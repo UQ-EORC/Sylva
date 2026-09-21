@@ -1,0 +1,18 @@
+[package]
+name = "sylva-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+# Python bindings: released to PyPI as wheels, never to crates.io.
+publish = false
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+sylva-rs = { path = "../sylva-rs" }
+pyo3.workspace = true
+rayon.workspace = true
+numpy.workspace = true

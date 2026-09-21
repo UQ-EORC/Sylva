@@ -1,0 +1,32 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "mkdocs.yml", "python/**", ".github/workflows/docs.yml"]
+  pull_request:
+    paths: ["docs/**", "mkdocs.yml", "python/**"]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Publish to GitHub Pages (gh-pages branch)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The API reference is read from the sources and the notebooks carry
+      # their outputs, so the Rust extension does not have to be built here.
+      - run: pip install "mkdocs>=1.6,<2" mkdocs-material "mkdocstrings[python]" mkdocs-jupyter
+      - run: mkdocs build --strict
+      - if: github.event_name == 'workflow_dispatch' && inputs.deploy
+        run: mkdocs gh-deploy --force

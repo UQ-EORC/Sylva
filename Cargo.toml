@@ -1,0 +1,32 @@
+[workspace]
+members = ["crates/sylva-rs", "crates/sylva-py", "crates/sylva-cli"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Tim Devereux <devereux.tj@gmail.com>"]
+repository = "https://github.com/tim-devereux/Sylva"
+homepage = "https://github.com/tim-devereux/Sylva"
+keywords = ["lidar", "point-cloud", "forestry", "tls", "remote-sensing"]
+categories = ["science", "science::geo"]
+
+[workspace.dependencies]
+nalgebra = "0.35"
+rayon = "1.12"
+kiddo = "6.3"
+las = { version = "0.11", features = ["laz"] }
+thiserror = "2"
+anyhow = "1"
+byteorder = "1.5"
+libloading = "0.8"
+parquet = { version = "60", default-features = false, features = ["zstd"] }
+clap = { version = "4.6", features = ["derive"] }
+pyo3 = { version = "0.29", features = ["extension-module", "abi3-py310"] }
+numpy = "0.29"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4

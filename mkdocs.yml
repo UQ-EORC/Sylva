@@ -1,0 +1,97 @@
+site_name: Sylva
+site_description: Terrestrial laser scanning processing for forest ecology, with a Rust core
+repo_url: https://github.com/tim-devereux/Sylva
+repo_name: tim-devereux/Sylva
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  logo: assets/icon.svg
+  favicon: assets/icon.svg
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      toggle: {icon: material/weather-night, name: Dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      toggle: {icon: material/weather-sunny, name: Light mode}
+
+nav:
+  - Home: index.md
+  - Install: install.md
+  - Guide:
+      - Plot workflow: guide/quickstart.md
+      - Pulse data: guide/pulses.md
+      - Ray-traced voxels: guide/voxels.md
+      - QSMs: guide/qsm.md
+      - Command line: guide/cli.md
+  - Examples:
+      - Overview: examples/index.md
+      - 1. Point clouds and I/O: examples/01_pointclouds_io.ipynb
+      - 2. Filtering: examples/02_filtering.ipynb
+      - 3. Registration: examples/03_registration.ipynb
+      - 4. Ground and height: examples/04_ground.ipynb
+      - 5. Trees: examples/05_trees.ipynb
+      - 6. QSMs: examples/06_qsm.ipynb
+      - 7. Canopy structure: examples/07_canopy.ipynb
+      - 8. Pulses and shots files: examples/08_shots.ipynb
+      - 9. Ray-traced voxels: examples/09_voxels.ipynb
+  - Benchmarks:
+      - Tree detection: benchmarks/trees.md
+      - QSMs: benchmarks/qsm.md
+  - API reference:
+      - PointCloud, Raster: api/pointcloud.md
+      - io: api/io.md
+      - Shots, RiSCAN: api/shots.md
+      - filters: api/filters.md
+      - ground: api/ground.md
+      - trees: api/trees.md
+      - canopy: api/canopy.md
+      - voxels: api/voxels.md
+      - registration: api/registration.md
+      - qsm: api/qsm.md
+  - Development: development.md
+  - Releasing: release.md
+  - References: references.md
+
+hooks:
+  - docs/hooks.py
+
+exclude_docs: |
+  hooks.py
+  examples/build_notebooks.py
+
+plugins:
+  - search
+  - mkdocs-jupyter:
+      execute: false
+      include_source: true
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [python]
+          options:
+            docstring_style: numpy
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: true
+            heading_level: 2
+            members_order: source
+            filters: ["!^_"]
+            separate_signature: true
+            show_signature_annotations: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc: {permalink: true}
+  - pymdownx.highlight
+  - pymdownx.superfences

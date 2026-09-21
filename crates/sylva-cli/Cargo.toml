@@ -1,0 +1,21 @@
+[package]
+name = "sylva-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+description = "Command-line tool for terrestrial laser scanning of forests, built on sylva-rs"
+
+[[bin]]
+name = "sylva"
+path = "src/main.rs"
+
+[dependencies]
+sylva-rs = { path = "../sylva-rs", version = "0.1.0" }
+clap.workspace = true
+anyhow.workspace = true

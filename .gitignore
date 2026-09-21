@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+target/
+*.so
+*.las
+*.laz
+*.rxp
+*.rdbx
+site/
+.ipynb_checkpoints/
+.cache/

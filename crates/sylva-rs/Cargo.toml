@@ -1,0 +1,23 @@
+[package]
+name = "sylva-rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/sylva-rs"
+description = "Terrestrial laser scanning processing for forest ecology"
+
+[dependencies]
+nalgebra.workspace = true
+rayon.workspace = true
+kiddo.workspace = true
+las.workspace = true
+thiserror.workspace = true
+byteorder.workspace = true
+libloading.workspace = true
+parquet.workspace = true

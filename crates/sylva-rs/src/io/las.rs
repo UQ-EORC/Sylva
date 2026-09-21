@@ -1,0 +1,314 @@
+//! LAS / LAZ via the `las` crate, with typed extra-bytes dimensions.
+
+use std::path::Path;
+
+use byteorder::{ByteOrder, LittleEndian};
+use las::point::{Classification, Format};
+use las::{Builder, Point as LasPoint, Reader, Transform as LasTransform, Vector, Vlr, Writer};
+
+use crate::error::{Error, Result};
+use crate::pointcloud::Attr;
+use crate::{Point, PointCloud};
+
+const EXTRA_BYTES_USER_ID: &str = "LASF_Spec";
+const EXTRA_BYTES_RECORD_ID: u16 = 4;
+
+/// One extra-bytes dimension as described by the LAS 1.4 spec VLR.
+#[derive(Debug, Clone)]
+struct ExtraDim {
+    name: String,
+    data_type: u8,
+    size: usize,
+}
+
+fn dim_size(data_type: u8) -> Option<usize> {
+    Some(match data_type {
+        1 | 2 => 1,
+        3 | 4 => 2,
+        5 | 6 => 4,
+        7 | 8 => 8,
+        9 => 4,
+        10 => 8,
+        _ => return None,
+    })
+}
+
+fn parse_extra_bytes_vlr(vlr: &Vlr) -> Vec<ExtraDim> {
+    let mut dims = Vec::new();
+    for rec in vlr.data.chunks_exact(192) {
+        let data_type = rec[2];
+        let name_end = rec[4..36].iter().position(|&b| b == 0).unwrap_or(32);
+        let name = String::from_utf8_lossy(&rec[4..4 + name_end]).to_string();
+        match dim_size(data_type) {
+            Some(size) => dims.push(ExtraDim { name, data_type, size }),
+            None => {
+                // Undocumented/deprecated array types: skip by options byte size.
+                let opts = rec[3];
+                dims.push(ExtraDim { name, data_type: 0, size: opts as usize });
+            }
+        }
+    }
+    dims
+}
+
+fn decode_dim(dim: &ExtraDim, bytes: &[u8]) -> f64 {
+    match dim.data_type {
+        1 => bytes[0] as f64,
+        2 => bytes[0] as i8 as f64,
+        3 => LittleEndian::read_u16(bytes) as f64,
+        4 => LittleEndian::read_i16(bytes) as f64,
+        5 => LittleEndian::read_u32(bytes) as f64,
+        6 => LittleEndian::read_i32(bytes) as f64,
+        7 => LittleEndian::read_u64(bytes) as f64,
+        8 => LittleEndian::read_i64(bytes) as f64,
+        9 => LittleEndian::read_f32(bytes) as f64,
+        10 => LittleEndian::read_f64(bytes),
+        _ => f64::NAN,
+    }
+}
+
+fn attr_from_dim(dim: &ExtraDim, values: Vec<f64>) -> Attr {
+    match dim.data_type {
+        1 => Attr::U8(values.iter().map(|&v| v as u8).collect()),
+        2 => Attr::I8(values.iter().map(|&v| v as i8).collect()),
+        3 => Attr::U16(values.iter().map(|&v| v as u16).collect()),
+        4 | 6 => Attr::I32(values.iter().map(|&v| v as i32).collect()),
+        5 => Attr::U32(values.iter().map(|&v| v as u32).collect()),
+        7 | 8 => Attr::I64(values.iter().map(|&v| v as i64).collect()),
+        9 => Attr::F32(values.iter().map(|&v| v as f32).collect()),
+        _ => Attr::F64(values),
+    }
+}
+
+/// Read a LAS/LAZ file. Standard dimensions become attributes named as in
+/// laspy (`intensity`, `return_number`, `classification`, `gps_time`, ...).
+pub fn read_las(path: impl AsRef<Path>) -> Result<PointCloud> {
+    let path = path.as_ref();
+    let mut reader = Reader::from_path(path)?;
+    let header = reader.header().clone();
+    let format = header.point_format().clone();
+    let extra_dims: Vec<ExtraDim> = header
+        .all_vlrs()
+        .filter(|v| v.user_id == EXTRA_BYTES_USER_ID && v.record_id == EXTRA_BYTES_RECORD_ID)
+        .flat_map(parse_extra_bytes_vlr)
+        .collect();
+    let n = header.number_of_points() as usize;
+
+    let mut xyz: Vec<Point> = Vec::with_capacity(n);
+    let mut intensity = Vec::with_capacity(n);
+    let mut return_number = Vec::with_capacity(n);
+    let mut number_of_returns = Vec::with_capacity(n);
+    let mut classification = Vec::with_capacity(n);
+    let mut scan_angle = Vec::with_capacity(n);
+    let mut user_data = Vec::with_capacity(n);
+    let mut point_source_id = Vec::with_capacity(n);
+    let mut gps_time = if format.has_gps_time { Some(Vec::with_capacity(n)) } else { None };
+    let mut color = if format.has_color { Some((Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n))) } else { None };
+    let mut extra: Vec<Vec<f64>> = extra_dims.iter().map(|_| Vec::with_capacity(n)).collect();
+
+    let pd = reader.read_all()?;
+    for p in pd.points() {
+        let p = p?;
+        xyz.push([p.x, p.y, p.z]);
+        intensity.push(p.intensity);
+        return_number.push(p.return_number);
+        number_of_returns.push(p.number_of_returns);
+        classification.push(u8::from(p.classification));
+        scan_angle.push(p.scan_angle);
+        user_data.push(p.user_data);
+        point_source_id.push(p.point_source_id);
+        if let (Some(v), Some(t)) = (&mut gps_time, p.gps_time) {
+            v.push(t);
+        }
+        if let (Some((r, g, b)), Some(c)) = (&mut color, p.color) {
+            r.push(c.red);
+            g.push(c.green);
+            b.push(c.blue);
+        }
+        let mut off = 0;
+        for (k, dim) in extra_dims.iter().enumerate() {
+            if off + dim.size <= p.extra_bytes.len() {
+                extra[k].push(decode_dim(dim, &p.extra_bytes[off..off + dim.size]));
+            }
+            off += dim.size;
+        }
+    }
+
+    let mut cloud = PointCloud::new(xyz);
+    cloud.attrs.insert("intensity".into(), Attr::U16(intensity));
+    cloud.attrs.insert("return_number".into(), Attr::U8(return_number));
+    cloud.attrs.insert("number_of_returns".into(), Attr::U8(number_of_returns));
+    cloud.attrs.insert("classification".into(), Attr::U8(classification));
+    cloud.attrs.insert("scan_angle".into(), Attr::F32(scan_angle));
+    cloud.attrs.insert("user_data".into(), Attr::U8(user_data));
+    cloud.attrs.insert("point_source_id".into(), Attr::U16(point_source_id));
+    if let Some(t) = gps_time {
+        cloud.attrs.insert("gps_time".into(), Attr::F64(t));
+    }
+    if let Some((r, g, b)) = color {
+        cloud.attrs.insert("red".into(), Attr::U16(r));
+        cloud.attrs.insert("green".into(), Attr::U16(g));
+        cloud.attrs.insert("blue".into(), Attr::U16(b));
+    }
+    for (dim, values) in extra_dims.iter().zip(extra) {
+        if dim.data_type != 0 && values.len() == cloud.len() {
+            cloud.attrs.insert(dim.name.clone(), attr_from_dim(dim, values));
+        }
+    }
+    Ok(cloud)
+}
+
+#[derive(Debug, Clone)]
+pub struct LasWriteOptions {
+    pub point_format: u8,
+    pub scale: f64,
+}
+
+impl Default for LasWriteOptions {
+    fn default() -> Self {
+        LasWriteOptions { point_format: 6, scale: 0.001 }
+    }
+}
+
+const STANDARD: &[&str] = &[
+    "intensity", "return_number", "number_of_returns", "classification", "scan_angle", "user_data",
+    "point_source_id", "gps_time", "red", "green", "blue",
+];
+
+fn extra_dim_for(attr: &Attr) -> (u8, usize) {
+    match attr {
+        Attr::U8(_) | Attr::Bool(_) => (1, 1),
+        Attr::I8(_) => (2, 1),
+        Attr::U16(_) => (3, 2),
+        Attr::I32(_) => (6, 4),
+        Attr::U32(_) => (5, 4),
+        Attr::I64(_) => (8, 8),
+        Attr::F32(_) => (9, 4),
+        Attr::F64(_) => (10, 8),
+    }
+}
+
+fn encode_dim(attr: &Attr, i: usize, out: &mut Vec<u8>) {
+    match attr {
+        Attr::U8(v) => out.push(v[i]),
+        Attr::Bool(v) => out.push(v[i] as u8),
+        Attr::I8(v) => out.push(v[i] as u8),
+        Attr::U16(v) => out.extend_from_slice(&v[i].to_le_bytes()),
+        Attr::I32(v) => out.extend_from_slice(&v[i].to_le_bytes()),
+        Attr::U32(v) => out.extend_from_slice(&v[i].to_le_bytes()),
+        Attr::I64(v) => out.extend_from_slice(&v[i].to_le_bytes()),
+        Attr::F32(v) => out.extend_from_slice(&v[i].to_le_bytes()),
+        Attr::F64(v) => out.extend_from_slice(&v[i].to_le_bytes()),
+    }
+}
+
+/// Write a LAS/LAZ file (compression chosen from the extension). Non-standard
+/// attributes are stored as extra-bytes dimensions.
+pub fn write_las(cloud: &PointCloud, path: impl AsRef<Path>, opts: &LasWriteOptions) -> Result<()> {
+    let path = path.as_ref();
+    let mut builder = Builder::from((1, 4));
+    let mut format = Format::new(opts.point_format)?;
+    if format.has_color && !cloud.attrs.contains_key("red") {
+        // fine: colours default to zero
+    }
+    let extras: Vec<(&String, &Attr, u8, usize)> = cloud
+        .attrs
+        .iter()
+        .filter(|(k, _)| !STANDARD.contains(&k.as_str()))
+        .map(|(k, a)| {
+            let (t, s) = extra_dim_for(a);
+            (k, a, t, s)
+        })
+        .collect();
+    format.extra_bytes = extras.iter().map(|e| e.3 as u16).sum();
+    format.is_compressed = path.extension().map(|e| e.eq_ignore_ascii_case("laz")).unwrap_or(false);
+    builder.point_format = format;
+
+    if !extras.is_empty() {
+        let mut data = Vec::with_capacity(192 * extras.len());
+        for (name, _, dtype, _) in &extras {
+            let mut rec = [0u8; 192];
+            rec[2] = *dtype;
+            let bytes = name.as_bytes();
+            let n = bytes.len().min(31);
+            rec[4..4 + n].copy_from_slice(&bytes[..n]);
+            let desc = b"sylva";
+            rec[160..160 + desc.len()].copy_from_slice(desc);
+            data.extend_from_slice(&rec);
+        }
+        builder.vlrs.push(Vlr {
+            user_id: EXTRA_BYTES_USER_ID.to_string(),
+            record_id: EXTRA_BYTES_RECORD_ID,
+            description: "Extra Bytes".to_string(),
+            data,
+        });
+    }
+
+    let (lo, _) = cloud.bounds().unwrap_or(([0.0; 3], [0.0; 3]));
+    builder.transforms = Vector {
+        x: LasTransform { scale: opts.scale, offset: lo[0].floor() },
+        y: LasTransform { scale: opts.scale, offset: lo[1].floor() },
+        z: LasTransform { scale: opts.scale, offset: lo[2].floor() },
+    };
+    builder.generating_software = format!("sylva {}", env!("CARGO_PKG_VERSION"));
+    let header = builder.into_header()?;
+    let has_gps = header.point_format().has_gps_time;
+    let has_color = header.point_format().has_color;
+    let mut writer = Writer::from_path(path, header)?;
+
+    let get = |name: &str| cloud.attrs.get(name);
+    let intensity = get("intensity");
+    let return_number = get("return_number");
+    let number_of_returns = get("number_of_returns");
+    let classification = get("classification");
+    let scan_angle = get("scan_angle");
+    let user_data = get("user_data");
+    let point_source_id = get("point_source_id");
+    let gps_time = get("gps_time");
+    let (red, green, blue) = (get("red"), get("green"), get("blue"));
+
+    for i in 0..cloud.len() {
+        let mut p = LasPoint { x: cloud.xyz[i][0], y: cloud.xyz[i][1], z: cloud.xyz[i][2], ..Default::default() };
+        if let Some(a) = intensity {
+            p.intensity = a.get_f64(i) as u16;
+        }
+        if let Some(a) = return_number {
+            p.return_number = (a.get_f64(i) as u8).clamp(0, 15);
+        }
+        if let Some(a) = number_of_returns {
+            p.number_of_returns = (a.get_f64(i) as u8).clamp(0, 15);
+        }
+        if let Some(a) = classification {
+            p.classification = Classification::new(a.get_f64(i) as u8).unwrap_or_default();
+        }
+        if let Some(a) = scan_angle {
+            p.scan_angle = a.get_f64(i) as f32;
+        }
+        if let Some(a) = user_data {
+            p.user_data = a.get_f64(i) as u8;
+        }
+        if let Some(a) = point_source_id {
+            p.point_source_id = a.get_f64(i) as u16;
+        }
+        if has_gps {
+            p.gps_time = Some(gps_time.map(|a| a.get_f64(i)).unwrap_or(0.0));
+        }
+        if has_color {
+            p.color = Some(las::Color {
+                red: red.map(|a| a.get_f64(i) as u16).unwrap_or(0),
+                green: green.map(|a| a.get_f64(i) as u16).unwrap_or(0),
+                blue: blue.map(|a| a.get_f64(i) as u16).unwrap_or(0),
+            });
+        }
+        let mut eb = Vec::with_capacity(extras.iter().map(|e| e.3).sum());
+        for (_, attr, _, _) in &extras {
+            encode_dim(attr, i, &mut eb);
+        }
+        p.extra_bytes = eb;
+        writer.write_point(p)?;
+    }
+    writer.close()?;
+    Ok(())
+}
+
+pub(crate) fn _unused(_: Error) {}
