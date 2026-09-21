@@ -365,14 +365,15 @@ pub fn tree_heights(heights: &[f64], labels: &[i64], trees: &mut [Tree], percent
     }
 }
 
-/// Convex hull (monotone chain) area of 2-D points.
-pub fn convex_hull_area(xy: &[[f64; 2]]) -> f64 {
-    if xy.len() < 3 {
-        return f64::NAN;
-    }
-    let mut pts = xy.to_vec();
+/// Convex hull (monotone chain) of 2-D points, counter-clockwise, without
+/// repeating the first vertex. Fewer than 3 distinct points give them back.
+pub fn convex_hull(xy: &[[f64; 2]]) -> Vec<[f64; 2]> {
+    let mut pts: Vec<[f64; 2]> = xy.iter().copied().filter(|p| p[0].is_finite() && p[1].is_finite()).collect();
     pts.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap().then(a[1].partial_cmp(&b[1]).unwrap()));
     pts.dedup();
+    if pts.len() < 3 {
+        return pts;
+    }
     let cross = |o: &[f64; 2], a: &[f64; 2], b: &[f64; 2]| (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
     let mut lower: Vec<[f64; 2]> = Vec::new();
     for p in &pts {
@@ -390,13 +391,127 @@ pub fn convex_hull_area(xy: &[[f64; 2]]) -> f64 {
     }
     lower.pop();
     upper.pop();
-    let hull: Vec<[f64; 2]> = lower.into_iter().chain(upper).collect();
+    lower.into_iter().chain(upper).collect()
+}
+
+/// Area of a polygon (shoelace).
+pub fn polygon_area(poly: &[[f64; 2]]) -> f64 {
     let mut area = 0.0;
-    for i in 0..hull.len() {
-        let j = (i + 1) % hull.len();
-        area += hull[i][0] * hull[j][1] - hull[j][0] * hull[i][1];
+    for i in 0..poly.len() {
+        let j = (i + 1) % poly.len();
+        area += poly[i][0] * poly[j][1] - poly[j][0] * poly[i][1];
     }
     area.abs() / 2.0
+}
+
+/// Whether `p` is inside (or on) a counter-clockwise convex polygon.
+pub fn in_convex_polygon(poly: &[[f64; 2]], p: [f64; 2]) -> bool {
+    if poly.len() < 3 {
+        return false;
+    }
+    (0..poly.len()).all(|i| {
+        let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+        (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= -1e-12
+    })
+}
+
+/// Convex hull area of 2-D points (NaN for fewer than 3).
+pub fn convex_hull_area(xy: &[[f64; 2]]) -> f64 {
+    let hull = convex_hull(xy);
+    if hull.len() < 3 {
+        return f64::NAN;
+    }
+    polygon_area(&hull)
+}
+
+/// Shape of a crown from its points (or any 3-D outline of it).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CrownShape {
+    /// Vertical projection: convex hull area (m2), its equivalent diameter
+    /// and greatest width (m).
+    pub projected_area: f64,
+    pub diameter: f64,
+    pub max_width: f64,
+    /// Stacked convex hulls of horizontal slices (m3): follows the crown's
+    /// taper and skirt, unlike one 3-D hull.
+    pub volume: f64,
+    /// Outer surface of the stacked hulls (m2): side walls plus top.
+    pub surface: f64,
+    pub base_height: f64,
+    pub top_height: f64,
+    /// Horizontal offset of the crown's area centroid from `base_xy` (m),
+    /// its direction (deg, counter-clockwise from +x) and the offset relative
+    /// to the equivalent crown radius.
+    pub offset: f64,
+    pub offset_direction: f64,
+    pub asymmetry: f64,
+}
+
+/// Crown shape from points between `z_min` and the top: projection, stacked
+/// slice hulls every `slice` metres, and asymmetry about `base_xy` (the stem
+/// position; the lowest point's position when `None`).
+pub fn crown_shape(points: &[Point], base_xy: Option<[f64; 2]>, z_min: f64, slice: f64) -> CrownShape {
+    let crown: Vec<&Point> = points.iter().filter(|p| p[2] >= z_min && p.iter().all(|v| v.is_finite())).collect();
+    if crown.len() < 3 || !(slice > 0.0) {
+        return CrownShape { projected_area: f64::NAN, diameter: f64::NAN, max_width: f64::NAN, volume: f64::NAN, surface: f64::NAN, base_height: z_min, top_height: f64::NAN, offset: f64::NAN, offset_direction: f64::NAN, asymmetry: f64::NAN };
+    }
+    let top = crown.iter().map(|p| p[2]).fold(f64::NEG_INFINITY, f64::max);
+    let base = crown.iter().map(|p| p[2]).fold(f64::INFINITY, f64::min);
+    let xy: Vec<[f64; 2]> = crown.iter().map(|p| [p[0], p[1]]).collect();
+    let hull = convex_hull(&xy);
+    let area = if hull.len() >= 3 { polygon_area(&hull) } else { 0.0 };
+    let mut max_width = 0.0f64;
+    for i in 0..hull.len() {
+        for j in i + 1..hull.len() {
+            max_width = max_width.max((hull[i][0] - hull[j][0]).hypot(hull[i][1] - hull[j][1]));
+        }
+    }
+    // Area centroid of the projection.
+    let (mut cx, mut cy, mut a2) = (0.0, 0.0, 0.0);
+    for i in 0..hull.len() {
+        let (p, q) = (hull[i], hull[(i + 1) % hull.len()]);
+        let c = p[0] * q[1] - q[0] * p[1];
+        cx += (p[0] + q[0]) * c;
+        cy += (p[1] + q[1]) * c;
+        a2 += c;
+    }
+    let centroid = if a2.abs() > 1e-12 { [cx / (3.0 * a2), cy / (3.0 * a2)] } else { [xy.iter().map(|p| p[0]).sum::<f64>() / xy.len() as f64, xy.iter().map(|p| p[1]).sum::<f64>() / xy.len() as f64] };
+    let lowest = crown.iter().min_by(|a, b| a[2].partial_cmp(&b[2]).unwrap()).unwrap();
+    let origin = base_xy.unwrap_or([lowest[0], lowest[1]]);
+    let (dx, dy) = (centroid[0] - origin[0], centroid[1] - origin[1]);
+    // Stacked slice hulls.
+    let n_slices = (((top - base) / slice).ceil() as usize).max(1);
+    let mut slices: Vec<Vec<[f64; 2]>> = vec![Vec::new(); n_slices];
+    for p in &crown {
+        let k = (((p[2] - base) / slice) as usize).min(n_slices - 1);
+        slices[k].push([p[0], p[1]]);
+    }
+    let (mut volume, mut surface) = (0.0, 0.0);
+    let mut top_area = 0.0;
+    for s in &slices {
+        let h = convex_hull(s);
+        if h.len() >= 3 {
+            let a = polygon_area(&h);
+            let perimeter: f64 = (0..h.len()).map(|i| (h[i][0] - h[(i + 1) % h.len()][0]).hypot(h[i][1] - h[(i + 1) % h.len()][1])).sum();
+            volume += a * slice;
+            surface += perimeter * slice;
+            top_area = a;
+        }
+    }
+    surface += top_area;
+    let radius = (area / std::f64::consts::PI).sqrt();
+    CrownShape {
+        projected_area: area,
+        diameter: 2.0 * radius,
+        max_width,
+        volume,
+        surface,
+        base_height: base,
+        top_height: top,
+        offset: dx.hypot(dy),
+        offset_direction: dy.atan2(dx).to_degrees(),
+        asymmetry: if radius > 0.0 { dx.hypot(dy) / radius } else { f64::NAN },
+    }
 }
 
 /// Crown metrics for every label in one pass over the cloud.

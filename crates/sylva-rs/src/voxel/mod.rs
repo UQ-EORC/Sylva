@@ -17,6 +17,7 @@
 
 mod iad;
 pub(crate) mod metrics;
+pub mod quality;
 mod refine;
 mod traverse;
 mod wood;

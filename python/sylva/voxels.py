@@ -27,7 +27,7 @@ from .qsm import QSM
 from .raster import Raster
 from .shots import Shots
 
-__all__ = ["RayVoxelGrid", "ray_voxelize", "laser_spec", "leaf_projection", "STATES",
+__all__ = ["RayVoxelGrid", "ray_voxelize", "laser_spec", "leaf_projection", "STATES", "tree_sampling",
            "EXCLUDED", "PLANT", "LEAF", "WOOD"]
 
 #: Values of ``RayVoxelGrid.state``.
@@ -115,6 +115,58 @@ class RayVoxelGrid:
     def observed(self) -> np.ndarray:
         """Voxels crossed by at least one pulse before its last echo."""
         return self["state"] >= STATES["empty"]
+
+    def occlusion_profile(self, min_height: float = 0.0, max_height: float | None = None) -> dict:
+        """What the scan saw of the canopy space, layer by layer.
+
+        The canopy space is every voxel from ``min_height`` above the ground
+        (``distance_from_ground``, needs a DTM; else above the grid floor) up
+        to ``max_height`` -- by default the highest layer holding a filled
+        voxel. Returns per layer the ``height`` of its centre, the voxel
+        count and the shares ``observed`` (a pulse went through or ended in
+        it), ``occluded`` (only pulses already stopped reached it; needs
+        ``occlusion=True``) and ``unobserved``, the mean pulses entering a
+        voxel (``mean_beams``), and plot totals under ``"total"``.
+        """
+        state = self["state"]
+        if "distance_from_ground" in self.metrics and np.isfinite(self["distance_from_ground"]).any():
+            h = self["distance_from_ground"]
+        else:
+            h = np.broadcast_to(((np.arange(self.shape[2]) + 0.5) * self.voxel_size)[:, None, None], state.shape)
+        filled = state == STATES["filled"]
+        top = max_height if max_height is not None else (float(np.nanmax(np.where(filled, h, np.nan))) if filled.any() else 0.0)
+        space = np.isfinite(h) & (h >= min_height) & (h <= top)
+        edges = np.arange(min_height, top + self.voxel_size, self.voxel_size)
+        k = np.clip(np.digitize(h, edges) - 1, 0, max(len(edges) - 2, 0))
+        n_layers = max(len(edges) - 1, 1)
+        def per_layer(mask, weights=None):
+            return np.bincount(k[space & mask], weights=None if weights is None else weights[space & mask], minlength=n_layers)[:n_layers]
+        n = per_layer(np.ones_like(space))
+        obs = per_layer(state >= STATES["empty"])
+        occ = per_layer(state == STATES["occluded"])
+        beams = per_layer(np.ones_like(space), np.asarray(self["num_beams"], float))
+        with np.errstate(invalid="ignore", divide="ignore"):
+            out = {"height": 0.5 * (edges[:-1] + edges[1:])[:n_layers], "n_voxels": n,
+                   "observed": obs / n, "occluded": occ / n, "unobserved": (n - obs - occ) / n,
+                   "mean_beams": beams / n}
+        tot = max(n.sum(), 1)
+        out["total"] = {"observed": float(obs.sum() / tot), "occluded": float(occ.sum() / tot),
+                        "unobserved": float((n.sum() - obs.sum() - occ.sum()) / tot), "top": float(top)}
+        return out
+
+    def observed_map(self, min_height: float = 0.0, max_height: float | None = None) -> np.ndarray:
+        """Share of each column's canopy space (see :meth:`occlusion_profile`)
+        that was observed, ``(ny, nx)``; NaN for columns with none."""
+        state = self["state"]
+        if "distance_from_ground" in self.metrics and np.isfinite(self["distance_from_ground"]).any():
+            h = self["distance_from_ground"]
+        else:
+            h = np.broadcast_to(((np.arange(self.shape[2]) + 0.5) * self.voxel_size)[:, None, None], state.shape)
+        filled = state == STATES["filled"]
+        top = max_height if max_height is not None else (float(np.nanmax(np.where(filled, h, np.nan))) if filled.any() else 0.0)
+        space = np.isfinite(h) & (h >= min_height) & (h <= top)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return (space & (state >= STATES["empty"])).sum(axis=0) / space.sum(axis=0)
 
     def z_levels(self) -> np.ndarray:
         return self.origin[2] + np.arange(self.shape[2]) * self.voxel_size
@@ -331,3 +383,38 @@ def ray_voxelize(
         float(triangle_lmax), float(unbounded_range),
     )
     return RayVoxelGrid(core)
+
+
+def tree_sampling(grid: RayVoxelGrid, cloud, labels, min_beams: float = 10.0,
+                  above: float = 2.0) -> dict[str, np.ndarray]:
+    """How well each tree was seen, from a ray-traced ``grid`` built with
+    ``occlusion=True`` (so occluded voxels are told from unreached ones).
+
+    A tree's crown envelope is, voxel layer by voxel layer, the convex hull
+    of its points (``labels`` per point, negative ignored). That envelope is
+    observed almost by construction -- the parts of a crown nobody saw left
+    no points -- so the informative columns are the pulses that reached it
+    and whether its top is real:
+
+    ``above_observed_fraction``
+        share of the voxels up to ``above`` metres over the tree's highest
+        point, within the footprint of its top metre, that were observed
+        (empty, or filled by a neighbour). Low means the top may be hidden
+        and the tree taller than its points.
+    ``median_beams``, ``p10_beams``, ``beams_by_quarter``
+        pulses entering an envelope voxel (unseen voxels count 0): overall,
+        the 10th percentile, and the median per quarter of the envelope's
+        height, bottom first.
+    ``well_sampled_fraction``
+        observed envelope voxels with at least ``min_beams`` pulses.
+
+    Also ``tree_id``, ``n_voxels`` and ``volume`` of the envelope and its
+    ``observed_fraction``, ``occluded_fraction``, ``unobserved_fraction``.
+    """
+    xyz = np.ascontiguousarray(cloud.xyz if hasattr(cloud, "xyz") else cloud, dtype=float)
+    lab = np.ascontiguousarray(labels, dtype=np.int64)
+    state = np.ascontiguousarray(grid["state"], dtype=np.uint8).ravel()
+    beams = np.ascontiguousarray(grid["num_beams"], dtype=float).ravel()
+    o = tuple(float(x) for x in grid.origin)
+    return _core.tree_sampling(xyz, lab, o, float(grid.voxel_size), tuple(int(x) for x in grid.shape),
+                               state, beams, float(min_beams), float(above))

@@ -77,6 +77,38 @@ class QSM:
     def dbh(self) -> float:
         return _core.qsm_summary(self.cylinders)["dbh"]
 
+    def metrics(self, crown_branch_length: float = 1.0, crown_slice: float = 0.5) -> dict:
+        """Tree architecture from the cylinders.
+
+        Height, DBH, volumes and lengths (total, stem, branches, and per
+        branch order), branch and tip counts, path fraction (mean base-to-tip
+        path over the longest), crown base height (lowest first-order branch
+        at least ``crown_branch_length`` long), stem lean and its direction,
+        sweep (greatest offset of the stem from the chord between the base and
+        the crown base, over its length), the stem taper profile, the crown
+        outlined by the branches (see :func:`sylva.trees.crown_shape`, slices
+        ``crown_slice`` high), length-weighted median insertion and zenith
+        angles of first-order branches (deg), and the share of volume and
+        length whose radius was fitted to points rather than filled in by
+        the taper and pipe-model priors -- a quality flag for the model.
+        Heights are above the stem base.
+        """
+        return _core.qsm_metrics(np.ascontiguousarray(self.cylinders, dtype=float),
+                                 float(crown_branch_length), float(crown_slice))
+
+    def branches(self) -> dict[str, np.ndarray]:
+        """One row per branch (``branch_id`` chain; the stem is order 0), as
+        columns: ``id``, ``order``, ``parent`` (branch it grows from, -1 for
+        the stem), ``n_cylinders``, ``length`` (m), ``volume`` (m3),
+        ``base_radius`` and length-weighted ``mean_radius`` (m),
+        ``base_height`` and ``tip_height`` (m above the stem base),
+        ``insertion_angle`` (deg between its direction over 0.5 m past its
+        first cylinder, which only joins it to the parent's axis, and the
+        parent's direction over 0.5 m either side of the junction), ``zenith`` and ``azimuth`` of the base-to-tip chord (deg),
+        ``tortuosity`` (length over chord), ``n_children`` and
+        ``measured_fraction`` (share of the length fitted to points)."""
+        return _core.qsm_branches(np.ascontiguousarray(self.cylinders, dtype=float))
+
     def summary(self) -> dict:
         s = _core.qsm_summary(self.cylinders)
         return {

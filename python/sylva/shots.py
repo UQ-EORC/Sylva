@@ -129,19 +129,21 @@ class Shots:
         half = pattern["theta_delta"] / 2
         return theta, np.concatenate([theta - half, [theta[-1] + half]])
 
-    def pulses_per_line(self, pattern: dict, quantile: float = 0.98) -> int:
+    def pulses_per_line(self, pattern: dict, quantile: float = 0.98, shot_stride: int = 1) -> int:
         """Effective number of pulses fired along each zenith line.
 
         Nominally ``pattern["phi_count"]``, but RIEGL scanners fire ~1 % more
         pulses than the nominal grid (a VZ-2000i at "600 kHz" steps at ~631
         kHz), so the count observed on saturated lines is a better estimate.
         Returns the larger of the nominal count and the ``quantile`` of shots
-        observed per zenith line; call in the scanner frame.
+        observed per zenith line; call in the scanner frame. For shots read
+        with ``shot_stride`` (every n-th pulse kept) the nominal count is
+        divided by it.
         """
         _, edges = self._zenith_lines(pattern)
         zen, _ = self.zenith_azimuth()
         observed, _ = np.histogram(zen, bins=edges)
-        return int(max(int(pattern["phi_count"]), np.quantile(observed, quantile)))
+        return int(max(int(pattern["phi_count"]) / max(int(shot_stride), 1), np.quantile(observed, quantile)))
 
     def expected_per_zenith(self, pattern: dict, zenith_edges: np.ndarray,
                             pulses_per_line: int | None = None) -> np.ndarray:

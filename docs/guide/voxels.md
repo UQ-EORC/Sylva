@@ -54,3 +54,38 @@ the free path of every vegetation segment (rayvoxel uses only the segments
 ending in an echo that is neither leaf nor wood); there is no
 out-of-core mode, NetCDF output or per-voxel class histogram. Memory is about
 0.25 kB per voxel while tracing.
+
+## What the scan saw
+
+With `occlusion=True` every voxel is observed (a pulse went through or ended
+in it), occluded (only pulses that had already stopped reached it) or
+unreached.
+
+```python
+g = voxels.ray_voxelize(shots, 0.25, bounds, dtm=dtm, occlusion=True)
+prof = g.occlusion_profile(min_height=0.5)   # per layer: observed / occluded / unreached, mean pulses
+prof["total"]                                # the whole canopy space
+m = g.observed_map()                         # (ny, nx): observed share of each column
+t = voxels.tree_sampling(g, cloud, labels)   # per tree
+t["above_observed_fraction"], t["beams_by_quarter"], t["p10_beams"]
+```
+
+The canopy space runs from `min_height` above the ground (needs a DTM) up to
+the highest filled voxel.
+
+Per tree, the envelope is the stacked layer hulls of the tree's points.
+That envelope is observed almost by construction: parts of a crown nobody
+saw left no points. So the telling measures are the pulses that reached it,
+per quarter of its height, and `above_observed_fraction`: whether the space
+up to 2 m over the tree's highest point was seen, as empty or as a
+neighbour's crown. If it was not, the tree may continue where the scanner
+could not see.
+
+Robson Creek rainforest, 149 manually segmented trees, 0.25 m voxels:
+
+- **Canopy space.** 84 % observed up to about 18 m, 43 % at 28 m and 2 % at
+  36 m. Pulses per voxel fall from over 1,000 near the ground to 0 at the
+  top.
+- **Per tree.** 141 of the 149 trees have their tops confirmed. Of the six
+  tallest (tops above 30 m) one does. These are the emergent trees whose
+  heights and volumes nothing on the ground can check.

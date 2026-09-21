@@ -422,3 +422,95 @@ pub fn density_grid_from_shots(shots: &Shots, voxel_size: f64) -> Result<Density
 fn _unused(a: &Point, b: &Point) -> Point {
     sub(a, b)
 }
+
+/// Returns and fired pulses of one or more scans, binned by zenith ring,
+/// azimuth sector and height above ground: the inputs of a Jupp et al. (2009)
+/// gap-probability profile.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PgapHistogram {
+    /// Zenith ring edges (deg).
+    pub zenith_edges: Vec<f64>,
+    pub n_azimuth: usize,
+    pub height_bin: f64,
+    pub n_heights: usize,
+    /// Weighted returns `[ring][sector][height]`: each echo of a pulse with
+    /// `n` echoes counts `1 / n`. Heights at or above the top bin go in the
+    /// last bin.
+    pub hits: Vec<f64>,
+    /// Pulses fired `[ring][sector]`.
+    pub shots: Vec<f64>,
+}
+
+impl PgapHistogram {
+    pub fn new(zenith_edges: Vec<f64>, n_azimuth: usize, height_bin: f64, n_heights: usize) -> Self {
+        let n_rings = zenith_edges.len().saturating_sub(1);
+        let n_azimuth = n_azimuth.max(1);
+        PgapHistogram { zenith_edges, n_azimuth, height_bin, n_heights, hits: vec![0.0; n_rings * n_azimuth * n_heights], shots: vec![0.0; n_rings * n_azimuth] }
+    }
+
+    pub fn n_rings(&self) -> usize {
+        self.zenith_edges.len().saturating_sub(1)
+    }
+
+    fn ring_of(&self, zenith_deg: f64) -> Option<usize> {
+        let e = &self.zenith_edges;
+        if !(zenith_deg >= e[0] && zenith_deg < e[e.len() - 1]) {
+            return None;
+        }
+        Some(e.partition_point(|&v| v <= zenith_deg) - 1)
+    }
+
+    fn sector_of(&self, azimuth_deg: f64) -> usize {
+        let a = azimuth_deg.rem_euclid(360.0);
+        ((a / 360.0 * self.n_azimuth as f64) as usize).min(self.n_azimuth - 1)
+    }
+
+    /// Add pulses. `echo_heights` are heights above ground, one per echo;
+    /// echoes below `min_height` (or NaN) are not counted as returns but still
+    /// count towards the pulse's echo number. `fired_per_ring`, when given,
+    /// replaces the observed pulse counts (for streams without the pulses that
+    /// returned nothing), spread evenly over the azimuth sectors.
+    pub fn add(&mut self, shots: &Shots, echo_heights: &[f64], min_height: f64, fired_per_ring: Option<&[f64]>) {
+        let n_rings = self.n_rings();
+        let (na, nh) = (self.n_azimuth, self.n_heights);
+        for s in 0..shots.n_shots() {
+            let d = shots.direction[s];
+            let zen = d[2].clamp(-1.0, 1.0).acos().to_degrees();
+            let Some(ring) = self.ring_of(zen) else { continue };
+            let sector = self.sector_of(d[0].atan2(d[1]).to_degrees());
+            if fired_per_ring.is_none() {
+                self.shots[ring * na + sector] += 1.0;
+            }
+            let (e0, n) = (shots.echo_start[s], shots.echo_count[s] as usize);
+            if n == 0 {
+                continue;
+            }
+            let w = 1.0 / n as f64;
+            for e in e0..e0 + n {
+                let h = echo_heights[e];
+                if !(h >= min_height) {
+                    continue;
+                }
+                let k = ((h / self.height_bin).floor().max(0.0) as usize).min(nh - 1);
+                self.hits[(ring * na + sector) * nh + k] += w;
+            }
+        }
+        if let Some(f) = fired_per_ring {
+            for ring in 0..n_rings.min(f.len()) {
+                for sector in 0..na {
+                    self.shots[ring * na + sector] += f[ring] / na as f64;
+                }
+            }
+        }
+    }
+
+    /// Sum of another histogram with the same bins.
+    pub fn merge(&mut self, other: &PgapHistogram) -> Result<()> {
+        if other.zenith_edges != self.zenith_edges || other.n_azimuth != self.n_azimuth || other.n_heights != self.n_heights || other.height_bin != self.height_bin {
+            return Err(Error::invalid("histograms have different bins"));
+        }
+        self.hits.iter_mut().zip(&other.hits).for_each(|(a, b)| *a += b);
+        self.shots.iter_mut().zip(&other.shots).for_each(|(a, b)| *a += b);
+        Ok(())
+    }
+}

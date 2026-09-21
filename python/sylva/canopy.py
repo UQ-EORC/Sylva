@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -14,7 +14,7 @@ from .shots import Shots
 __all__ = [
     "VoxelGrid", "voxelize", "vertical_profile", "pad_profile_voxel", "gap_fraction_zenith",
     "gap_fraction_pattern", "lai_from_gap_fraction", "canopy_cover", "DensityGrid",
-    "density_grid",
+    "density_grid", "fit_ground_plane", "fired_pulses_per_ring", "GapProfile",
 ]
 
 
@@ -232,3 +232,253 @@ def density_grid(shots: Shots, voxel_size: float, origin=None, shape=None,
                            None if shape is None else tuple(int(v) for v in shape), min_hits)
     return DensityGrid(d["n_rays"], d["n_hits"], d["path_length"], d["density"], d["profile"],
                        d["origin"], d["voxel_size"])
+
+
+def fit_ground_plane(points, cell: float = 1.0, centre=None, radius: float | None = None,
+                     iterations: int = 20) -> np.ndarray:
+    """Ground plane ``z = a x + b y + c`` through the lowest point of every
+    ``cell`` (m) grid cell, optionally within ``radius`` of ``centre`` (xy),
+    fitted with Huber-weighted least squares so tree bases and pits pull
+    little. Returns ``[a, b, c]``."""
+    xyz = np.asarray(points.xyz if isinstance(points, PointCloud) else points, dtype=float)
+    if centre is not None and radius is not None:
+        xyz = xyz[np.hypot(xyz[:, 0] - centre[0], xyz[:, 1] - centre[1]) <= radius]
+    if len(xyz) < 3:
+        raise ValueError("too few points for a ground plane")
+    key = np.floor(xyz[:, :2] / cell).astype(np.int64)
+    order = np.lexsort((xyz[:, 2], key[:, 1], key[:, 0]))
+    k = key[order]
+    first = np.r_[True, np.any(k[1:] != k[:-1], axis=1)]
+    low = xyz[order][first]
+    A = np.c_[low[:, 0], low[:, 1], np.ones(len(low))]
+    w = np.ones(len(low))
+    coef = np.zeros(3)
+    for _ in range(iterations):
+        coef = np.linalg.lstsq(A * w[:, None], low[:, 2] * w, rcond=None)[0]
+        r = low[:, 2] - A @ coef
+        s = 1.4826 * np.median(np.abs(r - np.median(r))) + 1e-6
+        u = np.abs(r) / (1.345 * s)
+        w = np.sqrt(np.where(u <= 1, 1.0, 1.0 / u))
+    return coef
+
+
+def fired_pulses_per_ring(shots_scanner: Shots, pattern: dict, zenith_edges,
+                          shot_stride: int = 1, ground_zenith=(100.0, 125.0)) -> np.ndarray:
+    """Pulses a RIEGL scan fired into each zenith ring, for streams without
+    the pulses that returned nothing (RiVLib). ``shots_scanner`` in the
+    scanner frame, read with ``shot_stride``.
+
+    Every azimuth step fires one pulse per zenith line, so a ring gets
+    (lines in the ring) x (pulses per line). Pulses per line are counted on
+    the downward lines in ``ground_zenith``, where every pulse hits the
+    ground and so every fired pulse is in the stream: the median there. The
+    nominal ``phi_count`` of the pattern is not used, because the scanner
+    fires about 1 % more pulses than nominal and a percentile over all lines
+    overshoots, since the mirror's zenith angles do not sit exactly on the
+    nominal lines. In dense canopy, where nearly every pulse returns, a few
+    per cent too many fired pulses read as gaps and cap the PAI.
+    """
+    edges = np.asarray(zenith_edges, dtype=float)
+    theta, line_edges = shots_scanner._zenith_lines(pattern)
+    zen, _ = shots_scanner.zenith_azimuth()
+    observed, _ = np.histogram(zen, bins=line_edges)
+    ground = (theta >= ground_zenith[0]) & (theta <= ground_zenith[1])
+    if ground.sum() >= 10 and np.median(observed[ground]) > 0:
+        ppl = float(np.median(observed[ground]))
+    else:
+        ppl = float(shots_scanner.pulses_per_line(pattern, shot_stride=shot_stride))
+    # Each line spans theta_delta; share it among the rings it overlaps, so a
+    # line on a ring edge counts half on each side, like its pulses do.
+    half = 0.5 * float(pattern["theta_delta"])
+    lo, hi = theta - half, theta + half
+    overlap = np.clip(np.minimum(hi[:, None], edges[None, 1:]) - np.maximum(lo[:, None], edges[None, :-1]), 0, None)
+    lines = overlap.sum(axis=0) / (2 * half)
+    return lines * ppl
+
+
+@dataclass
+class GapProfile:
+    """Gap probability by zenith ring, azimuth sector and height above ground,
+    pooled over scans (Jupp et al. 2009), and what follows from it.
+
+    Build it with :meth:`empty` and :meth:`add_scan` (one call per scan
+    position), or :func:`gap_profile`. Returns are weighted ``1 / n`` per
+    echo of an ``n``-echo pulse; ``shots`` are pulses fired.
+    """
+
+    zenith_edges: np.ndarray  #: deg
+    n_azimuth: int
+    height_bin: float  #: m
+    hits: np.ndarray  #: (rings, sectors, heights)
+    shots: np.ndarray  #: (rings, sectors)
+    scan_hits: list = field(default_factory=list)  #: per scan: (rings, sectors) total returns
+    scan_shots: list = field(default_factory=list)  #: per scan: (rings, sectors)
+    scan_low: list = field(default_factory=list)  #: per scan: (rings, sectors) returns in bins below ``min_height``
+    #: Plant area is counted from this height up (m). Upward pulses from a
+    #: tripod hit little below it but terrain rising on slopes, and returns
+    #: below the ground model are kept in the lowest bin.
+    min_height: float = 0.5
+
+    @classmethod
+    def empty(cls, zenith_edges=np.arange(5.0, 75.0, 5.0), n_azimuth: int = 36,
+              height_bin: float = 0.5, max_height: float = 80.0) -> "GapProfile":
+        edges = np.asarray(zenith_edges, dtype=float)
+        nh = int(np.ceil(max_height / height_bin))
+        return cls(edges, int(n_azimuth), float(height_bin), np.zeros((len(edges) - 1, n_azimuth, nh)),
+                   np.zeros((len(edges) - 1, n_azimuth)))
+
+    def add_scan(self, shots: Shots, echo_heights, fired_per_ring=None, min_height: float = -np.inf) -> None:
+        """Add one scan position's pulses; ``echo_heights`` above ground, one
+        per echo. Without ``fired_per_ring`` the shots must include the pulses
+        that returned nothing (e.g. :meth:`Shots.fill_missing` or a ray cloud).
+
+        Returns below ``min_height`` are not counted. By default all count, and
+        those below zero go in the lowest bin: a pulse fired upwards cannot
+        hit the ground, so a negative height means the ground model is off
+        there, not that the return is not vegetation."""
+        nr, na, nh = self.hits.shape
+        hits, shots_n = _core.pgap_histogram(
+            shots._to_core(), np.ascontiguousarray(echo_heights, dtype=float), [float(e) for e in self.zenith_edges],
+            na, self.height_bin, nh, float(min_height),
+            None if fired_per_ring is None else [float(v) for v in fired_per_ring])
+        hits = hits.reshape(nr, na, nh)
+        shots_n = shots_n.reshape(nr, na)
+        self.hits += hits
+        self.shots += shots_n
+        self.scan_hits.append(hits.sum(axis=2))
+        self.scan_shots.append(shots_n)
+        self.scan_low.append(hits[:, :, : self._first_bin()].sum(axis=2))
+
+    def _first_bin(self) -> int:
+        return int(np.floor(self.min_height / self.height_bin + 1e-9))
+
+    @property
+    def heights(self) -> np.ndarray:
+        """Top of each height bin (m): the profile at ``z`` counts returns below it."""
+        return (np.arange(self.hits.shape[2]) + 1) * self.height_bin
+
+    @property
+    def zenith(self) -> np.ndarray:
+        """Ring centres (deg)."""
+        return 0.5 * (self.zenith_edges[:-1] + self.zenith_edges[1:])
+
+    def pgap(self) -> np.ndarray:
+        """Gap probability ``(rings, heights)``: 1 minus the returns between
+        :attr:`min_height` and each height, over the pulses fired. NaN for
+        rings without pulses."""
+        fired = self.shots.sum(axis=1)[:, None]
+        counted = self.hits.sum(axis=1).copy()
+        counted[:, : self._first_bin()] = 0.0
+        with np.errstate(invalid="ignore", divide="ignore"):
+            p = 1.0 - np.cumsum(counted, axis=1) / fired
+        p[fired[:, 0] <= 0] = np.nan
+        return np.clip(p, 0.0, 1.0)
+
+    def _floor(self) -> np.ndarray:
+        # A ring with no gap left is floored at one pulse's worth of gap.
+        return 1.0 / np.maximum(self.shots.sum(axis=1), 1.0)
+
+    def pai_profile(self, method: str = "hinge") -> np.ndarray:
+        """Cumulative plant area index below each height (effective, not
+        corrected for clumping).
+
+        ``hinge``: ``-1.1 ln P(57.5 deg)`` from the ring holding 57.5 deg.
+        ``linear``: Jupp et al. (2009): ``-ln P(theta) = PAI_h + (2 / pi)
+        tan(theta) PAI_v`` (horizontal and vertical foliage) fitted over the
+        rings, ``PAI = PAI_h + PAI_v``; the mean leaf angle is
+        ``atan(PAI_v / PAI_h)``.
+        ``weighted``: ``2 cos(theta) (-ln P)`` averaged over rings with weights
+        ``sin(theta)`` (Miller 1967 over the rings measured, spherical leaves).
+        """
+        p = self.pgap()
+        lp = -np.log(np.maximum(p, self._floor()[:, None]))
+        th = np.radians(self.zenith)
+        ok = np.isfinite(p).all(axis=1)
+        if method == "hinge":
+            ring = np.searchsorted(self.zenith_edges, 57.5, side="right") - 1
+            if not (0 <= ring < len(th)) or not ok[ring]:
+                raise ValueError("no pulses in the ring holding 57.5 deg")
+            return 1.1 * lp[ring]
+        if method == "weighted":
+            w = (np.sin(th) * ok)[:, None]
+            return (2.0 * np.cos(th)[:, None] * np.nan_to_num(lp) * w).sum(axis=0) / w.sum()
+        if method == "linear":
+            return self._linear(lp, th, ok)[0]
+        raise ValueError("method must be 'hinge', 'linear' or 'weighted'")
+
+    def _linear(self, lp, th, ok):
+        x = np.tan(th[ok])
+        y = lp[ok]
+        A = np.c_[np.ones_like(x), x]
+        coef, *_ = np.linalg.lstsq(A, y, rcond=None)
+        pai_h, pai_v = coef[0], coef[1] * np.pi / 2
+        pai = np.maximum(pai_h + pai_v, 0.0)
+        # Either term can fit slightly negative where there is little
+        # foliage; the angle is only defined for the parts that are not.
+        h, v = np.maximum(pai_h, 0.0), np.maximum(pai_v, 0.0)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            mla = np.where(h + v > 0, np.degrees(np.arctan2(v, h)), np.nan)
+        return pai, mla
+
+    def pavd_profile(self, method: str = "hinge") -> np.ndarray:
+        """Plant area volume density (m2 m-3): the height derivative of :meth:`pai_profile`."""
+        return np.gradient(self.pai_profile(method), self.height_bin)
+
+    def clumping(self, zenith: float = 57.5) -> float:
+        """Lang & Xiang (1986) clumping index at the ring holding ``zenith``:
+        ``ln(mean P) / mean(ln P)`` over every (scan, azimuth sector) segment.
+        1 is random foliage; below 1 clumped."""
+        ring = np.searchsorted(self.zenith_edges, zenith, side="right") - 1
+        seg_p, seg_n = [], []
+        lows = self.scan_low if len(self.scan_low) == len(self.scan_hits) else [0.0] * len(self.scan_hits)
+        for hits, shots, low in zip(self.scan_hits, self.scan_shots, lows):
+            ok = shots[ring] > 0
+            h = hits[ring] - (low[ring] if np.ndim(low) else 0.0)
+            seg_p.append(1.0 - h[ok] / shots[ring][ok])
+            seg_n.append(shots[ring][ok])
+        if not seg_p:
+            return float("nan")
+        p = np.clip(np.concatenate(seg_p), 0.0, 1.0)
+        n = np.concatenate(seg_n)
+        p = np.maximum(p, 1.0 / n)
+        mean_p = np.average(p, weights=n)
+        mean_lnp = np.average(np.log(p), weights=n)
+        return float(np.log(mean_p) / mean_lnp) if mean_lnp < 0 else float("nan")
+
+    def report(self, top_fraction: float = 0.99, saturation_gap: float = 0.005) -> dict:
+        """Plot summary: effective PAI (hinge, linear, weighted), mean leaf
+        angle from the linear fit, clumping index and clumping-corrected hinge
+        PAI, canopy height (where the hinge PAI profile reaches
+        ``top_fraction`` of its total), canopy closure at 57.5 deg, cover at
+        the steepest ring measured, and the profiles.
+
+        ``saturated`` is set when less than ``saturation_gap`` of the pulses
+        at 57.5 deg got through the canopy (hinge PAI above about 5.8): the
+        PAI is then bounded by the pulse count, not measured. Dense
+        rainforest seen from the ground reaches it."""
+        p = self.pgap()
+        th = np.radians(self.zenith)
+        ok = np.isfinite(p).all(axis=1)
+        hinge = self.pai_profile("hinge")
+        lp = -np.log(np.maximum(p, self._floor()[:, None]))
+        linear, mla = self._linear(lp, th, ok)
+        weighted = self.pai_profile("weighted")
+        omega = self.clumping()
+        total = hinge[-1]
+        top = self.heights[np.searchsorted(hinge, top_fraction * total)] if total > 0 else 0.0
+        ring = np.searchsorted(self.zenith_edges, 57.5, side="right") - 1
+        steep = int(np.flatnonzero(ok)[0]) if ok.any() else 0
+        # Gap left in the hinge ring above the canopy: below `saturation_gap`
+        # the PAI is set by how few pulses got through, not by the canopy.
+        gap57 = float(p[ring, -1])
+        return {
+            "saturated": bool(gap57 < saturation_gap), "gap_57": gap57,
+            "pai_hinge": float(total), "pai_linear": float(linear[-1]), "pai_weighted": float(weighted[-1]),
+            "mla_linear": float(mla[-1]), "clumping": omega,
+            "pai_hinge_corrected": float(total / omega) if omega and np.isfinite(omega) else float("nan"),
+            "canopy_height": float(top), "closure_57": float(1 - p[ring, -1]),
+            "cover": float(1 - p[steep, -1]), "cover_zenith": float(self.zenith[steep]),
+            "n_scans": len(self.scan_hits), "pulses": float(self.shots.sum()),
+            "height": self.heights, "pai_hinge_profile": hinge, "pavd_hinge": np.gradient(hinge, self.height_bin),
+            "pai_linear_profile": linear, "pavd_linear": np.gradient(linear, self.height_bin),
+        }

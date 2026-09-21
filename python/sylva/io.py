@@ -55,7 +55,9 @@ def read_rxp(path: str | Path, **options) -> PointCloud:
 
     Needs RiVLib's ``libscanifc`` (set ``RIVLIB_PATH`` or pass ``library=``).
     Options: ``drop_pseudo_echoes=True``, ``min_range=0.5``, ``max_range``,
-    ``stride=1``, ``max_points``, ``echoes="all"|"first"|"last"|"single"``.
+    ``stride=1`` (every n-th echo), ``shot_stride=1`` (every n-th pulse with all
+    its echoes, for pulse data), ``max_points``,
+    ``echoes="all"|"first"|"last"|"single"``.
     """
     xyz, attrs = _core.read_rxp(str(path), **options)
     return PointCloud(xyz, attrs)

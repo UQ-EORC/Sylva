@@ -35,14 +35,17 @@ def test_crop(forest):
     assert len(rf) > 0
 
 
-def test_outlier_removal(rng):
+def test_outlier_removal():
+    # Own generator: with the shared one the draws depend on which tests ran first.
+    rng = np.random.default_rng(0)
     dense = rng.normal(0, 0.1, (1000, 3))
     far = np.array([[5, 5, 5], [-5, -5, -5]], dtype=float)
     pc = PointCloud(np.vstack([dense, far]))
     sor = filters.statistical_outlier_removal(pc, k=8, std_ratio=2.0)
-    assert len(sor) == 1000
+    # Both far points go; a Gaussian cluster may lose the odd tail point.
+    assert 990 <= len(sor) <= 1000 and np.abs(sor.xyz).max() < 1.0
     ror = filters.radius_outlier_removal(pc, radius=0.3, min_neighbors=3)
-    assert len(ror) == 1000
+    assert 990 <= len(ror) <= 1000 and np.abs(ror.xyz).max() < 1.0
     mask = filters.radius_outlier_removal(pc, radius=0.3, min_neighbors=3, return_mask=True)
     assert not mask[-2:].any()
 

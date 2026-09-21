@@ -53,3 +53,63 @@ per-ray rounding noise ray clouds carry. Mobile and airborne data (more than
 which costs a few bits along a smooth trajectory. On a 185 M-ray mobile ray
 cloud (97 % misses) the file is 1.1 GB against 2.4 GB of LAZ, and voxelising
 it peaks at 3.6 GB of memory instead of 37 GB.
+
+## Gap probability profiles
+
+`canopy.GapProfile` pools scans into returns and fired pulses by zenith ring,
+azimuth sector and height above ground (Jupp et al. 2009). Each echo of an
+*n*-echo pulse counts 1/*n*. From that it gives plant area profiles and a plot
+summary:
+
+```python
+from sylva import canopy, io
+
+prof = canopy.GapProfile.empty()                    # 5-70 deg rings, 36 sectors, 0.5 m bins
+for pos in project.positions:                      # upright scans
+    s = io.read_rxp_shots(pos.rxp, shot_stride=4)  # every 4th pulse, all its echoes
+    fired = canopy.fired_pulses_per_ring(s, pos.pattern, prof.zenith_edges, shot_stride=4)
+    s = s.transform(pos.sop)
+    xyz = s.echo_xyz()
+    a, b, c = canopy.fit_ground_plane(xyz, centre=pos.sop[:2, 3], radius=25)
+    prof.add_scan(s, xyz[:, 2] - (a * xyz[:, 0] + b * xyz[:, 1] + c), fired_per_ring=fired)
+r = prof.report()
+r["pai_hinge"], r["pai_linear"], r["mla_linear"], r["clumping"], r["canopy_height"]
+r["height"], r["pai_hinge_profile"], r["pavd_hinge"]
+```
+
+- **Estimators** (all effective, not corrected for clumping):
+  - `hinge`: −1.1 ln P(57.5°);
+  - `linear`: Jupp's fit of −ln P(θ) against tan θ, which also gives a mean
+    leaf angle;
+  - `weighted`: Miller's integral over the rings measured, assuming spherical
+    leaves.
+- **Clumping** is the Lang–Xiang index over every (scan, azimuth sector)
+  segment of the hinge ring. `pai_hinge_corrected` divides by it.
+- **Fired pulses.** RiVLib's stream drops the pulses that returned nothing,
+  so `fired_pulses_per_ring` rebuilds the fired counts (in the scanner
+  frame).
+  - Every azimuth step fires one pulse per zenith line.
+  - Pulses per line are counted on the downward lines (100–125°), where every
+    pulse hits the ground and so none is missing.
+  - A line on a ring edge is shared between the two rings.
+  - Neither the nominal `phi_count` nor a percentile over all lines will do.
+    The scanner fires about 1 % more than nominal, and the mirror's angles do
+    not sit on the nominal lines, so line bins catch extra pulses. In dense
+    canopy nearly every pulse returns, so a few per cent too many fired
+    pulses read as gaps and cap the PAI near 3.
+  - With `shot_stride` both sides are decimated alike.
+  - Shots that already hold their misses (a ray cloud, `Shots.fill_missing`)
+    need no `fired_per_ring`.
+- **Ground.** Heights are only used for the profile. Returns below the ground
+  model still count, in the lowest bin: an upward pulse cannot hit the
+  ground.
+
+On a simulated turbid layer of PAI 3, hinge and weighted recover 3.0 within
+2 %, and the linear fit 3.0 for horizontal and vertical foliage (2.84 for
+spherical). Its leaf angle is 0°, 90° and 54° against 0°, 90° and 57°.
+On eleven TERN plots read from the raw RXPs, the per-scan hinge PAI matches
+pylidar-tls-canopy's for the same scans (see the canopy benchmark page).
+
+Upward-looking scans from a 1.5–2 m tripod do not see vegetation at or below
+the scanner. In low woodland (mallee, mulga) the hinge PAI is close to zero
+while photographs and voxels find 0.5–0.8.

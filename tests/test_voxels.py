@@ -193,3 +193,37 @@ def test_malformed_shots_raise_value_error():
                 np.array([0]), np.array([3]), np.array([7.0]))
     with pytest.raises(ValueError, match="echo_range"):
         voxels.ray_voxelize(bad, 1.0, COLUMN, attenuation="transmittance")
+
+
+def test_occlusion_profile_and_tree_sampling():
+    # Vertical pulses from below through a 2 m x 2 m column; a dense roof at
+    # 2-3 m over the x < 1 half stops them, the other half is open. A "tree"
+    # of points sits in each half at 1-2 m, with a crown point at 5 m over
+    # the open half only.
+    rng = np.random.default_rng(4)
+    n = 20000
+    xy = rng.uniform(0, 2, (n, 2))
+    roof = xy[:, 0] < 1.0
+    ranges = np.where(roof, 2.5 + rng.uniform(0, 0.4, n), np.nan)
+    count = np.isfinite(ranges).astype(np.int64)
+    shots = Shots(np.c_[xy, np.zeros(n)], np.tile([0.0, 0.0, 1.0], (n, 1)), np.r_[0, np.cumsum(count)[:-1]], count,
+                  ranges[np.isfinite(ranges)])
+    g = voxels.ray_voxelize(shots, 0.5, ((0, 0, 0), (2, 2, 6)), occlusion=True, attenuation="transmittance",
+                            unbounded_range=6.0)
+    prof = g.occlusion_profile(max_height=6.0)
+    above = prof["height"] > 3.0
+    assert np.all(prof["occluded"][above] > 0.4) and np.all(prof["observed"][above] > 0.4)
+    assert prof["total"]["observed"] + prof["total"]["occluded"] + prof["total"]["unobserved"] == pytest.approx(1.0)
+    m = g.observed_map(max_height=6.0)
+    assert m.shape == (4, 4) and m[:, 2:].mean() > m[:, :2].mean()
+    tree_a = np.c_[rng.uniform(0.1, 0.9, (50, 2)), rng.uniform(1.0, 2.0, 50)]  # under the roof
+    tree_b = np.c_[rng.uniform(1.1, 1.9, (50, 2)), rng.uniform(1.0, 2.0, 50)]  # in the open
+    pts = np.vstack([tree_a, tree_b])
+    lab = np.r_[np.zeros(50, int), np.ones(50, int)]
+    t = voxels.tree_sampling(g, pts, lab, min_beams=10)
+    assert list(t["tree_id"]) == [0, 1]
+    # Both tops are at 2 m. Above tree 1 is open sky, seen all the way; above
+    # tree 0 the roof is seen but what lies beyond it is occluded.
+    assert t["above_observed_fraction"][1] == pytest.approx(1.0)
+    assert t["above_observed_fraction"][0] < 0.75
+    assert t["median_beams"][1] > 0 and t["beams_by_quarter"].shape == (2, 4)

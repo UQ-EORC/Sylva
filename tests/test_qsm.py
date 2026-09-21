@@ -155,3 +155,44 @@ def test_wood_points_thins(single_tree):
     assert 0 < len(wood) < len(single_tree)
     d = __import__("scipy.spatial", fromlist=["cKDTree"]).cKDTree(wood.xyz).query(wood.xyz, k=2)[0][:, 1]
     assert np.median(d) > 0.02
+
+
+def test_tree_metrics(single_tree):
+    model = qsm.build_qsm(single_tree)
+    m = model.metrics()
+    assert m["height"] == pytest.approx(6.0, abs=0.2)
+    assert m["dbh"] == pytest.approx(0.3, abs=0.02)
+    assert m["total_volume"] == pytest.approx(m["stem_volume"] + m["branch_volume"])
+    assert m["n_branches_by_order"][0] == 1 and sum(m["n_branches_by_order"][1:]) >= 1
+    assert sum(m["length_by_order"]) == pytest.approx(m["total_length"])
+    assert m["lean"] < 3 and m["sweep"] < 0.05  # a straight vertical stem
+    assert m["crown_base_height"] == pytest.approx(4.0, abs=0.3)  # the branch leaves at 4 m
+    assert 0.9 < m["measured_volume_fraction"] <= 1.0
+    assert 0 < m["path_fraction"] <= 1
+    assert len(m["taper_heights"]) == len(m["taper_radii"]) > 10
+    b = model.branches()
+    stem = b["order"] == 0
+    assert stem.sum() == 1 and b["parent"][stem][0] == -1 and np.isnan(b["insertion_angle"][stem][0])
+    first = np.flatnonzero(b["order"] == 1)[np.argmax(b["length"][b["order"] == 1])]
+    # The branch runs along +x rising 0.3 per metre: 73 deg from the vertical stem.
+    assert b["zenith"][first] == pytest.approx(73.3, abs=6)
+    assert b["insertion_angle"][first] == pytest.approx(73.3, abs=8)
+    assert b["length"][first] == pytest.approx(2.0, abs=0.3)
+    assert b["tortuosity"][first] < 1.1
+
+
+def test_crown_shape(rng):
+    from sylva import trees
+
+    # A cone of radius 2 m from 5 to 11 m, offset 1 m east of the stem at (0, 0).
+    n = 20000
+    z = rng.uniform(5, 11, n)
+    r = 2.0 * (11 - z) / 6 * np.sqrt(rng.uniform(0, 1, n))
+    a = rng.uniform(0, 2 * np.pi, n)
+    pts = np.c_[1.0 + r * np.cos(a), r * np.sin(a), z]
+    c = trees.crown_shape(pts, base_xy=(0.0, 0.0), crown_base=5.0, slice_height=0.25)
+    assert c["projected_area"] == pytest.approx(np.pi * 4, rel=0.1)  # few samples reach the rim
+    assert c["volume"] == pytest.approx(np.pi * 4 * 6 / 3, rel=0.1)
+    assert c["offset"] == pytest.approx(1.0, abs=0.05) and abs(c["offset_direction"]) < 5
+    assert c["asymmetry"] == pytest.approx(0.5, abs=0.05)
+    assert c["top_height"] == pytest.approx(11, abs=0.05)

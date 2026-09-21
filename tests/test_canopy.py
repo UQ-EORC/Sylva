@@ -73,3 +73,81 @@ def test_density_grid_uniform_foliage(rng):
 def test_canopy_cover():
     chm = np.array([[0, 1], [3, np.nan]], dtype=float)
     assert canopy.canopy_cover(chm, 2.0) == pytest.approx(1 / 3)
+
+
+def _turbid_layer(rng, g, pad=0.3, z0=5.0, z1=15.0, scans=3, n=200000, clumped=False):
+    """Pulses from 1.5 m up through a layer of plant area density ``pad``
+    with projection ``g(theta)``; ``clumped`` halves the layer's azimuth
+    sectors (dense in half, empty in the other)."""
+    from sylva import Shots
+
+    prof = canopy.GapProfile.empty(np.arange(5.0, 75.0, 5.0), n_azimuth=12, height_bin=0.5, max_height=30)
+    for _ in range(scans):
+        zen = np.degrees(np.arccos(rng.uniform(np.cos(np.radians(72)), np.cos(np.radians(3)), n)))
+        az = rng.uniform(0, 2 * np.pi, n)
+        th = np.radians(zen)
+        d = np.c_[np.sin(th) * np.sin(az), np.sin(th) * np.cos(az), np.cos(th)]
+        density = np.full(n, pad)
+        if clumped:
+            density = np.where(np.sin(6 * az) > 0, 2 * pad, 1e-9)
+        free = rng.exponential(1 / (g(th) * density))
+        z_hit = z0 + free * d[:, 2]
+        hit = z_hit < z1
+        count = hit.astype(np.int64)
+        s = Shots(np.c_[np.zeros((n, 2)), np.full(n, 1.5)], d, np.r_[0, np.cumsum(count)[:-1]], count,
+                  ((z_hit - 1.5) / d[:, 2])[hit])
+        prof.add_scan(s, s.echo_xyz()[:, 2])
+    return prof
+
+
+def test_gap_profile_recovers_pai(rng):
+    sph = _turbid_layer(rng, lambda t: np.full_like(t, 0.5)).report()
+    assert sph["pai_hinge"] == pytest.approx(3.0, rel=0.05)
+    assert sph["pai_weighted"] == pytest.approx(3.0, rel=0.05)
+    assert sph["pai_linear"] == pytest.approx(3.0, rel=0.1)
+    assert sph["clumping"] == pytest.approx(1.0, abs=0.03)
+    assert sph["canopy_height"] == pytest.approx(15.0, abs=0.6)
+    assert not sph["saturated"] and sph["gap_57"] == pytest.approx(np.exp(-3.0 / 1.1), rel=0.1)
+    layer = (sph["height"] > 6) & (sph["height"] < 14)
+    np.testing.assert_allclose(sph["pavd_hinge"][layer].mean(), 0.3, rtol=0.1)
+    horiz = _turbid_layer(rng, np.cos).report()
+    vert = _turbid_layer(rng, lambda t: 2 / np.pi * np.sin(t)).report()
+    assert horiz["pai_linear"] == pytest.approx(3.0, rel=0.05) and horiz["mla_linear"] < 10
+    assert vert["pai_linear"] == pytest.approx(3.0, rel=0.05) and vert["mla_linear"] > 80
+
+
+def test_gap_profile_clumping(rng):
+    rep = _turbid_layer(rng, lambda t: np.full_like(t, 0.5), clumped=True).report()
+    assert rep["clumping"] < 0.8  # half the sectors dense, half open
+    assert rep["pai_hinge_corrected"] > rep["pai_hinge"]
+
+
+def test_fit_ground_plane(rng):
+    xy = rng.uniform(-20, 20, (20000, 2))
+    z = 0.1 * xy[:, 0] - 0.05 * xy[:, 1] + 3.0 + rng.normal(0, 0.01, len(xy))
+    trunks = np.c_[rng.uniform(-20, 20, (500, 2)), rng.uniform(3, 20, 500)]
+    coef = canopy.fit_ground_plane(np.vstack([np.c_[xy, z], trunks]))
+    np.testing.assert_allclose(coef, [0.1, -0.05, 3.0], atol=0.02)
+
+
+def test_fired_pulses_from_ground_lines(rng):
+    from sylva import Shots
+
+    # Nominal 1 deg zenith lines from 30 to 130 deg and 360 azimuth steps, but
+    # the scanner fires 1 % more (364 per line). Downward pulses all hit the
+    # ground; upward ones return 40 % of the time and the rest are missing
+    # from the stream.
+    pattern = dict(theta_start=30.0, theta_delta=1.0, theta_count=101, phi_start=0.0, phi_delta=1.0, phi_count=360)
+    theta = np.repeat(30.0 + np.arange(101), 364) + rng.normal(0, 0.05, 101 * 364)
+    phi = np.tile(np.linspace(0, 360, 364, endpoint=False), 101)
+    kept = (theta > 90) | (rng.uniform(size=theta.size) < 0.4)
+    th, ph = np.radians(theta[kept]), np.radians(phi[kept])
+    d = np.c_[np.sin(th) * np.sin(ph), np.sin(th) * np.cos(ph), np.cos(th)]
+    n = len(d)
+    s = Shots(np.zeros((n, 3)), d, np.arange(n), np.ones(n, np.int64), np.full(n, 5.0))
+    edges = np.arange(30.0, 75.0, 5.0)
+    fired = canopy.fired_pulses_per_ring(s, pattern, edges)
+    np.testing.assert_allclose(fired, 5 * 364, rtol=0.01)
+    zen, _ = s.zenith_azimuth()
+    obs, _ = np.histogram(zen, bins=edges)
+    np.testing.assert_allclose(1 - obs / fired, 0.6, atol=0.03)

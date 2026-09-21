@@ -47,6 +47,7 @@ nav:
   - Benchmarks:
       - Tree detection: benchmarks/trees.md
       - QSMs: benchmarks/qsm.md
+      - Canopy gap profiles: benchmarks/canopy.md
   - API reference:
       - PointCloud, Raster: api/pointcloud.md
       - io: api/io.md

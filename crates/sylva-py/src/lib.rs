@@ -255,24 +255,24 @@ fn read_ascii<'py>(py: Python<'py>, path: PathBuf, columns: Option<Vec<String>>)
     cloud_to_py(py, &c)
 }
 
-fn rxp_opts(library: Option<PathBuf>, drop_pseudo_echoes: bool, min_range: f64, max_range: f64, stride: usize, max_points: Option<usize>, echoes: String) -> io::riegl::RxpOptions {
-    io::riegl::RxpOptions { library, drop_pseudo_echoes, min_range, max_range, stride: stride.max(1), max_points, echoes }
+fn rxp_opts(library: Option<PathBuf>, drop_pseudo_echoes: bool, min_range: f64, max_range: f64, stride: usize, max_points: Option<usize>, echoes: String, shot_stride: usize) -> io::riegl::RxpOptions {
+    io::riegl::RxpOptions { library, drop_pseudo_echoes, min_range, max_range, stride: stride.max(1), max_points, echoes, shot_stride: shot_stride.max(1) }
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, library=None, drop_pseudo_echoes=true, min_range=0.5, max_range=f64::INFINITY, stride=1, max_points=None, echoes="all".to_string()))]
+#[pyo3(signature = (path, library=None, drop_pseudo_echoes=true, min_range=0.5, max_range=f64::INFINITY, stride=1, max_points=None, echoes="all".to_string(), shot_stride=1))]
 #[allow(clippy::too_many_arguments)]
-fn read_rxp<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>, drop_pseudo_echoes: bool, min_range: f64, max_range: f64, stride: usize, max_points: Option<usize>, echoes: String) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
-    let opts = rxp_opts(library, drop_pseudo_echoes, min_range, max_range, stride, max_points, echoes);
+fn read_rxp<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>, drop_pseudo_echoes: bool, min_range: f64, max_range: f64, stride: usize, max_points: Option<usize>, echoes: String, shot_stride: usize) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
+    let opts = rxp_opts(library, drop_pseudo_echoes, min_range, max_range, stride, max_points, echoes, shot_stride);
     let c = py.detach(|| io::riegl::read_rxp(&path, &opts)).map_err(err)?;
     cloud_to_py(py, &c)
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, library=None, drop_pseudo_echoes=true, min_range=0.5, max_range=f64::INFINITY, stride=1, max_points=None, echoes="all".to_string()))]
+#[pyo3(signature = (path, library=None, drop_pseudo_echoes=true, min_range=0.5, max_range=f64::INFINITY, stride=1, max_points=None, echoes="all".to_string(), shot_stride=1))]
 #[allow(clippy::too_many_arguments)]
-fn read_rxp_shots<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>, drop_pseudo_echoes: bool, min_range: f64, max_range: f64, stride: usize, max_points: Option<usize>, echoes: String) -> PyResult<Bound<'py, PyDict>> {
-    let opts = rxp_opts(library, drop_pseudo_echoes, min_range, max_range, stride, max_points, echoes);
+fn read_rxp_shots<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>, drop_pseudo_echoes: bool, min_range: f64, max_range: f64, stride: usize, max_points: Option<usize>, echoes: String, shot_stride: usize) -> PyResult<Bound<'py, PyDict>> {
+    let opts = rxp_opts(library, drop_pseudo_echoes, min_range, max_range, stride, max_points, echoes, shot_stride);
     let s = py.detach(|| io::riegl::read_rxp_shots(&path, &opts)).map_err(err)?;
     shots_to_py(py, &s)
 }
@@ -1166,6 +1166,147 @@ fn insert_leaves<'py>(py: Python<'py>, cell_centres: PyReadonlyArray2<f64>, cell
     Ok(d)
 }
 
+fn crown_shape_to_py<'py>(py: Python<'py>, c: &trees::CrownShape) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    d.set_item("projected_area", c.projected_area)?;
+    d.set_item("diameter", c.diameter)?;
+    d.set_item("max_width", c.max_width)?;
+    d.set_item("volume", c.volume)?;
+    d.set_item("surface", c.surface)?;
+    d.set_item("base_height", c.base_height)?;
+    d.set_item("top_height", c.top_height)?;
+    d.set_item("offset", c.offset)?;
+    d.set_item("offset_direction", c.offset_direction)?;
+    d.set_item("asymmetry", c.asymmetry)?;
+    Ok(d)
+}
+
+#[pyfunction]
+#[pyo3(signature = (xyz, base_xy=None, z_min=f64::NEG_INFINITY, slice=0.5))]
+fn crown_shape<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, base_xy: Option<(f64, f64)>, z_min: f64, slice: f64) -> PyResult<Bound<'py, PyDict>> {
+    let p = xyz_from_py(xyz)?;
+    if !(slice > 0.0) {
+        return Err(PyValueError::new_err("slice must be positive"));
+    }
+    let c = py.detach(|| trees::crown_shape(&p, base_xy.map(|(x, y)| [x, y]), z_min, slice));
+    crown_shape_to_py(py, &c)
+}
+
+#[pyfunction]
+#[pyo3(signature = (cylinders, crown_branch_length=1.0, crown_slice=0.5))]
+fn qsm_metrics<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>, crown_branch_length: f64, crown_slice: f64) -> PyResult<Bound<'py, PyDict>> {
+    let q = qsm_from_rows(cylinders)?;
+    let m = qsm::metrics::tree_metrics(&q, crown_branch_length, crown_slice.max(1e-3));
+    let d = PyDict::new(py);
+    d.set_item("height", m.height)?;
+    d.set_item("dbh", m.dbh)?;
+    d.set_item("total_volume", m.total_volume)?;
+    d.set_item("stem_volume", m.stem_volume)?;
+    d.set_item("branch_volume", m.branch_volume)?;
+    d.set_item("total_length", m.total_length)?;
+    d.set_item("stem_length", m.stem_length)?;
+    d.set_item("max_order", m.max_order)?;
+    d.set_item("n_branches_by_order", m.n_branches_by_order.clone())?;
+    d.set_item("length_by_order", m.length_by_order.clone())?;
+    d.set_item("volume_by_order", m.volume_by_order.clone())?;
+    d.set_item("n_tips", m.n_tips)?;
+    d.set_item("path_fraction", m.path_fraction)?;
+    d.set_item("crown_base_height", m.crown_base_height)?;
+    d.set_item("lean", m.lean)?;
+    d.set_item("lean_direction", m.lean_direction)?;
+    d.set_item("sweep", m.sweep)?;
+    d.set_item("taper_heights", m.taper_heights.clone().into_pyarray(py))?;
+    d.set_item("taper_radii", m.taper_radii.clone().into_pyarray(py))?;
+    d.set_item("crown", crown_shape_to_py(py, &m.crown)?)?;
+    d.set_item("measured_volume_fraction", m.measured_volume_fraction)?;
+    d.set_item("measured_length_fraction", m.measured_length_fraction)?;
+    d.set_item("median_insertion_angle", m.median_insertion_angle)?;
+    d.set_item("median_branch_zenith", m.median_branch_zenith)?;
+    Ok(d)
+}
+
+#[pyfunction]
+fn qsm_branches<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>) -> PyResult<Bound<'py, PyDict>> {
+    let q = qsm_from_rows(cylinders)?;
+    let b = qsm::metrics::branches(&q);
+    let d = PyDict::new(py);
+    macro_rules! col {
+        ($name:literal, $f:expr) => {
+            d.set_item($name, b.iter().map($f).collect::<Vec<_>>().into_pyarray(py))?;
+        };
+    }
+    col!("id", |x| x.id as i64);
+    col!("order", |x| x.order as i64);
+    col!("parent", |x| x.parent);
+    col!("n_cylinders", |x| x.n_cylinders as i64);
+    col!("length", |x| x.length);
+    col!("volume", |x| x.volume);
+    col!("base_radius", |x| x.base_radius);
+    col!("mean_radius", |x| x.mean_radius);
+    col!("base_height", |x| x.base_height);
+    col!("tip_height", |x| x.tip_height);
+    col!("insertion_angle", |x| x.insertion_angle);
+    col!("zenith", |x| x.zenith);
+    col!("azimuth", |x| x.azimuth);
+    col!("tortuosity", |x| x.tortuosity);
+    col!("n_children", |x| x.n_children as i64);
+    col!("measured_fraction", |x| x.measured_fraction);
+    Ok(d)
+}
+
+#[pyfunction]
+#[pyo3(signature = (shots, echo_heights, zenith_edges, n_azimuth, height_bin, n_heights, min_height=0.0, fired_per_ring=None))]
+#[allow(clippy::too_many_arguments)]
+fn pgap_histogram<'py>(py: Python<'py>, shots: &Bound<'_, PyDict>, echo_heights: PyReadonlyArray1<f64>, zenith_edges: Vec<f64>, n_azimuth: usize, height_bin: f64, n_heights: usize, min_height: f64, fired_per_ring: Option<Vec<f64>>) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+    let s = shots_from_py(shots)?;
+    let h = echo_heights.as_array().to_vec();
+    if h.len() != s.echo_range.len() {
+        return Err(PyValueError::new_err("echo_heights must have one value per echo"));
+    }
+    if zenith_edges.len() < 2 || zenith_edges.windows(2).any(|w| !(w[1] > w[0])) {
+        return Err(PyValueError::new_err("zenith_edges must be increasing"));
+    }
+    if !(height_bin > 0.0) || n_heights == 0 {
+        return Err(PyValueError::new_err("height_bin and n_heights must be positive"));
+    }
+    let mut hist = canopy::PgapHistogram::new(zenith_edges, n_azimuth, height_bin, n_heights);
+    py.detach(|| hist.add(&s, &h, min_height, fired_per_ring.as_deref()));
+    Ok((hist.hits.into_pyarray(py), hist.shots.into_pyarray(py)))
+}
+
+#[pyfunction]
+#[pyo3(signature = (xyz, labels, origin, voxel_size, shape, state, beams, min_beams=10.0, above=2.0))]
+#[allow(clippy::too_many_arguments)]
+fn tree_sampling<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, labels: PyReadonlyArray1<i64>, origin: (f64, f64, f64), voxel_size: f64, shape: (usize, usize, usize), state: PyReadonlyArray1<u8>, beams: PyReadonlyArray1<f64>, min_beams: f64, above: f64) -> PyResult<Bound<'py, PyDict>> {
+    let p = xyz_from_py(xyz)?;
+    let l = labels.as_array().to_vec();
+    let (st, bm) = (state.as_array().to_vec(), beams.as_array().to_vec());
+    let n = shape.0 * shape.1 * shape.2;
+    if l.len() != p.len() || st.len() != n || bm.len() != n {
+        return Err(PyValueError::new_err("labels must match the points, state and beams the grid"));
+    }
+    let r = py.detach(|| voxel::quality::tree_sampling(&p, &l, [origin.0, origin.1, origin.2], voxel_size, [shape.0, shape.1, shape.2], &st, &bm, min_beams, above));
+    let d = PyDict::new(py);
+    macro_rules! col {
+        ($name:literal, $f:expr) => {
+            d.set_item($name, r.iter().map($f).collect::<Vec<_>>().into_pyarray(py))?;
+        };
+    }
+    col!("tree_id", |x| x.tree_id);
+    col!("n_voxels", |x| x.n_voxels as i64);
+    col!("volume", |x| x.volume);
+    col!("observed_fraction", |x| x.observed_fraction);
+    col!("occluded_fraction", |x| x.occluded_fraction);
+    col!("unobserved_fraction", |x| x.unobserved_fraction);
+    col!("median_beams", |x| x.median_beams);
+    col!("p10_beams", |x| x.p10_beams);
+    col!("well_sampled_fraction", |x| x.well_sampled_fraction);
+    col!("above_observed_fraction", |x| x.above_observed_fraction);
+    let q: Vec<f64> = r.iter().flat_map(|x| x.beams_by_quarter).collect();
+    d.set_item("beams_by_quarter", PyArray1::from_vec(py, q).reshape([r.len(), 4])?)?;
+    Ok(d)
+}
+
 #[pyfunction]
 fn qsm_summary<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>) -> PyResult<Bound<'py, PyDict>> {
     qsm_to_py(py, &qsm_from_rows(cylinders)?)
@@ -1222,6 +1363,11 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(classify_leaf_wood, m)?,
         wrap_pyfunction!(classify_leaf_wood_gbs, m)?,
         wrap_pyfunction!(insert_leaves, m)?,
+        wrap_pyfunction!(crown_shape, m)?,
+        wrap_pyfunction!(qsm_metrics, m)?,
+        wrap_pyfunction!(qsm_branches, m)?,
+        wrap_pyfunction!(pgap_histogram, m)?,
+        wrap_pyfunction!(tree_sampling, m)?,
         wrap_pyfunction!(euclidean_clusters, m)?,
         wrap_pyfunction!(knn, m)?,
         wrap_pyfunction!(csf_ground_mask, m)?,

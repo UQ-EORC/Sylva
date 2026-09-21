@@ -12,7 +12,7 @@ from .pointcloud import PointCloud
 __all__ = [
     "Tree", "fit_circle", "fit_circle_ransac", "detect_stems", "prune_trees", "dbh_profile",
     "merge_branches", "segment_trees", "tree_heights", "crown_metrics", "crown_metrics_all",
-    "convex_hull_area",
+    "convex_hull_area", "crown_shape",
 ]
 
 
@@ -248,3 +248,21 @@ def crown_metrics_all(cloud: PointCloud, labels: np.ndarray, height_attr: str = 
 
 def convex_hull_area(xy: np.ndarray) -> float:
     return _core.convex_hull_area(np.ascontiguousarray(xy, dtype=float))
+
+
+def crown_shape(points, base_xy=None, crown_base: float | None = None, slice_height: float = 0.5) -> dict:
+    """Crown shape from a tree's points (or any 3-D outline of the crown).
+
+    Points below ``crown_base`` (an absolute z) are ignored. Returns the
+    vertical projection (convex hull ``projected_area``, equivalent
+    ``diameter``, ``max_width``), ``volume`` and ``surface`` of convex hulls
+    stacked every ``slice_height`` metres (they follow the crown's taper,
+    unlike one 3-D hull), ``base_height`` and ``top_height`` (z of the lowest
+    and highest crown point), and the horizontal ``offset`` of the crown's
+    centroid from ``base_xy`` (the stem; the lowest point when ``None``),
+    its ``offset_direction`` (deg, counter-clockwise from +x) and
+    ``asymmetry`` (offset over the equivalent crown radius).
+    """
+    xyz = np.ascontiguousarray(points.xyz if isinstance(points, PointCloud) else points, dtype=float)
+    base = None if base_xy is None else (float(base_xy[0]), float(base_xy[1]))
+    return _core.crown_shape(xyz, base, float("-inf") if crown_base is None else float(crown_base), float(slice_height))

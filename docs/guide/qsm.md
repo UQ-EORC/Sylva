@@ -44,3 +44,50 @@ cross-section by subtree length at every fork.
 
 Accuracy against felled trees and against raycloudtools is on the
 [QSM benchmark](../benchmarks/qsm.md) page.
+
+## Tree metrics
+
+`QSM.metrics()` reads the tree's architecture off the cylinders:
+
+```python
+m = model.metrics()
+m["height"], m["dbh"], m["stem_volume"], m["branch_volume"]
+m["n_branches_by_order"], m["length_by_order"], m["volume_by_order"]
+m["crown_base_height"], m["crown"]["projected_area"], m["crown"]["volume"]
+m["lean"], m["sweep"], m["path_fraction"], m["median_insertion_angle"]
+m["taper_heights"], m["taper_radii"]                # the stem profile
+m["measured_volume_fraction"]                       # fitted to points vs filled in
+b = model.branches()                                # one row per branch
+b["order"], b["length"], b["base_radius"], b["insertion_angle"], b["zenith"]
+```
+
+- A branch is one `branch_id` chain. Its insertion angle is measured
+  between its direction over the 0.5 m past its first cylinder and the
+  parent's direction over 0.5 m either side of the junction. The first
+  cylinder only joins the branch to its parent's axis, and at a fork the
+  parent cylinder leans towards the branch. Its zenith is that of the chord
+  from base to tip.
+- The crown base is the lowest first-order branch at least
+  `crown_branch_length` (1 m) long. The crown outline is drawn from points
+  along every branch cylinder above it.
+- `trees.crown_shape()` gives the same shape from any points (a tree's
+  segmented points, say): projected area, stacked slice-hull volume and
+  surface, and the crown's offset from the stem.
+- `measured_volume_fraction` is the share of the volume in cylinders whose
+  radius was fitted to points; the rest comes from the taper and pipe-model
+  priors. It is a quality flag for the model itself.
+
+Against the 20 synthetic trees with exact wood meshes (simulated leaf-off
+scans, eight positions):
+
+| metric | median error | rRMSE |
+|---|---|---|
+| height | −2.1 % | 3.2 % |
+| DBH (15 trees with a circular section at 1.3 m) | −1.1 % | 1.5 % |
+| crown projected area | −3.2 % | 6.0 % |
+| crown volume | −10.5 % | 14 % |
+| branch-segment zenith (length-weighted median) | −0.2° bias | 3.2° MAE |
+
+The crown volume is low for the same reason the wood volume is. The
+QSMs recover only about a third of the length of twigs under 1 cm, and
+those twigs mark the crown's outer edge.

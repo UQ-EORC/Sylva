@@ -148,8 +148,11 @@ pub struct RxpOptions {
     /// Minimum range (m); RiSCAN's default export drops `< 0.5`.
     pub min_range: f64,
     pub max_range: f64,
-    /// Keep every `stride`-th point (1 = all).
+    /// Keep every `stride`-th point (1 = all). Splits multi-echo pulses;
+    /// prefer `shot_stride` for pulse data.
     pub stride: usize,
+    /// Keep every `shot_stride`-th pulse with all its echoes (1 = all).
+    pub shot_stride: usize,
     /// Read at most this many points.
     pub max_points: Option<usize>,
     /// Echo selection: `all`, `first`, `last`, `single`.
@@ -164,6 +167,7 @@ impl Default for RxpOptions {
             min_range: 0.5,
             max_range: f64::INFINITY,
             stride: 1,
+            shot_stride: 1,
             max_points: None,
             echoes: "all".into(),
         }
@@ -211,6 +215,9 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
         let mut time_buf = vec![0u64; CHUNK];
         let mut raw = RawRxp { xyz: Vec::new(), amplitude: Vec::new(), reflectance: Vec::new(), deviation: Vec::new(), flags: Vec::new(), time_ns: Vec::new() };
         let mut counter = 0usize;
+        // Pulses are runs of echoes sharing a timestamp.
+        let mut pulse = 0usize;
+        let mut last_time = u64::MAX;
         loop {
             let mut got = 0u32;
             let mut eof = 0i32;
@@ -224,6 +231,13 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
             let n = got as usize;
             for i in 0..n {
                 counter += 1;
+                if time_buf[i] != last_time {
+                    last_time = time_buf[i];
+                    pulse += 1;
+                }
+                if opts.shot_stride > 1 && pulse % opts.shot_stride != 0 {
+                    continue;
+                }
                 if opts.stride > 1 && counter % opts.stride != 0 {
                     continue;
                 }
