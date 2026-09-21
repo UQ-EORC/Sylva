@@ -1,0 +1,101 @@
+# Leaves on a QSM
+
+A QSM describes the wood. `sylva.leaves` adds the foliage as flat polygons
+whose total area, position and orientation follow what was measured, giving a
+whole-tree model for radiative transfer or visualisation.
+
+```python
+from sylva import leaves, qsm
+
+wood = leaves.classify_leaf_wood(tree)                  # bool per point
+model = qsm.build_qsm(qsm.wood_points(tree), base_xy=(x, y))
+foliage = tree[~wood]
+
+angles = leaves.leaf_angle_distribution(foliage)        # from point normals
+print(angles.mean_deg, angles.de_wit, angles.chi, angles.g([0.0, 1.0]))
+
+area = leaves.leaf_area_density(foliage, voxel_size=0.25)
+mesh = leaves.add_leaves(model, area, angles, leaf_points=foliage,
+                         leaf_length=0.08, leaf_width=0.04)
+leaves.write_tree_obj("tree.obj", model, mesh)         # objects "wood" and "leaves"
+```
+
+## The four steps
+
+**Leaf / wood labels.** `classify_leaf_wood` uses, by default, the graph-based
+separation of Tian et al. (2022). Shortest paths from the base give every
+point a path length and a direction of growth; graph edges are cut where they
+are long for their neighbourhood or join points growing in different
+directions, which severs leaves from the branch they hang on before any shape
+is judged. The cut graph is split into shells of path length at several
+scales (0.1–1 m for trees under 15 m, 0.5–3 m above), and a connected piece
+of a shell is wood when it runs the whole shell along its growth direction and
+is either cylindrical (a circle fits its cross-section) or linear; a piece
+thicker than the wood below it on its path is rejected. Wood then spreads
+down every path to the base and to close neighbours. Judging a 10–100 cm
+*segment* rather than a 5 cm neighbourhood is what makes it work: over a few
+centimetres a leaf is as planar as bark.
+
+`method="passage"` is the QSM's own wood filter (path passage plus local
+anisotropy, here with a second 10 cm scale). It keeps nearly all the wood and
+half the leaves with it, which is what a QSM wants — a cylinder fit suffers
+more from missing wood than from stray leaves — and the wrong trade for leaf
+work:
+
+| 30 manually labelled tropical trees (Van den Broeck et al. 2025) | accuracy | mIoU | wood recall / precision | leaf recall / precision |
+|---|---|---|---|---|
+| anisotropy only | 0.75 | 0.56 | 0.68 / 0.57 | 0.77 / 0.84 |
+| passage (the QSM filter) | 0.61 | 0.44 | 0.97 / 0.45 | 0.44 / 0.97 |
+| passage, two scales | 0.68 | 0.51 | 0.95 / 0.50 | 0.55 / 0.96 |
+| graph-based, 0.1–1 m shells | 0.80 | 0.66 | 0.93 / 0.64 | 0.73 / 0.96 |
+| **graph-based, 0.5–3 m shells (default for tall trees)** | **0.90** | **0.79** | 0.91 / 0.80 | 0.89 / 0.96 |
+
+As the QSM input the graph-based labels are worse (destructive-harvest volume
+rRMSE 26 % against 20 %), so `qsm.wood_points` keeps the passage filter;
+`wood_points(method="gbs")` is there to try.
+
+**Leaf angle distribution.** Normals from a PCA over each leaf point's
+neighbours give inclinations (angle between the leaf normal and the vertical),
+weighted by the area each point stands for so densely scanned leaves do not
+dominate. The result carries the histogram, mean, a two-parameter beta fit,
+Campbell's ellipsoidal χ, the nearest de Wit type and the projection function
+`g(zenith)`. `LeafAngleDistribution.from_type("planophile")` gives the analytic
+types.
+
+**Leaf area density.** Without pulses, `leaf_area_density` counts the surface
+in the points: thinned to one point per cube of side `res`, a surface with
+normal *n* crosses (|nx| + |ny| + |nz|) / res² cubes per unit area, so each
+survivor stands for res² / (|nx| + |ny| + |nz|). `res` defaults to 3.5 × the
+median point spacing. This is a box count with no plateau — smaller cubes
+undercount, larger ones overcount at leaf edges — and it only sees foliage the
+scanner saw. With pulse data prefer a ray-traced grid,
+`LeafAreaGrid.from_voxels(grid, field)`; with a known total (litterfall,
+allometry, hemispherical photos) keep the spatial pattern and rescale:
+`area.scaled_to(total_m2)`. A plain number instead of a grid does that in one
+step: `add_leaves(model, 85.0, angles, leaf_points=foliage)`.
+
+**Insertion.** Each voxel receives leaves until its area is met, centred on
+leaf points of that voxel (uniformly inside it if it has none), with normals
+drawn from the angle distribution and a uniform azimuth; blades within
+`max_branch_distance` of a cylinder point away from it and record that
+cylinder. The leaf is a six-vertex blade of the given length and width
+(`single_leaf_area` gives its area). Leaves may intersect each other: no
+collision test is made.
+
+## How well it works
+
+Against synthetic trees with separate wood and leaf meshes, sampled as points
+without occlusion (so the estimators are isolated from visibility):
+
+| | result |
+|---|---|
+| mean leaf inclination | within 0.5° of the mesh (48–59°), histogram overlap 0.95, correct de Wit type, *G* within 0.01 — and the same from the classified leaf points as from the true ones |
+| point-based leaf area, true leaf points | 0.9–1.15 × the mesh area from 5 000 to 80 000 points per m² |
+| leaf / wood labels (graph-based) | accuracy 0.81–0.96; 96–99 % of leaf points found at 80–98 % precision; wood precision 0.86–0.97, wood recall 0.24–0.94 by point count (most wood *surface* in these trees is millimetre twigs inside the foliage, which end up as leaf) |
+| leaf area after classification | 0.95–1.16 × the mesh area |
+| inserted leaves | area met to within one leaf, inclinations as asked, vertical leaf-area profile r = 0.97–1.00 against the mesh |
+
+So the labels, the angle distribution and the placement hold up on clouds
+without occlusion. What a real scan adds is visibility: the point-based area
+only counts foliage the scanner saw, which is why a ray-traced or
+independently known total is the better input for dense crowns.

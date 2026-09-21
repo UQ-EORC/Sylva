@@ -226,17 +226,21 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
 
 def wood_points(cloud: PointCloud, k: int = 20, threshold: float = 0.85,
                 voxel_size: float | None = 0.02, medium_threshold: float = 0.75,
-                passage: bool = True, min_passage: int = 3, target_res: float = 0.2,
+                scale_radius: float = 0.0, passage: bool = True, min_passage: int = 3,
+                target_res: float = 0.2,
                 graph_k: int = 10, max_edge: float = 1.0, base_height: float = 0.25,
                 assign_dist: float = 0.05, assign_scale: float = 0.0,
                 component_res: float = 0.05,
                 component_min: int = 200, sor_k: int = 50, sor_std: float = 1.0,
-                dilate_dist: float = 0.03) -> PointCloud:
+                dilate_dist: float = 0.03, method: str = "passage") -> PointCloud:
     """Leaf / wood separation for one tree's points, returning the wood
     thinned to ``voxel_size``.
 
     Two cues are combined. Local anisotropy -- planarity + linearity over
-    ``k`` neighbours -- marks bark and branch surfaces
+    ``k`` neighbours (and, with ``scale_radius`` > 0, again over that wider
+    neighbourhood, the lower score counting: better leaf labels, but it
+    removes wood a QSM needs, see :func:`sylva.leaves.classify_leaf_wood`)
+    -- marks bark and branch surfaces
     above ``threshold`` (high likelihood) and ``medium_threshold`` (kept
     only after statistical outlier removal, ``sor_k`` / ``sor_std``, and
     next to wood already found; set it at or above ``threshold`` to skip
@@ -258,7 +262,11 @@ def wood_points(cloud: PointCloud, k: int = 20, threshold: float = 0.85,
     from .filters import voxel_downsample
 
     thin = voxel_downsample(cloud, voxel_size) if voxel_size else cloud
-    mask = _core.wood_mask(thin.xyz, k, threshold, medium_threshold, graph_k, max_edge,
+    if method == "gbs":
+        from .leaves import classify_leaf_wood
+
+        return thin[classify_leaf_wood(thin, voxel_size=0.0, method="gbs")]
+    mask = _core.wood_mask(thin.xyz, k, threshold, medium_threshold, scale_radius, graph_k, max_edge,
                            base_height, target_res, min_passage, assign_dist, assign_scale,
                            component_res,
                            component_min, sor_k, sor_std, dilate_dist, passage)

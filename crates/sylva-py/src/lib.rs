@@ -372,11 +372,11 @@ fn planarity_linearity<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, k: usiz
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, k=20, high_threshold=0.85, medium_threshold=0.75, graph_k=10, max_edge=1.0, base_height=0.25, target_res=0.2, min_passage=3, assign_dist=0.05, assign_scale=0.0, component_res=0.05, component_min=200, sor_k=50, sor_std=1.0, dilate_dist=0.03, passage=true))]
+#[pyo3(signature = (xyz, k=20, high_threshold=0.85, medium_threshold=0.75, scale_radius=0.0, graph_k=10, max_edge=1.0, base_height=0.25, target_res=0.2, min_passage=3, assign_dist=0.05, assign_scale=0.0, component_res=0.05, component_min=200, sor_k=50, sor_std=1.0, dilate_dist=0.03, passage=true))]
 #[allow(clippy::too_many_arguments)]
-fn wood_mask<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, k: usize, high_threshold: f64, medium_threshold: f64, graph_k: usize, max_edge: f64, base_height: f64, target_res: f64, min_passage: usize, assign_dist: f64, assign_scale: f64, component_res: f64, component_min: usize, sor_k: usize, sor_std: f64, dilate_dist: f64, passage: bool) -> PyResult<Bound<'py, PyArray1<bool>>> {
+fn wood_mask<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, k: usize, high_threshold: f64, medium_threshold: f64, scale_radius: f64, graph_k: usize, max_edge: f64, base_height: f64, target_res: f64, min_passage: usize, assign_dist: f64, assign_scale: f64, component_res: f64, component_min: usize, sor_k: usize, sor_std: f64, dilate_dist: f64, passage: bool) -> PyResult<Bound<'py, PyArray1<bool>>> {
     let p = xyz_from_py(xyz)?;
-    let params = qsm::wood::WoodParams { k, high_threshold, medium_threshold, graph_k, max_edge, base_height, target_res, min_passage, assign_dist, assign_scale, component_res, component_min, sor_k, sor_std, dilate_dist, passage };
+    let params = qsm::wood::WoodParams { k, high_threshold, medium_threshold, scale_radius, graph_k, max_edge, base_height, target_res, min_passage, assign_dist, assign_scale, component_res, component_min, sor_k, sor_std, dilate_dist, passage };
     Ok(py.detach(|| qsm::wood::wood_mask(&p, &params)).into_pyarray(py))
 }
 
@@ -1068,6 +1068,105 @@ fn skeletonize<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, base_xy: Option
 }
 
 #[pyfunction]
+#[pyo3(signature = (xyz, k=12))]
+fn leaf_inclinations<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, k: usize) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray2<f64>>)> {
+    let p = xyz_from_py(xyz)?;
+    let (incl, normals) = py.detach(|| sylva_rs::leaves::inclinations(&p, k));
+    Ok((incl.into_pyarray(py), xyz_to_py(py, &normals)))
+}
+
+fn leaf_angles_to_py<'py>(py: Python<'py>, a: &sylva_rs::leaves::LeafAngles) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    d.set_item("bin_centres", a.bin_centres.clone().into_pyarray(py))?;
+    d.set_item("density", a.density.clone().into_pyarray(py))?;
+    d.set_item("mean", a.mean)?;
+    d.set_item("std", a.std)?;
+    d.set_item("beta_a", a.beta_a)?;
+    d.set_item("beta_b", a.beta_b)?;
+    d.set_item("chi", a.chi)?;
+    d.set_item("de_wit", a.de_wit)?;
+    Ok(d)
+}
+
+#[pyfunction]
+#[pyo3(signature = (inclination, weights=None, n_bins=18))]
+fn leaf_angle_distribution<'py>(py: Python<'py>, inclination: PyReadonlyArray1<f64>, weights: Option<PyReadonlyArray1<f64>>, n_bins: usize) -> PyResult<Bound<'py, PyDict>> {
+    let incl = inclination.as_array().to_vec();
+    let w = weights.map(|w| w.as_array().to_vec());
+    if let Some(w) = &w {
+        if w.len() != incl.len() {
+            return Err(PyValueError::new_err("weights must match inclination"));
+        }
+    }
+    leaf_angles_to_py(py, &sylva_rs::leaves::angle_distribution(&incl, w.as_deref(), n_bins))
+}
+
+#[pyfunction]
+fn leaf_projection_histogram(bin_centres: PyReadonlyArray1<f64>, density: PyReadonlyArray1<f64>, beam_zenith: PyReadonlyArray1<f64>) -> PyResult<Vec<f64>> {
+    let a = sylva_rs::leaves::LeafAngles { bin_centres: bin_centres.as_array().to_vec(), density: density.as_array().to_vec(), mean: 0.0, std: 0.0, beta_a: 0.0, beta_b: 0.0, chi: 1.0, de_wit: None };
+    Ok(beam_zenith.as_array().iter().map(|&t| sylva_rs::leaves::projection(&a, t)).collect())
+}
+
+#[pyfunction]
+#[pyo3(signature = (xyz, res=0.01, k=12))]
+fn point_leaf_area<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, res: f64, k: usize) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+    let p = xyz_from_py(xyz)?;
+    let (pts, area, incl) = py.detach(|| sylva_rs::leaves::point_leaf_area(&p, res, k));
+    Ok((xyz_to_py(py, &pts), area.into_pyarray(py), incl.into_pyarray(py)))
+}
+
+#[pyfunction]
+#[pyo3(signature = (xyz, voxel_size=0.02, k=20, high_threshold=0.85, medium_threshold=0.75, scale_radius=0.1, graph_k=10, max_edge=1.0, base_height=0.25, target_res=0.2, min_passage=3, assign_dist=0.05, assign_scale=0.0, component_res=0.05, component_min=200, sor_k=50, sor_std=1.0, dilate_dist=0.03, passage=true))]
+#[allow(clippy::too_many_arguments)]
+fn classify_leaf_wood<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, k: usize, high_threshold: f64, medium_threshold: f64, scale_radius: f64, graph_k: usize, max_edge: f64, base_height: f64, target_res: f64, min_passage: usize, assign_dist: f64, assign_scale: f64, component_res: f64, component_min: usize, sor_k: usize, sor_std: f64, dilate_dist: f64, passage: bool) -> PyResult<Bound<'py, PyArray1<bool>>> {
+    let p = xyz_from_py(xyz)?;
+    let params = qsm::wood::WoodParams { k, high_threshold, medium_threshold, scale_radius, graph_k, max_edge, base_height, target_res, min_passage, assign_dist, assign_scale, component_res, component_min, sor_k, sor_std, dilate_dist, passage };
+    Ok(py.detach(|| sylva_rs::leaves::classify_leaf_wood(&p, voxel_size, &params)).into_pyarray(py))
+}
+
+#[pyfunction]
+#[pyo3(signature = (xyz, voxel_size=0.02, graph_k=8, max_edge=1.0, base_height=0.25, intervals=vec![0.1, 0.2, 0.3, 0.5, 1.0], max_angle=std::f64::consts::FRAC_PI_4, linearity=0.9, circle_error=0.2, min_points=10))]
+#[allow(clippy::too_many_arguments)]
+fn classify_leaf_wood_gbs<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, graph_k: usize, max_edge: f64, base_height: f64, intervals: Vec<f64>, max_angle: f64, linearity: f64, circle_error: f64, min_points: usize) -> PyResult<Bound<'py, PyArray1<bool>>> {
+    let p = xyz_from_py(xyz)?;
+    if intervals.is_empty() || intervals.iter().any(|v| !(*v > 0.0)) {
+        return Err(PyValueError::new_err("intervals must be positive"));
+    }
+    let params = qsm::wood::GbsParams { graph_k, max_edge, base_height, intervals, max_angle, linearity, circle_error, min_points };
+    Ok(py.detach(|| sylva_rs::leaves::classify_leaf_wood_gbs(&p, voxel_size, &params)).into_pyarray(py))
+}
+
+#[pyfunction]
+#[pyo3(signature = (cell_centres, cell_area, voxel_size, seeds, bin_centres, density, cylinders, length=0.08, width=0.04, max_branch_distance=0.5, jitter=0.01, seed=1))]
+#[allow(clippy::too_many_arguments)]
+fn insert_leaves<'py>(py: Python<'py>, cell_centres: PyReadonlyArray2<f64>, cell_area: PyReadonlyArray1<f64>, voxel_size: f64, seeds: PyReadonlyArray2<f64>, bin_centres: PyReadonlyArray1<f64>, density: PyReadonlyArray1<f64>, cylinders: PyReadonlyArray2<f64>, length: f64, width: f64, max_branch_distance: f64, jitter: f64, seed: u64) -> PyResult<Bound<'py, PyDict>> {
+    let centres = xyz_from_py(cell_centres)?;
+    let area = cell_area.as_array().to_vec();
+    if area.len() != centres.len() {
+        return Err(PyValueError::new_err("cell_area must have one value per cell centre"));
+    }
+    let cells: Vec<(sylva_rs::Point, f64)> = centres.into_iter().zip(area).collect();
+    let seeds = xyz_from_py(seeds)?;
+    let angles = sylva_rs::leaves::LeafAngles { bin_centres: bin_centres.as_array().to_vec(), density: density.as_array().to_vec(), mean: 0.0, std: 0.0, beta_a: 0.0, beta_b: 0.0, chi: 1.0, de_wit: None };
+    if angles.bin_centres.len() != angles.density.len() || angles.density.is_empty() {
+        return Err(PyValueError::new_err("bin_centres and density must be non-empty and equal in length"));
+    }
+    let model = if cylinders.as_array().nrows() > 0 { qsm_from_rows(cylinders)? } else { Default::default() };
+    let params = sylva_rs::leaves::LeafParams { length, width, max_branch_distance, jitter, seed };
+    let mesh = py.detach(|| sylva_rs::leaves::insert_leaves(&cells, voxel_size, &seeds, &angles, &model.cylinders, &params));
+    let d = PyDict::new(py);
+    let nf = mesh.faces.len();
+    d.set_item("vertices", xyz_to_py(py, &mesh.vertices))?;
+    d.set_item("faces", PyArray1::from_vec(py, mesh.faces.iter().flat_map(|f| f.iter().cloned()).collect::<Vec<u32>>()).reshape([nf, 3])?)?;
+    d.set_item("centres", xyz_to_py(py, &mesh.centres))?;
+    d.set_item("normals", xyz_to_py(py, &mesh.normals))?;
+    d.set_item("inclination", mesh.inclination.clone().into_pyarray(py))?;
+    d.set_item("cylinder", mesh.cylinder.clone().into_pyarray(py))?;
+    d.set_item("leaf_area", mesh.leaf_area)?;
+    Ok(d)
+}
+
+#[pyfunction]
 fn qsm_summary<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>) -> PyResult<Bound<'py, PyDict>> {
     qsm_to_py(py, &qsm_from_rows(cylinders)?)
 }
@@ -1116,6 +1215,13 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(estimate_normals, m)?,
         wrap_pyfunction!(planarity_linearity, m)?,
         wrap_pyfunction!(wood_mask, m)?,
+        wrap_pyfunction!(leaf_inclinations, m)?,
+        wrap_pyfunction!(leaf_angle_distribution, m)?,
+        wrap_pyfunction!(leaf_projection_histogram, m)?,
+        wrap_pyfunction!(point_leaf_area, m)?,
+        wrap_pyfunction!(classify_leaf_wood, m)?,
+        wrap_pyfunction!(classify_leaf_wood_gbs, m)?,
+        wrap_pyfunction!(insert_leaves, m)?,
         wrap_pyfunction!(euclidean_clusters, m)?,
         wrap_pyfunction!(knn, m)?,
         wrap_pyfunction!(csf_ground_mask, m)?,

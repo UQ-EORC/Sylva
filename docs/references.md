@@ -8,3 +8,7 @@
 - Vicari, Pisek & Disney 2019, *Agric. For. Meteorol.* 264 — leaf angle distributions from TLS normals.
 - Bailey & Mahaffee 2017, *Meas. Sci. Technol.* 28(6) — leaf area and orientation from triangulated returns.
 - Calders et al. 2015, *Methods Ecol. Evol.* 6 — TLS tree structure and volume.
+- Tian et al. 2022, *IEEE Trans. Geosci. Remote Sens.* 60, doi:10.1109/TGRS.2022.3218603 — graph-based leaf–wood separation (GBSeparation).
+- Van den Broeck, W. et al. 2025, *ISPRS J. Photogramm. Remote Sens.* 227:366–382 — manually labelled leaf–wood tropical trees (benchmark data).
+- Campbell, G. S. 1990, *Agric. For. Meteorol.* 49:173–176 — ellipsoidal leaf angle distribution.
+- Goel, N. S., Strebel, D. E. 1984, *Agron. J.* 76:800–802 — beta distribution of leaf inclination.

@@ -31,6 +31,7 @@ nav:
       - Pulse data: guide/pulses.md
       - Ray-traced voxels: guide/voxels.md
       - QSMs: guide/qsm.md
+      - Leaves on a QSM: guide/leaves.md
       - Command line: guide/cli.md
   - Examples:
       - Overview: examples/index.md
@@ -57,6 +58,7 @@ nav:
       - voxels: api/voxels.md
       - registration: api/registration.md
       - qsm: api/qsm.md
+      - leaves: api/leaves.md
   - Development: development.md
   - Releasing: release.md
   - References: references.md

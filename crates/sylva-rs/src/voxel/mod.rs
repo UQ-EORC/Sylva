@@ -16,7 +16,7 @@
 //! per-voxel LAS class histogram (only plant / leaf / wood hit counts are kept).
 
 mod iad;
-mod metrics;
+pub(crate) mod metrics;
 mod refine;
 mod traverse;
 mod wood;

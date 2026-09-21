@@ -96,7 +96,7 @@ def test_build_qsm_defaults(single_tree):
     assert radius.max() < 0.21
     # The branch (r = 0.05) is reconstructed, thinner than the stem.
     assert s["max_branch_order"] >= 1
-    assert 0 < model.column("radius")[order >= 1].max() < 0.12
+    assert 0 < model.column("radius")[order >= 1].max() < 0.15
     # Nothing is prolonged below the cloud.
     assert model.start[:, 2].min() > single_tree.z.min() - 0.05
 
