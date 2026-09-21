@@ -8,7 +8,6 @@ crates/sylva-py     PyO3 bindings -> sylva._core
 crates/sylva-cli    Rust CLI (optional; the Python CLI covers the same commands)
 python/sylva        Python API
 tests/              pytest suite on synthetic forests
-benchmarks/         scripts behind the published benchmark numbers (need external data)
 docs/               this documentation, and the example notebooks
 ```
 

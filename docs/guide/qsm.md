@@ -41,10 +41,6 @@ allometry) replaces weak fits and fills gaps, non-increasing; everything
 unmeasured, branches included, comes from a pipe model, tapering
 linearly with subtree length on straight runs and sharing the parent's
 cross-section by subtree length at every fork.
-`benchmarks/run_qsms.py` does this for every tree of a segmented plot
-and also writes `plot_qsm.ply`, one mesh for the whole plot coloured per
-tree; `benchmarks/render_qsm.py` draws a QSM over its points for inspection and
-`benchmarks/compare_qsm_rct.py` compares per-tree volumes with raycloudtools.
 
 Accuracy against felled trees and against raycloudtools is on the
 [QSM benchmark](../benchmarks/qsm.md) page.

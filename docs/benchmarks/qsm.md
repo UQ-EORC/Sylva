@@ -2,8 +2,7 @@
 
 ## Destructive harvest
 
-`benchmarks/harvest_qsm.py` and
-`benchmarks/harvest_benchmark.py` score single-tree QSMs against felled-tree
+Single-tree QSMs are scored against felled-tree
 volumes: 72 trees from Momo Takoudjou 2017, Gonzalez de Tanago 2017 and Burt
 2021, with wood density assigned per tree and agreement statistics computed
 the same way for every method:
@@ -13,14 +12,12 @@ the same way for every method:
 | rayextract | −11.8 % | 48.6 % | 0.920 | −23 % / 29 % |
 | sylva | −3.8 % | 19.9 % | 0.989 | +2 % / 13 % |
 
-`benchmarks/harvest_structure.py` reads the models of each method into one
-cylinder representation to compare stem, branch and taper structure. Study
+Study
 biases are Momo −5 %, GdtM −3 %, Burt +1 %. The remaining scatter is a handful of
 co-dominant Peruvian trees whose second limb is barely sampled: the pipe
 model has to guess it. Never cap or anchor stem radii on a breast-height
 slice: at 1.3 m the big tropical trees are 3 m-wide buttress stars where a
-circle explains 15 % of the points. `benchmarks/harvest_qsm.py --mesh` also
-writes an OBJ and a PLY mesh per tree.
+circle explains 15 % of the points.
 
 ## CHERLET plots against raycloudtools
 
