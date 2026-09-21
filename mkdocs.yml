@@ -32,6 +32,7 @@ nav:
       - Ray-traced voxels: guide/voxels.md
       - QSMs: guide/qsm.md
       - Leaves on a QSM: guide/leaves.md
+      - Scan quality: guide/quality.md
       - Command line: guide/cli.md
   - Examples:
       - Overview: examples/index.md
@@ -60,6 +61,7 @@ nav:
       - registration: api/registration.md
       - qsm: api/qsm.md
       - leaves: api/leaves.md
+      - quality: api/quality.md
   - Development: development.md
   - Releasing: release.md
   - References: references.md

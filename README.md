@@ -17,6 +17,7 @@ numpy-friendly API (`import sylva`) and a `sylva` command.
 | `sylva.registration` | Kabsch, point-to-point / point-to-plane (trimmed) ICP, scan merging |
 | `sylva.qsm` | cylinder fitting, geodesic skeletonisation, cylinder QSMs with volumes and branch orders, `_trees.txt` export, tree metrics (branch table, taper, lean, sweep, crown, share of the model fitted to points) |
 | `sylva.leaves` | leaf / wood labels, leaf angle distribution, leaf area density from points or voxels, leaf meshes placed on a QSM |
+| `sylva.quality` | scan quality from stems: range noise with the stem shape removed, per-scan registration offsets, mixed-pixel tails |
 | `sylva.Shots` | pulse-centric data (origin, direction, CSR echoes) for ray-based metrics, with a compact Parquet file format that stores misses without far points and streams into the voxeliser |
 
 ## Install

@@ -248,4 +248,11 @@ class Shots:
         (else ``alpha == 0``) marks unbounded rays, which become echo-less
         shots. Returns sharing a ``beam_id`` / ``gps_time`` are joined into one
         multi-echo shot when ``number_of_returns`` is present."""
-        return cls._from_core(_core.shots_from_ray_cloud(cloud.xyz, cloud.attrs))
+        shots = cls._from_core(_core.shots_from_ray_cloud(cloud.xyz, cloud.attrs))
+        if shots.n_shots and np.all(np.abs(shots.origin[:: max(1, shots.n_shots // 10000)]) < 1e-6):
+            import warnings
+
+            warnings.warn("every ray of this ray cloud starts at (0, 0, 0): it was written without sensor "
+                          "positions, so ray-traced products (voxels, occlusion, sampling) will describe "
+                          "pulses from the origin, not the scan", stacklevel=2)
+        return shots

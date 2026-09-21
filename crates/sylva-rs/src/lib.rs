@@ -20,6 +20,7 @@ pub mod leaves;
 pub mod optim;
 pub mod pointcloud;
 pub mod qsm;
+pub mod quality;
 pub mod raster;
 pub mod registration;
 pub mod shots;

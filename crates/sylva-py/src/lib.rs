@@ -1308,6 +1308,62 @@ fn tree_sampling<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, labels: PyRea
 }
 
 #[pyfunction]
+#[pyo3(signature = (xyz, heights, stems, scan_ids=None, height_min=1.0, height_max=3.0, step=0.25, thickness=0.1, min_radius=0.05, max_radius=1.0, min_arc=270.0, min_inlier_fraction=0.5, cut_min=0.05, cut_fraction=0.3, min_scan_points=30, iterations=3))]
+#[allow(clippy::too_many_arguments)]
+fn stem_noise<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, stems: PyReadonlyArray2<f64>, scan_ids: Option<PyReadonlyArray1<i64>>, height_min: f64, height_max: f64, step: f64, thickness: f64, min_radius: f64, max_radius: f64, min_arc: f64, min_inlier_fraction: f64, cut_min: f64, cut_fraction: f64, min_scan_points: usize, iterations: usize) -> PyResult<Bound<'py, PyDict>> {
+    let p = xyz_from_py(xyz)?;
+    let h = heights.as_array().to_vec();
+    let ids = scan_ids.map(|s| s.as_array().to_vec());
+    if h.len() != p.len() || ids.as_ref().is_some_and(|s| s.len() != p.len()) {
+        return Err(PyValueError::new_err("heights and scan_ids need one value per point"));
+    }
+    let st = stems.as_array();
+    if st.ncols() < 2 {
+        return Err(PyValueError::new_err("stems must be (n, 2): x, y"));
+    }
+    let stems: Vec<[f64; 2]> = st.rows().into_iter().map(|r| [r[0], r[1]]).collect();
+    let params = sylva_rs::quality::NoiseParams { height_min, height_max, step, thickness, min_radius, max_radius, min_arc, min_inlier_fraction, cut_min, cut_fraction, min_scan_points };
+    let r = py.detach(|| sylva_rs::quality::stem_noise(&p, &h, ids.as_deref(), &stems, &params, iterations));
+    let d = PyDict::new(py);
+    let sl = PyDict::new(py);
+    macro_rules! col {
+        ($dict:expr, $src:expr, $name:literal, $f:expr) => {
+            $dict.set_item($name, $src.iter().map($f).collect::<Vec<_>>().into_pyarray(py))?;
+        };
+    }
+    col!(sl, r.slices, "stem", |x| x.stem as i64);
+    col!(sl, r.slices, "height", |x| x.height);
+    col!(sl, r.slices, "cx", |x| x.cx);
+    col!(sl, r.slices, "cy", |x| x.cy);
+    col!(sl, r.slices, "radius", |x| x.radius);
+    col!(sl, r.slices, "n_points", |x| x.n_points as i64);
+    col!(sl, r.slices, "sigma", |x| x.sigma);
+    col!(sl, r.slices, "sigma_first", |x| x.sigma_first);
+    col!(sl, r.slices, "arc", |x| x.arc);
+    col!(sl, r.slices, "tail_fraction", |x| x.tail_fraction);
+    let ss = PyDict::new(py);
+    col!(ss, r.scan_slices, "scan", |x| x.scan);
+    col!(ss, r.scan_slices, "slice", |x| x.slice as i64);
+    col!(ss, r.scan_slices, "n_points", |x| x.n_points as i64);
+    col!(ss, r.scan_slices, "median_residual", |x| x.median_residual);
+    col!(ss, r.scan_slices, "sigma_within", |x| x.sigma_within);
+    col!(ss, r.scan_slices, "sigma_local", |x| x.sigma_local);
+    let sc = PyDict::new(py);
+    col!(sc, r.scans, "scan", |x| x.scan);
+    col!(sc, r.scans, "n_points", |x| x.n_points as i64);
+    col!(sc, r.scans, "n_slices", |x| x.n_slices as i64);
+    col!(sc, r.scans, "tx", |x| x.tx);
+    col!(sc, r.scans, "ty", |x| x.ty);
+    col!(sc, r.scans, "sigma_within", |x| x.sigma_within);
+    col!(sc, r.scans, "sigma_local", |x| x.sigma_local);
+    d.set_item("slices", sl)?;
+    d.set_item("scan_slices", ss)?;
+    d.set_item("scans", sc)?;
+    d.set_item("residual", r.residual.into_pyarray(py))?;
+    Ok(d)
+}
+
+#[pyfunction]
 fn qsm_summary<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>) -> PyResult<Bound<'py, PyDict>> {
     qsm_to_py(py, &qsm_from_rows(cylinders)?)
 }
@@ -1368,6 +1424,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(qsm_branches, m)?,
         wrap_pyfunction!(pgap_histogram, m)?,
         wrap_pyfunction!(tree_sampling, m)?,
+        wrap_pyfunction!(stem_noise, m)?,
         wrap_pyfunction!(euclidean_clusters, m)?,
         wrap_pyfunction!(knn, m)?,
         wrap_pyfunction!(csf_ground_mask, m)?,

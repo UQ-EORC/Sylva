@@ -81,11 +81,7 @@ up to 2 m over the tree's highest point was seen, as empty or as a
 neighbour's crown. If it was not, the tree may continue where the scanner
 could not see.
 
-Robson Creek rainforest, 149 manually segmented trees, 0.25 m voxels:
-
-- **Canopy space.** 84 % observed up to about 18 m, 43 % at 28 m and 2 % at
-  36 m. Pulses per voxel fall from over 1,000 near the ground to 0 at the
-  top.
-- **Per tree.** 141 of the 149 trees have their tops confirmed. Of the six
-  tallest (tops above 30 m) one does. These are the emergent trees whose
-  heights and volumes nothing on the ground can check.
+Ray tracing needs the real scanner position of every pulse. Ray clouds
+exported without sensor positions put every ray's start at the origin; they
+can still be voxelised, but the occlusion they give is that of pulses from
+below, not of the scan. `Shots.from_ray_cloud` warns about this case.
