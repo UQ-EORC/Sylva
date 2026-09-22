@@ -272,7 +272,7 @@ class Shots:
         return lines * n
 
     def fill_missing(self, pattern: dict, pulses_per_line: int | None = None,
-                     seed: int = 0) -> Shots:
+                     seed: int = 0, shot_stride: int = 1) -> Shots:
         """Add the pulses that returned nothing.
 
         RiVLib's point stream only contains echoes, so a pulse that went to the
@@ -284,7 +284,10 @@ class Shots:
         free space these pulses sampled.
 
         ``pulses_per_line`` defaults to :meth:`pulses_per_line`, which corrects
-        for the scanner firing slightly more pulses than the nominal grid.
+        for the scanner firing slightly more pulses than the nominal grid but
+        can overshoot by a few per cent. Where the scan looks at the ground,
+        the median count on the downward lines is exact, since every pulse
+        there returns (see :func:`sylva.canopy.fired_pulses_per_ring`).
 
         Call this on shots in scanner coordinates (before applying a SOP), as
         the pattern's zenith lines are defined in the scanner frame; all shots
@@ -299,6 +302,10 @@ class Shots:
             Pulses fired per zenith line; estimated if None.
         seed
             Seed for the random azimuths, so the output is reproducible.
+        shot_stride
+            The ``shot_stride`` the shots were read with. The estimate of
+            pulses per line is divided by it; without it, thinned shots get
+            ``shot_stride`` times too many misses.
 
         Returns
         -------
@@ -311,7 +318,7 @@ class Shots:
         zen, _ = self.zenith_azimuth()
         observed, _ = np.histogram(zen, bins=edges)
         if pulses_per_line is None:
-            pulses_per_line = self.pulses_per_line(pattern)
+            pulses_per_line = self.pulses_per_line(pattern, shot_stride=shot_stride)
         missing = np.maximum(int(pulses_per_line) - observed, 0)
         n = int(missing.sum())
         if n == 0:

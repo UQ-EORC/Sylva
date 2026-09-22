@@ -103,8 +103,16 @@ class StemNoise:
     scans: dict  #: per scan: scan, n_points, n_slices, tx, ty, sigma_within, sigma_local
     residual: np.ndarray  #: per input point (NaN where not used), after the scans were moved back
 
-    def summary(self) -> dict:
+    def summary(self, min_scan_slices: int = 1) -> dict:
         """Plot-level quality figures, in metres.
+
+        Parameters
+        ----------
+        min_scan_slices
+            Scans measured in fewer stem slices than this are left out of the
+            registration figures. A scan that saw only a few stem points (an
+            outer position looking away from the plot) gets an offset fitted
+            to almost nothing, which would otherwise set ``registration_max``.
 
         Returns
         -------
@@ -112,7 +120,8 @@ class StemNoise:
             ``n_stems``, ``n_slices``, ``n_scans``; point-weighted medians
             ``sigma_total``, ``sigma_corrected``, ``sigma_within``,
             ``sigma_local``; ``tail_fraction``; and with several scans
-            ``registration_rms``, ``registration_max`` and ``worst_scan``.
+            ``registration_rms``, ``registration_max`` and ``worst_scan``
+            over the ``n_scans_registered`` scans with enough slices.
             Only the counts are present if no slice qualified.
 
         Notes
@@ -133,11 +142,14 @@ class StemNoise:
         out["sigma_within"] = _wmedian(ss["sigma_within"], ss["n_points"])
         out["sigma_local"] = _wmedian(ss["sigma_local"], ss["n_points"])
         out["tail_fraction"] = float(np.average(sl["tail_fraction"], weights=sl["n_points"]))
-        if len(sc["scan"]) > 1:
-            off = np.hypot(sc["tx"], sc["ty"])
-            out["registration_rms"] = float(np.sqrt(np.average(off ** 2, weights=sc["n_points"])))
+        ok = np.asarray(sc["n_slices"]) >= min_scan_slices
+        out["n_scans_registered"] = int(ok.sum())
+        if ok.sum() > 1:
+            off = np.hypot(np.asarray(sc["tx"])[ok], np.asarray(sc["ty"])[ok])
+            w = np.asarray(sc["n_points"])[ok]
+            out["registration_rms"] = float(np.sqrt(np.average(off ** 2, weights=w)))
             out["registration_max"] = float(off.max())
-            out["worst_scan"] = int(sc["scan"][np.argmax(off)])
+            out["worst_scan"] = int(np.asarray(sc["scan"])[ok][np.argmax(off)])
         return out
 
 

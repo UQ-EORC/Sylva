@@ -57,3 +57,16 @@ def test_pulses_per_line_overshoot():
     full = shots.fill_missing(pattern)
     assert full.n_shots == 105 * 10
     assert shots.fill_missing(pattern, pulses_per_line=100).n_shots == 9 * 105 + 100
+
+
+def test_fill_missing_thinned():
+    """Shots read with shot_stride fire phi_count / stride pulses per line, not phi_count."""
+    pattern = {"theta_start": 30.0, "theta_delta": 1.0, "theta_count": 10,
+               "phi_start": 0.0, "phi_delta": 1.0, "phi_count": 400}
+    # Every 4th pulse kept: 100 fired per line, 60 returned.
+    theta = np.radians(np.repeat(30 + np.arange(10), 60))
+    az = np.linspace(0, 2 * np.pi, theta.size)
+    d = np.column_stack([np.sin(theta) * np.sin(az), np.sin(theta) * np.cos(az), np.cos(theta)])
+    shots = Shots.from_pointcloud(PointCloud(d * 5))
+    assert shots.fill_missing(pattern, shot_stride=4).n_shots == 10 * 100
+    assert shots.fill_missing(pattern).n_shots == 10 * 400

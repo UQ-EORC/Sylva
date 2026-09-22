@@ -49,6 +49,7 @@ nav:
       - 7. Canopy structure: examples/07_canopy.ipynb
       - 8. Pulses and shots files: examples/08_shots.ipynb
       - 9. Ray-traced voxels: examples/09_voxels.ipynb
+      - 10. A RIEGL project, end to end: examples/10_riscan_pipeline.ipynb
   - Benchmarks:
       - Tree detection: benchmarks/trees.md
       - QSMs: benchmarks/qsm.md
@@ -79,6 +80,7 @@ exclude_docs: |
   hooks.py
   examples/build_notebooks.py
   examples/make_litch_subset.py
+  examples/build_riscan_notebook.py
   examples/data/*.laz
   examples/data/*.parquet
 

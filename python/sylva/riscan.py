@@ -126,7 +126,7 @@ class ScanPosition:
         if fill_missing:
             if self.pattern is None:
                 raise ValueError(f"scan position {self.name} has no scan pattern in project.rsp")
-            shots = shots.fill_missing(self.pattern)
+            shots = shots.fill_missing(self.pattern, shot_stride=options.get("shot_stride", 1))
         return shots.transform(self.transform(pop))
 
 

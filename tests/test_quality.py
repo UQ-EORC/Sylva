@@ -53,3 +53,23 @@ def test_scan_ids_from_origins():
     o = np.array([[0, 0, 1.5], [0.01, 0, 1.5], [10, 0, 1.6], [10, 0.02, 1.6], [0, 0, 1.51]])
     ids = quality.scan_ids_from_origins(o)
     assert ids[0] == ids[1] == ids[4] and ids[2] == ids[3] and ids[0] != ids[2]
+
+
+def test_summary_skips_unsupported_scans():
+    from sylva.quality import StemNoise
+
+    sl = {"stem": np.array([0, 0]), "height": np.array([1.5, 2.0]),
+          "n_points": np.array([100, 100]),
+          "sigma": np.array([0.005, 0.005]), "sigma_first": np.array([0.006, 0.006]),
+          "tail_fraction": np.array([0.0, 0.0])}
+    ss = {"scan": np.array([0, 1]), "slice": np.array([0, 1]), "n_points": np.array([50, 50]),
+          "sigma_within": np.array([0.004, 0.004]), "sigma_local": np.array([0.003, 0.003])}
+    # Scan 2 saw five stem points and no slice: its 0.6 m offset is fitted to nothing.
+    sc = {"scan": np.array([0, 1, 2]), "n_points": np.array([500, 500, 5]),
+          "n_slices": np.array([4, 4, 0]), "tx": np.array([0.002, -0.002, 0.6]),
+          "ty": np.array([0.0, 0.0, 0.0]), "sigma_within": np.array([0.004, 0.004, np.nan]),
+          "sigma_local": np.array([0.003, 0.003, np.nan])}
+    s = StemNoise(sl, ss, sc, np.zeros(0)).summary()
+    assert s["n_scans_registered"] == 2 and s["registration_max"] == pytest.approx(0.002)
+    loose = StemNoise(sl, ss, sc, np.zeros(0)).summary(min_scan_slices=0)
+    assert loose["registration_max"] == pytest.approx(0.6)

@@ -38,6 +38,7 @@ statistical outlier filter removes 4 % of the cloud, two thirds of it below
 | 7 | [Canopy structure](07_canopy.ipynb) | both | voxel occupancy, contact-frequency PAD, gap fraction and effective PAI |
 | 8 | [Pulses and shots files](08_shots.ipynb) | tile | `Shots`, misses, conversions, the Parquet shots format |
 | 9 | [Ray-traced voxels](09_voxels.ipynb) | both | attenuation, PAD / LAD / WAD, leaf angles, wood volume, `.vox`, streaming |
+| 10 | [A RIEGL project, end to end](10_riscan_pipeline.ipynb) | full plot | every stage on one hectare straight from the `.rxp` files: read, ground, trees, scan quality, QSMs and leaves, gap profile, voxels, sampling |
 
 The numbers the notebooks print describe this one tile and are not validation.
 Accuracy against reference plots, felled trees and independent instruments is
@@ -57,3 +58,9 @@ run it to regenerate and re-execute them (`python docs/examples/build_notebooks.
 The tile is derived from TERN data, distributed here for documentation and
 teaching. Cite TERN if you use it for anything else, and see
 `data/README.md`.
+
+Notebook 10 is different: it reads a whole RiSCAN PRO project, the TERN
+Litchfield core hectare (64 VZ-2000i positions, 35 GB), so it needs RiVLib,
+the project on disk and about 25 GB of memory, and is run by hand with
+`build_riscan_notebook.py` rather than by `build_notebooks.py`. Point
+`PROJECT` at your own project and `PLOT` at its extent to run it elsewhere.
