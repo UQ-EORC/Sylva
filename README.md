@@ -1,12 +1,11 @@
-<img src="docs/assets/icon.png" width="160" align="left" alt="Sylva">
-
-### Sylva
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
+  <img src="docs/assets/banner-light.png" height="160" alt="Sylva: terrestrial laser scanning for forest ecology">
+</picture>
 
 Terrestrial laser scanning (TLS) processing for forest ecology and remote
 sensing. A Rust core (the `sylva-rs` crate) does the work; Python gets a
 numpy-friendly API (`import sylva`) and a `sylva` command.
-
-<br clear="left">
 
 | Module | What it does |
 |---|---|
