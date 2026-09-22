@@ -86,6 +86,45 @@ def test_add_leaves(single_tree, rng, tmp_path):
     assert "o wood" in text and "o leaves" in text
 
 
+def test_leaf_shape_and_default_size(tmp_path):
+    rng = np.random.default_rng(3)  # session rng is shared: draw from our own
+    built_in = leaves.LeafShape()
+    assert built_in.area == pytest.approx(leaves.single_leaf_area(0.08, 0.04))
+    assert built_in.resized(0.16, 0.08).area == pytest.approx(4 * built_in.area)
+    assert built_in.scaled_to(0.01).area == pytest.approx(0.01)
+    # A blade given in metres keeps the size it was drawn at, in unit leaf space.
+    v = np.array([[0, 0, 0], [0.1, 0.03, 0.01], [0.2, 0, 0], [0.1, -0.03, 0.01]], float)
+    f = np.array([[0, 1, 2], [0, 2, 3]], np.uint32)
+    custom = leaves.LeafShape.from_mesh(v, f)
+    assert (custom.length, custom.width) == pytest.approx((0.2, 0.06))
+    np.testing.assert_allclose(custom.vertices.max(0) - custom.vertices.min(0), [1, 1, 0.01 / 0.06])
+    assert custom.area == pytest.approx(0.5 * np.linalg.norm(np.cross(v[1] - v[0], v[2] - v[0])) * 2)
+    (tmp_path / "leaf.obj").write_text("".join(f"v {x} {y} {z}\n" for x, y, z in v) + "f 1 2 3 4\n")
+    assert leaves.LeafShape.from_obj(tmp_path / "leaf.obj").area == pytest.approx(custom.area)
+    for bad in [dict(vertices=v[:2], faces=f), dict(faces=np.zeros((0, 3), np.uint32)), dict(length=0.0)]:
+        with pytest.raises(ValueError):
+            leaves.LeafShape(**bad)
+
+    pts = rng.uniform(0, 2, (4000, 3))
+    grid = leaves.leaf_area_density(pts, voxel_size=0.25).scaled_to(10.0)
+    plain = leaves.add_leaves(None, grid, "spherical", leaf_points=pts)
+    shaped = leaves.add_leaves(None, grid, "spherical", leaf_points=pts, shape=custom)
+    assert shaped.leaf_area == pytest.approx(custom.area)
+    assert shaped.faces.shape == (2 * len(shaped), 3) and shaped.vertices.shape == (4 * len(shaped), 3)
+    assert shaped.total_area == pytest.approx(10.0, abs=2 * custom.area)
+    assert len(shaped) < len(plain)  # a bigger leaf, so fewer of them
+    # The default size applies to calls that ask for none, and can be put back.
+    big = leaves.add_leaves(None, grid, "spherical", leaf_points=pts, leaf_length=0.16, leaf_width=0.08)
+    was = leaves.set_default_leaf(length=0.16, width=0.08)
+    try:
+        assert leaves.default_leaf().length == 0.16
+        now = leaves.add_leaves(None, grid, "spherical", leaf_points=pts)
+        np.testing.assert_array_equal(now.vertices, big.vertices)
+    finally:
+        leaves.set_default_leaf(was)
+    assert (leaves.default_leaf().length, leaves.default_leaf().width) == (0.08, 0.04)
+
+
 def test_classify_leaf_wood(single_tree, rng):
     foliage, _ = make_leaves(rng, 500, lambda r, n: np.degrees(np.arccos(r.uniform(0, 1, n))), centre=(1.8, 0.0, 4.8), spread=0.4)
     cloud = PointCloud(np.vstack([single_tree.xyz, foliage]))

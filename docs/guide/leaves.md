@@ -78,9 +78,44 @@ step: `add_leaves(model, 85.0, angles, leaf_points=foliage)`.
 leaf points of that voxel (uniformly inside it if it has none), with normals
 drawn from the angle distribution and a uniform azimuth; blades within
 `max_branch_distance` of a cylinder point away from it and record that
-cylinder. The leaf is a six-vertex blade of the given length and width
-(`single_leaf_area` gives its area). Leaves may intersect each other: no
-collision test is made.
+cylinder. Leaves may intersect each other: no collision test is made.
+
+## Leaf shape and size
+
+The blade is a `LeafShape`: a mesh in unit leaf space — `(along, across, up)`
+with the base at the origin, the tip at `along = 1` and the greatest width 1
+across — plus the length and width it is placed at. The default is the
+six-vertex outline at 8 × 4 cm; `shape.area` is the area of one leaf, as is
+`single_leaf_area(length, width)`.
+
+Set the size per call, or once for the session:
+
+```python
+mesh = leaves.add_leaves(model, area, angles, leaf_points=foliage,
+                         leaf_length=0.15, leaf_width=0.06)
+
+leaves.set_default_leaf(length=0.15, width=0.06)   # every later call
+leaves.default_leaf()                              # what is in force
+```
+
+A custom blade takes any triangle mesh of a single leaf, so a scanned or
+modelled one — lobed, curled, or several leaflets — can be used instead. It
+is read with the base at the smallest *x*, the tip along +*x*, the blade
+across ±*y* and any curl in *z*; `along` then scales with the length and
+`across` and `up` with the width. A mesh drawn in metres keeps the size it
+was drawn at:
+
+```python
+shape = leaves.LeafShape.from_obj("eucalypt_leaf.obj")   # at its own size
+shape = shape.resized(length=0.12)                       # or set one
+shape = shape.scaled_to(0.004)                           # or an area (m2)
+mesh = leaves.add_leaves(model, area, angles, leaf_points=foliage, shape=shape)
+leaves.set_default_leaf(shape)                           # or make it the default
+```
+
+The leaf count follows from the area to be met divided by the area of one
+leaf, so a bigger blade gives fewer leaves for the same leaf area, and a
+curled blade counts the area of its triangles, not of its outline.
 
 ## How well it works
 

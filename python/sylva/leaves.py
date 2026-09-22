@@ -33,8 +33,8 @@ from .pointcloud import PointCloud
 from .qsm import QSM, write_obj
 
 __all__ = ["classify_leaf_wood", "LeafAngleDistribution", "leaf_angle_distribution",
-           "LeafAreaGrid", "leaf_area_density", "LeafMesh", "add_leaves", "write_tree_obj",
-           "single_leaf_area"]
+           "LeafAreaGrid", "leaf_area_density", "LeafMesh", "LeafShape", "add_leaves", "write_tree_obj",
+           "single_leaf_area", "default_leaf", "set_default_leaf"]
 
 
 def _xyz(points) -> np.ndarray:
@@ -382,25 +382,235 @@ def leaf_area_density(leaf_points, voxel_size: float = 0.25, res: float | None =
     return LeafAreaGrid(origin, float(voxel_size), dens / voxel_size**3)
 
 
-def single_leaf_area(length: float, width: float) -> float:
-    """One-sided area of the leaf shape used by :func:`add_leaves`.
+def single_leaf_area(length: float, width: float, shape: "LeafShape | None" = None) -> float:
+    """One-sided area of one leaf of the given size.
 
     Parameters
     ----------
     length, width
         Leaf length and width (m).
+    shape
+        Blade to measure; the built-in outline by default.
 
     Returns
     -------
     float
         Area (m²), 0.562 × length × width for the built-in outline.
     """
-    x, y = np.array(_OUTLINE).T
-    return float(0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) * length * width)
+    return (shape or LeafShape()).resized(length, width).area
 
 
 #: Unit leaf outline (along, across), as in the core.
 _OUTLINE = [(0.0, 0.0), (0.2, 0.36), (0.45, 0.5), (1.0, 0.0), (0.45, -0.5), (0.2, -0.36)]
+
+
+def _unit_blade() -> tuple[np.ndarray, np.ndarray]:
+    """The built-in blade as (vertices (V, 3), faces (F, 3)) in unit leaf space."""
+    v = np.column_stack([np.array(_OUTLINE, float), np.zeros(len(_OUTLINE))])
+    f = np.array([[0, t, t + 1] for t in range(1, len(_OUTLINE) - 1)], np.uint32)
+    return v, f
+
+
+@dataclass(frozen=True)
+class LeafShape:
+    """The blade one leaf is cut from, and how big it is.
+
+    The blade lives in unit leaf space — ``(along, across, up)`` with the base
+    at the origin, the tip at ``along = 1`` and the greatest width 1 across —
+    and is scaled by ``length`` along and by ``width`` across and up when
+    placed. It may therefore be curled or made of several leaflets, not only
+    a flat outline. Default is the built-in six-sided blade at 8 × 4 cm.
+
+    Examples
+    --------
+    A bigger leaf of the built-in shape, and one scanned from life::
+
+        shape = leaves.LeafShape(length=0.15, width=0.06)
+        shape = leaves.LeafShape.from_obj("eucalypt_leaf.obj")  # keeps its own size
+    """
+
+    vertices: np.ndarray = None  #: (V, 3) unit leaf space (along, across, up)
+    faces: np.ndarray = None  #: (F, 3) into ``vertices``
+    length: float = 0.08  #: blade length (m)
+    width: float = 0.04  #: greatest blade width (m)
+
+    def __post_init__(self) -> None:
+        v, f = _unit_blade()
+        v = v if self.vertices is None else np.ascontiguousarray(self.vertices, float)
+        f = f if self.faces is None else np.ascontiguousarray(self.faces, np.uint32)
+        if v.ndim != 2 or v.shape[1] != 3 or f.ndim != 2 or f.shape[1] != 3:
+            raise ValueError("vertices must be (V, 3) and faces (F, 3)")
+        if len(f) == 0 or f.max() >= len(v):
+            raise ValueError("faces must be non-empty and index vertices")
+        if not (self.length > 0 and self.width > 0):
+            raise ValueError("length and width must be positive")
+        object.__setattr__(self, "vertices", v)
+        object.__setattr__(self, "faces", f)
+
+    @property
+    def area(self) -> float:
+        """One-sided area of one leaf (m²): the sum of its triangles."""
+        v = self.vertices * [self.length, self.width, self.width]
+        a, b, c = v[self.faces[:, 0]], v[self.faces[:, 1]], v[self.faces[:, 2]]
+        return float(0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1).sum())
+
+    def resized(self, length: float | None = None, width: float | None = None) -> "LeafShape":
+        """The same blade at a new size.
+
+        Parameters
+        ----------
+        length, width
+            New length and width (m); unchanged where None.
+
+        Returns
+        -------
+        LeafShape
+        """
+        return LeafShape(self.vertices, self.faces, self.length if length is None else length,
+                         self.width if width is None else width)
+
+    def scaled_to(self, area: float) -> "LeafShape":
+        """The same blade and aspect ratio, scaled to a one-sided area (m²).
+
+        Parameters
+        ----------
+        area
+            Wanted area of one leaf (m²).
+
+        Returns
+        -------
+        LeafShape
+        """
+        if not area > 0:
+            raise ValueError("area must be positive")
+        k = float(np.sqrt(area / self.area))
+        return self.resized(self.length * k, self.width * k)
+
+    @classmethod
+    def from_mesh(cls, vertices, faces, length: float | None = None, width: float | None = None,
+                  normalise: bool = True) -> "LeafShape":
+        """A custom blade from a mesh of one leaf.
+
+        The mesh is read in leaf space: the base at the smallest x, the tip
+        along +x, the blade across ±y and any curl in z. With ``normalise``
+        it is mapped into unit space and its own extent becomes the default
+        size, so a leaf modelled in metres keeps the size it was drawn at.
+
+        Parameters
+        ----------
+        vertices
+            (V, 3) mesh vertices, or (V, 2) for a flat blade.
+        faces
+            (F, 3) triangles into ``vertices``.
+        length, width
+            Size to place the blade at (m); the mesh's own extent by default.
+        normalise
+            Map the mesh into unit leaf space. Pass False for vertices that
+            are already in it.
+
+        Returns
+        -------
+        LeafShape
+
+        Raises
+        ------
+        ValueError
+            If the mesh is empty or flat along the blade.
+        """
+        v = np.ascontiguousarray(vertices, float)
+        if v.ndim == 2 and v.shape[1] == 2:
+            v = np.column_stack([v, np.zeros(len(v))])
+        if v.ndim != 2 or v.shape[1] != 3 or len(v) == 0:
+            raise ValueError("vertices must be (V, 3) or (V, 2)")
+        size = v.max(0) - v.min(0)
+        if not normalise:
+            return cls(v, faces, length or 0.08, width or 0.04)
+        if not (size[0] > 0 and size[1] > 0):
+            raise ValueError("the mesh has no extent along or across the blade")
+        v = (v - [v[:, 0].min(), 0.5 * (v[:, 1].min() + v[:, 1].max()), 0.5 * (v[:, 2].min() + v[:, 2].max())])
+        v = v / [size[0], size[1], size[1]]
+        return cls(v, faces, size[0] if length is None else length, size[1] if width is None else width)
+
+    @classmethod
+    def from_obj(cls, path: str | Path, length: float | None = None, width: float | None = None,
+                 normalise: bool = True) -> "LeafShape":
+        """A custom blade from an OBJ file holding one leaf.
+
+        Only ``v`` and ``f`` lines are read; polygons are fanned into
+        triangles and texture and normal indices are ignored.
+
+        Parameters
+        ----------
+        path
+            OBJ file of a single leaf, oriented as in :meth:`from_mesh`.
+        length, width
+            Size to place the blade at (m); the mesh's own extent by default.
+        normalise
+            Map the mesh into unit leaf space.
+
+        Returns
+        -------
+        LeafShape
+
+        Raises
+        ------
+        ValueError
+            If the file holds no faces.
+        """
+        v, f = [], []
+        for line in Path(path).read_text().splitlines():
+            w = line.split()
+            if not w:
+                continue
+            if w[0] == "v":
+                v.append([float(x) for x in w[1:4]])
+            elif w[0] == "f":
+                idx = [int(p.split("/")[0]) for p in w[1:]]
+                idx = [i - 1 if i > 0 else len(v) + i for i in idx]
+                f += [[idx[0], idx[t], idx[t + 1]] for t in range(1, len(idx) - 1)]
+        if not f:
+            raise ValueError(f"{path} holds no faces")
+        return cls.from_mesh(np.array(v, float), np.array(f, np.uint32), length, width, normalise)
+
+
+_DEFAULT = LeafShape()
+
+
+def default_leaf() -> LeafShape:
+    """The leaf :func:`add_leaves` uses when none is given.
+
+    Returns
+    -------
+    LeafShape
+    """
+    return _DEFAULT
+
+
+def set_default_leaf(shape: LeafShape | None = None, length: float | None = None,
+                     width: float | None = None) -> LeafShape:
+    """Set the leaf :func:`add_leaves` uses when none is given.
+
+    Sets it for the process, so a site's leaf size or a scanned blade is
+    chosen once rather than at every call::
+
+        leaves.set_default_leaf(length=0.15, width=0.06)
+
+    Parameters
+    ----------
+    shape
+        Blade to make the default; the current default if None.
+    length, width
+        Size to set on it (m); unchanged where None.
+
+    Returns
+    -------
+    LeafShape
+        The previous default, to restore it later.
+    """
+    global _DEFAULT
+    was = _DEFAULT
+    _DEFAULT = (shape or _DEFAULT).resized(length, width)
+    return was
 
 
 @dataclass
@@ -435,8 +645,9 @@ class LeafMesh:
 
 
 def add_leaves(model: QSM | None, leaf_area: LeafAreaGrid | float, angles: LeafAngleDistribution | str = "spherical",
-               leaf_points=None, leaf_length: float = 0.08, leaf_width: float = 0.04,
-               max_branch_distance: float = 0.5, jitter: float = 0.01, seed: int = 1) -> LeafMesh:
+               leaf_points=None, leaf_length: float | None = None, leaf_width: float | None = None,
+               shape: LeafShape | None = None, max_branch_distance: float = 0.5, jitter: float = 0.01,
+               seed: int = 1) -> LeafMesh:
     """Leaf polygons for a QSM.
 
     ``leaf_area`` is a :class:`LeafAreaGrid`, or a total (m2) to spread over
@@ -458,7 +669,11 @@ def add_leaves(model: QSM | None, leaf_area: LeafAreaGrid | float, angles: LeafA
     leaf_points
         Leaf points to centre leaves on; required with a total area.
     leaf_length, leaf_width
-        Leaf size (m); area per leaf is :func:`single_leaf_area`.
+        Leaf size (m); the shape's own size by default. Area per leaf is
+        :attr:`LeafShape.area`.
+    shape
+        Blade to cut the leaves from, such as one scanned from life
+        (:meth:`LeafShape.from_obj`); :func:`default_leaf` by default.
     max_branch_distance
         Leaves within this distance (m) of a cylinder are attached to it.
     jitter
@@ -488,9 +703,11 @@ def add_leaves(model: QSM | None, leaf_area: LeafAreaGrid | float, angles: LeafA
     o = np.asarray(leaf_area.origin, float)
     cyl = cyl.copy()
     cyl[:, 0:3] -= o
+    shape = (shape or _DEFAULT).resized(leaf_length, leaf_width)
     d = _core.insert_leaves(np.ascontiguousarray(centres - o), np.ascontiguousarray(area), float(leaf_area.voxel_size),
-                            np.ascontiguousarray(seeds - o), angles.bin_centres, angles.density, cyl, float(leaf_length),
-                            float(leaf_width), float(max_branch_distance), float(jitter), int(seed))
+                            np.ascontiguousarray(seeds - o), angles.bin_centres, angles.density, cyl, shape.length,
+                            shape.width, float(max_branch_distance), float(jitter), int(seed),
+                            shape.vertices, shape.faces)
     d["vertices"] = d["vertices"] + o
     d["centres"] = d["centres"] + o
     return LeafMesh(**d)

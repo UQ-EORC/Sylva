@@ -190,6 +190,8 @@ pub struct LeafParams {
     /// Blade length and greatest width (m).
     pub length: f64,
     pub width: f64,
+    /// Shape of one blade, in unit leaf space.
+    pub blade: LeafBlade,
     /// Leaves whose centre is within this distance of a cylinder axis point
     /// away from it; further ones take a random in-plane direction.
     pub max_branch_distance: f64,
@@ -200,23 +202,51 @@ pub struct LeafParams {
 
 impl Default for LeafParams {
     fn default() -> Self {
-        LeafParams { length: 0.08, width: 0.04, max_branch_distance: 0.5, jitter: 0.01, seed: 1 }
+        LeafParams { length: 0.08, width: 0.04, blade: LeafBlade::default(), max_branch_distance: 0.5, jitter: 0.01, seed: 1 }
     }
 }
 
-/// Outline of a unit leaf in its own plane, base at the origin, tip at
-/// `(1, 0)`, half-width 0.5 at 45 % of the length: `(along, across)`.
+/// A blade in unit leaf space: `(along, across, up)`, base at the origin, tip
+/// at `along = 1`, greatest width 1 across. A placed leaf scales `along` by
+/// the length and `across` and `up` by the width, so a blade may be curled
+/// or made of several leaflets, not only a flat outline.
+#[derive(Debug, Clone)]
+pub struct LeafBlade {
+    pub vertices: Vec<Point>,
+    pub faces: Vec<[u32; 3]>,
+}
+
+/// Outline of the built-in unit leaf in its own plane, base at the origin, tip
+/// at `(1, 0)`, half-width 0.5 at 45 % of the length: `(along, across)`.
 const OUTLINE: [(f64, f64); 6] = [(0.0, 0.0), (0.2, 0.36), (0.45, 0.5), (1.0, 0.0), (0.45, -0.5), (0.2, -0.36)];
 
-/// One-sided area of a leaf of the given length and width.
-pub fn single_leaf_area(length: f64, width: f64) -> f64 {
-    let mut a = 0.0;
-    for i in 0..OUTLINE.len() {
-        let (x0, y0) = OUTLINE[i];
-        let (x1, y1) = OUTLINE[(i + 1) % OUTLINE.len()];
-        a += x0 * y1 - x1 * y0;
+impl Default for LeafBlade {
+    fn default() -> Self {
+        LeafBlade {
+            vertices: OUTLINE.iter().map(|&(x, y)| [x, y, 0.0]).collect(),
+            faces: (1..OUTLINE.len() as u32 - 1).map(|t| [0, t, t + 1]).collect(),
+        }
     }
-    0.5 * a.abs() * length * width
+}
+
+impl LeafBlade {
+    /// One-sided area of this blade at the given length and width: the sum of
+    /// its triangles, so a flat outline gives the area it encloses.
+    pub fn area(&self, length: f64, width: f64) -> f64 {
+        let s = |v: &Point| [v[0] * length, v[1] * width, v[2] * width];
+        self.faces
+            .iter()
+            .map(|f| {
+                let (a, b, c) = (s(&self.vertices[f[0] as usize]), s(&self.vertices[f[1] as usize]), s(&self.vertices[f[2] as usize]));
+                0.5 * norm(&cross(&sub(&b, &a), &sub(&c, &a)))
+            })
+            .sum()
+    }
+}
+
+/// One-sided area of a leaf of the given length and width, for the built-in blade.
+pub fn single_leaf_area(length: f64, width: f64) -> f64 {
+    LeafBlade::default().area(length, width)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -246,7 +276,7 @@ impl LeafMesh {
 /// each must hold; `seeds` are leaf points (may be empty) that leaves are
 /// centred on where a cell has some; `cylinders` the QSM (may be empty).
 pub fn insert_leaves(cells: &[(Point, f64)], voxel_size: f64, seeds: &[Point], angles: &LeafAngles, cylinders: &[Cylinder], p: &LeafParams) -> LeafMesh {
-    let leaf_area = single_leaf_area(p.length, p.width);
+    let leaf_area = p.blade.area(p.length, p.width);
     let mut mesh = LeafMesh { leaf_area, ..Default::default() };
     if !(leaf_area > 0.0) || !(voxel_size > 0.0) {
         return mesh;
@@ -314,11 +344,12 @@ pub fn insert_leaves(cells: &[(Point, f64)], voxel_size: f64, seeds: &[Point], a
             let side = cross(&normal, &dir);
             let base = sub(&c, &scale(&dir, 0.5 * p.length));
             let v0 = mesh.vertices.len() as u32;
-            for (along, across) in OUTLINE {
-                mesh.vertices.push(add(&add(&base, &scale(&dir, along * p.length)), &scale(&side, across * p.width)));
+            for b in &p.blade.vertices {
+                let q = add(&scale(&dir, b[0] * p.length), &add(&scale(&side, b[1] * p.width), &scale(&normal, b[2] * p.width)));
+                mesh.vertices.push(add(&base, &q));
             }
-            for t in 1..OUTLINE.len() as u32 - 1 {
-                mesh.faces.push([v0, v0 + t, v0 + t + 1]);
+            for f in &p.blade.faces {
+                mesh.faces.push([v0 + f[0], v0 + f[1], v0 + f[2]]);
             }
             mesh.centres.push(c);
             mesh.normals.push(normal);

@@ -1199,9 +1199,9 @@ fn classify_leaf_wood_gbs<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxe
 }
 
 #[pyfunction]
-#[pyo3(signature = (cell_centres, cell_area, voxel_size, seeds, bin_centres, density, cylinders, length=0.08, width=0.04, max_branch_distance=0.5, jitter=0.01, seed=1))]
+#[pyo3(signature = (cell_centres, cell_area, voxel_size, seeds, bin_centres, density, cylinders, length=0.08, width=0.04, max_branch_distance=0.5, jitter=0.01, seed=1, blade_vertices=None, blade_faces=None))]
 #[allow(clippy::too_many_arguments)]
-fn insert_leaves<'py>(py: Python<'py>, cell_centres: PyReadonlyArray2<f64>, cell_area: PyReadonlyArray1<f64>, voxel_size: f64, seeds: PyReadonlyArray2<f64>, bin_centres: PyReadonlyArray1<f64>, density: PyReadonlyArray1<f64>, cylinders: PyReadonlyArray2<f64>, length: f64, width: f64, max_branch_distance: f64, jitter: f64, seed: u64) -> PyResult<Bound<'py, PyDict>> {
+fn insert_leaves<'py>(py: Python<'py>, cell_centres: PyReadonlyArray2<f64>, cell_area: PyReadonlyArray1<f64>, voxel_size: f64, seeds: PyReadonlyArray2<f64>, bin_centres: PyReadonlyArray1<f64>, density: PyReadonlyArray1<f64>, cylinders: PyReadonlyArray2<f64>, length: f64, width: f64, max_branch_distance: f64, jitter: f64, seed: u64, blade_vertices: Option<PyReadonlyArray2<f64>>, blade_faces: Option<PyReadonlyArray2<u32>>) -> PyResult<Bound<'py, PyDict>> {
     let centres = xyz_from_py(cell_centres)?;
     let area = cell_area.as_array().to_vec();
     if area.len() != centres.len() {
@@ -1214,7 +1214,23 @@ fn insert_leaves<'py>(py: Python<'py>, cell_centres: PyReadonlyArray2<f64>, cell
         return Err(PyValueError::new_err("bin_centres and density must be non-empty and equal in length"));
     }
     let model = if cylinders.as_array().nrows() > 0 { qsm_from_rows(cylinders)? } else { Default::default() };
-    let params = sylva_rs::leaves::LeafParams { length, width, max_branch_distance, jitter, seed };
+    let blade = match (blade_vertices, blade_faces) {
+        (Some(v), Some(f)) => {
+            let vertices = xyz_from_py(v)?;
+            let f = f.as_array();
+            if f.ncols() != 3 {
+                return Err(PyValueError::new_err("blade_faces must have three columns"));
+            }
+            let faces: Vec<[u32; 3]> = f.rows().into_iter().map(|r| [r[0], r[1], r[2]]).collect();
+            if faces.is_empty() || faces.iter().flatten().any(|&i| i as usize >= vertices.len()) {
+                return Err(PyValueError::new_err("blade_faces must be non-empty and index blade_vertices"));
+            }
+            sylva_rs::leaves::LeafBlade { vertices, faces }
+        }
+        (None, None) => sylva_rs::leaves::LeafBlade::default(),
+        _ => return Err(PyValueError::new_err("blade_vertices and blade_faces must be given together")),
+    };
+    let params = sylva_rs::leaves::LeafParams { length, width, blade, max_branch_distance, jitter, seed };
     let mesh = py.detach(|| sylva_rs::leaves::insert_leaves(&cells, voxel_size, &seeds, &angles, &model.cylinders, &params));
     let d = PyDict::new(py);
     let nf = mesh.faces.len();
