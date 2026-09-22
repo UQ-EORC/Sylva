@@ -1,12 +1,18 @@
 """Generate and execute the example notebooks.
 
-    python docs/examples/build_notebooks.py
+    python docs/examples/build_notebooks.py            # all
+    python docs/examples/build_notebooks.py 05_trees   # one
 
 Each notebook is defined below as a list of cells: a string starting with
 ``#`` followed by a space, or with plain prose, is Markdown when passed
-through ``md()``; everything else is code. The notebooks run on
-``sylva.synthetic`` scenes, so they need no data, and are saved with their
-outputs so the documentation does not have to execute them.
+through ``md()``; everything else is code. They are saved with their outputs
+so the documentation does not have to execute them.
+
+Most notebooks run on the real TLS tile in ``data/`` (20 x 20 m of the TERN
+Litchfield savanna plot, see ``make_litch_subset.py``). Where a known answer
+is needed -- registration with a known transform, QSM volume against a known
+taper, leaf area against a known scene -- they use a ``sylva.synthetic``
+scene instead, and say so.
 """
 
 from __future__ import annotations
@@ -25,12 +31,23 @@ class md(str):
 
 
 SETUP = """\
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
 import sylva
 from sylva import synthetic
 
+DATA = Path("data")          # the Litchfield tile, cut by make_litch_subset.py
 plt.rcParams.update({"figure.dpi": 90, "figure.figsize": (7, 4), "axes.grid": False})"""
+
+TILE = md("""The data: a 20 x 20 m tile of the TERN [Litchfield Savanna
+SuperSite](https://www.tern.org.au) plot in the Northern Territory, scanned in
+2021 with a RIEGL VZ-2000i from many positions and registered into one cloud.
+`litch_tile.laz` holds the echoes inside the tile thinned to 5 cm, with
+`classification` (2 ground, 4 vegetation) and `intensity`;
+`litch_tile_shots.parquet` holds every 40th pulse, clipped to the tile, misses
+included. The plot data are TERN's; `make_litch_subset.py` cuts the tile.""")
 
 NOTEBOOKS: dict[str, list] = {}
 
@@ -40,41 +57,53 @@ NOTEBOOKS["01_pointclouds_io"] = [
 `sylva.PointCloud` is an `(N, 3)` float64 array plus named per-point attributes.
 It is what readers return and what almost every function takes."""),
     SETUP,
-    md("A synthetic plot to work with: sloped terrain and four trees. `classification` and `tree_id` are the ground truth."),
+    TILE,
     """\
-cloud = synthetic.forest()
+cloud = sylva.read(DATA / "litch_tile.laz")
 print(cloud)
 lo, hi = cloud.bounds
 print("extent:", np.round(hi - lo, 2), "m")
 {k: (v.dtype, v.min(), v.max()) for k, v in cloud.attrs.items()}""",
-    md("Indexing with a mask, indices or a slice keeps the attributes aligned. `with_attrs` returns a copy with extra columns."),
+    md("""LAS files bring their standard dimensions along, whether or not the data
+filled them in: `return_number` and `scan_angle` here are artefacts of the
+export, while `classification` and `intensity` carry real information. Indexing
+with a mask, indices or a slice keeps every attribute aligned, and `with_attrs`
+returns a copy with extra columns."""),
     """\
-wood = cloud[cloud.attrs["classification"] == 5]
+veg = cloud[cloud.attrs["classification"] == 4]
+ground_pts = cloud[cloud.attrs["classification"] == 2]
 cloud = cloud.with_attrs(range=np.linalg.norm(cloud.xyz - [10, 10, 1.5], axis=1).astype(np.float32))
-print(wood, cloud, sep="\\n")""",
+print(veg, ground_pts, sep="\\n")
+print("vegetation:", f"{len(veg) / len(cloud):.0%} of the tile")""",
     """\
-fig, ax = plt.subplots(1, 2, figsize=(10, 4))
-s = ax[0].scatter(cloud.x[::5], cloud.y[::5], c=cloud.z[::5], s=0.3, cmap="viridis")
-ax[0].set(title="top view, coloured by z", xlabel="x (m)", ylabel="y (m)", aspect="equal")
+fig, ax = plt.subplots(1, 2, figsize=(11, 4.4))
+s = ax[0].scatter(cloud.x[::4], cloud.y[::4], c=cloud.z[::4], s=0.2, cmap="viridis")
+ax[0].set(title="top view, coloured by height", xlabel="x (m)", ylabel="y (m)", aspect="equal")
 fig.colorbar(s, ax=ax[0], label="z (m)")
-ax[1].scatter(cloud.x[::5], cloud.z[::5], c=cloud.attrs["classification"][::5], s=0.3, cmap="Set1")
-ax[1].set(title="side view, coloured by class", xlabel="x (m)", ylabel="z (m)", aspect="equal");""",
+slab = (cloud.y > 9) & (cloud.y < 11)
+ax[1].scatter(cloud.x[slab], cloud.z[slab], s=0.2,
+              c=np.where(cloud.attrs["classification"][slab] == 2, "tab:brown", "tab:green"))
+ax[1].set(title="2 m slice: ground (brown) and vegetation", xlabel="x (m)", ylabel="z (m)", aspect="equal");""",
     md("""## Reading and writing
 
 `sylva.read` / `sylva.write` pick the format from the extension: LAS/LAZ (extra
 attributes become typed extra-bytes dimensions), PLY, and delimited text.
-RIEGL `.rxp` needs RiVLib, see `sylva.io.read_rxp`."""),
+RIEGL `.rxp` needs RiVLib, see `sylva.io.read_rxp`. This tile came from a
+raycloudtools ray cloud, which `read` also opens -- `nx, ny, nz` then point
+from each echo back to the scanner (notebook 8)."""),
     """\
-import tempfile, pathlib
-tmp = pathlib.Path(tempfile.mkdtemp())
-for name in ("plot.laz", "plot.ply", "plot.csv"):
-    sylva.write(cloud, tmp / name)
+import tempfile
+tmp = Path(tempfile.mkdtemp())
+small = cloud[::20]
+for name in ("tile.laz", "tile.ply", "tile.csv"):
+    sylva.write(small, tmp / name)
     back = sylva.read(tmp / name)
     print(f"{name:9s} {(tmp / name).stat().st_size / 1e6:6.2f} MB  {len(back):,} points  attrs: {sorted(back.attrs)}")""",
     """\
-laz = sylva.read(tmp / "plot.laz")
-print("max coordinate error after LAZ (1 mm scale):", np.abs(laz.xyz - cloud.xyz).max())
-print("range attribute dtype preserved:", laz.attrs["range"].dtype)""",
+laz = sylva.read(tmp / "tile.laz")
+print("max coordinate error after LAZ (1 mm scale):", np.abs(laz.xyz - small.xyz).max())
+print("classification dtype preserved:", laz.attrs["classification"].dtype,
+      " range attribute:", laz.attrs["range"].dtype)""",
     md("Plain arrays come in through `PointCloud.from_array`, naming the columns after x, y, z."),
     """\
 arr = np.column_stack([cloud.xyz, cloud.attrs["classification"]])
@@ -84,58 +113,88 @@ sylva.PointCloud.from_array(arr, names={3: "classification"})""",
 NOTEBOOKS["02_filtering"] = [
     md("""# 2. Filtering
 
-Thinning, cropping, outlier removal and local geometry from `sylva.filters`."""),
-    SETUP + "\nfrom sylva import filters\n\ncloud = synthetic.forest()",
-    md("## Subsampling"),
+Thinning, cropping, outlier removal and local geometry from `sylva.filters`,
+on the Litchfield tile."""),
+    SETUP + "\nfrom sylva import filters\n\ncloud = sylva.read(DATA / \"litch_tile.laz\")",
+    md("""## Subsampling
+
+Registered plot clouds are far denser near the scanners than between them.
+Voxel downsampling keeps one point per cell, `min_distance_subsample` enforces
+a spacing without the grid pattern, and random thinning keeps the density
+gradient as it is."""),
     """\
 thin = {
-    "voxel 5 cm": filters.voxel_downsample(cloud, 0.05),
-    "voxel 5 cm (centroid)": filters.voxel_downsample(cloud, 0.05, method="centroid"),
+    "voxel 10 cm": filters.voxel_downsample(cloud, 0.10),
+    "voxel 10 cm (centroid)": filters.voxel_downsample(cloud, 0.10, method="centroid"),
     "random 20 %": filters.random_subsample(cloud, fraction=0.2),
-    "min distance 5 cm": filters.min_distance_subsample(cloud, 0.05),
+    "min distance 10 cm": filters.min_distance_subsample(cloud, 0.10),
 }
 for k, v in thin.items():
-    print(f"{k:24s} {len(v):>8,} of {len(cloud):,}")""",
-    md("## Crops"),
+    print(f"{k:24s} {len(v):>9,} of {len(cloud):,}")""",
+    md("## Crops\n\nA box, a circular subplot, and a range shell around a point."),
     """\
-box = filters.crop_box(cloud, (0, 0, -1), (10, 10, 30))
-cyl = filters.crop_cylinder(cloud, (8.0, 15.0), radius=3.0)
-near = filters.range_filter(cloud, origin=(10, 10, 1.5), max_range=6.0)
-fig, ax = plt.subplots(1, 3, figsize=(11, 3.6), sharex=True, sharey=True)
-for a, (name, c) in zip(ax, {"crop_box": box, "crop_cylinder": cyl, "range_filter": near}.items()):
-    a.scatter(cloud.x[::20], cloud.y[::20], s=0.2, c="0.8")
-    a.scatter(c.x[::5], c.y[::5], s=0.3, c="C2")
-    a.set(title=name, aspect="equal")""",
-    md("## Outliers\n\nAdd 500 stray points and remove them again. Statistical removal compares each point's mean neighbour distance with the cloud-wide distribution; radius removal needs a minimum number of neighbours."),
-    """\
-rng = np.random.default_rng(1)
-lo, hi = cloud.bounds
-noise = rng.uniform(lo, hi + [0, 0, 5], (500, 3))
-noisy = sylva.PointCloud(np.vstack([cloud.xyz, noise]))
-is_noise = np.arange(len(noisy)) >= len(cloud)
+box = filters.crop_box(cloud, (0, 0, 2.0), (20, 20, None))          # everything above 2 m
+plot = filters.crop_cylinder(cloud, (10.0, 10.0), radius=5.0)       # a 5 m radius subplot
+shell = filters.range_filter(cloud, origin=(10, 10, 1.0), min_range=4.0, max_range=8.0)
+fig, ax = plt.subplots(1, 3, figsize=(12, 3.8), sharex=True, sharey=True)
+for a, (name, c) in zip(ax, {"crop_box (z > 2 m)": box, "crop_cylinder (r = 5 m)": plot,
+                             "range_filter (4-8 m)": shell}.items()):
+    a.scatter(cloud.x[::20], cloud.y[::20], s=0.2, c="0.85")
+    a.scatter(c.x[::8], c.y[::8], s=0.2, c="C2")
+    a.set(title=f"{name}\\n{len(c):,} points", aspect="equal")""",
+    md("""## Outliers
 
-sor = filters.statistical_outlier_removal(noisy, k=8, std_ratio=2.0, return_mask=True)
-ror = filters.radius_outlier_removal(noisy, radius=0.25, min_neighbors=4, return_mask=True)
-for name, keep in (("statistical", sor), ("radius", ror)):
-    print(f"{name:12s} removed {np.sum(~keep & is_noise)} of 500 stray points and {np.sum(~keep & ~is_noise)} real ones")""",
-    md("## Local geometry\n\nPCA over the `k` nearest neighbours gives normals and the planarity / linearity used by the wood filter: stems and branches are planar or linear at this scale, foliage is neither."),
+Two filters, both deciding from the neighbourhood: statistical removal compares
+each point's mean distance to its `k` neighbours against the cloud-wide
+distribution, radius removal needs a minimum count inside a ball. On real data there is no
+truth to check against, so look at what they actually take. Here the two
+disagree completely: the statistical filter removes 4 % of the cloud, most of
+it the thin grass layer near the ground, because sparse-but-real vegetation
+looks like noise by that test; the radius filter removes 77 genuinely isolated
+points. Tune on the part of the cloud you care about, or the filter will eat
+the understorey."""),
     """\
-t = synthetic.tree(seed=3)
-planarity, linearity = filters.planarity_linearity(t, k=20)
+thinned = filters.voxel_downsample(cloud, 0.05)
+sor = filters.statistical_outlier_removal(thinned, k=8, std_ratio=2.0, return_mask=True)
+ror = filters.radius_outlier_removal(thinned, radius=0.25, min_neighbors=4, return_mask=True)
+for name, keep in (("statistical (k=8, 2 sd)", sor), ("radius (0.25 m, 4)", ror)):
+    drop = ~keep
+    print(f"{name:24s} drops {drop.sum():>6,} ({drop.mean():.2%}); "
+          f"median height of dropped points {np.median(thinned.z[drop]):5.1f} m vs {np.median(thinned.z):.1f} m overall")""",
+    """\
+fig, ax = plt.subplots(figsize=(9, 4.5))
+drop = ~ror
+ax.scatter(thinned.x[::4], thinned.z[::4], s=0.2, c="0.8")
+ax.scatter(thinned.x[drop], thinned.z[drop], s=1.5, c="C3")
+ax.set(title="points dropped by radius_outlier_removal (red)", xlabel="x (m)", ylabel="z (m)", aspect="equal");
+print("dropped by the statistical filter below 1 m:", f"{np.mean(thinned.z[~sor] < 1.0):.0%}")""",
+    md("""## Local geometry
+
+PCA over the `k` nearest neighbours gives normals and the planarity / linearity
+the wood filter uses. On a real stem, bark is locally planar and the trunk
+is linear at metre scale, while the grass layer is neither."""),
+    """\
+stem = filters.crop_cylinder(cloud, (4.8, 7.5), radius=1.2, zmin=0.5, zmax=8.0)
+planarity, linearity = filters.planarity_linearity(stem, k=20)
 fig, ax = plt.subplots(1, 2, figsize=(9, 4.5), sharey=True)
 for a, v, name in ((ax[0], planarity, "planarity"), (ax[1], linearity, "linearity")):
-    s = a.scatter(t.x, t.z, c=v, s=0.4, cmap="magma", vmin=0, vmax=1)
+    sc = a.scatter(stem.x, stem.z, c=v, s=0.6, cmap="magma", vmin=0, vmax=1)
     a.set(title=name, xlabel="x (m)", aspect="equal")
 ax[0].set_ylabel("z (m)")
-fig.colorbar(s, ax=ax, shrink=0.8);""",
-    md("## Clustering\n\n`euclidean_clusters` labels connected components (points closer than `radius`). Above the ground the four trees separate."),
+fig.colorbar(sc, ax=ax, shrink=0.8);""",
+    md("""## Clustering
+
+`euclidean_clusters` labels connected components of the radius graph. Above the
+grass layer the savanna crowns mostly separate, which is the cheap version of
+tree segmentation -- notebook 5 does it properly, because crowns that touch
+merge here."""),
     """\
-above = cloud[cloud.z - synthetic.terrain_height(cloud.x, cloud.y) > 0.5]
-above = filters.voxel_downsample(above, 0.1)
-labels = filters.euclidean_clusters(above.xyz, radius=0.35, min_points=50)
-print("clusters:", labels.max() + 1, " unassigned points:", np.sum(labels < 0))
-plt.scatter(above.x, above.y, c=labels, s=0.5, cmap="tab10")
-plt.gca().set(aspect="equal", xlabel="x (m)", ylabel="y (m)");""",
+above = filters.voxel_downsample(cloud[cloud.z > 2.0], 0.15)
+labels = filters.euclidean_clusters(above.xyz, radius=0.4, min_points=200)
+print("clusters:", labels.max() + 1, " unassigned points:", int(np.sum(labels < 0)),
+      " largest cluster:", int(np.sum(labels == 0)), "points")
+plt.scatter(above.x, above.y, c=np.where(labels < 0, np.nan, labels % 10), s=1.0, cmap="tab10")
+plt.gca().set(aspect="equal", xlabel="x (m)", ylabel="y (m)", title="crown clusters above 2 m");""",
 ]
 
 NOTEBOOKS["03_registration"] = [
@@ -197,105 +256,160 @@ NOTEBOOKS["04_ground"] = [
 
 Classify ground returns, interpolate a terrain model, and turn elevations into
 heights above ground."""),
-    SETUP + "\nfrom sylva import ground\n\ncloud = synthetic.forest().without('classification')",
+    SETUP + "\nfrom sylva import canopy, filters, ground\n\ncloud = filters.voxel_downsample(sylva.read(DATA / \"litch_tile.laz\"), 0.05)",
     md("""## Ground classification
 
 Two filters: the cloth simulation filter (CSF, Zhang et al. 2016) drapes a
 cloth over the inverted cloud; the progressive morphological filter (PMF,
-Zhang et al. 2003) opens a minimum surface with growing windows. CSF suits
-multi-scan plots and open terrain, PMF copes better with single scans where
-some cells have no ground return at all."""),
+Zhang et al. 2003) opens a minimum surface with growing windows.
+
+The tile's own `classification` came from PMF (see `make_litch_subset.py`), so
+compare the two directly. On this savanna tile CSF leaves the terrain several
+metres too high in about 8 % of cells -- the cloth hangs on the dense grass and
+shrub layer -- while PMF's opening removes it. Which filter wins is a property
+of the stand, so check a profile before trusting either."""),
     """\
-truth = synthetic.forest().attrs["classification"] == 2
-for name, f in (("CSF", ground.classify_ground_csf), ("PMF", ground.classify_ground_pmf)):
-    g = ground.ground_mask(f(cloud))
-    print(f"{name}: {g.sum():,} ground points; recall {np.mean(g[truth]):.3f}, false positives {np.sum(g & ~truth):,}")
-cloud = ground.classify_ground_csf(cloud)""",
-    md("## DTM and height normalisation"),
+csf = ground.ground_mask(ground.classify_ground_csf(cloud))
+pmf = ground.ground_mask(ground.classify_ground_pmf(cloud))
+for name, m in (("CSF", csf), ("PMF", pmf)):
+    print(f"{name}: {m.sum():>8,} ground points ({m.mean():.1%}); "
+          f"highest ground point {cloud.z[m].max():5.2f} m")
+
+dtm_csf = ground.make_dtm(cloud.with_attrs(classification=np.where(csf, 2, 1).astype("uint8")), 0.5, bounds=(0, 0, 20, 20))
+dtm = ground.make_dtm(cloud.with_attrs(classification=np.where(pmf, 2, 1).astype("uint8")), 0.5, bounds=(0, 0, 20, 20))
+diff = dtm_csf.data - dtm.data
+print(f"CSF above PMF by more than 0.5 m in {np.mean(diff > 0.5):.1%} of cells, "
+      f"95th percentile {np.nanpercentile(diff, 95):.1f} m")""",
     """\
-dtm = ground.make_dtm(cloud, resolution=0.5)
-X, Y = dtm.cell_centers()
-print("DTM", dtm.shape, "cells; RMSE against the true surface:",
-      round(float(np.sqrt(np.nanmean((dtm.data - synthetic.terrain_height(X, Y)) ** 2))), 3), "m")
+fig, ax = plt.subplots(1, 2, figsize=(11, 4), sharex=True, sharey=True)
+slab = (cloud.y > 9) & (cloud.y < 11)
+for a, m, name in ((ax[0], csf, "CSF"), (ax[1], pmf, "PMF")):
+    a.scatter(cloud.x[slab], cloud.z[slab], s=0.3, c="0.75")
+    a.scatter(cloud.x[slab & m], cloud.z[slab & m], s=1.0, c="C3")
+    a.set(title=f"{name} ground points, 2 m slice", xlabel="x (m)", ylim=(-1, 6))
+ax[0].set_ylabel("z (m)");""",
+    md("## DTM, heights and CHM"),
+    """\
 cloud = ground.normalize_height(cloud, dtm)          # adds the 'height' attribute
-flat = ground.flatten(cloud, dtm)                    # or replace z itself""",
+flat = ground.flatten(cloud, dtm)                    # or replace z itself
+chm = ground.make_chm(cloud, resolution=0.5)
+print("terrain relief across the tile:", round(float(np.nanmax(dtm.data) - np.nanmin(dtm.data)), 2), "m")
+print("canopy height p99:", round(float(np.percentile(cloud.attrs["height"], 99)), 1), "m,",
+      "max", round(float(cloud.attrs["height"].max()), 1), "m")
+print("canopy cover above 2 m:", round(float(canopy.canopy_cover(chm.data, 2.0)), 3))""",
     """\
-fig, ax = plt.subplots(1, 2, figsize=(10, 3.6))
-ax[0].scatter(cloud.x[::5], cloud.z[::5], s=0.2, c=cloud.attrs["classification"][::5], cmap="coolwarm")
-ax[0].set(title="elevation (ground in red)", xlabel="x (m)", ylabel="z (m)")
-ax[1].scatter(cloud.x[::5], cloud.attrs["height"][::5], s=0.2, c="C2")
-ax[1].set(title="height above ground", xlabel="x (m)", ylabel="height (m)");""",
-    md("## Canopy height model"),
-    """\
-from sylva import canopy
-chm = ground.make_chm(cloud, resolution=0.25)
-fig, ax = plt.subplots(1, 2, figsize=(10, 4))
+fig, ax = plt.subplots(1, 3, figsize=(14, 3.8))
 for a, r, title, cmap in ((ax[0], dtm, "DTM (m)", "terrain"), (ax[1], chm, "CHM (m)", "YlGn")):
     im = a.imshow(r.data, origin="lower", extent=(r.xmin, r.xmax, r.ymin, r.ymax), cmap=cmap)
-    a.set_title(title); fig.colorbar(im, ax=a, shrink=0.8)
-print("canopy cover above 2 m:", round(canopy.canopy_cover(chm.data, 2.0), 3))
-print("tallest point:", round(float(chm.data.max()), 2), "m (the tallest stem is 15 m, with foliage above it)")
-chm.to_ascii_grid("chm.asc")   # or .to_geotiff() with rasterio""",
+    a.set(title=title, xlabel="x (m)"); fig.colorbar(im, ax=a, shrink=0.85)
+ax[2].scatter(cloud.x[slab], cloud.attrs["height"][slab], s=0.3, c="C2")
+ax[2].set(title="height above ground, 2 m slice", xlabel="x (m)", ylabel="height (m)");""",
+    md("""Rasters export to an ESRI ASCII grid, or to GeoTIFF with
+`dtm.to_geotiff("dtm.tif", crs="EPSG:28352")` when `rasterio` is installed
+(`pip install sylva-rs[geotiff]`). Pass the same `bounds` on every date so a
+time series lines up."""),
+    """\
+chm.to_ascii_grid("chm.asc")
+sylva.write(cloud, "tile_normalized.laz")       # keeps 'height' as an extra-bytes dimension
+print(sorted(sylva.read("tile_normalized.laz").attrs))""",
 ]
 
 NOTEBOOKS["05_trees"] = [
     md("""# 5. Trees
 
 Stem detection and DBH, segmentation of the cloud into trees, heights and
-crown metrics. Everything here works on a height-normalised cloud (notebook 4)."""),
+crown metrics, on a height-normalised cloud (notebook 4)."""),
     SETUP + """
-from sylva import ground, trees
+from sylva import filters, ground, trees
 
-cloud = ground.classify_ground_csf(synthetic.forest().without("classification"))
-cloud = ground.normalize_height(cloud, ground.make_dtm(cloud, 0.5))""",
-    md("## Stems\n\n`detect_stems` fits RANSAC circles in horizontal slices around breast height, links them vertically into stems, and reports DBH at 1.3 m with quality measures."),
+cloud = filters.voxel_downsample(sylva.read(DATA / "litch_tile.laz"), 0.02)
+dtm = ground.make_dtm(ground.classify_ground_pmf(cloud), 0.5, bounds=(0, 0, 20, 20))
+cloud = ground.normalize_height(cloud, dtm)""",
+    md("""## Stems
+
+`detect_stems` fits RANSAC circles in horizontal slices from 1 to 5 m, links
+them vertically, and reports DBH at 1.3 m with quality measures. It favours
+recall: the candidates below include shrubs and low branches, which the next
+steps remove."""),
     """\
 stems = trees.detect_stems(cloud)
-print(f"{'id':>2} {'x':>6} {'y':>6} {'dbh':>6} {'cover':>6} {'slices':>6} {'quality':>7}")
-for t in stems:
-    print(f"{t.tree_id:>2} {t.x:6.2f} {t.y:6.2f} {t.dbh:6.3f} {t.inlier_fraction:6.2f} {t.n_slices:>6} {t.quality:7.2f}")
-print("\\ntruth (x, y, dbh):", [(x, y, d) for x, y, d, _ in synthetic.DEFAULT_TREES])""",
-    md("## Segmentation\n\nEvery point is assigned to a stem by shortest path over a neighbourhood graph, then heights are measured and spurious candidates pruned."),
-    """\
-labels = trees.segment_trees(cloud, stems)
-trees.tree_heights(cloud, labels, stems)
-stems, labels = trees.prune_trees(stems, labels)
-crowns = trees.crown_metrics_all(cloud, labels)
-for t in stems:
-    c = crowns[t.tree_id]
-    print(f"tree {t.tree_id}: DBH {t.dbh:.3f} m, height {t.height:5.2f} m, crown area {c['crown_area']:5.1f} m2, "
-          f"crown base {c['crown_base_height']:.1f} m")""",
-    """\
-truth = synthetic.forest().attrs["tree_id"]
-veg = truth > 0
-match = {t.tree_id: np.bincount(truth[labels == t.tree_id]).argmax() for t in stems}
-correct = np.mean([match.get(l, -1) == g for l, g in zip(labels[veg][::10], truth[veg][::10])])
-print(f"vegetation points on the right tree: {correct:.1%}")
+print(f"{len(stems)} candidates")
+print(f"{'id':>3} {'x':>6} {'y':>6} {'dbh':>6} {'cover':>6} {'slices':>6} {'rmse':>6} {'quality':>7}")
+for t in stems[:12]:
+    print(f"{t.tree_id:>3} {t.x:6.2f} {t.y:6.2f} {t.dbh:6.3f} {t.inlier_fraction:6.2f} "
+          f"{t.n_slices:>6} {t.rmse:6.3f} {t.quality:7.2f}")""",
+    md("""## Segmentation and pruning
 
-fig, ax = plt.subplots(1, 2, figsize=(10, 4.2))
-m = labels > 0
-ax[0].scatter(cloud.x[m][::3], cloud.y[m][::3], c=labels[m][::3], s=0.4, cmap="tab10")
-for t in stems:
-    ax[0].add_patch(plt.Circle((t.x, t.y), t.dbh / 2, fill=False, color="k"))
-    ax[0].annotate(str(t.tree_id), (t.x + 0.4, t.y + 0.4))
-ax[0].set(title="tree labels", aspect="equal")
-ax[1].scatter(cloud.x[m][::3], cloud.attrs["height"][m][::3], c=labels[m][::3], s=0.4, cmap="tab10")
-ax[1].set(title="side view", xlabel="x (m)", ylabel="height (m)");""",
-    md("## Taper\n\n`dbh_profile` fits circles up the stem."),
+`merge_branches` folds limbs back into their own tree, `segment_trees` grows
+each tree from its stem by least-cost paths over a kNN graph, `tree_heights`
+measures the result, and `prune_trees` drops what is too short and merges
+duplicate stems."""),
     """\
-big = max(stems, key=lambda t: t.dbh)
-heights = np.arange(0.5, 8.0, 0.5)
-diam = trees.dbh_profile(cloud, (big.x, big.y), heights=heights)
-plt.plot(diam[:, 1], diam[:, 0], "o-")
-plt.gca().set(xlabel="diameter (m)", ylabel="height (m)", title=f"taper of tree {big.tree_id}");""",
-    md("Save the result: `sylva.write(cloud.with_attrs(tree_id=labels), 'plot_trees.laz')`."),
+stems, merged_into = trees.merge_branches(cloud, stems)
+labels = trees.segment_trees(cloud, stems)
+trees.tree_heights(cloud, labels, stems, percentile=99)
+stems, labels = trees.prune_trees(stems, labels, min_height=3.0)
+crowns = trees.crown_metrics_all(cloud, labels)
+print(f"{len(stems)} trees after pruning; {np.mean(labels > 0):.0%} of points assigned")
+print(f"{'id':>3} {'dbh':>6} {'height':>7} {'crown area':>11} {'crown base':>11}")
+for t in stems[:10]:
+    c = crowns.get(t.tree_id, {})
+    print(f"{t.tree_id:>3} {t.dbh:6.3f} {t.height:7.1f} {c.get('crown_area', float('nan')):11.1f} "
+          f"{c.get('crown_base_height', float('nan')):11.1f}")""",
+    """\
+m = labels > 0
+fig, ax = plt.subplots(1, 2, figsize=(12, 4.6))
+ax[0].scatter(cloud.x[~m][::10], cloud.y[~m][::10], s=0.2, c="0.85")
+ax[0].scatter(cloud.x[m][::4], cloud.y[m][::4], c=labels[m][::4] % 10, s=0.3, cmap="tab10")
+for t in stems:
+    ax[0].add_patch(plt.Circle((t.x, t.y), max(t.dbh / 2, 0.15), fill=False, color="k", lw=0.8))
+    ax[0].annotate(str(t.tree_id), (t.x + 0.3, t.y + 0.3), fontsize=7)
+ax[0].set(title="tree labels and stem positions", xlabel="x (m)", ylabel="y (m)", aspect="equal")
+ax[1].scatter(cloud.x[m][::4], cloud.attrs["height"][m][::4], c=labels[m][::4] % 10, s=0.3, cmap="tab10")
+ax[1].set(title="side view", xlabel="x (m)", ylabel="height (m)");""",
+    md("""There is no field inventory for this tile, so treat the table as a
+demonstration: detection and segmentation are scored against manually
+segmented plots (including Litchfield) in
+[Benchmarks](../benchmarks/trees.md). Where labels have to be right, correct
+them by hand in [Segfix](https://github.com/tim-devereux/segfix), which reads
+and writes the `tree_id` column:"""),
+    """\
+ids = np.where(labels > 0, labels, 0).astype("int32")      # Segfix: 0 = unassigned
+sylva.write(cloud.with_attrs(tree_id=ids), "tile_trees.laz")""",
+    md("## The tree table\n\n`Tree.as_dict` and the crown metrics make one row per tree."),
+    """\
+import pandas as pd
+
+table = pd.DataFrame([{**t.as_dict(), **crowns.get(t.tree_id, {})} for t in stems])
+table.to_csv("trees.csv", index=False)
+table[["tree_id", "x", "y", "dbh", "height", "crown_area", "crown_depth", "quality"]].head(8).round(2)""",
+    md("""The candidates with a large DBH but a height of about 3 m are shrub
+and grass clumps that the slice fits read as wide stems; their `quality` is
+around 0.1 against 0.5 for the real trees, and `prune_trees(...,
+min_quality_short=0.15)` or a `max_dbh` removes them. Measure the taper on a
+tree that detection is confident about instead."""),
+    md("## Taper and crown shape"),
+    """\
+big = max(stems, key=lambda t: t.height)
+diam = trees.dbh_profile(cloud, (big.x, big.y), heights=np.arange(0.5, 8.0, 0.5))
+shape = trees.crown_shape(cloud[labels == big.tree_id], base_xy=(big.x, big.y))
+print(f"tree {big.tree_id}: DBH {big.dbh:.3f} m, height {big.height:.1f} m, "
+      f"crown volume {shape['volume']:.0f} m3, asymmetry {shape['asymmetry']:.2f}")
+fig, ax = plt.subplots(1, 2, figsize=(9, 4))
+ax[0].plot(diam[:, 1], diam[:, 0], "o-")
+ax[0].set(xlabel="diameter (m)", ylabel="height (m)", title=f"taper of tree {big.tree_id}")
+sel = labels == big.tree_id
+ax[1].scatter(cloud.x[sel], cloud.attrs["height"][sel], s=0.3, c="C2")
+ax[1].set(xlabel="x (m)", title=f"tree {big.tree_id}", aspect="equal");""",
 ]
 
 NOTEBOOKS["06_qsm"] = [
     md("""# 6. Quantitative structure models
 
 From the points of one tree to a connected set of cylinders with volumes and
-branch orders."""),
+branch orders. This one starts on a synthetic tree, whose stem volume follows
+from its taper, so the model can be checked against a known answer; a real
+tree from the Litchfield tile follows."""),
     SETUP + "\nfrom sylva import qsm\n\ntree = synthetic.tree(dbh=0.35, height=14.0, seed=4)\nprint(tree)",
     md("""## Leaf / wood separation
 
@@ -331,6 +445,41 @@ fig, ax = plt.subplots(figsize=(5, 6))
 for s, e, r, o in zip(start, end, model.column("radius"), order):
     ax.plot([s[0], e[0]], [s[2], e[2]], color=f"C{min(o, 9)}", lw=max(0.6, r * 120), solid_capstyle="round")
 ax.set(aspect="equal", xlabel="x (m)", ylabel="z (m)", title="cylinders, coloured by branch order");""",
+    md("""## A real tree, and why to check `measured_volume_fraction`
+
+The same steps on the tallest tree of the Litchfield tile (notebook 5). The
+tile is thinned to 5 cm and cut out of a decimated ray cloud, so the trunk and
+branches are sampled far more thinly than a single-tree scan: most cylinders
+end up interpolated rather than fitted. `metrics()["measured_volume_fraction"]`
+says how much of the volume came from real fits, and it is the flag to filter
+on before using QSM volumes."""),
+    """\
+from sylva import filters, ground, trees
+
+plot = filters.voxel_downsample(sylva.read(DATA / "litch_tile.laz"), 0.02)
+plot = ground.normalize_height(plot, ground.make_dtm(ground.classify_ground_pmf(plot), 0.5, bounds=(0, 0, 20, 20)))
+stems = trees.detect_stems(plot)
+stems, _ = trees.merge_branches(plot, stems)
+labels = trees.segment_trees(plot, stems)
+trees.tree_heights(plot, labels, stems)
+stems, labels = trees.prune_trees(stems, labels, min_height=3.0)
+tallest = max(stems, key=lambda t: t.height)
+
+points = plot[labels == tallest.tree_id]
+points = points[points.attrs["height"] > 0.3]      # leave the grass layer out of the base fit
+real = qsm.build_qsm(qsm.wood_points(points, voxel_size=0.02), base_xy=(tallest.x, tallest.y))
+print(f"detection: DBH {tallest.dbh:.3f} m, height {tallest.height:.1f} m")
+print(f"QSM:       DBH {real.dbh:.3f} m, stem {real.stem_volume:.2f} m3, total {real.total_volume:.2f} m3, "
+      f"{real.summary()['n_cylinders']} cylinders")
+print(f"measured volume fraction: {real.metrics()['measured_volume_fraction']:.2f} "
+      "-- on a single-tree scan this is above 0.8")""",
+    md("""Two lessons. The DBHs agree (0.31 m against 0.32 m), because breast
+height is where the stem is best sampled. The volume should not be quoted:
+less than half of it was fitted to points. Keeping the grass out of the base
+matters too -- without the height cut the base cylinder swallows the tussocks
+and the QSM DBH comes out at 0.50 m. Volumes are validated against felled
+trees in [Benchmarks](../benchmarks/qsm.md), on single-tree clouds two orders
+of magnitude denser than this tile."""),
     md("## Export\n\nA cylinder table, a raycloudtools-style tree file, and meshes for Blender / CloudCompare."),
     """\
 model.to_csv("tree_qsm.csv")
@@ -345,102 +494,151 @@ NOTEBOOKS["07_canopy"] = [
 Vertical profiles and plant area from a point cloud, and gap fraction from
 pulse data. For the rigorous ray-traced version see notebook 9."""),
     SETUP + """
-from sylva import canopy, ground
+from sylva import canopy, filters, ground
 
-cloud = ground.classify_ground_csf(synthetic.forest().without("classification"))
-cloud = ground.normalize_height(cloud, ground.make_dtm(cloud, 0.5))""",
-    md("## Occupancy and the contact-frequency profile\n\n`voxelize` counts points per voxel. `pad_profile_voxel` turns the fraction of occupied voxels per layer into plant area density (a simplified Hosoi & Omasa 2006, assuming vertical beams and G = 0.5). It ignores occlusion, which is why pulse data is better."),
+cloud = filters.voxel_downsample(sylva.read(DATA / "litch_tile.laz"), 0.05)
+dtm = ground.make_dtm(ground.classify_ground_pmf(cloud), 0.5, bounds=(0, 0, 20, 20))
+cloud = ground.normalize_height(cloud, dtm)""",
+    TILE,
+    md("""## Occupancy and the contact-frequency profile
+
+`voxelize` counts points per voxel. `pad_profile_voxel` turns the fraction of
+occupied voxels per layer into plant area density (a simplified Hosoi & Omasa
+2006, assuming vertical beams and G = 0.5). Both ignore occlusion and both
+depend on the point density, so they describe the cloud as much as the canopy
+-- pulse data (notebook 9) is what measures the canopy."""),
     """\
 veg = cloud[cloud.attrs["height"] > 0.5]
 grid = canopy.voxelize(veg, 0.25)
 z, pad = canopy.pad_profile_voxel(veg, voxel_size=0.25)
-print("voxel grid (nx, ny, nz):", grid.shape, " PAI:", round(float(np.sum(pad) * 0.25), 2))
+print("voxel grid (nx, ny, nz):", grid.shape)
+print("PAI from voxel occupancy:", round(float(np.nansum(pad) * 0.25), 2),
+      "  (the ray-traced plot value for Litchfield is 1.4, see the canopy benchmark)")
 
 hb, counts = canopy.vertical_profile(veg, bin_size=0.5)
-fig, ax = plt.subplots(1, 3, figsize=(11, 4), sharey=True)
+fig, ax = plt.subplots(1, 3, figsize=(12, 4.2), sharey=True)
 ax[0].barh(hb, counts, height=0.5, align="edge"); ax[0].set(title="points per 0.5 m", ylabel="height (m)")
 ax[1].plot(grid.vertical_profile(), grid.z_levels() - grid.origin[2]); ax[1].set(title="fraction of voxels occupied")
 ax[2].plot(pad, z); ax[2].set(title="PAD (m2 m-3)");""",
+    md("""The savanna's structure shows in all three: a dense grass and shrub
+layer below 2 m, a sparse middle, and a canopy from 8 m to 20 m. The point
+profile exaggerates the lower layers, which are metres from the scanners; the
+occupancy profile is flatter because a voxel counts once however many points
+it holds."""),
+    md("""## Canopy cover and the CHM"""),
+    """\
+chm = ground.make_chm(cloud, resolution=0.5)
+for h in (0.5, 2.0, 5.0, 10.0):
+    print(f"cover above {h:4.1f} m: {canopy.canopy_cover(chm.data, h):.2f}")""",
     md("""## Gap fraction from pulses
 
-A scanner in the middle of the plot fires pulses on an angular grid
-(`synthetic.scan`; with RIEGL data use `ScanPosition.read_shots`). A pulse with no
-echo above `min_height` is a gap. `lai_from_gap_fraction` inverts P(θ) by the
-hinge angle (57.5°) or Miller's integral."""),
+Gap fraction inverts the fraction of pulses that got through at each zenith
+angle, so it needs pulses with their scanner origins. The tile's pulse file
+cannot serve here: its rays were clipped at the tile boundary, so their origins
+sit on the tile edge rather than at a scanner (notebook 8). This part uses a
+synthetic scene instead, where the leaf area is known -- see
+[Pulse data](../guide/pulses.md) and the [canopy
+benchmark](../benchmarks/canopy.md) for whole plots read from RIEGL `.rxp`,
+where Sylva's profiles match pylidar-tls-canopy to within 4 %."""),
     """\
-shots = synthetic.scan(synthetic.forest(), origin=(10.0, 10.0, 1.5), resolution_deg=0.25)
+scene = synthetic.forest()
+shots = synthetic.scan(scene, origin=(10.0, 10.0, 1.5), resolution_deg=0.25)
 print(shots, f"- {np.mean(shots.echo_count == 0):.0%} of pulses returned nothing")
-print(f"true leaf area index of the scene: {synthetic.leaf_area(synthetic.forest()) / 20**2:.2f} (plus bark)")
+print(f"true leaf area index of the scene: {synthetic.leaf_area(scene) / 20**2:.2f} (plus bark)")
 echo_height = shots.echo_xyz()[:, 2] - synthetic.terrain_height(*shots.echo_xyz()[:, :2].T)
 zen, gap = canopy.gap_fraction_zenith(shots, echo_height, min_height=1.0, zenith_edges=np.arange(0, 95, 5.0))
 for method in ("hinge", "miller"):
     print(f"effective PAI ({method}): {canopy.lai_from_gap_fraction(zen, gap, method):.2f}")
 plt.plot(zen, gap, "o-"); plt.gca().set(xlabel="zenith (deg)", ylabel="gap fraction", ylim=(0, 1.02));""",
+    md("""Both estimators land well below the scene's 0.30, and that is the
+point of the exercise: one scan from inside a scene of discrete leaf discs
+misses most of the leaf area, and an *effective* PAI is a lower bound on the
+real one. Several positions, or the ray-traced voxels of notebook 9, recover
+more of it."""),
 ]
 
 NOTEBOOKS["08_shots"] = [
     md("""# 8. Pulses and shots files
 
 `sylva.Shots` stores pulses rather than points: an origin and direction per
-pulse, with a CSR list of echo ranges. Pulses without a return stay in the data,
-because they say where there was nothing."""),
+pulse, with a CSR list of echo ranges. Pulses without a return stay in the
+data, because they say where there was nothing."""),
     SETUP + "\nfrom sylva import Shots",
+    md("""The tile's pulse file came from a raycloudtools ray cloud through
+`Shots.from_ray_cloud`, then `save`. Every ray was clipped to the tile, so a
+ray that ends inside carries its echo and a ray that passes through (or never
+returned) is a miss. That keeps the free-space information inside the tile,
+but it also moves the origins onto the tile boundary: these are not pulses
+from a scanner, and anything that needs true beam geometry -- gap fraction by
+zenith ring, or a scan pattern -- needs the original `.rxp` (see
+[Pulse data](../guide/pulses.md))."""),
     """\
-scene = synthetic.forest()
-shots = synthetic.scan(scene, origin=(10.0, 10.0, 1.5), resolution_deg=0.2)
+shots = Shots.load(DATA / "litch_tile_shots.parquet")
 print(shots)
-print("echoes per pulse:", dict(enumerate(np.bincount(shots.echo_count))))
+print("misses:", f"{np.mean(shots.echo_count == 0):.0%}",
+      " echoes per pulse:", dict(enumerate(np.bincount(shots.echo_count))))
 print("echo attributes:", sorted(shots.echo_attrs))""",
     md("The echo arrays are flat; `echo_start` / `echo_count` say which belong to which pulse."),
     """\
-s = int(np.flatnonzero(shots.echo_count == 2)[0])
+s = int(np.flatnonzero(shots.echo_count > 0)[0])
 a = shots.echo_start[s]
-print("pulse", s, "direction", np.round(shots.direction[s], 3), "ranges", np.round(shots.echo_range[a:a + 2], 2))
+print("pulse", s, "origin", shots.origin[s].round(2), "direction", shots.direction[s].round(3),
+      "range", shots.echo_range[a].round(2))
 zen, az = shots.zenith_azimuth()
 first = shots.echo_rank() == 0
-print("first returns:", first.sum(), " later returns:", (~first).sum())""",
+print("first returns:", int(first.sum()), " later returns:", int((~first).sum()))
+print("zenith quartiles:", np.percentile(zen, [25, 50, 75]).round(0),
+      "deg - mostly near-horizontal, because a 20 m tile is crossed by rays from the whole plot")
+print("pulses with more than one echo:", int(np.sum(shots.echo_count > 1)),
+      "- a ray cloud stores one echo per ray, so the multi-echo structure is already gone")""",
     """\
 hit = shots.echo_count > 0
-fig, ax = plt.subplots(figsize=(9, 3.2))
-ax.scatter(az[~hit][::7], zen[~hit][::7], s=0.2, c="lightskyblue", label="no return")
-ax.scatter(az[hit][::7], zen[hit][::7], s=0.2, c="darkgreen", label="return")
-ax.set(xlabel="azimuth (deg)", ylabel="zenith (deg)", ylim=(130, 0), title="the scan as the scanner sees it")
-ax.legend(markerscale=20, loc="lower right");""",
+fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+ax[0].scatter(az[~hit][::4], zen[~hit][::4], s=0.2, c="lightskyblue", label="no return")
+ax[0].scatter(az[hit][::4], zen[hit][::4], s=0.2, c="darkgreen", label="return")
+ax[0].set(xlabel="azimuth (deg)", ylabel="zenith (deg)", ylim=(130, 0), title="pulses by direction")
+ax[0].legend(markerscale=20, loc="lower right")
+ax[1].scatter(shots.origin[::20, 0], shots.origin[::20, 1], s=0.3, c="C1")
+ax[1].set(title="origins: the tile boundary, not the scanners", xlabel="x (m)", ylabel="y (m)", aspect="equal");""",
     md("Conversions: `to_pointcloud` gives the echoes as points (with `return_number`, `number_of_returns`, `range`); `from_pointcloud` and `from_ray_cloud` go the other way; `transform`, `subset` and `concatenate` behave as for point clouds."),
     """\
 points = shots.to_pointcloud()
-upward = shots.subset(zen < 60)
-both = Shots.concatenate([shots, synthetic.scan(scene, origin=(4.0, 16.0, 1.5), resolution_deg=0.2)])
-print(points, upward, both, sep="\\n")""",
+downward = shots.subset(zen > 90)
+print(points, downward, sep="\\n")
+print("mean echo range:", round(float(shots.echo_range.mean()), 2), "m")""",
     md("""## Shots files
 
 `save` writes a Parquet file with one row per pulse: a scan index, two beam
 angles and list columns for the echoes. A pulse without a return costs its two
 angles and nothing else. Compare with storing the same pulses as a ray cloud,
-where every miss is a far point carrying all the attributes."""),
+where every miss has to become a far point carrying all its attributes."""),
     """\
-import tempfile, pathlib
-tmp = pathlib.Path(tempfile.mkdtemp())
-both.save(tmp / "plot.parquet")
+import tempfile
+tmp = Path(tempfile.mkdtemp())
+shots.save(tmp / "tile.parquet")
 
-# The same pulses as a LAZ ray cloud: echoes, plus a point 100 m out for each miss.
-miss = both.echo_count == 0
-far = both.origin[miss] + 100 * both.direction[miss]
-first_echo = both.echo_start[~miss]
-ends = np.vstack([both.echo_xyz(), far])
-starts = np.vstack([both.origin[both.shot_of_echo()], both.origin[miss]])
-bound = np.r_[np.ones(both.n_echoes, np.uint8), np.zeros(miss.sum(), np.uint8)]
+miss = shots.echo_count == 0
+far = shots.origin[miss] + 100 * shots.direction[miss]
+ends = np.vstack([shots.echo_xyz(), far])
+starts = np.vstack([shots.origin[shots.shot_of_echo()], shots.origin[miss]])
+bound = np.r_[np.ones(shots.n_echoes, np.uint8), np.zeros(miss.sum(), np.uint8)]
 off = (starts - ends).astype(np.float32)
-sylva.write(sylva.PointCloud(ends, {"sx": off[:, 0], "sy": off[:, 1], "sz": off[:, 2], "bound": bound}), tmp / "rays.laz")
-for f in ("plot.parquet", "rays.laz"):
-    print(f"{f:13s} {(tmp / f).stat().st_size / 1e6:6.2f} MB")""",
+sylva.write(sylva.PointCloud(ends, {"sx": off[:, 0], "sy": off[:, 1], "sz": off[:, 2], "bound": bound}),
+            tmp / "rays.laz")
+for f in ("tile.parquet", "rays.laz"):
+    print(f"{f:14s} {(tmp / f).stat().st_size / 1e6:6.2f} MB")""",
     """\
-info = Shots.file_info(tmp / "plot.parquet")
+info = Shots.file_info(tmp / "tile.parquet")
 print({k: v for k, v in info.items() if k != "scans"})
-print("scanner positions:\\n", info["scans"])
-back = Shots.load(tmp / "plot.parquet")
-print("max echo position error after the float32 round trip:", f"{np.abs(back.echo_xyz() - both.echo_xyz()).max() * 1000:.3f} mm")""",
-    md("Any Parquet reader opens the file (polars, pyarrow, duckdb, R arrow). Row groups can be read one at a time with `Shots.load(path, groups=[...])`, and `sylva.voxels.ray_voxelize` accepts the path and streams it (notebook 9)."),
+back = Shots.load(tmp / "tile.parquet")
+print("max echo position error after the float32 round trip:",
+      f"{np.abs(back.echo_xyz() - shots.echo_xyz()).max() * 1000:.3f} mm")""",
+    md("""Any Parquet reader opens the file (polars, pyarrow, duckdb, R arrow).
+Row groups can be read one at a time with `Shots.load(path, groups=[...])`, and
+`sylva.voxels.ray_voxelize` accepts the path and streams it (notebook 9). For
+scans read from `.rxp`, `Shots.fill_missing` reconstructs the pulses RIEGL
+leaves out of the point stream; `ScanPosition.read_shots(fill_missing=True)`
+does it in the right order."""),
 ]
 
 NOTEBOOKS["09_voxels"] = [
@@ -451,70 +649,107 @@ attenuation coefficient λ of each voxel from how far pulses got, then plant are
 density as λ / G. It follows AMAPVox and the rayvoxel tool; see the
 [guide](../guide/voxels.md) for the estimators."""),
     SETUP + "\nfrom sylva import Shots, voxels",
-    md("Four scan positions around the plot, combined into one set of pulses. The echoes carry `classification` (2 ground, 4 leaf, 5 wood) and `tree_id`."),
+    md("""## Tracing a real tile
+
+The Litchfield pulses, with the echoes' `classification` so the terrain can be
+left out of the plant area. `occlusion=True` also records what the pulses never
+reached."""),
     """\
-scene = synthetic.forest()
-positions = [(3, 3), (17, 3), (3, 17), (17, 17), (10, 10)]
-shots = Shots.concatenate([
-    synthetic.scan(scene, origin=(x, y, synthetic.terrain_height(x, y) + 1.5), resolution_deg=0.2)
-    for x, y in positions])
-print(shots)""",
-    """\
+shots = Shots.load(DATA / "litch_tile_shots.parquet")
 grid = voxels.ray_voxelize(
-    shots, voxel_size=0.5, bounds=((0, 0, -0.5), (20, 20, 16.5)),
-    ground_class=2, leaf_classes=[4], wood_classes=[5],
-    attenuation=["fpl", "ppl"], laser="VZ-400", occlusion=True,
+    shots, voxel_size=0.5, bounds=((0, 0, 0), (20, 20, 18)),
+    ground_class=2, leaf_classes=[4], attenuation=["fpl", "ppl"], occlusion=True,
 )
 print(grid)
-print("raw fields:", ", ".join(grid.fields[:12]), "...")""",
-    md("## What the pulses saw\n\n`state` is 0 unobserved, 1 occluded (only reached behind a last echo), 2 empty, 3 filled. Arrays are `(nz, ny, nx)`."),
+print("raw fields:", ", ".join(grid.fields[:10]), "...")""",
+    md("""`state` is 0 unobserved, 1 occluded (only reached behind a last echo),
+2 empty, 3 filled. Arrays are `(nz, ny, nx)`. Here 97 % of the tile was
+observed and 3 % is occluded, which is what many scan positions buy you."""),
     """\
 state = grid.state
 names = ["unobserved", "occluded", "empty", "filled"]
 print({n: f"{np.mean(state == i):.1%}" for i, n in enumerate(names)})
-fig, ax = plt.subplots(1, 3, figsize=(12, 3.8))
-j = 10                                        # the row of voxels at y = 5 m, through two trees
-ax[0].imshow(state[:, j, :], origin="lower", cmap="viridis", vmin=0, vmax=3); ax[0].set_title("state")
-ax[1].imshow(np.log10(grid.num_beams[:, j, :] + 1), origin="lower", cmap="magma"); ax[1].set_title("log10 beams")
-ax[2].imshow(grid.num_hits[:, j, :], origin="lower", cmap="Greens", vmax=50); ax[2].set_title("echoes");""",
-    md("## Attenuation and area density\n\nFPL and PPL agree where voxels are well sampled. Leaf and wood area density split λ by echo class; `transmittance` is the beam-section weighted gap probability. The scene's true leaf area is known. Expect the estimate to be of the right size but low: the pseudo-scanner only sees each leaf disc through its 12 points, so some pulses slip through leaves a real beam would hit."),
+print({k: round(v, 3) for k, v in grid.occlusion_profile()["total"].items()})
+fig, ax = plt.subplots(1, 3, figsize=(13, 3.8))
+j = 15                                        # the row of voxels at y = 7.5 m
+for a, (v, title, kw) in zip(ax, [
+        (state[:, j, :], "state", dict(cmap="viridis", vmin=0, vmax=3)),
+        (np.log10(grid.num_beams[:, j, :] + 1), "log10 beams", dict(cmap="magma")),
+        (grid.num_hits[:, j, :], "echoes", dict(cmap="Greens", vmax=50))]):
+    im = a.imshow(v, origin="lower", **kw); a.set(title=title, xlabel="x voxel", ylabel="z voxel")
+    fig.colorbar(im, ax=a, shrink=0.8)""",
+    md("""## Attenuation and area density
+
+FPL and PPL agree where voxels are well sampled and diverge where they are
+not, which is the useful diagnostic. The profile below is the *tile's*, not the
+plot's: because every ray was clipped at the tile boundary, the pulses crossing
+the upper canopy are few and near-horizontal, and λ there is estimated from
+short path lengths, which biases PAD upward. The plot value for Litchfield,
+from whole scans with their true origins, is PAI 1.4 (see the [canopy
+benchmark](../benchmarks/canopy.md)); this tile gives several times that. Use a
+`min_beams` threshold, and read the profile's shape rather than its
+magnitude."""),
     """\
-ok = (grid.num_beams >= 20) & (grid.num_hits > 0)
-fig, ax = plt.subplots(1, 3, figsize=(12, 3.8))
-ax[0].loglog(grid.attenuation_fpl[ok], grid.attenuation_ppl[ok], ".", ms=1.5, alpha=0.4)
-ax[0].plot([1e-3, 20], [1e-3, 20], "k", lw=0.6); ax[0].set(xlabel="λ FPL (1/m)", ylabel="λ PPL (1/m)")
+ok = (grid.num_beams >= 100) & (grid.num_hits > 0)
 z = grid.z_levels() + 0.25
-for name in ("pad_ppl", "lad_ppl", "wad_ppl"):
-    ax[1].plot(grid.profile(name, min_beams=20), z, label=name)
-ax[1].set(xlabel="area density (m2 m-3)", ylabel="z (m)"); ax[1].legend()
-ax[2].imshow(grid.transmittance[:, j, :], origin="lower", cmap="bone", vmin=0, vmax=1); ax[2].set_title("transmittance")
-print("PAI:", round(float(np.nansum(grid.profile("pad_ppl", min_beams=20)) * grid.voxel_size), 2),
-      " LAI:", round(float(np.nansum(grid.profile("lad_ppl", min_beams=20)) * grid.voxel_size), 2),
-      " true LAI of the scene:", round(synthetic.leaf_area(scene) / 20**2, 2))""",
-    md("## Leaf angles\n\nWith `inclination=True`, normals of the echoes give an inclination angle distribution per tree, and G is integrated over it and over the tree's beam zeniths instead of assuming a spherical distribution. The synthetic leaves are randomly oriented discs, so the result should be close to spherical with G ≈ 0.5."),
+fig, ax = plt.subplots(1, 3, figsize=(13, 3.8))
+ax[0].loglog(grid.attenuation_fpl[ok], grid.attenuation_ppl[ok], ".", ms=1.5, alpha=0.3)
+ax[0].plot([1e-3, 40], [1e-3, 40], "k", lw=0.6)
+ax[0].set(xlabel="λ FPL (1/m)", ylabel="λ PPL (1/m)", title="the two estimators")
+for name in ("pad_ppl", "lad_ppl"):
+    ax[1].plot(grid.profile(name, min_beams=100), z, label=name)
+ax[1].set(xlabel="area density (m2 m-3)", ylabel="z (m)", title="profile (tile, biased)"); ax[1].legend()
+im = ax[2].imshow(grid.transmittance[:, j, :], origin="lower", cmap="bone", vmin=0, vmax=1)
+ax[2].set(title="transmittance", xlabel="x voxel"); fig.colorbar(im, ax=ax[2], shrink=0.8)
+print("median beams per voxel by layer:", np.median(grid.num_beams, axis=(1, 2)).astype(int)[::6])""",
+    md("""## Checking the estimators against a known scene
+
+To see whether the numbers are right, the scene has to be known. Four
+synthetic scans of a scene with a known leaf area: the estimate should be the
+right size, and low, because the pseudo-scanner sees each leaf disc through
+only a few points."""),
     """\
-inc = voxels.ray_voxelize(shots, 0.5, ((0, 0, -0.5), (20, 20, 16.5)), ground_class=2,
+scene = synthetic.forest()
+positions = [(3, 3), (17, 3), (3, 17), (17, 17), (10, 10)]
+sim = Shots.concatenate([
+    synthetic.scan(scene, origin=(x, y, synthetic.terrain_height(x, y) + 1.5), resolution_deg=0.2)
+    for x, y in positions])
+sim_grid = voxels.ray_voxelize(sim, 0.5, ((0, 0, -0.5), (20, 20, 16.5)), ground_class=2,
+                               leaf_classes=[4], wood_classes=[5], attenuation=["fpl", "ppl"])
+pai = float(np.nansum(sim_grid.profile("pad_ppl", min_beams=20)) * 0.5)
+lai = float(np.nansum(sim_grid.profile("lad_ppl", min_beams=20)) * 0.5)
+print(f"PAI {pai:.2f}  LAI {lai:.2f}  true LAI of the scene {synthetic.leaf_area(scene) / 20**2:.2f}")""",
+    md("""## Leaf angles
+
+With `inclination=True`, normals of the echoes give an inclination angle
+distribution per tree, and G is integrated over it and over the tree's beam
+zeniths instead of assuming a spherical distribution. The synthetic leaves are
+randomly oriented discs, so the result should be close to spherical with
+G ≈ 0.5."""),
+    """\
+inc = voxels.ray_voxelize(sim, 0.5, ((0, 0, -0.5), (20, 20, 16.5)), ground_class=2,
                           leaf_classes=[4], wood_classes=[5], inclination=True)
 for tid, t in inc.tree_iad.items():
-    print(f"tree {tid}: leaves {t['liad_de_wit']:12s} G_leaf {t['g_leaf']:.2f}   wood {t['wiad_de_wit']:12s} G_wood {t['g_wood']:.2f}")
+    print(f"tree {tid}: leaves {t['liad_de_wit']:12s} G_leaf {t['g_leaf']:.2f}   "
+          f"wood {t['wiad_de_wit']:12s} G_wood {t['g_wood']:.2f}")
 t = inc.tree_iad[3]
 plt.step(np.degrees(t["bin_centres"]), t["liad"], where="mid", label="leaf")
 plt.step(np.degrees(t["bin_centres"]), t["wiad"], where="mid", label="wood")
 plt.gca().set(xlabel="inclination of the surface normal (deg)", ylabel="fraction", title="tree 3"); plt.legend();""",
-    md("## Wood volume, files and streaming\n\nQSM cylinders can be rasterised into the same grid; `write` produces an AMAPVox `.vox` file or a text table; and a shots file is voxelised without loading it."),
+    md("## Wood volume, files and streaming\n\nQSM cylinders can be rasterised into the same grid; `write` produces an AMAPVox `.vox` file or a text table; and a shots file is voxelised without being loaded."),
     """\
 from sylva import qsm
 tree3 = scene[scene.attrs["tree_id"] == 3]
 model = qsm.build_qsm(tree3[tree3.attrs["classification"] == 5], base_xy=(8.0, 15.0))
-grid.add_wood_volume(model)
-print(f"wood volume in the grid {grid.wood_volume.sum():.3f} m3 of {model.total_volume:.3f} m3 in the QSM")
+sim_grid.add_wood_volume(model)
+print(f"wood volume in the grid {sim_grid.wood_volume.sum():.3f} m3 of {model.total_volume:.3f} m3 in the QSM")
 
-n = grid.write("plot.vox")
-print(n, "voxels written;", open("plot.vox").read().split("\\n")[6][:110], "...")
-
-shots.save("plot.parquet")
-streamed = voxels.ray_voxelize("plot.parquet", 0.5, ((0, 0, -0.5), (20, 20, 16.5)), ground_class=2)
-print("streamed from file:", streamed, "- same hits:", int(streamed.num_hits.sum()) == int(grid.num_hits.sum()))""",
+n = grid.write("tile.vox")
+print(n, "voxels written to tile.vox")
+streamed = voxels.ray_voxelize(DATA / "litch_tile_shots.parquet", 0.5, ((0, 0, 0), (20, 20, 18)),
+                               ground_class=2, leaf_classes=[4])
+print("streamed from the file:", streamed,
+      "- same echo count:", int(streamed.num_hits.sum()) == int(grid.num_hits.sum()))""",
 ]
 
 
@@ -525,7 +760,8 @@ def build(name: str, cells: list, execute: bool = True) -> None:
     if execute:
         import tempfile
         with tempfile.TemporaryDirectory() as work:      # files the notebooks write stay out of the repo
-            NotebookClient(nb, timeout=600, kernel_name="python3", resources={"metadata": {"path": work}}).execute()
+            (Path(work) / "data").symlink_to(HERE / "data")   # ... but data is read from the repo
+            NotebookClient(nb, timeout=1800, kernel_name="python3", resources={"metadata": {"path": work}}).execute()
     for cell in nb.cells:
         cell.pop("id", None)
         if cell.cell_type == "code":

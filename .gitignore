@@ -11,6 +11,8 @@ target/
 *.laz
 *.rxp
 *.rdbx
+# ... except the Litchfield tile the examples run on
+!docs/examples/data/*.laz
 site/
 .ipynb_checkpoints/
 .cache/
