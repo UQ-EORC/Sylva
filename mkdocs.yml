@@ -65,6 +65,7 @@ nav:
       - canopy: api/canopy.md
       - voxels: api/voxels.md
       - registration: api/registration.md
+      - coreg: api/coreg.md
       - qsm: api/qsm.md
       - leaves: api/leaves.md
       - quality: api/quality.md

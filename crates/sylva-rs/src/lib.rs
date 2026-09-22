@@ -12,6 +12,7 @@
 
 pub mod canopy;
 pub mod cluster;
+pub mod coreg;
 pub mod error;
 pub mod filters;
 pub mod ground;

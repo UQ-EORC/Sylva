@@ -11,7 +11,7 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use sylva_rs::pointcloud::Attr;
-use sylva_rs::{canopy, cluster, filters, ground, io, qsm, registration, trees, voxel, Point, PointCloud, Raster, Shots, Transform};
+use sylva_rs::{canopy, cluster, coreg, filters, ground, io, qsm, registration, trees, voxel, Point, PointCloud, Raster, Shots, Transform};
 
 fn err(e: sylva_rs::Error) -> PyErr {
     match e {
@@ -833,6 +833,68 @@ fn icp<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, target: PyReadonlyAr
     Ok((matrix_to_py(py, &r.transform), info))
 }
 
+fn stem_match_to_py<'py>(py: Python<'py>, r: &coreg::StemMatch) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    d.set_item("transform", matrix_to_py(py, &r.transform))?;
+    d.set_item("n_inliers", r.n_inliers)?;
+    d.set_item("inlier_rmse", r.inlier_rmse)?;
+    d.set_item("score", r.score)?;
+    let c: Vec<i64> = r.correspondences.iter().flat_map(|&(i, j)| [i as i64, j as i64]).collect();
+    d.set_item("correspondences", numpy::ndarray::Array2::from_shape_vec((r.correspondences.len(), 2), c).unwrap().into_pyarray(py))?;
+    d.set_item("n_source", r.n_source)?;
+    d.set_item("n_target", r.n_target)?;
+    d.set_item("success", r.success)?;
+    d.set_item("ambiguity", r.ambiguity)?;
+    match &r.rival {
+        Some(rv) => d.set_item("rival", stem_match_to_py(py, rv)?)?,
+        None => d.set_item("rival", py.None())?,
+    }
+    Ok(d)
+}
+
+#[pyfunction]
+#[pyo3(signature = (source, source_diameters, source_qualities, target, target_diameters, target_qualities, min_pair_distance=2.0, max_pair_distance=35.0, pair_distance_tolerance=0.25, inlier_tolerance=0.40, diameter_rel_tolerance=0.30, diameter_abs_tolerance=0.04, use_diameters=true, max_stems=70, max_hypotheses=60000, min_inliers=4, early_exit_inliers=40, distinct_translation=1.0, distinct_yaw_deg=5.0, refine_iterations=6))]
+#[allow(clippy::too_many_arguments)]
+fn match_stem_maps<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, source_diameters: PyReadonlyArray1<f64>, source_qualities: PyReadonlyArray1<f64>, target: PyReadonlyArray2<f64>, target_diameters: PyReadonlyArray1<f64>, target_qualities: PyReadonlyArray1<f64>, min_pair_distance: f64, max_pair_distance: f64, pair_distance_tolerance: f64, inlier_tolerance: f64, diameter_rel_tolerance: f64, diameter_abs_tolerance: f64, use_diameters: bool, max_stems: usize, max_hypotheses: usize, min_inliers: usize, early_exit_inliers: usize, distinct_translation: f64, distinct_yaw_deg: f64, refine_iterations: usize) -> PyResult<Bound<'py, PyDict>> {
+    let src = coreg::StemMap { positions: xyz_from_py(source)?, diameters: source_diameters.as_array().to_vec(), qualities: source_qualities.as_array().to_vec() };
+    let dst = coreg::StemMap { positions: xyz_from_py(target)?, diameters: target_diameters.as_array().to_vec(), qualities: target_qualities.as_array().to_vec() };
+    if src.diameters.len() != src.len() || src.qualities.len() != src.len() || dst.diameters.len() != dst.len() || dst.qualities.len() != dst.len() {
+        return Err(PyValueError::new_err("diameters and qualities must have one value per stem"));
+    }
+    let p = coreg::MatchParams { min_pair_distance, max_pair_distance, pair_distance_tolerance, inlier_tolerance, diameter_rel_tolerance, diameter_abs_tolerance, use_diameters, max_stems, max_hypotheses, min_inliers, early_exit_inliers, distinct_translation, distinct_yaw_deg, refine_iterations };
+    let r = py.detach(|| coreg::match_stem_maps(&src, &dst, &p));
+    stem_match_to_py(py, &r)
+}
+
+#[pyfunction]
+#[pyo3(signature = (xyz, heights, cx, cy, ground_z, resolution=0.02, slice=0.05, close_radius=0.08, max_radius=4.0, max_height=6.0, top=None, solidity=0.9, round_run=4, min_top=0.5, min_points=30, smooth=10))]
+#[allow(clippy::too_many_arguments)]
+fn buttress_mesh<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, cx: f64, cy: f64, ground_z: f64, resolution: f64, slice: f64, close_radius: f64, max_radius: f64, max_height: f64, top: Option<f64>, solidity: f64, round_run: usize, min_top: f64, min_points: usize, smooth: usize) -> PyResult<Bound<'py, PyDict>> {
+    let pts = xyz_from_py(xyz)?;
+    let h = heights.as_array().to_vec();
+    if h.len() != pts.len() {
+        return Err(PyValueError::new_err("heights must have one value per point"));
+    }
+    if resolution <= 0.0 || slice <= 0.0 || max_height <= 0.0 {
+        return Err(PyValueError::new_err("resolution, slice and max_height must be positive"));
+    }
+    let p = qsm::buttress::ButtressParams { resolution, slice, close_radius, max_radius, max_height, top, solidity, round_run, min_top, min_points, smooth };
+    let b = py.detach(|| qsm::buttress::buttress_mesh(&pts, &h, cx, cy, ground_z, &p));
+    let d = PyDict::new(py);
+    let v: Vec<f64> = b.vertices.iter().flatten().copied().collect();
+    d.set_item("vertices", numpy::ndarray::Array2::from_shape_vec((b.vertices.len(), 3), v).unwrap().into_pyarray(py))?;
+    let f: Vec<i64> = b.faces.iter().flatten().map(|&x| x as i64).collect();
+    d.set_item("faces", numpy::ndarray::Array2::from_shape_vec((b.faces.len(), 3), f).unwrap().into_pyarray(py))?;
+    d.set_item("volume", b.volume)?;
+    d.set_item("top", b.top)?;
+    d.set_item("top_z", b.top_z)?;
+    d.set_item("heights", b.heights.into_pyarray(py))?;
+    d.set_item("areas", b.areas.into_pyarray(py))?;
+    d.set_item("solidities", b.solidities.into_pyarray(py))?;
+    d.set_item("open", b.open.into_pyarray(py))?;
+    Ok(d)
+}
+
 // ---------------------------------------------------------------------- trees
 
 fn xy_from_py(xy: PyReadonlyArray2<f64>) -> PyResult<Vec<[f64; 2]>> {
@@ -1450,6 +1512,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(leaf_projection, m)?,
         wrap_pyfunction!(kabsch, m)?,
         wrap_pyfunction!(icp, m)?,
+        wrap_pyfunction!(match_stem_maps, m)?,
+        wrap_pyfunction!(buttress_mesh, m)?,
         wrap_pyfunction!(fit_circle, m)?,
         wrap_pyfunction!(fit_circle_ransac, m)?,
         wrap_pyfunction!(detect_stems, m)?,

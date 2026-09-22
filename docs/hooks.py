@@ -16,7 +16,7 @@ MARKER = "<!-- function-index -->"
 PAGES = {
     "pointcloud": "pointcloud.md", "raster": "pointcloud.md", "io": "io.md", "shots": "shots.md",
     "riscan": "shots.md", "filters": "filters.md", "registration": "registration.md",
-    "ground": "ground.md", "trees": "trees.md", "canopy": "canopy.md", "voxels": "voxels.md",
+    "coreg": "coreg.md", "ground": "ground.md", "trees": "trees.md", "canopy": "canopy.md", "voxels": "voxels.md",
     "qsm": "qsm.md", "leaves": "leaves.md", "quality": "quality.md", "synthetic": "synthetic.md",
 }
 

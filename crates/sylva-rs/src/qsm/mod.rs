@@ -4,6 +4,7 @@
 //! graph and splits each bin into connected segments; [`fit_cylinders`] fits a
 //! cylinder per segment and links parents to build a [`Qsm`].
 
+pub mod buttress;
 pub mod cylinder;
 pub mod metrics;
 pub mod model;

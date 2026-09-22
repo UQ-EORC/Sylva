@@ -16,7 +16,7 @@ from . import _core
 from .pointcloud import PointCloud
 
 __all__ = ["QSM", "fit_cylinder", "fit_cylinder_ransac", "skeletonize", "build_qsm", "wood_points",
-           "write_obj", "write_ply_mesh"]
+           "write_obj", "write_ply_mesh", "Buttress", "buttress_mesh"]
 
 COLUMNS = ("sx", "sy", "sz", "ax", "ay", "az", "length", "radius", "parent", "branch_order",
            "branch_id", "n_points")
@@ -282,6 +282,29 @@ class QSM:
         v, f, _ = self.mesh(sides)
         write_obj(path, [(v, f)])
 
+    def volume_above(self, z: float) -> float:
+        """Cylinder volume above a horizontal plane, cutting cylinders that cross it.
+
+        Use it to join a :func:`buttress_mesh` to the model: the buttress
+        volume below its top plus the cylinders above it.
+
+        Parameters
+        ----------
+        z
+            Absolute height of the plane (e.g. ``Buttress.top_z``).
+
+        Returns
+        -------
+        float
+            Volume (m³); a cylinder crossing the plane counts by the share of
+            its axis above it.
+        """
+        z0, z1 = self.start[:, 2], self.end[:, 2]
+        lo, hi = np.minimum(z0, z1), np.maximum(z0, z1)
+        span = np.maximum(hi - lo, 1e-12)
+        share = np.where(hi <= z, 0.0, np.where(lo >= z, 1.0, (hi - z) / span))
+        return float((self.volumes * share).sum())
+
     def to_ply(self, path: str | Path, sides: int = 12, color=None) -> None:
         """Write the cylinder mesh as a binary PLY with face colours.
 
@@ -306,6 +329,159 @@ class QSM:
 
 _ORDER_COLORS = np.array([[139, 90, 43], [205, 133, 63], [222, 184, 135], [60, 179, 113],
                           [46, 139, 87], [34, 139, 34]], dtype=np.uint8)
+
+
+@dataclass
+class Buttress:
+    """An irregular stem base as a closed mesh; build with :func:`buttress_mesh`.
+
+    Attributes
+    ----------
+    vertices, faces
+        Closed triangle mesh (``(n, 3)`` coordinates, ``(m, 3)`` 0-based
+        vertex indices) from the ground to ``top``.
+    volume
+        Volume below ``top`` (m³), the sum of the slice areas.
+    top, top_z
+        Where the buttress ends: height above ground (m) and absolute z.
+    heights, areas, solidities
+        Per slice: bottom height (m), cross-section area (m²), and solidity
+        (area over convex-hull area; about 1 for a round stem, low for flanges).
+    open
+        Per slice, True where the outline did not close (part of the bark
+        unseen): the seen bark was kept, thickened to ``close_radius``, plus a
+        circle where the points form a good arc.
+    """
+
+    vertices: np.ndarray
+    faces: np.ndarray
+    volume: float
+    top: float
+    top_z: float
+    heights: np.ndarray
+    areas: np.ndarray
+    solidities: np.ndarray
+    open: np.ndarray
+
+    def total_volume(self, model: QSM) -> float:
+        """Buttress volume plus the QSM's volume above the buttress.
+
+        Parameters
+        ----------
+        model
+            The tree's cylinder model.
+
+        Returns
+        -------
+        float
+            Volume (m³).
+        """
+        return self.volume + model.volume_above(self.top_z)
+
+    def to_obj(self, path: str | Path) -> None:
+        """Write the mesh as a Wavefront OBJ object named ``buttress``.
+
+        Parameters
+        ----------
+        path
+            Output file.
+        """
+        write_obj(path, [(self.vertices, self.faces)], names=["buttress"])
+
+    def to_ply(self, path: str | Path) -> None:
+        """Write the mesh as a binary PLY.
+
+        Parameters
+        ----------
+        path
+            Output file.
+        """
+        write_ply_mesh(path, self.vertices, self.faces)
+
+
+def buttress_mesh(cloud: PointCloud, base_xy, ground_z: float | None = None,
+                  height_attr: str = "height", resolution: float = 0.02,
+                  slice_height: float = 0.05, close_radius: float = 0.08, max_radius: float = 4.0,
+                  max_height: float = 6.0, top: float | None = None,
+                  solidity: float = 0.9, smooth: int = 10) -> Buttress:
+    """Rebuild a buttressed or otherwise irregular stem base as a closed mesh.
+
+    A cylinder cannot follow a flanged base: a circle fitted to a star-shaped
+    section misses the flanges or spans the gaps between them (at 1.3 m a big
+    tropical tree can be a 3 m wide star that a circle explains 15 % of).
+    Here the base is rebuilt volumetrically, so any shape works:
+
+    1. The tree's points are cut into ``slice_height`` slices and rasterised
+       at ``resolution``.
+    2. A morphological closing of ``close_radius`` bridges gaps that occlusion
+       leaves in the bark, and flood-filling from outside gives the solid
+       cross-section. Where the outline does not close (part of the bark
+       unseen), the seen bark is kept, thickened to ``close_radius`` (a flange
+       seen from outside becomes a flange of that thickness), plus a circle
+       where the points form a good arc of a round stem.
+    3. Slices are built from the top down. A buttress only widens towards
+       the ground, so each section contains the one above, and the part of a
+       slice kept is the part connected to the section above: neighbouring
+       stems, shrubs and logs stay out, and the core carries down where near
+       the ground only the outsides of the flanges were seen.
+    4. The buttress ends where the section turns convex (solidity at or above
+       ``solidity`` for four slices), unless ``top`` is given.
+    5. The stacked sections become a watertight surface (surface nets,
+       Taubin-smoothed); the volume is the sum of slice areas, with the
+       boundary cells counted as half.
+
+    Parameters
+    ----------
+    cloud
+        One tree's points (or the plot's; only points within ``max_radius``
+        of ``base_xy`` are used), with height above ground.
+    base_xy
+        Stem centre ``(x, y)``, e.g. ``(tree.x, tree.y)``.
+    ground_z
+        Terrain elevation at the stem, to place the mesh; ``z - height`` of the
+        lowest points near the stem if None.
+    height_attr
+        Attribute holding height above ground.
+    resolution
+        Raster cell (m).
+    slice_height
+        Slice thickness (m).
+    close_radius
+        Gaps in the outline up to twice this wide are bridged (m). Larger
+        closes more occlusion but also fills narrow gaps between flanges.
+    max_radius
+        Horizontal reach from the stem centre (m).
+    max_height
+        Highest possible top (m above ground).
+    top
+        Buttress top (m above ground); found from the solidity if None.
+    solidity
+        Solidity at which a section counts as a round stem.
+    smooth
+        Taubin smoothing passes over the mesh.
+
+    Returns
+    -------
+    Buttress
+        Empty (no faces, zero volume) if too few points are near the stem.
+
+    Examples
+    --------
+    >>> b = qsm.buttress_mesh(tree, (t.x, t.y))
+    >>> b.volume, b.top, b.total_volume(model)
+    >>> b.to_obj("buttress.obj")
+    """
+    h = np.ascontiguousarray(cloud.heights(height_attr), dtype=float)
+    cx, cy = float(base_xy[0]), float(base_xy[1])
+    if ground_z is None:
+        near = np.hypot(cloud.x - cx, cloud.y - cy) <= 1.0
+        base = (cloud.z - h)[near] if near.any() else cloud.z - h
+        ground_z = float(np.median(base))
+    d = _core.buttress_mesh(cloud.xyz, h, cx, cy, float(ground_z), resolution, slice_height,
+                            close_radius, max_radius, max_height, top, solidity, 4, 0.5, 30,
+                            int(smooth))
+    return Buttress(d["vertices"], d["faces"], d["volume"], d["top"], d["top_z"], d["heights"],
+                    d["areas"], d["solidities"], d["open"])
 
 
 def write_obj(path: str | Path, meshes: list[tuple[np.ndarray, np.ndarray]],

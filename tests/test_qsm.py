@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from sylva import qsm
+from sylva import PointCloud, qsm
 
 
 def test_fit_cylinder(rng):
@@ -196,3 +196,24 @@ def test_crown_shape(rng):
     assert c["offset"] == pytest.approx(1.0, abs=0.05) and abs(c["offset_direction"]) < 5
     assert c["asymmetry"] == pytest.approx(0.5, abs=0.05)
     assert c["top_height"] == pytest.approx(11, abs=0.05)
+
+
+def test_buttress_mesh_of_a_flanged_base():
+    # Five flanges fading out by 2 m on a 0.3 m stem, seen all round; area known per slice.
+    t = np.linspace(0, 2 * np.pi, 720, endpoint=False)
+    pts, truth = [], 0.0
+    for k in range(100):
+        h = (k + 0.5) * 0.04
+        r = 0.3 * (1 + 3 * max(1 - h / 2, 0) * np.cos(2.5 * t) ** 8)
+        pts.append(np.column_stack([r * np.cos(t), r * np.sin(t), np.full(len(t), h)]))
+        if h < 2.0:
+            truth += 0.5 * np.sum(r**2) * (2 * np.pi / len(t)) * 0.04
+    xyz = np.vstack(pts)
+    cloud = PointCloud(xyz, {"height": xyz[:, 2].copy()})
+    b = qsm.buttress_mesh(cloud, (0.0, 0.0), ground_z=0.0, top=2.0)
+    assert abs(b.volume - truth) / truth < 0.05
+    assert len(b.faces) and b.solidities[0] < 0.7
+    # Joined to a QSM: cylinders above the top plane count, those below do not.
+    model = qsm.QSM(np.array([[0, 0, 0, 0, 0, 1, 4.0, 0.3, -1, 0, 0, 10]], float))
+    assert model.volume_above(2.0) == pytest.approx(model.total_volume / 2)
+    assert b.total_volume(model) == pytest.approx(b.volume + model.total_volume / 2)
