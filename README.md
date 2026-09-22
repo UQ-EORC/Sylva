@@ -1,6 +1,6 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
-  <img src="docs/assets/banner-light.png" height="160" alt="Sylva: terrestrial laser scanning for forest ecology">
+  <img src="docs/assets/banner-light.png" height="160" alt="Sylva">
 </picture>
 
 Terrestrial laser scanning (TLS) processing for forest ecology and remote
