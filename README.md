@@ -1,6 +1,6 @@
-<img src="docs/assets/icon.png" width="140" align="left" alt="Sylva">
+<img src="docs/assets/icon.png" width="160" align="left" alt="Sylva">
 
-# Sylva
+### Sylva
 
 Terrestrial laser scanning (TLS) processing for forest ecology and remote
 sensing. A Rust core (the `sylva-rs` crate) does the work; Python gets a
