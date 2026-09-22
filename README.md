@@ -1,4 +1,4 @@
-<img src="docs/assets/icon.png" width="110" align="left" alt="Sylva">
+<img src="docs/assets/icon.png" width="140" align="left" alt="Sylva">
 
 # Sylva
 
