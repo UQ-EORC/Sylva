@@ -1,9 +1,4 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner.png">
-    <img src="docs/assets/banner.png" height="280" alt="Sylva">
-  </picture>
-</p>
+# Sylva
 
 Terrestrial laser scanning processing for forest ecology and remote
 sensing. A Rust core (the `sylva-rs` crate) does the work; Python gets a
