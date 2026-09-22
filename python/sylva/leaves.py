@@ -496,7 +496,8 @@ def add_leaves(model: QSM | None, leaf_area: LeafAreaGrid | float, angles: LeafA
     return LeafMesh(**d)
 
 
-def write_tree_obj(path: str | Path, model: QSM, leaf_mesh: LeafMesh, sides: int = 12) -> None:
+def write_tree_obj(path: str | Path, model: QSM, leaf_mesh: LeafMesh, sides: int = 12,
+                   contiguous: bool = False) -> None:
     """Write wood cylinders and leaves to one OBJ, as objects ``wood`` and ``leaves``.
 
     Parameters
@@ -509,6 +510,8 @@ def write_tree_obj(path: str | Path, model: QSM, leaf_mesh: LeafMesh, sides: int
         Leaves from :func:`add_leaves`.
     sides
         Facets around each cylinder.
+    contiguous
+        One continuous tube per branch (see :meth:`sylva.qsm.QSM.mesh`).
     """
-    v, f, _ = model.mesh(sides)
+    v, f, _ = model.mesh(sides, contiguous)
     write_obj(path, [(v, f), (leaf_mesh.vertices, leaf_mesh.faces)], names=["wood", "leaves"])

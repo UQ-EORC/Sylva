@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from sylva import PointCloud, qsm
+from sylva import PointCloud, qsm, synthetic
 
 
 def test_fit_cylinder(rng):
@@ -217,3 +217,29 @@ def test_buttress_mesh_of_a_flanged_base():
     model = qsm.QSM(np.array([[0, 0, 0, 0, 0, 1, 4.0, 0.3, -1, 0, 0, 10]], float))
     assert model.volume_above(2.0) == pytest.approx(model.total_volume / 2)
     assert b.total_volume(model) == pytest.approx(b.volume + model.total_volume / 2)
+
+
+def test_contiguous_mesh_is_closed_and_smaller():
+    model = qsm.build_qsm(qsm.wood_points(synthetic.tree(seed=2)))
+
+    def closed(f):
+        edges = {}
+        for t in f:
+            for k in range(3):
+                e = (min(t[k], t[(k + 1) % 3]), max(t[k], t[(k + 1) % 3]))
+                edges[e] = edges.get(e, 0) + 1
+        return all(c == 2 for c in edges.values())
+
+    def enclosed(v, f):
+        return abs(float(np.einsum("ij,ij->i", v[f[:, 0]],
+                                   np.cross(v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]])).sum() / 6))
+
+    v0, f0, o0 = model.mesh(12)
+    v1, f1, o1 = model.mesh(12, contiguous=True)
+    assert closed(f0) and closed(f1)
+    assert len(f1) < 0.7 * len(f0) and len(v1) < 0.7 * len(v0)
+    assert len(o1) == len(f1) and o1.max() < len(model)
+    # One tube per branch: no caps inside a branch, so the mesh encloses the
+    # cylinders' volume. The per-cylinder mesh double-covers every joint.
+    assert enclosed(v1, f1) == pytest.approx(model.total_volume, rel=0.1)
+    assert enclosed(v0, f0) < 0.5 * model.total_volume

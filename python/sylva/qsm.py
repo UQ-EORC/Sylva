@@ -250,13 +250,21 @@ class QSM:
         """
         return cls(np.loadtxt(path, delimiter=",", skiprows=1, ndmin=2))
 
-    def mesh(self, sides: int = 12) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Triangle mesh of the cylinders, with end caps.
+    def mesh(self, sides: int = 12, contiguous: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Triangle mesh of the cylinders.
 
         Parameters
         ----------
         sides
             Facets around each cylinder.
+        contiguous
+            One continuous tube per branch instead of one closed tube per
+            cylinder: consecutive cylinders share a ring, so a branch has no
+            caps inside it and its surface runs unbroken from base to tip.
+            The ring frame is carried along the branch so the facets do not
+            twist, and a shared ring takes the mean of the two radii. Each
+            branch is still its own closed surface, pushed into its parent
+            rather than welded to it, and the mesh is about half the size.
 
         Returns
         -------
@@ -267,9 +275,9 @@ class QSM:
         owner : numpy.ndarray
             Cylinder row of each face.
         """
-        return _core.qsm_mesh(self.cylinders, sides)
+        return _core.qsm_mesh(self.cylinders, sides, contiguous)
 
-    def to_obj(self, path: str | Path, sides: int = 12) -> None:
+    def to_obj(self, path: str | Path, sides: int = 12, contiguous: bool = False) -> None:
         """Write the cylinder mesh as a Wavefront OBJ (Blender, MeshLab, CloudCompare).
 
         Parameters
@@ -278,8 +286,10 @@ class QSM:
             Output file.
         sides
             Facets around each cylinder.
+        contiguous
+            One continuous tube per branch (see :meth:`mesh`).
         """
-        v, f, _ = self.mesh(sides)
+        v, f, _ = self.mesh(sides, contiguous)
         write_obj(path, [(v, f)])
 
     def volume_above(self, z: float) -> float:
@@ -305,7 +315,7 @@ class QSM:
         share = np.where(hi <= z, 0.0, np.where(lo >= z, 1.0, (hi - z) / span))
         return float((self.volumes * share).sum())
 
-    def to_ply(self, path: str | Path, sides: int = 12, color=None) -> None:
+    def to_ply(self, path: str | Path, sides: int = 12, color=None, contiguous: bool = False) -> None:
         """Write the cylinder mesh as a binary PLY with face colours.
 
         Parameters
@@ -317,8 +327,10 @@ class QSM:
         color
             One RGB triple (0-255) for every face; by default faces are
             coloured by branch order, brown stem to green twigs.
+        contiguous
+            One continuous tube per branch (see :meth:`mesh`).
         """
-        v, f, owner = self.mesh(sides)
+        v, f, owner = self.mesh(sides, contiguous)
         if color is None:
             order = self.column("branch_order").astype(int)
             face_rgb = _ORDER_COLORS[np.minimum(order[owner], len(_ORDER_COLORS) - 1)]

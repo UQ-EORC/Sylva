@@ -135,6 +135,118 @@ impl Qsm {
         (verts, tris, owner)
     }
 
+    /// Triangle mesh with one continuous tube per branch instead of one closed
+    /// tube per cylinder: consecutive cylinders of a branch share a ring, so
+    /// there are no caps inside a branch and the surface runs unbroken from
+    /// its base to its tip. The ring frame is carried along the branch, so the
+    /// facets do not twist, and a shared ring takes the mean of the two radii.
+    ///
+    /// Each branch is still its own closed surface, pushed into its parent
+    /// rather than welded to it: the result is one watertight component per
+    /// branch. Welding them into a single solid needs a boolean union, which
+    /// this does not do.
+    pub fn mesh_contiguous(&self, sides: usize) -> (Vec<Point>, Vec<[u32; 3]>, Vec<u32>) {
+        let sides = sides.max(3);
+        let n = self.cylinders.len();
+        let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for (i, c) in self.cylinders.iter().enumerate() {
+            if c.parent >= 0 && (c.parent as usize) < n {
+                children[c.parent as usize].push(i);
+            }
+        }
+        // The child that continues the same branch, if any.
+        let next: Vec<Option<usize>> = (0..n)
+            .map(|i| children[i].iter().copied().find(|&j| self.cylinders[j].branch_id == self.cylinders[i].branch_id))
+            .collect();
+        let mut head = vec![true; n];
+        for (i, nx) in next.iter().enumerate() {
+            if let Some(j) = nx {
+                if self.cylinders[*j].branch_id == self.cylinders[i].branch_id {
+                    head[*j] = false;
+                }
+            }
+        }
+        let mut verts: Vec<Point> = Vec::new();
+        let mut tris: Vec<[u32; 3]> = Vec::new();
+        let mut owner: Vec<u32> = Vec::new();
+        let mut ring = |verts: &mut Vec<Point>, centre: Point, u: Point, v: Point, r: f64| -> u32 {
+            let base = verts.len() as u32;
+            for k in 0..sides {
+                let a = k as f64 / sides as f64 * std::f64::consts::TAU;
+                let (sa, ca) = a.sin_cos();
+                verts.push([
+                    centre[0] + r * (ca * u[0] + sa * v[0]),
+                    centre[1] + r * (ca * u[1] + sa * v[1]),
+                    centre[2] + r * (ca * u[2] + sa * v[2]),
+                ]);
+            }
+            base
+        };
+        for start in 0..n {
+            if !head[start] {
+                continue;
+            }
+            let mut i = start;
+            let mut axis = crate::transform::normalize(&self.cylinders[i].axis);
+            let helper = if axis[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+            let mut u = crate::transform::normalize(&crate::transform::cross(&axis, &helper));
+            let mut v = crate::transform::cross(&axis, &u);
+            let mut base = ring(&mut verts, self.cylinders[i].start, u, v, self.cylinders[i].radius);
+            // Cap the base of the branch.
+            let c0 = verts.len() as u32;
+            verts.push(self.cylinders[i].start);
+            for k in 0..sides as u32 {
+                tris.push([c0, base + (k + 1) % sides as u32, base + k]);
+                owner.push(i as u32);
+            }
+            loop {
+                let c = &self.cylinders[i];
+                let new_axis = crate::transform::normalize(&c.axis);
+                // Carry the frame across the joint: project u onto the new normal plane.
+                let dot = crate::transform::dot(&u, &new_axis);
+                let mut nu = [u[0] - dot * new_axis[0], u[1] - dot * new_axis[1], u[2] - dot * new_axis[2]];
+                if crate::transform::norm(&nu) < 1e-9 {
+                    let helper = if new_axis[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+                    nu = crate::transform::cross(&new_axis, &helper);
+                }
+                u = crate::transform::normalize(&nu);
+                v = crate::transform::cross(&new_axis, &u);
+                axis = new_axis;
+                let follow = next[i];
+                // A shared ring takes the mean radius of the two cylinders.
+                let r_end = match follow {
+                    Some(j) => 0.5 * (c.radius + self.cylinders[j].radius),
+                    None => c.radius,
+                };
+                let top = ring(&mut verts, c.end(), u, v, r_end);
+                for k in 0..sides as u32 {
+                    let k1 = (k + 1) % sides as u32;
+                    tris.push([base + k, top + k, base + k1]);
+                    tris.push([base + k1, top + k, top + k1]);
+                    owner.extend([i as u32; 2]);
+                }
+                match follow {
+                    Some(j) => {
+                        base = top;
+                        i = j;
+                    }
+                    None => {
+                        // Cap the tip.
+                        let c1 = verts.len() as u32;
+                        verts.push(c.end());
+                        for k in 0..sides as u32 {
+                            tris.push([c1, top + k, top + (k + 1) % sides as u32]);
+                            owner.push(i as u32);
+                        }
+                        break;
+                    }
+                }
+            }
+            let _ = axis;
+        }
+        (verts, tris, owner)
+    }
+
     /// `(n, 12)` row-major array: start(3), axis(3), length, radius, parent, order, branch, n_points.
     pub fn to_rows(&self) -> Vec<[f64; 12]> {
         self.cylinders

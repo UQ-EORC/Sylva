@@ -45,6 +45,25 @@ cross-section by subtree length at every fork.
 Accuracy against felled trees and against raycloudtools is on the
 [QSM benchmark](../benchmarks/qsm.md) page.
 
+## Meshes
+
+`QSM.mesh`, `to_obj` and `to_ply` build one closed tube per cylinder, so a
+branch of 50 cylinders is 50 tubes with 100 caps inside it. With
+`contiguous=True` each branch is one continuous tube instead: consecutive
+cylinders share a ring, the ring frame is carried along the branch so the
+facets do not twist, and a shared ring takes the mean of the two radii.
+
+```python
+model.to_ply("tree.ply", contiguous=True)
+```
+
+The mesh is about half the size, and because nothing is double-covered it
+encloses the volume the cylinders describe (within a few per cent, from the
+averaged radii at the joints), which the per-cylinder mesh does not. Each
+branch is still its own closed surface pushed into its parent, not welded to
+it: welding them into a single solid would need a boolean union, which Sylva
+does not do.
+
 ## Tree metrics
 
 `QSM.metrics()` reads the tree's architecture off the cylinders:

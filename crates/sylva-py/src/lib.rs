@@ -1431,9 +1431,10 @@ fn qsm_summary<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>) -> PyResu
 }
 
 #[pyfunction]
-#[pyo3(signature = (cylinders, sides=12))]
-fn qsm_mesh<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>, sides: usize) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray2<u32>>, Bound<'py, PyArray1<u32>>)> {
-    let (v, t, o) = qsm_from_rows(cylinders)?.mesh(sides);
+#[pyo3(signature = (cylinders, sides=12, contiguous=false))]
+fn qsm_mesh<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>, sides: usize, contiguous: bool) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray2<u32>>, Bound<'py, PyArray1<u32>>)> {
+    let q = qsm_from_rows(cylinders)?;
+    let (v, t, o) = if contiguous { q.mesh_contiguous(sides) } else { q.mesh(sides) };
     let flat_t: Vec<u32> = t.iter().flat_map(|f| f.iter().cloned()).collect();
     let nt = t.len();
     Ok((xyz_to_py(py, &v), PyArray1::from_vec(py, flat_t).reshape([nt, 3])?, o.into_pyarray(py)))
