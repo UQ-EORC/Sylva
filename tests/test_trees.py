@@ -78,8 +78,9 @@ def test_dbh_profile(normalized, tree_specs):
 def test_segment_leaves_low_vegetation(rng):
     # A litter / understorey layer reachable along the surface stays
     # unassigned beyond low_radius of the base; the stem base keeps its label.
-    import sylva
     from conftest import make_crown, make_stem
+
+    import sylva
 
     stem = make_stem(rng, 0, 0, 0.15, 8.0)
     crown = make_crown(rng, 0, 0, 7.0, 2.0)
@@ -94,6 +95,34 @@ def test_segment_leaves_low_vegetation(rng):
     labels = trees.segment_trees(pc, tree)
     assert (labels[far] == -1).all()
     assert (labels[: len(stem)][stem[:, 2] > 0.5] == 1).mean() > 0.99
-    # Without the rule the layer is swallowed by the tree.
-    loose = trees.segment_trees(pc, tree, low_height=0.0)
+    # Without the rule (and the understorey sources) the layer is swallowed by the tree.
+    loose = trees.segment_trees(pc, tree, low_height=0.0, understorey_height=0.0)
     assert (loose[far] == 1).mean() > 0.5
+
+
+def test_understorey_keeps_its_own_points(rng):
+    # A 2.5 m shrub 2 m from the stem, joined to it by a grass layer: without a
+    # competing source it goes to the tree, with one it stays unassigned, and
+    # the tree keeps its stem and crown.
+    from conftest import make_crown, make_stem
+
+    import sylva
+
+    stem = make_stem(rng, 0, 0, 0.15, 8.0)
+    crown = make_crown(rng, 0, 0, 7.0, 2.0)
+    n = 6000
+    rad, ang = 3.0 * np.sqrt(rng.uniform(0, 1, n)), rng.uniform(0, 2 * np.pi, n)
+    grass = np.column_stack([rad * np.cos(ang), rad * np.sin(ang), rng.uniform(0.27, 0.6, n)])
+    shrub = make_crown(rng, 2.0, 0.0, 1.5, 0.9, n=3000)
+    shrub = shrub[shrub[:, 2] > 0.3]
+    xyz = np.vstack([stem, crown, grass, shrub])
+    pc = sylva.PointCloud(xyz, {"height": xyz[:, 2].copy()})
+    tree = [trees.Tree(1, 0.0, 0.0, 0.30)]
+    is_shrub = np.arange(len(xyz)) >= len(xyz) - len(shrub)
+    upper = is_shrub & (xyz[:, 2] > 1.0)
+    on = trees.segment_trees(pc, tree)
+    off = trees.segment_trees(pc, tree, understorey_height=0.0)
+    assert (off[upper] == 1).mean() > 0.9
+    assert (on[upper] == -1).mean() > 0.9
+    tree_pts = np.arange(len(xyz)) < len(stem) + len(crown)
+    assert (on[tree_pts & (xyz[:, 2] > 1.0)] == 1).mean() > 0.99

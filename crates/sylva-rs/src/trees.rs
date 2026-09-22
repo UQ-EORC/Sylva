@@ -183,11 +183,19 @@ pub struct SegmentParams {
     pub wood_costs: bool,
     pub wood_k: usize,
     pub wood_threshold: f64,
+    /// Understorey competes for points (after raycloudtools, where every
+    /// point's path runs to the ground and small plants keep their own).
+    /// Graph nodes up to `understorey_band` above `cut_above_ground`, and
+    /// further than `max(low_radius, 1.5 DBH)` from every stem, become extra
+    /// sources whose path costs are scaled as for a tree this tall (with
+    /// `height_prior`); what they claim is left unassigned. 0 disables.
+    pub understorey_height: f64,
+    pub understorey_band: f64,
 }
 
 impl Default for SegmentParams {
     fn default() -> Self {
-        SegmentParams { k: 10, max_edge: 1.0, voxel_size: 0.05, seed_height: 1.5, seed_radius: 0.5, power: 3.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, height_prior: true, height_prior_radius: 1.5, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9 }
+        SegmentParams { k: 10, max_edge: 1.0, voxel_size: 0.05, seed_height: 1.5, seed_radius: 0.5, power: 3.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, height_prior: true, height_prior_radius: 1.5, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 10.0, understorey_band: 0.5 }
     }
 }
 
@@ -234,6 +242,25 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
     }
     if seeds.is_empty() {
         return vec![-1; points.len()];
+    }
+    if p.understorey_height > 0.0 {
+        // Near-ground nodes away from every stem: sources labelled -1.
+        let stems = KdTree::new(&trees.iter().map(|t| [t.x, t.y, 0.0]).collect::<Vec<_>>());
+        let clear: Vec<f64> = trees.iter().map(|t| p.low_radius.max(1.5 * t.dbh)).collect();
+        let scale = if p.height_prior { 1.0 / p.understorey_height } else { 1.0 };
+        for (i, q) in work.iter().enumerate() {
+            if hw[i] > p.cut_above_ground + p.understorey_band {
+                continue;
+            }
+            let flat = [q[0], q[1], 0.0];
+            let near = stems.within(&flat, clear.iter().cloned().fold(0.0, f64::max)).into_iter().any(|(j, d)| d <= clear[j]);
+            if !near {
+                seeds.push(i);
+                seed_tree.push(-1);
+                seed_xy.push([q[0], q[1]]);
+                seed_scale.push(scale);
+            }
+        }
     }
     let (dist, src, _) = dijkstra_scaled(&graph, &seeds, Some(&seed_xy), p.gravity, if p.height_prior { Some(&seed_scale) } else { None });
     let labels_work: Vec<i64> = (0..work.len()).map(|i| if dist[i].is_finite() { seed_tree[src[i]] } else { -1 }).collect();
