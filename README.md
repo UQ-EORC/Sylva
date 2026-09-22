@@ -50,14 +50,14 @@ sylva voxel plot.parquet plot.vox --voxel 0.25 --ground-class 2
 
 ## Documentation
 
-The documentation lives in [`docs/`](https://github.com/tim-devereux/Sylva/blob/main/docs/index.md):
+The documentation lives in [`docs/`](https://github.com/TerraSpatial/Sylva/blob/main/docs/index.md):
 
-- Guides: [plot workflow](https://github.com/tim-devereux/Sylva/blob/main/docs/guide/quickstart.md), [pulse data and shots files](https://github.com/tim-devereux/Sylva/blob/main/docs/guide/pulses.md),
-  [ray-traced voxels](https://github.com/tim-devereux/Sylva/blob/main/docs/guide/voxels.md), [QSMs](https://github.com/tim-devereux/Sylva/blob/main/docs/guide/qsm.md), [command line](https://github.com/tim-devereux/Sylva/blob/main/docs/guide/cli.md)
-- [Example notebooks](https://github.com/tim-devereux/Sylva/blob/main/docs/examples/index.md), one per stage, on synthetic data
-- Benchmarks: [tree detection](https://github.com/tim-devereux/Sylva/blob/main/docs/benchmarks/trees.md), [QSMs against felled trees](https://github.com/tim-devereux/Sylva/blob/main/docs/benchmarks/qsm.md)
-- API reference (generated from the docstrings), [development notes](https://github.com/tim-devereux/Sylva/blob/main/docs/development.md),
-  [references](https://github.com/tim-devereux/Sylva/blob/main/docs/references.md)
+- Guides: [plot workflow](https://github.com/TerraSpatial/Sylva/blob/main/docs/guide/quickstart.md), [pulse data and shots files](https://github.com/TerraSpatial/Sylva/blob/main/docs/guide/pulses.md),
+  [ray-traced voxels](https://github.com/TerraSpatial/Sylva/blob/main/docs/guide/voxels.md), [QSMs](https://github.com/TerraSpatial/Sylva/blob/main/docs/guide/qsm.md), [command line](https://github.com/TerraSpatial/Sylva/blob/main/docs/guide/cli.md)
+- [Example notebooks](https://github.com/TerraSpatial/Sylva/blob/main/docs/examples/index.md), one per stage, on synthetic data
+- Benchmarks: [tree detection](https://github.com/TerraSpatial/Sylva/blob/main/docs/benchmarks/trees.md), [QSMs against felled trees](https://github.com/TerraSpatial/Sylva/blob/main/docs/benchmarks/qsm.md)
+- API reference (generated from the docstrings), [development notes](https://github.com/TerraSpatial/Sylva/blob/main/docs/development.md),
+  [references](https://github.com/TerraSpatial/Sylva/blob/main/docs/references.md)
 
 Build the site with `pip install -e '.[docs]' && mkdocs serve`.
 

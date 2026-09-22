@@ -14,5 +14,5 @@ sylva shots rays.laz plot.parquet
 sylva voxel plot.parquet plot.vox --voxel 0.25 --ground-class 2
 ```
 
-See the [Sylva repository](https://github.com/tim-devereux/Sylva) for the
+See the [Sylva repository](https://github.com/TerraSpatial/Sylva) for the
 documentation. Licence: MIT.

@@ -1,7 +1,7 @@
 site_name: Sylva
 site_description: Terrestrial laser scanning processing for forest ecology, with a Rust core
-repo_url: https://github.com/tim-devereux/Sylva
-repo_name: tim-devereux/Sylva
+repo_url: https://github.com/TerraSpatial/Sylva
+repo_name: TerraSpatial/Sylva
 edit_uri: edit/main/docs/
 
 theme:

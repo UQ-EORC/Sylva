@@ -23,9 +23,9 @@ classifiers = [
 dependencies = ["numpy>=1.24"]
 
 [project.urls]
-Repository = "https://github.com/tim-devereux/Sylva"
-Documentation = "https://github.com/tim-devereux/Sylva/tree/main/docs"
-Issues = "https://github.com/tim-devereux/Sylva/issues"
+Repository = "https://github.com/TerraSpatial/Sylva"
+Documentation = "https://github.com/TerraSpatial/Sylva/tree/main/docs"
+Issues = "https://github.com/TerraSpatial/Sylva/issues"
 
 [project.optional-dependencies]
 geotiff = ["rasterio>=1.3"]

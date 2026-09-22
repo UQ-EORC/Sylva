@@ -7,8 +7,8 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 authors = ["Tim Devereux <devereux.tj@gmail.com>"]
-repository = "https://github.com/tim-devereux/Sylva"
-homepage = "https://github.com/tim-devereux/Sylva"
+repository = "https://github.com/TerraSpatial/Sylva"
+homepage = "https://github.com/TerraSpatial/Sylva"
 keywords = ["lidar", "point-cloud", "forestry", "tls", "remote-sensing"]
 categories = ["science", "science::geo"]
 
