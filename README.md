@@ -1,4 +1,4 @@
-<p align="center"><img src="https://raw.githubusercontent.com/TerraSpatial/Sylva/main/docs/assets/icon.png" width="160" alt="Sylva"></p>
+<p align="center"><img src="docs/assets/icon.png" width="160" alt="Sylva"></p>
 
 # Sylva
 
