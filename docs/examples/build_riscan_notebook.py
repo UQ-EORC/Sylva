@@ -36,7 +36,7 @@ positions (36 on a 20 m grid inside the plot, 28 on a ring around it).
 |---|---|---|
 | 1. Project | `read_riscan_project` | scan positions, SOPs, scan pattern |
 | 2. Read | `io.read_rxp_shots`, `Shots.fill_missing`, `filters.voxel_downsample` | 2 cm plot cloud, pulse file with misses |
-| 3. Registration check | `ground.classify_ground_csf`, `make_dtm` | vertical offset of every scan |
+| 3. Registration | `coreg.prepare_scan`, `coreg.register_scans` | the ring registered into the inner grid, checked on the ground |
 | 4. Ground | `ground.classify_ground_csf`, `make_dtm`, `normalize_height`, `make_chm` | DTM, CHM, heights |
 | 5. Trees | `trees.detect_stems`, `merge_branches`, `segment_trees`, `prune_trees`, `crown_metrics_all` | tree table, segmented cloud |
 | 6. Scan quality | `quality.stem_noise` | range noise, per-scan horizontal registration |
@@ -50,8 +50,9 @@ thinned read is cached in `OUT`, so later runs start at step 3 within a
 minute. The data are TERN's.
 
 Step 3 finds that the ring positions are not registered with the inner grid
-(metres off in height), so everything after it uses the 36 inner scans. Checking
-registration before anything else is the lesson of this plot."""),
+(metres off in height) and registers them into it with `sylva.coreg`, so
+everything after it uses all 64 scans. Checking registration before anything
+else is the lesson of this plot."""),
     """from pathlib import Path
 import time
 
@@ -59,7 +60,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import sylva
-from sylva import canopy, filters, ground, io, leaves, qsm, quality, trees, voxels
+import json
+import pickle
+
+from sylva import canopy, coreg, filters, ground, io, leaves, qsm, quality, trees, voxels
 
 PROJECT = Path("{project}")
 OUT = Path.home() / "Data" / "sylva_runs" / PROJECT.stem      # cached read and every product
@@ -116,6 +120,7 @@ derived from that read:
 Only the attributes used later are kept, which keeps the pass under about
 25 GB."""),
     """cloud_path, rays_path, counts_path = OUT / "cloud_2cm.laz", OUT / "rays.parquet", OUT / "ray_counts.npy"
+features_path = OUT / "coreg_features.pkl"
 lo = np.array([PLOT[0] - BUFFER, PLOT[1] - BUFFER, -np.inf])
 hi = np.array([PLOT[2] + BUFFER, PLOT[3] + BUFFER, np.inf])
 
@@ -127,9 +132,9 @@ def fired_per_line(s, pattern):
     return int(round(np.median(observed[(theta >= 100) & (theta <= 125)])))
 
 
-if not (cloud_path.exists() and rays_path.exists() and counts_path.exists()):
+if not all(p.exists() for p in (cloud_path, rays_path, counts_path, features_path)):
     t0 = time.time()
-    parts, rays = [], []
+    parts, rays, features = [], [], []
     for i, pos in enumerate(positions):
         s = io.read_rxp_shots(pos.rxp, shot_stride=STRIDE)            # scanner frame
         r = s.subset(np.arange(s.n_shots) % RAY_EVERY == 0)
@@ -138,6 +143,9 @@ if not (cloud_path.exists() and rays_path.exists() and counts_path.exists()):
         r.echo_attrs = {{}}
         rays.append(r)
         pts = s.transform(pos.sop).to_pointcloud()
+        # Registration features from everything within 40 m of the scanner.
+        near = pts[np.linalg.norm(pts.xyz - pos.sop[:3, 3], axis=1) < 40.0]
+        features.append(coreg.prepare_scan(sylva.PointCloud(near.xyz), name=pos.name, origin=pos.sop[:3, 3]))
         pts = pts[np.all((pts.xyz >= lo) & (pts.xyz <= hi), axis=1)]
         pts = sylva.PointCloud(pts.xyz, {{"reflectance": pts.attrs["reflectance"]}})
         pts = filters.voxel_downsample(pts, VOXEL)
@@ -148,6 +156,7 @@ if not (cloud_path.exists() and rays_path.exists() and counts_path.exists()):
     del parts
     sylva.write(cloud, cloud_path)
     np.save(counts_path, np.array([r.n_shots for r in rays]))
+    pickle.dump(features, open(features_path, "wb"))
     shots = sylva.Shots.concatenate(rays)
     del rays
     shots.save(rays_path)
@@ -155,73 +164,115 @@ if not (cloud_path.exists() and rays_path.exists() and counts_path.exists()):
 else:
     cloud = sylva.read(cloud_path)
     shots = sylva.Shots.load(rays_path)
+    features = pickle.load(open(features_path, "rb"))
 ray_counts = np.load(counts_path)
 print(f"plot cloud: {{len(cloud):,}} points at {{VOXEL * 100:.0f}} cm; pulses: {{shots.n_shots:,}} "
       f"({{(shots.echo_count == 0).mean():.0%}} misses), {{shots.n_echoes:,}} echoes")""",
-    md("""## 3. Checking the registration
+    md("""## 3. Registering the outer ring
 
-The scans are only as good as their SOPs. Stem noise (step 6) measures
-horizontal registration, but only for scans that see many stems. For
-height, every scan can be checked against the ground: build a reference DTM
-from the 36 inner-grid scans, then take, for each scan, the lowest point in
-each 0.5 m cell within 25 m of it and its median height above the
-reference. A scan registered with the others sits a few centimetres above
-(grass and litter); one that is not stands out."""),
+The scans are only as good as their SOPs. The 36 inner-grid scans were
+registered together in RiSCAN; the 28 on the ring around the plot carry
+little more than the scanner's own GNSS fix (the project gives them 0.8 m
+horizontal and 1.3 m vertical accuracy). `sylva.coreg` registers them into the
+inner grid from the trees themselves:
+
+- **Stems.** Each scan's stems are matched against the others' with no
+  initial guess. Stem pairs at equal separation are candidate matches, which
+  gives yaw and translation.
+- **ICP.** Point-to-plane ICP on locally planar points (stems, ground, logs)
+  refines each pair. A pair is accepted only if it also fits above the
+  ground.
+- **Pose graph.** The accepted pairs are solved together, with the inner scans
+  held fixed.
+- **Prior.** The SOPs serve as a prior on where each scanner stood. Their
+  headings are not trusted, and two turn out to be wrong by 123 and 155
+  degrees.
+
+The check is the ground: build a DTM from the inner scans, take each scan's
+lowest point per 0.5 m cell within 25 m of it, and read the median height
+above that DTM. A scan registered with the others sits a few centimetres
+above it (grass and litter)."""),
     """t0 = time.time()
-c5 = filters.voxel_downsample(cloud, 0.05)
+fixed = {{k: np.eye(4) for k in np.flatnonzero(in_plot)}}
+reg = coreg.register_scans(features, positions=origins, fixed=fixed, priors=[np.eye(4)] * len(positions),
+                           max_pair_distance=40.0, workers=8, log=None)
+corr = reg.poses                                  # correction applied on top of each SOP
+print(f"{{reg.registered.sum()}} of {{len(positions)}} scans registered in {{time.time() - t0:.0f}} s; "
+      f"{{sum(p.success for p in reg.pairs)}} accepted pairs")
+ring = pd.DataFrame({{
+    "scan": [positions[k].name for k in np.flatnonzero(~in_plot)],
+    "shift_m": [np.linalg.norm(features[k].location(corr[k]) - origins[k]) for k in np.flatnonzero(~in_plot)],
+    "dz_m": [(features[k].location(corr[k]) - origins[k])[2] for k in np.flatnonzero(~in_plot)],
+    "rotation_deg": [np.degrees(np.linalg.norm(coreg.se3_log(corr[k])[:3])) for k in np.flatnonzero(~in_plot)],
+}}).round(2)
+json.dump({{p.name: (T @ p.sop).tolist() for p, T in zip(positions, corr)}}, open(OUT / "sop_corrected.json", "w"))
+ring.sort_values("shift_m", ascending=False).head(10)""",
+    """c5 = filters.voxel_downsample(cloud, 0.05)
 sid = c5.attrs["scan_id"]
 g = ground.classify_ground_csf(c5[in_plot[sid]], cloth_resolution=0.5, rigidness=2)
 ref = ground.make_dtm(g, resolution=0.5, bounds=(lo[0], lo[1], hi[0], hi[1]))
 del g
-dz = np.full(len(positions), np.nan)
-for i in range(len(positions)):
-    s = c5[sid == i]
-    r = np.hypot(s.x - origins[i, 0], s.y - origins[i, 1])
-    s = s[(r > 2) & (r < 25)]
-    if len(s) < 1000:
-        continue
-    key = np.floor(s.xyz[:, :2] / 0.5).astype(np.int64)
-    k = key[:, 0] * 1_000_000 + key[:, 1]
-    order = np.lexsort((s.z, k))
-    low = s.xyz[order][np.r_[True, k[order][1:] != k[order][:-1]]]      # lowest point per cell
-    dz[i] = np.median(low[:, 2] - ref.sample(low[:, 0], low[:, 1]))
-del c5
-print(f"{{time.time() - t0:.0f}} s; inner scans {{np.nanmin(dz[in_plot]):+.2f}} to {{np.nanmax(dz[in_plot]):+.2f}} m, "
-      f"ring scans {{np.nanmin(dz[~in_plot]):+.2f}} to {{np.nanmax(dz[~in_plot]):+.2f}} m")
-off = pd.DataFrame({{"scan": [p.name for p in positions], "dz_m": dz.round(2)}})[~in_plot]
-print("ring scans more than 0.5 m off:", ", ".join(off[off.dz_m.abs() > 0.5].scan))
 
-fig, ax = plt.subplots(figsize=(5.5, 5))
-sc_ = ax.scatter(*origins[:, :2].T, c=dz, cmap="RdBu_r", vmin=-3, vmax=3, s=40, edgecolor="k", lw=0.3)
-ax.add_patch(plt.Rectangle(PLOT[:2], 100, 100, fill=False, lw=1))
-ax.set(aspect="equal", title="Ground seen by each scan, height above the inner-grid DTM")
-fig.colorbar(sc_, ax=ax, label="m", shrink=0.8);""",
-    md("""The 36 inner scans agree to within 10 cm. Most of the ring positions do
-not: several put the ground 1-3 m above or below it. Their SOPs look like
-the scanner's own GNSS fix (the project gives 0.8 m horizontal and 1.3 m
-vertical accuracy for them), not a registration to the inner grid. So from
-here on only the inner scans are used, and the ring is dropped from both the
-points and the pulses. With the ring included, the DTM steps down by metres
-in wedges behind the misregistered positions, and ghost stems appear at the
-plot edge. If the ring matters for your plot, register it first."""),
-    """use = in_plot.copy()
+
+def ground_offset(xyz, origin):
+    \"\"\"Median height above the inner-grid DTM of a scan's lowest point per 0.5 m cell within 25 m.\"\"\"
+    r = np.hypot(xyz[:, 0] - origin[0], xyz[:, 1] - origin[1])
+    xyz = xyz[(r > 2) & (r < 25)]
+    if len(xyz) < 1000:
+        return np.nan
+    key = np.floor(xyz[:, :2] / 0.5).astype(np.int64)
+    k = key[:, 0] * 1_000_000 + key[:, 1]
+    order = np.lexsort((xyz[:, 2], k))
+    low = xyz[order][np.r_[True, k[order][1:] != k[order][:-1]]]
+    return float(np.median(low[:, 2] - ref.sample(low[:, 0], low[:, 1])))
+
+
+before = np.array([ground_offset(c5.xyz[sid == k], origins[k]) for k in range(len(positions))])
+after = np.array([ground_offset(coreg._transform(corr[k], c5.xyz[sid == k]), features[k].location(corr[k]))
+                  for k in range(len(positions))])
+del c5
+print(f"ring scans: {{np.nanmin(before[~in_plot]):+.2f}} to {{np.nanmax(before[~in_plot]):+.2f}} m before, "
+      f"{{np.nanmin(after[~in_plot]):+.2f}} to {{np.nanmax(after[~in_plot]):+.2f}} m after; "
+      f"inner scans {{np.nanmin(after[in_plot]):+.2f}} to {{np.nanmax(after[in_plot]):+.2f}} m")
+fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.8))
+for ax, v, title in [(axes[0], before, "as delivered"), (axes[1], after, "after sylva.coreg")]:
+    sc_ = ax.scatter(*origins[:, :2].T, c=v, cmap="RdBu_r", vmin=-3, vmax=3, s=40, edgecolor="k", lw=0.3)
+    ax.add_patch(plt.Rectangle(PLOT[:2], 100, 100, fill=False, lw=1))
+    ax.set(aspect="equal", title=title)
+fig.suptitle("Each scan's ground, height above the inner-grid DTM")
+fig.colorbar(sc_, ax=axes, label="m", shrink=0.8);""",
+    md("""The corrections are applied to the cached points and pulses, so nothing
+has to be read again. With the ring left as delivered, the DTM stepped down
+by metres in wedges behind the misregistered positions, and ghost stems
+appeared at the plot edge. From here on all 64 scans are used."""),
+    """use = reg.registered
+for k in range(len(positions)):
+    if use[k] and not np.allclose(corr[k], np.eye(4)):
+        m = cloud.attrs["scan_id"] == k
+        cloud.xyz[m] = coreg._transform(corr[k], cloud.xyz[m])
 cloud = cloud[use[cloud.attrs["scan_id"]]]
 start = np.r_[0, np.cumsum(ray_counts)]
+origin, direction = shots.origin.copy(), shots.direction.copy()
 keep = np.zeros(shots.n_shots, bool)
-for i in np.flatnonzero(use):
-    keep[start[i]:start[i + 1]] = True
-shots = shots.subset(keep)
+for k in np.flatnonzero(use):
+    s_, e_ = start[k], start[k + 1]
+    origin[s_:e_] = coreg._transform(corr[k], origin[s_:e_])
+    direction[s_:e_] = direction[s_:e_] @ corr[k][:3, :3].T
+    keep[s_:e_] = True
+shots = sylva.Shots(origin, direction, shots.echo_start, shots.echo_count, shots.echo_range).subset(keep)
 used_counts = ray_counts[use]
-rays_path = OUT / "rays_inner.parquet"
+inner_used = in_plot[use]                       # the gap profile uses the scans inside the plot
+origins = np.array([features[k].location(corr[k]) for k in range(len(positions))])
+rays_path = OUT / "rays_registered.parquet"
 shots.save(rays_path)
-print(f"{{use.sum()}} scans kept: {{len(cloud):,}} points, {{shots.n_shots:,}} pulses")""",
+print(f"{{use.sum()}} scans: {{len(cloud):,}} points, {{shots.n_shots:,}} pulses")""",
     md("""## 4. Ground and heights
 
 The cloth simulation filter runs on a 5 cm copy of the plot and its buffer,
 and the DTM covers the same area, so the plot edge is not a cloth edge.
 Heights are then added to the full 2 cm cloud and the plot is cut out.
 
-A CHM takes the highest point in each cell, and 36 scans collect a few
+A CHM takes the highest point in each cell, and 64 scans collect a few
 returns far above the canopy (birds, insects, mixed-pixel ghosts), up to
 90 m here. Isolated points are removed before the CHM is built.
 
@@ -387,7 +438,8 @@ print(f"wood {{wood.mean():.0%}} of points; mean leaf angle {{angles.mean_deg:.0
       f"leaf area seen {{area.total_area:.1f}} m2 as {{len(mesh)}} leaves -> tree_{{tid:04d}}.obj")""",
     md("""## 8. Canopy gap profile
 
-Gap probability by zenith ring and height, pooled over the 36 inner scans (Jupp et al. 2009). The VZ-2000i scans from 30 deg zenith down, so
+Gap probability by zenith ring and height, pooled over the 36 scans inside
+the plot (the ring looks at the plot from outside, across its edge) (Jupp et al. 2009). The VZ-2000i scans from 30 deg zenith down, so
 the rings run from 30 to 70 deg. The pulses already hold their misses, so
 no fired-pulse count is needed. Heights come from the DTM."""),
     """t0 = time.time()
@@ -397,7 +449,7 @@ xyz = shots.echo_xyz()
 echo_h = xyz[:, 2] - dtm.sample(xyz[:, 0], xyz[:, 1])
 del xyz
 soe = shots.shot_of_echo()
-for j in range(len(used_counts)):
+for j in np.flatnonzero(inner_used):
     keep = np.zeros(shots.n_shots, bool)
     keep[start[j]:start[j + 1]] = True
     prof.add_scan(shots.subset(keep), echo_h[keep[soe]])
@@ -434,7 +486,7 @@ pulse through the grid, the other counts gaps by zenith ring. Both depend
 on the misses being there. Traced without them, the grid gave about twice
 the plant area, rising with height.
 
-With 36 positions and the misses traced, a pulse crosses every voxel of this
+With 64 positions and the misses traced, a pulse crosses every voxel of this
 open canopy, so nothing is occluded or unreached. In denser plots, and with
 fewer scans, `occlusion_profile` and `observed_map` show where to rescan. The
 right panel shows how many pulses reached each layer, which sets how far up
