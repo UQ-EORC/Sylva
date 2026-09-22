@@ -13,18 +13,19 @@ SuperSite](https://www.tern.org.au) plot in the Northern Territory, scanned in
 `make_litch_subset.py` cuts both from the plot's ray cloud. Rays are clipped at
 the tile boundary, so a ray that ends inside keeps its echo and a ray that
 passes through becomes a pulse with no return. That preserves free space inside
-the tile, but it also puts the pulse origins on the tile edge instead of at the
-scanners, which is why the notebooks use the tile for everything point-based
-and fall back to `sylva.synthetic` where the answer has to be known:
-registration with a known transform, QSM volume against a known taper, and
-leaf area against a known scene.
+the tile. One scan position falls in the tile's corner and keeps its true
+origin, but the rest of the pulses start where they crossed the boundary, so
+the tile carries everything point-based while `sylva.synthetic` is kept for the
+cases where the answer has to be known: registration with a known transform,
+QSM volume against a known taper, and leaf area against a known scene.
 
-Where the two disagree is worth reading. Two examples from the notebooks: the
-cloth simulation filter leaves the terrain metres too high in 8 % of this
-savanna tile's cells, where the cloth hangs on the grass layer, while the
-morphological filter handles it; and the statistical outlier filter removes 4 %
-of the cloud, most of it real grass, because sparse vegetation looks like noise
-by that test.
+What real data shows that a synthetic scene cannot is worth reading. Two
+examples the notebooks work through: the cloth simulation filter puts the
+terrain metres too high in 8 % of the tile's cells, all of them within about
+2 m of the cut edge, because a cloth needs points on both sides to be pulled
+down -- so classify ground on the whole plot and crop afterwards; and the
+statistical outlier filter removes 4 % of the cloud, two thirds of it below
+1 m, because a sparse grass layer looks like noise by that test.
 
 | | Notebook | Data | Covers |
 |---|---|---|---|

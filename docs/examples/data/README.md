@@ -9,6 +9,10 @@ many positions and registered into one plot cloud.
 | `litch_tile.laz` | 1,553,677 echoes inside the tile, thinned to one point per 5 cm, with `classification` (2 = ground, 4 = vegetation) and `intensity` (the ray cloud's `alpha`) |
 | `litch_tile_shots.parquet` | 625,764 pulses: every 40th ray crossing the tile, clipped to it, misses included, echoes carrying the same `classification` |
 
+One scan position falls inside the tile (its north-east corner, about 38 % of
+the pulses) and keeps its true origin; the remaining pulses are rays from the
+rest of the plot, clipped where they enter.
+
 Both are cut from the plot's raycloudtools ray cloud by
 `../make_litch_subset.py`, into a local frame with the tile's south-west
 corner at (0, 0) and the ground near z = 0. Rays are clipped at the tile

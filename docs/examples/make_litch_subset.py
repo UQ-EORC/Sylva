@@ -110,8 +110,9 @@ def main(path: str) -> None:
     pts = filters.voxel_downsample(pts, POINT_VOXEL)
 
     # Ground / vegetation per echo, so the voxeliser can leave the terrain out.
-    # The progressive morphological filter is used because the cloth filter
-    # hangs up on the grass layer of this tile (see the examples index).
+    # The progressive morphological filter is used because it works cell by
+    # cell: a cloth simulation rides up on the vegetation along the cut edge of
+    # a tile, where it has no points on the far side to pull it down.
     dtm = ground.make_dtm(ground.classify_ground_pmf(pts), 0.5, bounds=(0, 0, 20, 20))
     height = (end - shift)[:, 2] - dtm.sample((end - shift)[:, 0], (end - shift)[:, 1])
     echo_class = np.where(height <= GROUND_HEIGHT, 2, 4).astype(np.uint8)

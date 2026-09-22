@@ -81,9 +81,11 @@ s = ax[0].scatter(cloud.x[::4], cloud.y[::4], c=cloud.z[::4], s=0.2, cmap="virid
 ax[0].set(title="top view, coloured by height", xlabel="x (m)", ylabel="y (m)", aspect="equal")
 fig.colorbar(s, ax=ax[0], label="z (m)")
 slab = (cloud.y > 9) & (cloud.y < 11)
-ax[1].scatter(cloud.x[slab], cloud.z[slab], s=0.2,
-              c=np.where(cloud.attrs["classification"][slab] == 2, "tab:brown", "tab:green"))
-ax[1].set(title="2 m slice: ground (brown) and vegetation", xlabel="x (m)", ylabel="z (m)", aspect="equal");""",
+is_ground = cloud.attrs["classification"] == 2
+ax[1].scatter(cloud.x[slab & ~is_ground], cloud.z[slab & ~is_ground], s=0.2, c="tab:green", label="vegetation")
+ax[1].scatter(cloud.x[slab & is_ground], cloud.z[slab & is_ground], s=0.6, c="tab:brown", label="ground")
+ax[1].set(title="a 2 m slice through the tile", xlabel="x (m)", ylabel="z (m)", aspect="equal")
+ax[1].legend(markerscale=12, loc="upper center", ncol=2);""",
     md("""## Reading and writing
 
 `sylva.read` / `sylva.write` pick the format from the extension: LAS/LAZ (extra
@@ -162,12 +164,16 @@ for name, keep in (("statistical (k=8, 2 sd)", sor), ("radius (0.25 m, 4)", ror)
     print(f"{name:24s} drops {drop.sum():>6,} ({drop.mean():.2%}); "
           f"median height of dropped points {np.median(thinned.z[drop]):5.1f} m vs {np.median(thinned.z):.1f} m overall")""",
     """\
-fig, ax = plt.subplots(figsize=(9, 4.5))
-drop = ~ror
-ax.scatter(thinned.x[::4], thinned.z[::4], s=0.2, c="0.8")
-ax.scatter(thinned.x[drop], thinned.z[drop], s=1.5, c="C3")
-ax.set(title="points dropped by radius_outlier_removal (red)", xlabel="x (m)", ylabel="z (m)", aspect="equal");
-print("dropped by the statistical filter below 1 m:", f"{np.mean(thinned.z[~sor] < 1.0):.0%}")""",
+slab = (thinned.y > 9) & (thinned.y < 11)
+fig, ax = plt.subplots(1, 2, figsize=(12, 4.2), sharex=True, sharey=True)
+for a, keep, name in ((ax[0], sor, "statistical (k=8, 2 sd)"), (ax[1], ror, "radius (0.25 m, 4)")):
+    drop = slab & ~keep
+    a.scatter(thinned.x[slab & keep], thinned.z[slab & keep], s=0.2, c="0.8")
+    a.scatter(thinned.x[drop], thinned.z[drop], s=1.2, c="C3")
+    a.set(title=f"{name}: {int(drop.sum()):,} dropped in this slice", xlabel="x (m)", ylim=(-0.5, 8))
+ax[0].set_ylabel("z (m)")
+print("of the points the statistical filter drops,", f"{np.mean(thinned.z[~sor] < 1.0):.0%}",
+      "are below 1 m; for the radius filter,", f"{np.mean(thinned.z[~ror] < 1.0):.0%}")""",
     md("""## Local geometry
 
 PCA over the `k` nearest neighbours gives normals and the planarity / linearity
@@ -264,10 +270,11 @@ cloth over the inverted cloud; the progressive morphological filter (PMF,
 Zhang et al. 2003) opens a minimum surface with growing windows.
 
 The tile's own `classification` came from PMF (see `make_litch_subset.py`), so
-compare the two directly. On this savanna tile CSF leaves the terrain several
-metres too high in about 8 % of cells -- the cloth hangs on the dense grass and
-shrub layer -- while PMF's opening removes it. Which filter wins is a property
-of the stand, so check a profile before trusting either."""),
+compare the two directly. CSF puts the terrain metres too high in about 8 % of
+cells here, and the map below shows where: a band along the tile boundary. The
+cloth is a connected sheet, so it needs points on both sides to be pulled down;
+at a cut edge it has nothing to hold it and rides up on the vegetation just
+inside. PMF works cell by cell and is unaffected."""),
     """\
 csf = ground.ground_mask(ground.classify_ground_csf(cloud))
 pmf = ground.ground_mask(ground.classify_ground_pmf(cloud))
@@ -281,13 +288,40 @@ diff = dtm_csf.data - dtm.data
 print(f"CSF above PMF by more than 0.5 m in {np.mean(diff > 0.5):.1%} of cells, "
       f"95th percentile {np.nanpercentile(diff, 95):.1f} m")""",
     """\
-fig, ax = plt.subplots(1, 2, figsize=(11, 4), sharex=True, sharey=True)
-slab = (cloud.y > 9) & (cloud.y < 11)
-for a, m, name in ((ax[0], csf, "CSF"), (ax[1], pmf, "PMF")):
-    a.scatter(cloud.x[slab], cloud.z[slab], s=0.3, c="0.75")
-    a.scatter(cloud.x[slab & m], cloud.z[slab & m], s=1.0, c="C3")
-    a.set(title=f"{name} ground points, 2 m slice", xlabel="x (m)", ylim=(-1, 6))
-ax[0].set_ylabel("z (m)");""",
+row = int(np.nanargmax(np.nan_to_num(diff).max(axis=1)))       # the worst row of the difference
+y0 = dtm.ymin + row * dtm.resolution
+slab = (cloud.y > y0 - 0.5) & (cloud.y < y0 + 0.5)
+fig, ax = plt.subplots(1, 2, figsize=(13, 4))
+im = ax[0].imshow(diff, origin="lower", extent=(dtm.xmin, dtm.xmax, dtm.ymin, dtm.ymax),
+                  cmap="OrRd", vmin=0, vmax=6)
+ax[0].axhline(y0, color="k", lw=0.8, ls="--")
+ax[0].set(title="CSF terrain minus PMF terrain (m)", xlabel="x (m)", ylabel="y (m)")
+fig.colorbar(im, ax=ax[0], shrink=0.85)
+ax[1].scatter(cloud.x[slab], cloud.z[slab], s=0.3, c="0.8")
+for m, name, c, size in ((pmf, "PMF ground", "C0", 2.0), (csf, "CSF ground", "C3", 2.0)):
+    ax[1].scatter(cloud.x[slab & m], cloud.z[slab & m], s=size, c=c, label=name)
+ax[1].set(title=f"the marked row, y = {y0:.1f} m", xlabel="x (m)", ylabel="z (m)", ylim=(-1, 12))
+ax[1].legend(markerscale=6);""",
+    md("""The diagnosis is testable: crop the cloud further in and the bad band
+should follow the new edge, which is what happens. Distance of the disagreeing
+cells from whichever boundary the cloud was cut at:"""),
+    """\
+for lo, hi, label in ((0, 20, "full tile"), (4, 16, "inner 12 x 12 m"), (7, 13, "inner 6 x 6 m")):
+    sub = filters.crop_box(cloud, (lo, lo, None), (hi, hi, None))
+    a = ground.make_dtm(ground.classify_ground_csf(sub), 0.5, bounds=(lo, lo, hi, hi)).data
+    b = ground.make_dtm(ground.classify_ground_pmf(sub), 0.5, bounds=(lo, lo, hi, hi)).data
+    bad = np.argwhere(np.nan_to_num(a - b) > 0.5)
+    if not len(bad):
+        print(f"{label:16s} no cell differs by more than 0.5 m")
+        continue
+    xs, ys = lo + bad[:, 1] * 0.5, lo + bad[:, 0] * 0.5
+    edge = np.minimum(np.minimum(xs - lo, hi - xs), np.minimum(ys - lo, hi - ys))
+    print(f"{label:16s} {len(bad) / a.size:5.1%} of cells disagree, "
+          f"median {np.median(edge):.1f} m from the edge, 90th percentile {np.percentile(edge, 90):.1f} m")""",
+    md("""So the lesson is not "CSF is worse here": it is to classify ground on
+the whole plot and crop afterwards, or to cut tiles with a buffer of a few
+metres. Away from the edge the two filters agree to within 0.5 m on every cell
+of this tile."""),
     md("## DTM, heights and CHM"),
     """\
 cloud = ground.normalize_height(cloud, dtm)          # adds the 'height' attribute
@@ -358,15 +392,17 @@ for t in stems[:10]:
           f"{c.get('crown_base_height', float('nan')):11.1f}")""",
     """\
 m = labels > 0
-fig, ax = plt.subplots(1, 2, figsize=(12, 4.6))
-ax[0].scatter(cloud.x[~m][::10], cloud.y[~m][::10], s=0.2, c="0.85")
-ax[0].scatter(cloud.x[m][::4], cloud.y[m][::4], c=labels[m][::4] % 10, s=0.3, cmap="tab10")
+shuffle = np.random.default_rng(3).permutation(labels.max() + 2)   # neighbouring trees get unlike colours
+colour = shuffle[labels] % 20
+fig, ax = plt.subplots(1, 2, figsize=(13, 5))
+ax[0].scatter(cloud.x[~m][::10], cloud.y[~m][::10], s=0.2, c="0.88")
+ax[0].scatter(cloud.x[m][::4], cloud.y[m][::4], c=colour[m][::4], s=0.3, cmap="tab20")
 for t in stems:
-    ax[0].add_patch(plt.Circle((t.x, t.y), max(t.dbh / 2, 0.15), fill=False, color="k", lw=0.8))
-    ax[0].annotate(str(t.tree_id), (t.x + 0.3, t.y + 0.3), fontsize=7)
+    ax[0].add_patch(plt.Circle((t.x, t.y), max(t.dbh / 2, 0.2), fill=False, color="k", lw=1.0))
+    ax[0].annotate(str(t.tree_id), (t.x + 0.35, t.y + 0.35), fontsize=7)
 ax[0].set(title="tree labels and stem positions", xlabel="x (m)", ylabel="y (m)", aspect="equal")
-ax[1].scatter(cloud.x[m][::4], cloud.attrs["height"][m][::4], c=labels[m][::4] % 10, s=0.3, cmap="tab10")
-ax[1].set(title="side view", xlabel="x (m)", ylabel="height (m)");""",
+ax[1].scatter(cloud.x[m][::4], cloud.attrs["height"][m][::4], c=colour[m][::4], s=0.3, cmap="tab20")
+ax[1].set(title="side view", xlabel="x (m)", ylabel="height (m)", aspect="equal");""",
     md("""There is no field inventory for this tile, so treat the table as a
 demonstration: detection and segmentation are scored against manually
 segmented plots (including Litchfield) in
@@ -599,7 +635,22 @@ ax[0].scatter(az[hit][::4], zen[hit][::4], s=0.2, c="darkgreen", label="return")
 ax[0].set(xlabel="azimuth (deg)", ylabel="zenith (deg)", ylim=(130, 0), title="pulses by direction")
 ax[0].legend(markerscale=20, loc="lower right")
 ax[1].scatter(shots.origin[::20, 0], shots.origin[::20, 1], s=0.3, c="C1")
-ax[1].set(title="origins: the tile boundary, not the scanners", xlabel="x (m)", ylabel="y (m)", aspect="equal");""",
+ax[1].set(title="origins: the tile boundary, plus one real scan position",
+          xlabel="x (m)", ylabel="y (m)", aspect="equal");""",
+    md("""One scan position does fall inside the tile, in the corner, and keeps
+its true origin: 38 % of the pulses here are its. The rest of the interior
+scatter is not scan positions but rounding -- a ray cloud stores the vector to
+the sensor as float32 next to double coordinates, so origins reconstructed 20 m
+away land within a few centimetres of each other rather than exactly on the
+scanner. `Shots.save(origin_tolerance=...)` collapses origins that close
+together into one position when writing a shots file."""),
+    """\
+o = shots.origin
+interior = (o[:, 0] > 0.05) & (o[:, 0] < 19.95) & (o[:, 1] > 0.05) & (o[:, 1] < 19.95)
+uniq, counts = np.unique(np.round(o[interior], 1), axis=0, return_counts=True)
+print(f"{interior.mean():.0%} of pulses start inside the tile, at {len(uniq):,} distinct rounded origins")
+print("the biggest:", uniq[counts.argmax()], f"with {counts.max():,} pulses - the scan position")
+print("the rest hold", f"{np.sort(counts)[-2]:,}", "pulses at most each - float32 rounding")""",
     md("Conversions: `to_pointcloud` gives the echoes as points (with `return_number`, `number_of_returns`, `range`); `from_pointcloud` and `from_ray_cloud` go the other way; `transform`, `subset` and `concatenate` behave as for point clouds."),
     """\
 points = shots.to_pointcloud()
@@ -678,30 +729,55 @@ for a, (v, title, kw) in zip(ax, [
         (grid.num_hits[:, j, :], "echoes", dict(cmap="Greens", vmax=50))]):
     im = a.imshow(v, origin="lower", **kw); a.set(title=title, xlabel="x voxel", ylabel="z voxel")
     fig.colorbar(im, ax=a, shrink=0.8)""",
-    md("""## Attenuation and area density
+    md("""## Attenuation, and where the tile can support an estimate
 
-FPL and PPL agree where voxels are well sampled and diverge where they are
-not, which is the useful diagnostic. The profile below is the *tile's*, not the
-plot's: because every ray was clipped at the tile boundary, the pulses crossing
-the upper canopy are few and near-horizontal, and λ there is estimated from
-short path lengths, which biases PAD upward. The plot value for Litchfield,
-from whole scans with their true origins, is PAI 1.4 (see the [canopy
-benchmark](../benchmarks/canopy.md)); this tile gives several times that. Use a
-`min_beams` threshold, and read the profile's shape rather than its
-magnitude."""),
+FPL and PPL agree where voxels are well sampled and diverge where they are not,
+which is the useful diagnostic. Before reading any profile, look at how many
+beams reached each layer: the tile holds one real scan position (its corner)
+plus rays from the rest of the plot clipped at the boundary, so sampling falls
+away with height. Layers whose voxels see only a few tens of beams produce
+large, meaningless λ -- a voxel with 20 beams, 2 echoes and short path lengths
+reads as dense -- and `profile` averages over whichever voxels pass
+`min_beams`, so a stricter threshold can *raise* the number rather than
+settle it."""),
     """\
-ok = (grid.num_beams >= 100) & (grid.num_hits > 0)
+beams = np.median(grid.num_beams, axis=(1, 2))
 z = grid.z_levels() + 0.25
 fig, ax = plt.subplots(1, 3, figsize=(13, 3.8))
-ax[0].loglog(grid.attenuation_fpl[ok], grid.attenuation_ppl[ok], ".", ms=1.5, alpha=0.3)
+ax[0].loglog(grid.attenuation_fpl[(grid.num_beams >= 200) & (grid.num_hits > 0)],
+             grid.attenuation_ppl[(grid.num_beams >= 200) & (grid.num_hits > 0)], ".", ms=1.5, alpha=0.3)
 ax[0].plot([1e-3, 40], [1e-3, 40], "k", lw=0.6)
-ax[0].set(xlabel="λ FPL (1/m)", ylabel="λ PPL (1/m)", title="the two estimators")
-for name in ("pad_ppl", "lad_ppl"):
-    ax[1].plot(grid.profile(name, min_beams=100), z, label=name)
-ax[1].set(xlabel="area density (m2 m-3)", ylabel="z (m)", title="profile (tile, biased)"); ax[1].legend()
-im = ax[2].imshow(grid.transmittance[:, j, :], origin="lower", cmap="bone", vmin=0, vmax=1)
-ax[2].set(title="transmittance", xlabel="x voxel"); fig.colorbar(im, ax=ax[2], shrink=0.8)
-print("median beams per voxel by layer:", np.median(grid.num_beams, axis=(1, 2)).astype(int)[::6])""",
+ax[0].set(xlabel="λ FPL (1/m)", ylabel="λ PPL (1/m)", title="the two estimators (≥ 200 beams)")
+ax[1].plot(beams, z, "C1")
+ax[1].axvline(200, color="k", ls="--", lw=0.8)
+ax[1].set(xscale="log", xlabel="beams per voxel (median)", ylabel="z (m)", title="sampling by layer")
+for mb in (20, 200):
+    ax[2].plot(grid.profile("pad_ppl", min_beams=mb), z, label=f"min_beams={mb}")
+ax[2].set(xlabel="PAD (m2 m-3)", title="the same profile, two thresholds"); ax[2].legend()
+usable = z[beams >= 200].max()
+print(f"median beams per voxel stays above 200 up to {usable:.1f} m, and falls below 20 above "
+      f"{z[beams >= 20].max():.1f} m")""",
+    md("""Read the profile up to that height and no further. Summed over the
+well-sampled layers it comes to about 0.7 -- the grass layer and the lower
+canopy, and in the same range as the plot's hinge PAI of 0.87. Summed over
+every layer it comes to 6.3, which is the sparsely sampled top of the tile
+inventing plant area. A 20 x 20 m cut-out cannot give a plot's plant area
+index either way: its rays were clipped at the boundary and the upper canopy is
+barely sampled. The [canopy benchmark](../benchmarks/canopy.md) has the plot
+values from whole scans, where Sylva's profiles match pylidar-tls-canopy to
+within 4 %."""),
+    """\
+ok = beams >= 200
+print("PAI over the well-sampled layers only:",
+      round(float(np.nansum(grid.profile("pad_ppl", min_beams=200)[ok]) * grid.voxel_size), 2),
+      " over every layer:",
+      round(float(np.nansum(grid.profile("pad_ppl", min_beams=200)) * grid.voxel_size), 2))
+fig, ax = plt.subplots(1, 2, figsize=(11, 3.8))
+for a, (v, title) in zip(ax, [(grid.transmittance[:, j, :], "transmittance"),
+                              (grid.pad_ppl[:, j, :], "PAD (m2 m-3), same slice")]):
+    im = a.imshow(v, origin="lower", cmap="bone" if "trans" in title else "YlGn",
+                  vmin=0, vmax=1 if "trans" in title else 3)
+    a.set(title=title, xlabel="x voxel", ylabel="z voxel"); fig.colorbar(im, ax=a, shrink=0.8)""",
     md("""## Checking the estimators against a known scene
 
 To see whether the numbers are right, the scene has to be known. Four
