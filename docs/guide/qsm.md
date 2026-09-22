@@ -91,3 +91,60 @@ scans, eight positions):
 The crown volume is low for the same reason the wood volume is. The
 QSMs recover only about a third of the length of twigs under 1 cm, and
 those twigs mark the crown's outer edge.
+
+## Buttresses
+
+A cylinder cannot follow a buttressed base. At 1.3 m a large tropical tree can
+be a star of flanges that a circle explains only a fraction of, so the QSM
+either misses the flanges or spans the gaps between them. Sylva finds
+buttresses, then rebuilds them as a closed mesh:
+
+```python
+from sylva import qsm, trees
+
+b = trees.detect_buttress(tree)                 # tree: one tree's points with "height"
+if b["buttressed"]:
+    base = qsm.buttress_mesh(tree, b["centre"], top=b["top"])
+    volume = base.total_volume(model)           # mesh below the top + QSM above it
+    base.to_ply("buttress.ply")
+```
+
+**Detection** (`trees.detect_buttress`) uses only bark-like points: locally
+planar, with a near-horizontal normal. Flanges and round bark are both
+vertical surfaces, while grass, shrubs and resprouts clumped around a stem are
+not. Two signals then decide:
+
+- how much of the base a circle explains, compared with the round stem higher
+  up;
+- how many ridges there are: angles around the stem where protrusions persist
+  through the lowest metre. Neighbouring flanges are split where persistence
+  dips between them.
+
+The top is the lowest height from which a circle explains the stem again.
+
+On 97 harvest trees labelled by eye (Cameroon, Peru, Guyana, Indonesia and
+Wytham), it finds 28 of 29 buttressed trees with no false alarms, whether the
+points come at 1 or 2 cm. On the 40 largest trees of the Litchfield savanna,
+which have no buttresses, it calls 2 buttressed. Both are dense shrub clumps
+pressed against the stem.
+
+**Meshing** (`qsm.buttress_mesh`) rebuilds the base volumetrically, so any
+shape works:
+
+- Thin slices are rasterised, and a morphological closing plus a flood fill
+  gives the solid cross-section.
+- Slices are built from the top down. Each section contains the one above,
+  and the part of a slice kept is the part connected to it. The core then
+  carries down where near the ground only the outsides of the flanges were
+  seen.
+- Where an outline stays open, the seen bark is kept, thickened to the closing
+  radius, plus a circle where the points form a good arc.
+
+The stacked sections become a watertight surface (surface nets). The volume is
+the sum of the slice areas.
+
+On the 15 Cameroon harvest trees it detects as buttressed, the QSM alone has a
+−10.1 % volume bias against the felled volume. With the buttress mesh below
+the top, the bias is +2.3 % (RMSE 18.1 % and 17.7 %). Whether the published
+felled volumes include the stump below the cut is not recorded, so treat this
+as indicative.

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from sylva import ground, trees
+from sylva import PointCloud, ground, trees
 
 
 @pytest.fixture(scope="module")
@@ -126,3 +126,25 @@ def test_understorey_keeps_its_own_points(rng):
     assert (on[upper] == -1).mean() > 0.9
     tree_pts = np.arange(len(xyz)) < len(stem) + len(crown)
     assert (on[tree_pts & (xyz[:, 2] > 1.0)] == 1).mean() > 0.99
+
+
+def _base(rng, flanges: bool, clutter: bool):
+    """A 0.25 m stem to 6 m, optionally with five flanges fading out by 2 m and a grass clump."""
+    t = rng.uniform(0, 2 * np.pi, 400_000)
+    h = rng.uniform(0, 6, len(t))
+    r = 0.25 * (1 + (3 * np.clip(1 - h / 2, 0, None) * np.cos(2.5 * t) ** 8 if flanges else 0))
+    pts = np.column_stack([r * np.cos(t), r * np.sin(t), h])
+    pts[:, :2] += rng.normal(0, 0.003, (len(t), 2))
+    if clutter:
+        g = rng.normal(0, 1, (60_000, 3)) * [0.35, 0.35, 0.25] + [0.7, 0.2, 0.5]
+        pts = np.vstack([pts, g[g[:, 2] > 0.05]])
+    return PointCloud(pts, {"height": pts[:, 2].copy()})
+
+
+def test_detect_buttress(rng):
+    flanged = trees.detect_buttress(_base(rng, True, False), base_xy=(0, 0))
+    assert flanged["buttressed"] and flanged["ridges"] >= 2
+    assert 1.0 <= flanged["top"] <= 2.6, flanged["top"]
+    round_ = trees.detect_buttress(_base(rng, False, True), base_xy=(0, 0))
+    assert not round_["buttressed"], round_
+    assert abs(round_["stem_radius"] - 0.25) < 0.03
