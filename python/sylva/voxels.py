@@ -117,6 +117,7 @@ class RayVoxelGrid:
     |---|---|
     | ``num_beams`` | pulses entering the voxel |
     | ``num_hits`` | echoes in the voxel (``num_hit_leaf``, ``_wood``, ``_plant`` by class) |
+    | ``num_hits_weighted`` | echoes weighted by their share of the pulse (``weighting``) |
     | ``num_beams_occluded`` | pulses reaching it only after their last echo (``occlusion=True``) |
     | ``path_length`` | potential path length: full chords of the entering pulses (m) |
     | ``free_path_length`` | path actually travelled inside the voxel (m) |

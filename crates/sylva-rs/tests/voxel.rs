@@ -188,3 +188,49 @@ fn subvoxels_priors_and_wood_volume() {
     assert_eq!(v.write_text(dir.join("a.txt"), WriteOptions { filled_only: true, ..Default::default() }).unwrap(), 0);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn multi_echo_pulses_count_hits_by_their_share() {
+    // Two echoes of one pulse in the same voxel (z = 1.5 and 1.2): two hits, one pulse.
+    let shots = down_shots(&[(0.5, 0.5, vec![8.5, 8.8])]);
+    let v = voxel::voxelize(&VoxelInputs::new(&shots), &params(([0.0; 3], [1.0, 1.0, 4.0]))).unwrap();
+    assert_eq!(v.get_i(I::NumHits, 1), 2);
+    assert!((v.get_f(F::HitsWeighted, 1) - 1.0).abs() < 1e-6);
+
+    // Pulses with up to three echoes in a 1 m slab. Without beam geometry the
+    // FPL estimate uses the weighted hits, so it must equal the beam-section
+    // estimate when every section is the same (no divergence) and there is no
+    // leaf-size correction.
+    let mut seed = 7;
+    let rays: Vec<_> = (0..20_000)
+        .map(|_| {
+            let (x, y) = (lcg(&mut seed), lcg(&mut seed));
+            let mut r = 8.0;
+            let mut echoes = Vec::new();
+            while echoes.len() < 3 {
+                r += -(1.0 - lcg(&mut seed)).ln() / 0.8;
+                if r >= 9.0 {
+                    break;
+                }
+                echoes.push(r);
+            }
+            (x, y, echoes)
+        })
+        .collect();
+    let shots = down_shots(&rays);
+    let multi = shots.echo_count.iter().filter(|&&c| c > 1).count();
+    assert!(multi > 2_000, "{multi} multi-echo pulses");
+    let bounds = ([0.0; 3], [1.0, 1.0, 3.0]);
+    let plain = voxel::voxelize(&VoxelInputs::new(&shots), &params(bounds)).unwrap();
+    let beam = VoxelParams { beam: Some(BeamSpec { diameter: 0.01, divergence: 0.0 }), ..params(bounds) };
+    let beam = voxel::voxelize(&VoxelInputs::new(&shots), &beam).unwrap();
+    let (a, b) = (plain.attenuation(1, Attenuation::Fpl), beam.attenuation(1, Attenuation::Fpl));
+    assert!((a - b).abs() < 1e-4 * b, "no beam {a} vs beam {b}");
+    // Counting every echo as a whole hit would put the plain estimate well above.
+    let counts = plain.get_i(I::NumHits, 1) as f64 / plain.get_f(F::FreePathLength, 1) as f64;
+    assert!(counts > 1.2 * a, "counts {counts} vs weighted {a}");
+    // A pulse is intercepted at most once: the contact-frequency density cannot
+    // exceed 2 x (pulses) / path.
+    let bound = 2.0 * plain.get_i(I::NumBeams, 1) as f64 / plain.get_f(F::PathLength, 1) as f64;
+    assert!(plain.pad_g0_5(1) <= bound);
+}

@@ -247,7 +247,9 @@ impl RayVoxels {
     ///   (Pimont et al. 2018).
     pub fn attenuation(&self, idx: usize, method: Attenuation) -> f64 {
         let f = |fld: F| self.get_f(fld, idx) as f64;
-        let hits = self.get_i(I::NumHits, idx) as f64;
+        // Share-weighted: the free path and beam counts below carry each
+        // segment's share of the pulse, so the hits must too.
+        let hits_w = self.get_f(F::HitsWeighted, idx) as f64;
         let transmittance = || {
             if f(F::BsEntering) > EPS {
                 return Some(-((f(F::BsEntering) - f(F::BsIntercepted)) / f(F::BsEntering)).max(EPS).ln());
@@ -259,19 +261,20 @@ impl RayVoxels {
                 if f(F::BsEffectiveFreePath) > EPS {
                     f(F::BsIntercepted) / f(F::BsEffectiveFreePath)
                 } else if f(F::FreePathLength) > EPS {
-                    hits / f(F::FreePathLength)
+                    hits_w / f(F::FreePathLength)
                 } else {
                     0.0
                 }
             }
             Attenuation::Transmittance => transmittance().unwrap_or_else(|| {
                 if f(F::NumBeamsWeighted) > EPS {
-                    -(1.0 - (hits / f(F::NumBeamsWeighted)).min(1.0 - EPS)).ln()
+                    -(1.0 - (hits_w / f(F::NumBeamsWeighted)).min(1.0 - EPS)).ln()
                 } else {
                     0.0
                 }
             }),
             Attenuation::Ppl => {
+                let hits = self.get_i(I::NumHits, idx) as f64;
                 if let Some(k) = self.ppl_lambda.as_ref().map(|v| v[idx]).filter(|&k| k >= 0.0) {
                     return k as f64;
                 }
@@ -302,7 +305,7 @@ impl RayVoxels {
             }
             Attenuation::Bailey => {
                 if f(F::PathLength) > EPS {
-                    hits / f(F::PathLength)
+                    hits_w / f(F::PathLength)
                 } else {
                     0.0
                 }
@@ -322,13 +325,14 @@ impl RayVoxels {
     }
 
     /// Bias-corrected contact-frequency density for a spherical leaf angle
-    /// distribution: `2 (N − 1) / N · hits / path_length`.
+    /// distribution: `2 (N − 1) / N · hits / path_length`, with each echo
+    /// counted as its share of the pulse (a pulse is intercepted at most once).
     pub fn pad_g0_5(&self, idx: usize) -> f64 {
         let n = self.get_f(F::NumBeamsWeighted, idx) as f64;
         if n < 2.0 {
             return 0.0;
         }
-        2.0 * (n - 1.0) * self.get_i(I::NumHits, idx) as f64 / (EPS + n * self.get_f(F::PathLength, idx) as f64)
+        2.0 * (n - 1.0) * self.get_f(F::HitsWeighted, idx) as f64 / (EPS + n * self.get_f(F::PathLength, idx) as f64)
     }
 
     pub fn transmittance(&self, idx: usize) -> f64 {

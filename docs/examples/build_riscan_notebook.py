@@ -409,10 +409,10 @@ Every pulse is traced through a 0.5 m grid over the plot. With
 `occlusion=True` each voxel is observed (a pulse went through or ended in
 it), occluded (only pulses already stopped reached it) or unreached.
 
-- **Beam geometry.** `beam=` switches on beam-section weighting, which also
-  weights each echo by its share of the pulse. The values are approximate
-  (7 mm exit, 0.27 mrad). Only relative beam sections enter a pooled layer
-  estimate, so they matter little.
+- **Beam geometry.** `beam=` weights each pulse by its cross-section in
+  the voxel, which grows with range. The values are approximate (7 mm exit,
+  0.27 mrad). Only relative sections enter a pooled layer estimate, so they
+  matter little: without `beam` the PAI differs by about 3 %.
 - **Profile.** Plant area density per height layer is pooled over the layer
   (intercepted section over effective free path), and only layers where the
   median voxel saw at least 50 pulses are counted. With every 32nd pulse,

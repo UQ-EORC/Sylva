@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
-    <img src="docs/assets/banner-light.png" height="160" alt="Sylva">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner.png">
+    <img src="docs/assets/banner.png" height="280" alt="Sylva">
   </picture>
 </p>
 

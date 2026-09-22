@@ -224,16 +224,20 @@ pub enum F {
     BsEffectiveFreePath,
     BsEffFreePathHits,
     PplMissWl,
+    /// Σ echo share of the pulse over the echoes in the voxel: hits on the
+    /// same footing as the share-weighted path lengths. `NumHits` counts
+    /// every echo of a multi-echo pulse as one whole hit.
+    HitsWeighted,
 }
 
 impl F {
-    pub const COUNT: usize = 23;
+    pub const COUNT: usize = 24;
     pub const ALL: [F; F::COUNT] = [
         F::NumBeamsWeighted, F::PathLength, F::PathLengthSq, F::FreePathLength, F::FreePathLengthPlant,
         F::FreePathLengthLeaf, F::FreePathLengthWood, F::EffectiveFreePathLength, F::PathLengthOccluded,
         F::SumOfAngles, F::SumSinAzimuth, F::SumCosAzimuth, F::SumOfLaserDistances, F::SumHitDelta,
         F::SumMissDelta, F::PathLengthUnbound, F::BsEntering, F::BsIntercepted, F::BsPotential,
-        F::BsFreePath, F::BsEffectiveFreePath, F::BsEffFreePathHits, F::PplMissWl,
+        F::BsFreePath, F::BsEffectiveFreePath, F::BsEffFreePathHits, F::PplMissWl, F::HitsWeighted,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -261,6 +265,7 @@ impl F {
             F::BsEffectiveFreePath => "bs_effective_free_path",
             F::BsEffFreePathHits => "bs_eff_free_path_hits",
             F::PplMissWl => "ppl_miss_wl",
+            F::HitsWeighted => "num_hits_weighted",
         }
     }
 

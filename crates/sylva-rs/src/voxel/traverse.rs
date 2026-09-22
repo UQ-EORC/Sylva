@@ -446,6 +446,7 @@ impl Tracer<'_> {
                 free = (r.range - t_in).min(chord).max(0.0);
             }
             a.addi(I::NumHits, idx);
+            a.addf(F::HitsWeighted, idx, echo_w[k] as f64);
             a.addf(F::SumHitDelta, idx, chord);
             match r.foliage {
                 foliage::LEAF => a.addi(I::NumHitLeaf, idx),
