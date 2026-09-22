@@ -13,10 +13,19 @@ from .pointcloud import PointCloud
 
 @dataclass
 class Shots:
-    """Laser shots with a CSR list of echoes.
+    """Laser pulses, each with zero or more echoes.
 
+    Point clouds lose the pulses that hit nothing and the order of echoes
+    along each beam; gap fraction, clumping and ray-traced voxels need both.
+    ``Shots`` keeps one row per pulse and the echoes in compressed sparse
+    row (CSR) form: the echoes of shot ``i`` are
+    ``echo_range[echo_start[i] : echo_start[i] + echo_count[i]]``.
     A shot with ``echo_count == 0`` is a genuine miss and still carries
-    information about free space, which ray-traced density estimates use.
+    information about free space.
+
+    Build one with :func:`sylva.io.read_rxp_shots`,
+    :meth:`sylva.riscan.ScanPosition.read_shots`, :meth:`from_ray_cloud`,
+    :meth:`from_pointcloud` or :meth:`load`.
 
     Attributes
     ----------
@@ -47,10 +56,12 @@ class Shots:
 
     @property
     def n_shots(self) -> int:
+        """Number of pulses, including misses."""
         return len(self.origin)
 
     @property
     def n_echoes(self) -> int:
+        """Number of echoes over all pulses."""
         return len(self.echo_range)
 
     def __repr__(self) -> str:
@@ -69,28 +80,78 @@ class Shots:
                    d["echo_range"], d["echo_attrs"])
 
     def shot_of_echo(self) -> np.ndarray:
+        """Index of the owning shot for each echo.
+
+        Returns
+        -------
+        numpy.ndarray
+            Length ``n_echoes``.
+        """
         return np.repeat(np.arange(self.n_shots), self.echo_count)
 
     def echo_rank(self) -> np.ndarray:
-        """0 = first return within its shot."""
+        """Position of each echo within its shot.
+
+        Returns
+        -------
+        numpy.ndarray
+            Length ``n_echoes``; 0 is the first (nearest) return.
+        """
         return np.arange(self.n_echoes) - np.repeat(self.echo_start, self.echo_count)
 
     def echo_xyz(self) -> np.ndarray:
+        """Echo positions in the shots' frame.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(n_echoes, 3)``, ``origin + direction * range``.
+        """
         s = self.shot_of_echo()
         return self.origin[s] + self.direction[s] * self.echo_range[:, None]
 
     def to_pointcloud(self) -> PointCloud:
-        """Echoes as points with ``return_number``, ``number_of_returns`` and ``range``."""
+        """The echoes as a point cloud; misses are dropped.
+
+        Returns
+        -------
+        PointCloud
+            One point per echo with ``return_number`` (1 = first),
+            ``number_of_returns``, ``range`` (m) and every echo attribute.
+        """
         xyz, attrs = _core.shots_to_pointcloud(self._to_core())
         return PointCloud(xyz, attrs)
 
     def transform(self, matrix: np.ndarray) -> Shots:
-        """Apply a rigid transform to origins and directions."""
+        """Move the pulses into another frame (e.g. scanner to project with the SOP).
+
+        Parameters
+        ----------
+        matrix
+            ``(4, 4)`` rigid transform. Origins are transformed as points,
+            directions are rotated; ranges are unchanged, so the matrix must
+            not scale.
+
+        Returns
+        -------
+        Shots
+        """
         m = np.ascontiguousarray(matrix, dtype=np.float64)
         return Shots._from_core(_core.shots_transform(self._to_core(), m))
 
     def subset(self, mask: np.ndarray) -> Shots:
-        """Keep the shots where ``mask`` is True (echo arrays are re-packed)."""
+        """Select pulses.
+
+        Parameters
+        ----------
+        mask
+            Boolean array of length ``n_shots``.
+
+        Returns
+        -------
+        Shots
+            The selected pulses with all their echoes (never part of a pulse).
+        """
         mask = np.asarray(mask, dtype=bool)
         keep_shots = np.flatnonzero(mask)
         echo_mask = mask[self.shot_of_echo()]
@@ -102,8 +163,16 @@ class Shots:
         )
 
     def zenith_azimuth(self) -> tuple[np.ndarray, np.ndarray]:
-        """Per-shot zenith (degrees from +z) and azimuth (degrees, ``atan2(x, y)``
-        wrapped to ``[0, 360)``, RIEGL convention)."""
+        """Beam angles of each pulse.
+
+        Returns
+        -------
+        zenith : numpy.ndarray
+            Degrees from +z (0 = straight up, 90 = horizontal).
+        azimuth : numpy.ndarray
+            Degrees clockwise from +y, ``atan2(x, y)`` wrapped to
+            ``[0, 360)`` (RIEGL convention).
+        """
         d = self.direction
         zen = np.degrees(np.arccos(np.clip(d[:, 2], -1, 1)))
         az = np.degrees(np.arctan2(d[:, 0], d[:, 1])) % 360.0
@@ -111,7 +180,24 @@ class Shots:
 
     @classmethod
     def concatenate(cls, parts: list[Shots]) -> Shots:
-        """Stack shots; only echo attributes common to all parts are kept."""
+        """Stack pulse sets, e.g. several scan positions.
+
+        Parameters
+        ----------
+        parts
+            Shots in a common frame.
+
+        Returns
+        -------
+        Shots
+            All pulses in order; only echo attributes present in every part
+            are kept.
+
+        Raises
+        ------
+        ValueError
+            If ``parts`` is empty.
+        """
         if not parts:
             raise ValueError("no shots to concatenate")
         counts = np.concatenate([p.echo_count for p in parts])
@@ -135,10 +221,22 @@ class Shots:
         Nominally ``pattern["phi_count"]``, but RIEGL scanners fire ~1 % more
         pulses than the nominal grid (a VZ-2000i at "600 kHz" steps at ~631
         kHz), so the count observed on saturated lines is a better estimate.
-        Returns the larger of the nominal count and the ``quantile`` of shots
-        observed per zenith line; call in the scanner frame. For shots read
-        with ``shot_stride`` (every n-th pulse kept) the nominal count is
-        divided by it.
+        Call in the scanner frame.
+
+        Parameters
+        ----------
+        pattern
+            Scan pattern from :attr:`sylva.riscan.ScanPosition.pattern`.
+        quantile
+            Quantile of the per-line shot counts taken as "fully sampled".
+        shot_stride
+            The ``shot_stride`` the shots were read with; the nominal count
+            is divided by it.
+
+        Returns
+        -------
+        int
+            The larger of the nominal count and the observed ``quantile``.
         """
         _, edges = self._zenith_lines(pattern)
         zen, _ = self.zenith_azimuth()
@@ -151,8 +249,22 @@ class Shots:
 
         ``pattern`` holds ``theta_start``, ``theta_delta``, ``theta_count``
         (zenith lines, degrees) and ``phi_count`` (azimuth steps per line), as
-        parsed from a RiSCAN ``project.rsp``. ``pulses_per_line`` overrides
-        ``phi_count`` (see :meth:`pulses_per_line`).
+        parsed from a RiSCAN ``project.rsp``.
+
+        Parameters
+        ----------
+        pattern
+            Scan pattern from :attr:`sylva.riscan.ScanPosition.pattern`.
+        zenith_edges
+            Ring edges in degrees from up.
+        pulses_per_line
+            Overrides ``phi_count`` (see :meth:`pulses_per_line`).
+
+        Returns
+        -------
+        numpy.ndarray
+            Pulses fired per ring (length ``len(zenith_edges) - 1``): zenith
+            lines whose angle falls in the ring times pulses per line.
         """
         theta, _ = self._zenith_lines(pattern)
         lines, _ = np.histogram(theta, bins=np.asarray(zenith_edges, dtype=float))
@@ -178,6 +290,21 @@ class Shots:
         the pattern's zenith lines are defined in the scanner frame; all shots
         must share one origin. ``ScanPosition.read_shots(fill_missing=True)``
         does this in the right order.
+
+        Parameters
+        ----------
+        pattern
+            Scan pattern from :attr:`sylva.riscan.ScanPosition.pattern`.
+        pulses_per_line
+            Pulses fired per zenith line; estimated if None.
+        seed
+            Seed for the random azimuths, so the output is reproducible.
+
+        Returns
+        -------
+        Shots
+            The input followed by the added misses (the input itself if none
+            are missing).
         """
         rng = np.random.default_rng(seed)
         theta, edges = self._zenith_lines(pattern)
@@ -218,27 +345,86 @@ class Shots:
         origin); ``0`` keeps them exact. With more than 65 536 positions
         (mobile or airborne scanning) origins are stored per pulse at 0.1 mm,
         delta encoded.
+
+        Parameters
+        ----------
+        path
+            Output ``.parquet`` file; overwritten if it exists.
+        double
+            Store angles and ranges as float64.
+        row_group_size
+            Pulses per row group; the unit of partial reads and of streaming
+            in :func:`sylva.voxels.ray_voxelize`. Smaller groups use less
+            memory when streaming.
+        zstd_level
+            zstd compression level (1 fast, 22 smallest).
+        origin_tolerance
+            Distance (m) within which origins are merged into one position.
         """
         _core.write_shots(self._to_core(), str(path), double, int(row_group_size),
                           int(zstd_level), float(origin_tolerance))
 
     @classmethod
     def load(cls, path: str | Path, groups: list[int] | None = None) -> Shots:
-        """Read a shots file written by :meth:`save`, or only some of its row
-        groups (see :meth:`file_info`)."""
+        """Read a shots file written by :meth:`save`.
+
+        Parameters
+        ----------
+        path
+            ``.parquet`` shots file.
+        groups
+            Row-group indices to read (see :meth:`file_info`); all if None.
+
+        Returns
+        -------
+        Shots
+
+        Raises
+        ------
+        OSError
+            If the file is missing or is not a Sylva shots file.
+        """
         return cls._from_core(_core.read_shots(str(path), groups))
 
     @staticmethod
     def file_info(path: str | Path) -> dict:
-        """Header of a shots file, without reading pulses: ``n_shots``,
-        ``n_echoes``, ``n_groups``, echo ``bounds``, ``scans`` (scanner
-        positions; empty when stored per pulse) and ``echo_attrs``."""
+        """Describe a shots file without reading its pulses.
+
+        Parameters
+        ----------
+        path
+            ``.parquet`` shots file.
+
+        Returns
+        -------
+        dict
+            ``n_shots``, ``n_echoes``, ``n_groups``, echo ``bounds``,
+            ``scans`` (scanner positions; empty when origins are stored per
+            pulse) and ``echo_attrs`` (names).
+        """
         return _core.shots_info(str(path))
 
     @classmethod
     def from_pointcloud(cls, cloud: PointCloud, origin=(0.0, 0.0, 0.0)) -> Shots:
-        """Treat each point as a return from ``origin``; adjacent points with
-        equal ``gps_time`` form one multi-echo shot."""
+        """Pulses from a single-position point cloud.
+
+        Use when the only record of a scan is its points (no ``.rxp``). Misses
+        are not recovered; add them with :meth:`fill_missing` if the scan
+        pattern is known.
+
+        Parameters
+        ----------
+        cloud
+            Points of one scan position. Adjacent points with equal
+            ``gps_time`` form one multi-echo shot; otherwise each point is a
+            single-return pulse. Other attributes become echo attributes.
+        origin
+            Scanner position in the cloud's frame.
+
+        Returns
+        -------
+        Shots
+        """
         return cls._from_core(_core.shots_from_pointcloud(cloud.xyz, cloud.attrs, tuple(origin)))
 
     @classmethod
@@ -247,7 +433,29 @@ class Shots:
         (LAS/LAZ) point from each end point back to the sensor; ``bound == 0``
         (else ``alpha == 0``) marks unbounded rays, which become echo-less
         shots. Returns sharing a ``beam_id`` / ``gps_time`` are joined into one
-        multi-echo shot when ``number_of_returns`` is present."""
+        multi-echo shot when ``number_of_returns`` is present.
+
+        Parameters
+        ----------
+        cloud
+            A ray cloud read with :func:`sylva.read`.
+
+        Returns
+        -------
+        Shots
+            Origins are the per-ray sensor positions.
+
+        Raises
+        ------
+        ValueError
+            If the cloud has no sensor-vector attributes.
+
+        Warns
+        -----
+        UserWarning
+            If every ray starts at (0, 0, 0): the file was written without
+            sensor positions, and ray-traced products would be wrong.
+        """
         shots = cls._from_core(_core.shots_from_ray_cloud(cloud.xyz, cloud.attrs))
         if shots.n_shots and np.all(np.abs(shots.origin[:: max(1, shots.n_shots // 10000)]) < 1e-6):
             import warnings

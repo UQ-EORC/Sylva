@@ -20,7 +20,22 @@ __all__ = [
 
 @dataclass
 class VoxelGrid:
-    """Point counts per voxel. ``counts[k, j, i]`` indexes z, y, x."""
+    """Point counts on a regular 3D grid; build with :func:`voxelize`.
+
+    Attributes
+    ----------
+    counts
+        ``(nz, ny, nx)`` integer counts; ``counts[k, j, i]`` indexes z, y, x.
+    origin
+        Minimum corner of the grid, ``(x, y, z)``.
+    voxel_size
+        Voxel edge length (m).
+
+    Notes
+    -----
+    Occupancy is not density: an empty voxel may simply not have been seen.
+    For plant area density use the ray-traced :func:`sylva.voxels.ray_voxelize`.
+    """
 
     counts: np.ndarray
     origin: np.ndarray
@@ -28,28 +43,67 @@ class VoxelGrid:
 
     @property
     def occupied(self) -> np.ndarray:
+        """Boolean ``(nz, ny, nx)``, True where a voxel holds at least one point."""
         return self.counts > 0
 
     @property
     def shape(self) -> tuple[int, int, int]:
-        """``(nx, ny, nz)``."""
+        """Grid size as ``(nx, ny, nz)`` (the reverse of ``counts.shape``)."""
         return self.counts.shape[::-1]
 
     def z_levels(self) -> np.ndarray:
+        """Bottom z of each voxel layer.
+
+        Returns
+        -------
+        numpy.ndarray
+            Length ``nz``, bottom first (m).
+        """
         return self.origin[2] + np.arange(self.counts.shape[0]) * self.voxel_size
 
     def occupied_centers(self) -> np.ndarray:
+        """Centres of the occupied voxels, e.g. for plotting.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(n, 3)`` x, y, z of each voxel with at least one point.
+        """
         k, j, i = np.nonzero(self.occupied)
         return self.origin + (np.column_stack([i, j, k]) + 0.5) * self.voxel_size
 
     def vertical_profile(self) -> np.ndarray:
-        """Fraction of voxels occupied per vertical layer."""
+        """Fraction of voxels occupied in each layer.
+
+        Returns
+        -------
+        numpy.ndarray
+            Length ``nz``, bottom first, values 0 to 1.
+        """
         occ = self.occupied
         return occ.sum(axis=(1, 2)) / (occ.shape[1] * occ.shape[2])
 
 
 def voxelize(cloud: PointCloud, voxel_size: float, origin=None, shape=None) -> VoxelGrid:
-    """Count points per voxel."""
+    """Count points per voxel.
+
+    Parameters
+    ----------
+    cloud
+        Input points.
+    voxel_size
+        Voxel edge length (m).
+    origin
+        Minimum corner ``(x, y, z)``; the cloud's minimum if None. Fix it
+        (with ``shape``) to compare grids across dates or plots.
+    shape
+        ``(nx, ny, nz)``; enough to cover the cloud if None. Points outside
+        the grid are ignored.
+
+    Returns
+    -------
+    VoxelGrid
+    """
     d = _core.voxelize(cloud.xyz, voxel_size,
                        None if origin is None else tuple(float(v) for v in origin),
                        None if shape is None else tuple(int(v) for v in shape))
@@ -58,7 +112,25 @@ def voxelize(cloud: PointCloud, voxel_size: float, origin=None, shape=None) -> V
 
 def vertical_profile(cloud: PointCloud, bin_size: float = 0.5, height_attr: str = "height",
                      max_height: float | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """Histogram of point counts by height. Returns ``(bin_bottoms, counts)``."""
+    """Point counts by height above ground.
+
+    Parameters
+    ----------
+    cloud
+        A height-normalised cloud.
+    bin_size
+        Bin height (m).
+    height_attr
+        Attribute holding heights; z is used if absent.
+    max_height
+        Top of the last bin; the highest point if None.
+
+    Returns
+    -------
+    bin_bottoms, counts : numpy.ndarray
+        Point counts depend on scanner distance and occlusion, so this is a
+        description of the data, not of the canopy.
+    """
     h = cloud.heights(height_attr)
     top = max_height if max_height is not None else np.nanmax(h)
     edges = np.arange(0, top + bin_size, bin_size)
@@ -71,9 +143,31 @@ def pad_profile_voxel(cloud: PointCloud, voxel_size: float = 0.5, height_attr: s
                       clumping: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
     """Plant area density profile by the vertical contact-frequency method
     (simplified Hosoi & Omasa 2006, vertical beams, G = 0.5):
-    ``PAD_i = -ln(1 - N_i) / (G dz)``. Returns ``(layer_bottoms, pad)``.
+    ``PAD_i = -ln(1 - N_i) / (G dz)``, where ``N_i`` is the fraction of voxel
+    columns not yet intercepted above layer ``i`` that are occupied in it.
 
-    For a rigorous path-length model use :func:`density_grid` with pulse data.
+    Quick and needs only points, but it ignores beam direction and
+    occlusion. For a path-length estimate use
+    :func:`sylva.voxels.ray_voxelize` or :class:`GapProfile` with pulse
+    data.
+
+    Parameters
+    ----------
+    cloud
+        A height-normalised cloud.
+    voxel_size
+        Voxel edge and layer thickness (m); results depend strongly on it.
+    height_attr
+        Attribute holding heights.
+    max_height
+        Top of the profile; the highest point if None.
+    clumping
+        Factor the PAD is multiplied by (1 = none).
+
+    Returns
+    -------
+    layer_bottoms, pad : numpy.ndarray
+        Heights (m) and plant area density (m² m⁻³).
     """
     h = np.ascontiguousarray(cloud.heights(height_attr))
     return _core.pad_profile_voxel(cloud.xyz, h, voxel_size, max_height, clumping)
@@ -81,8 +175,29 @@ def pad_profile_voxel(cloud: PointCloud, voxel_size: float = 0.5, height_attr: s
 
 def gap_fraction_zenith(shots: Shots, echo_heights: np.ndarray, min_height: float = 0.0,
                         zenith_edges: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """Directional gap fraction P(theta) by zenith ring: a shot is a gap when
-    none of its echoes is above ``min_height``. Returns ``(centres_deg, gap)``."""
+    """Directional gap fraction by zenith ring from pulses that include misses.
+
+    A pulse is a gap when none of its echoes is above ``min_height``. Needs
+    every fired pulse, so use shots from a ray cloud or after
+    :meth:`sylva.Shots.fill_missing`; for raw RiVLib streams use
+    :func:`gap_fraction_pattern` or :class:`GapProfile`.
+
+    Parameters
+    ----------
+    shots
+        Pulses of one scan position.
+    echo_heights
+        Height above ground of each echo (length ``shots.n_echoes``).
+    min_height
+        Echoes at or below this height (m) do not block the pulse.
+    zenith_edges
+        Ring edges (degrees from up); 0-90 in 5 degree rings if None.
+
+    Returns
+    -------
+    centres_deg, gap : numpy.ndarray
+        Ring centres and gap fraction; NaN for rings without pulses.
+    """
     edges = None if zenith_edges is None else np.ascontiguousarray(zenith_edges, dtype=float)
     return _core.gap_fraction_zenith(shots._to_core(),
                                      np.ascontiguousarray(echo_heights, dtype=float),
@@ -98,7 +213,29 @@ def gap_fraction_pattern(shots: Shots, echo_heights: np.ndarray, pattern: dict,
     a fired pulse with no echo above ``min_height`` is a gap. Pass the shots
     in the scanner frame, or ``pulses_per_line`` from the scanner-frame shots.
 
-    Returns ``(centres_deg, gap)``; rings outside the scanned zenith range are NaN.
+    Parameters
+    ----------
+    shots
+        Pulses of one scan position.
+    echo_heights
+        Height above ground of each echo.
+    pattern
+        Scan pattern from :attr:`sylva.riscan.ScanPosition.pattern`.
+    min_height
+        Echoes at or below this height (m) do not block the pulse.
+    zenith_edges
+        Ring edges (degrees); 0-90 in 5 degree rings if None.
+    pulses_per_line
+        Pulses fired per zenith line; estimated from ``shots`` if None.
+
+    Returns
+    -------
+    centres_deg, gap : numpy.ndarray
+        Rings outside the scanned zenith range are NaN.
+
+    See Also
+    --------
+    GapProfile : the same pooled over scans and resolved by height.
     """
     edges = np.arange(0, 95, 5.0) if zenith_edges is None else np.asarray(zenith_edges, float)
     if pulses_per_line is None:
@@ -123,13 +260,47 @@ def lai_from_gap_fraction(zenith_deg, gap_fraction, method: str = "hinge") -> fl
 
     NaN rings are skipped; a gap fraction of 0 (saturated ring, common in
     dense forest) is floored at 1e-5, so the result is large but finite.
+
+    Parameters
+    ----------
+    zenith_deg
+        Ring centres (degrees).
+    gap_fraction
+        Gap fraction per ring.
+    method : {"hinge", "miller"}
+        ``"hinge"`` uses the ring nearest 57.5 degrees, where the result is
+        almost independent of leaf angle; ``"miller"`` needs rings covering
+        0-90 degrees.
+
+    Returns
+    -------
+    float
+        Effective PAI (m² m⁻²), not corrected for clumping.
+
+    Raises
+    ------
+    ValueError
+        For an unknown method or no valid rings.
     """
     return _core.lai_from_gap_fraction(np.ascontiguousarray(zenith_deg, dtype=float),
                                        np.ascontiguousarray(gap_fraction, dtype=float), method)
 
 
 def canopy_cover(chm_data: np.ndarray, threshold: float = 2.0) -> float:
-    """Fraction of CHM cells at or above ``threshold`` (m)."""
+    """Canopy cover from a canopy height model.
+
+    Parameters
+    ----------
+    chm_data
+        CHM values, e.g. ``make_chm(...).data``; NaN cells are ignored.
+    threshold
+        Height (m) at or above which a cell counts as canopy.
+
+    Returns
+    -------
+    float
+        Fraction of valid cells that are canopy; NaN if none are valid.
+    """
     return _core.canopy_cover(np.ascontiguousarray(chm_data, dtype=float), threshold)
 
 
@@ -139,7 +310,28 @@ class DensityGrid:
 
     Arrays are ``[k, j, i]`` (z, y, x). ``density`` is
     ``2 (n-1)/n · hits / path_length`` per voxel (spherical leaf angles),
-    NaN where fewer than ``min_hits`` hits.
+    NaN where fewer than ``min_hits`` hits. Build with :func:`density_grid`.
+
+    For most work :func:`sylva.voxels.ray_voxelize` is the fuller model
+    (beam width, several estimators, occlusion); this grid is the simple,
+    fast one.
+
+    Attributes
+    ----------
+    n_rays
+        Pulses entering each voxel.
+    n_hits
+        Echoes inside each voxel.
+    path_length
+        Summed beam path length through each voxel (m).
+    density
+        Plant area density (m² m⁻³).
+    profile
+        Mean density per layer, bottom first.
+    origin
+        Minimum corner ``(x, y, z)``.
+    voxel_size
+        Voxel edge (m).
     """
 
     n_rays: np.ndarray
@@ -151,10 +343,23 @@ class DensityGrid:
     voxel_size: float
 
     def z_levels(self) -> np.ndarray:
+        """Bottom z of each voxel layer.
+
+        Returns
+        -------
+        numpy.ndarray
+            Length ``nz``, bottom first (m).
+        """
         return self.origin[2] + np.arange(self.n_rays.shape[0]) * self.voxel_size
 
     def centers(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Voxel-centre coordinate grids ``(X, Y, Z)``, each shaped like ``density``."""
+        """Voxel-centre coordinates.
+
+        Returns
+        -------
+        X, Y, Z : numpy.ndarray
+            Each shaped like ``density``, ``(nz, ny, nx)``.
+        """
         nz, ny, nx = self.density.shape
         xs = self.origin[0] + (np.arange(nx) + 0.5) * self.voxel_size
         ys = self.origin[1] + (np.arange(ny) + 0.5) * self.voxel_size
@@ -163,19 +368,45 @@ class DensityGrid:
         return X, Y, Z
 
     def height_above(self, dtm: Raster) -> np.ndarray:
-        """Height of each voxel centre above the DTM, shaped like ``density``."""
+        """Height of each voxel centre above the terrain.
+
+        Parameters
+        ----------
+        dtm
+            Terrain in the grid's frame.
+
+        Returns
+        -------
+        numpy.ndarray
+            Shaped like ``density`` (m).
+        """
         X, Y, Z = self.centers()
         return Z - dtm.sample(X.ravel(), Y.ravel()).reshape(Z.shape)
 
     @property
     def pai(self) -> float:
-        """Plant area index: column-integrated mean density."""
+        """Plant area index: the layer means summed over height (m² m⁻²).
+
+        Includes ground layers unless :meth:`mask_ground` was applied.
+        """
         return float(np.nansum(self.profile) * self.voxel_size)
 
     def mask_ground(self, dtm: Raster, margin: float | None = None) -> DensityGrid:
-        """Copy with voxels at or below the terrain (centre height < ``margin``,
-        default one voxel) set to NaN, so ground returns do not count as plant
-        material. Also recomputes ``profile``."""
+        """Remove ground voxels so terrain returns do not count as plant material.
+
+        Parameters
+        ----------
+        dtm
+            Terrain in the grid's frame.
+        margin
+            Voxels whose centre is less than this height (m) above the
+            terrain are set to NaN; one voxel if None.
+
+        Returns
+        -------
+        DensityGrid
+            A copy with ``density`` masked and ``profile`` recomputed.
+        """
         margin = self.voxel_size if margin is None else margin
         h = self.height_above(dtm)
         density = np.where(h < margin, np.nan, self.density)
@@ -196,7 +427,24 @@ class DensityGrid:
         its rays — which weights voxels by how well they were sampled and is
         robust to the sparsely-sampled, occluded voxels of a single scan.
         ``pooled=False`` averages the per-voxel ``density`` instead.
-        Returns ``(bin_bottoms, pad)``; integrate with ``bin_size`` for PAI.
+
+        Parameters
+        ----------
+        dtm
+            Terrain in the grid's frame.
+        bin_size
+            Height bin (m); the voxel size if None.
+        max_height
+            Top of the profile; the highest sampled voxel if None.
+        margin
+            Minimum voxel-centre height (m); one voxel if None.
+        pooled
+            Pool hits and path lengths per bin (recommended).
+
+        Returns
+        -------
+        bin_bottoms, pad : numpy.ndarray
+            PAD in m² m⁻³; ``np.nansum(pad) * bin_size`` is PAI.
         """
         bin_size = self.voxel_size if bin_size is None else bin_size
         margin = self.voxel_size if margin is None else margin
@@ -225,8 +473,25 @@ class DensityGrid:
 
 def density_grid(shots: Shots, voxel_size: float, origin=None, shape=None,
                  min_hits: int = 2) -> DensityGrid:
-    """Trace every shot through a voxel grid (unbounded shots traverse to the
-    grid edge) and estimate plant area density per voxel."""
+    """Ray-trace pulses through a voxel grid and estimate plant area density.
+
+    Pulses without echoes run to the grid edge.
+
+    Parameters
+    ----------
+    shots
+        Pulses from one or more scan positions in a common frame.
+    voxel_size
+        Voxel edge (m).
+    origin, shape
+        Grid minimum corner and ``(nx, ny, nz)``; both None covers the echoes.
+    min_hits
+        Voxels with fewer echoes get NaN density.
+
+    Returns
+    -------
+    DensityGrid
+    """
     d = _core.density_grid(shots._to_core(), voxel_size,
                            None if origin is None else tuple(float(v) for v in origin),
                            None if shape is None else tuple(int(v) for v in shape), min_hits)
@@ -239,7 +504,33 @@ def fit_ground_plane(points, cell: float = 1.0, centre=None, radius: float | Non
     """Ground plane ``z = a x + b y + c`` through the lowest point of every
     ``cell`` (m) grid cell, optionally within ``radius`` of ``centre`` (xy),
     fitted with Huber-weighted least squares so tree bases and pits pull
-    little. Returns ``[a, b, c]``."""
+    little.
+
+    Used for the single-scan gap profiles, where a plane around the scanner
+    is enough and a DTM may not exist.
+
+    Parameters
+    ----------
+    points
+        A :class:`~sylva.PointCloud` or ``(N, 3)`` array; for a scan,
+        downward echoes work best.
+    cell
+        Grid cell size (m) for the lowest-point selection.
+    centre, radius
+        Only use points within ``radius`` (m) of ``centre`` (xy).
+    iterations
+        Reweighting iterations.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``[a, b, c]``; ground height at (x, y) is ``a * x + b * y + c``.
+
+    Raises
+    ------
+    ValueError
+        With fewer than 3 points.
+    """
     xyz = np.asarray(points.xyz if isinstance(points, PointCloud) else points, dtype=float)
     if centre is not None and radius is not None:
         xyz = xyz[np.hypot(xyz[:, 0] - centre[0], xyz[:, 1] - centre[1]) <= radius]
@@ -277,6 +568,27 @@ def fired_pulses_per_ring(shots_scanner: Shots, pattern: dict, zenith_edges,
     overshoots, since the mirror's zenith angles do not sit exactly on the
     nominal lines. In dense canopy, where nearly every pulse returns, a few
     per cent too many fired pulses read as gaps and cap the PAI.
+
+    Parameters
+    ----------
+    shots_scanner
+        Pulses of one scan in the scanner frame.
+    pattern
+        Scan pattern from :attr:`sylva.riscan.ScanPosition.pattern`.
+    zenith_edges
+        Ring edges (degrees).
+    shot_stride
+        The ``shot_stride`` used when reading (for the fallback estimate).
+    ground_zenith
+        Zenith range (degrees) of the lines used to count pulses per line.
+        If fewer than 10 lines fall in it, the estimate from
+        :meth:`sylva.Shots.pulses_per_line` is used instead.
+
+    Returns
+    -------
+    numpy.ndarray
+        Pulses fired per ring (float, length ``len(zenith_edges) - 1``), for
+        :meth:`GapProfile.add_scan`.
     """
     edges = np.asarray(zenith_edges, dtype=float)
     theta, line_edges = shots_scanner._zenith_lines(pattern)
@@ -302,8 +614,24 @@ class GapProfile:
     pooled over scans (Jupp et al. 2009), and what follows from it.
 
     Build it with :meth:`empty` and :meth:`add_scan` (one call per scan
-    position), or :func:`gap_profile`. Returns are weighted ``1 / n`` per
+    position), then read :meth:`report`. Returns are weighted ``1 / n`` per
     echo of an ``n``-echo pulse; ``shots`` are pulses fired.
+
+    Validated against pylidar on TERN plots (within 4 % where unsaturated)
+    and against hemispherical photographs; see *Benchmarks > Canopy gap
+    profiles* and the *Pulse data* guide for the full workflow.
+
+    Examples
+    --------
+    >>> prof = GapProfile.empty()
+    >>> for pos in project.with_scans():
+    ...     s = io.read_rxp_shots(pos.rxp, shot_stride=4)
+    ...     fired = fired_pulses_per_ring(s, pos.pattern, prof.zenith_edges, shot_stride=4)
+    ...     s = s.transform(pos.sop)
+    ...     xyz = s.echo_xyz()
+    ...     a, b, c = fit_ground_plane(xyz, centre=pos.sop[:2, 3], radius=25)
+    ...     prof.add_scan(s, xyz[:, 2] - (a * xyz[:, 0] + b * xyz[:, 1] + c), fired_per_ring=fired)
+    >>> prof.report()["pai_hinge"]
     """
 
     zenith_edges: np.ndarray  #: deg
@@ -322,6 +650,24 @@ class GapProfile:
     @classmethod
     def empty(cls, zenith_edges=np.arange(5.0, 75.0, 5.0), n_azimuth: int = 36,
               height_bin: float = 0.5, max_height: float = 80.0) -> "GapProfile":
+        """Start an empty profile.
+
+        Parameters
+        ----------
+        zenith_edges
+            Ring edges (degrees from up). The default, 5-75 degrees in 5 degree
+            rings, avoids the near-horizontal rings that see mostly stems.
+        n_azimuth
+            Azimuth sectors per ring, used for the clumping index.
+        height_bin
+            Height resolution (m).
+        max_height
+            Top of the profile (m); returns above it go in the top bin.
+
+        Returns
+        -------
+        GapProfile
+        """
         edges = np.asarray(zenith_edges, dtype=float)
         nh = int(np.ceil(max_height / height_bin))
         return cls(edges, int(n_azimuth), float(height_bin), np.zeros((len(edges) - 1, n_azimuth, nh)),
@@ -335,7 +681,27 @@ class GapProfile:
         Returns below ``min_height`` are not counted. By default all count, and
         those below zero go in the lowest bin: a pulse fired upwards cannot
         hit the ground, so a negative height means the ground model is off
-        there, not that the return is not vegetation."""
+        there, not that the return is not vegetation.
+
+        Parameters
+        ----------
+        shots
+            One scan position's pulses. Only their directions and echo
+            counts are used, so the scanner or project frame both work.
+        echo_heights
+            Height above ground of each echo (length ``shots.n_echoes``),
+            e.g. from a DTM or :func:`fit_ground_plane`.
+        fired_per_ring
+            Pulses fired into each ring (:func:`fired_pulses_per_ring`) for
+            RiVLib streams, which lack the misses.
+        min_height
+            Echoes below this height (m) are dropped entirely.
+
+        Notes
+        -----
+        The profile is updated in place; add every scan of the plot before
+        reading it.
+        """
         nr, na, nh = self.hits.shape
         hits, shots_n = _core.pgap_histogram(
             shots._to_core(), np.ascontiguousarray(echo_heights, dtype=float), [float(e) for e in self.zenith_edges],
@@ -363,9 +729,15 @@ class GapProfile:
         return 0.5 * (self.zenith_edges[:-1] + self.zenith_edges[1:])
 
     def pgap(self) -> np.ndarray:
-        """Gap probability ``(rings, heights)``: 1 minus the returns between
-        :attr:`min_height` and each height, over the pulses fired. NaN for
-        rings without pulses."""
+        """Gap probability by ring and height.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(rings, heights)``: 1 minus the returns between
+            :attr:`min_height` and the top of each height bin, over the
+            pulses fired, clipped to 0-1. NaN for rings without pulses.
+        """
         fired = self.shots.sum(axis=1)[:, None]
         counted = self.hits.sum(axis=1).copy()
         counted[:, : self._first_bin()] = 0.0
@@ -389,6 +761,22 @@ class GapProfile:
         ``atan(PAI_v / PAI_h)``.
         ``weighted``: ``2 cos(theta) (-ln P)`` averaged over rings with weights
         ``sin(theta)`` (Miller 1967 over the rings measured, spherical leaves).
+
+        Parameters
+        ----------
+        method : {"hinge", "linear", "weighted"}
+            Estimator. Hinge is the most robust; linear also gives leaf angle.
+
+        Returns
+        -------
+        numpy.ndarray
+            PAI below the top of each height bin (m² m⁻²), non-decreasing.
+
+        Raises
+        ------
+        ValueError
+            For an unknown method, or ``"hinge"`` with no pulses in the ring
+            holding 57.5 degrees.
         """
         p = self.pgap()
         lp = -np.log(np.maximum(p, self._floor()[:, None]))
@@ -421,13 +809,36 @@ class GapProfile:
         return pai, mla
 
     def pavd_profile(self, method: str = "hinge") -> np.ndarray:
-        """Plant area volume density (m2 m-3): the height derivative of :meth:`pai_profile`."""
+        """Plant area volume density: the height derivative of :meth:`pai_profile`.
+
+        Parameters
+        ----------
+        method : {"hinge", "linear", "weighted"}
+            Estimator, as for :meth:`pai_profile`.
+
+        Returns
+        -------
+        numpy.ndarray
+            PAVD per height bin (m² m⁻³).
+        """
         return np.gradient(self.pai_profile(method), self.height_bin)
 
     def clumping(self, zenith: float = 57.5) -> float:
         """Lang & Xiang (1986) clumping index at the ring holding ``zenith``:
         ``ln(mean P) / mean(ln P)`` over every (scan, azimuth sector) segment.
-        1 is random foliage; below 1 clumped."""
+        1 is random foliage; below 1 clumped.
+
+        Parameters
+        ----------
+        zenith
+            Zenith angle (degrees) whose ring is used.
+
+        Returns
+        -------
+        float
+            Clumping index; NaN without scans or without any gap. Divide
+            effective PAI by it for true PAI.
+        """
         ring = np.searchsorted(self.zenith_edges, zenith, side="right") - 1
         seg_p, seg_n = [], []
         lows = self.scan_low if len(self.scan_low) == len(self.scan_hits) else [0.0] * len(self.scan_hits)
@@ -455,7 +866,26 @@ class GapProfile:
         ``saturated`` is set when less than ``saturation_gap`` of the pulses
         at 57.5 deg got through the canopy (hinge PAI above about 5.8): the
         PAI is then bounded by the pulse count, not measured. Dense
-        rainforest seen from the ground reaches it."""
+        rainforest seen from the ground reaches it.
+
+        Parameters
+        ----------
+        top_fraction
+            Fraction of total PAI that defines canopy height.
+        saturation_gap
+            Gap fraction at 57.5 degrees below which ``saturated`` is set.
+
+        Returns
+        -------
+        dict
+            Scalars ``saturated``, ``gap_57``, ``pai_hinge``, ``pai_linear``,
+            ``pai_weighted``, ``mla_linear`` (degrees), ``clumping``,
+            ``pai_hinge_corrected``, ``canopy_height`` (m), ``closure_57``,
+            ``cover``, ``cover_zenith``, ``n_scans``, ``pulses``; and arrays
+            ``height``, ``pai_hinge_profile``, ``pavd_hinge``,
+            ``pai_linear_profile``, ``pavd_linear``. Check ``saturated``
+            before reporting PAI.
+        """
         p = self.pgap()
         th = np.radians(self.zenith)
         ok = np.isfinite(p).all(axis=1)

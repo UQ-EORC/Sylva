@@ -1,4 +1,9 @@
-"""Command-line interface: ``sylva <command> ...``."""
+"""Command-line interface: ``sylva <command> ...``.
+
+Every command reads its input, writes its outputs and prints a one-line
+summary. Errors print ``sylva: error: ...`` to stderr and exit with status 1,
+so the commands can be chained in shell scripts and workflow managers.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +13,7 @@ import sys
 
 import numpy as np
 
-from . import canopy, filters, ground, io, qsm, trees, voxels
+from . import __version__, canopy, filters, ground, io, qsm, trees, voxels
 from .raster import Raster
 from .shots import Shots
 
@@ -128,93 +133,118 @@ def _cmd_voxel(args):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="sylva", description=__doc__)
+    p = argparse.ArgumentParser(prog="sylva",
+                                description="Terrestrial laser scanning for forest ecology.",
+                                epilog="Run `sylva <command> --help` for the options of a command.")
+    p.add_argument("--version", action="version", version=f"sylva {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
+    fmt = {"formatter_class": argparse.ArgumentDefaultsHelpFormatter}
 
-    s = sub.add_parser("info", help="print point count, bounds and attributes")
-    s.add_argument("input")
+    s = sub.add_parser("info", help="print point count, bounds and attributes", **fmt)
+    s.add_argument("input", help="point cloud (.las .laz .ply .xyz .txt .csv .pts .rxp)")
     s.set_defaults(func=_cmd_info)
 
-    s = sub.add_parser("convert", help="convert between formats, optionally voxel-thinning")
-    s.add_argument("input")
-    s.add_argument("output")
-    s.add_argument("--voxel", type=float, default=None)
+    s = sub.add_parser("convert", help="convert between formats, optionally voxel-thinning", **fmt)
+    s.add_argument("input", help="point cloud")
+    s.add_argument("output", help="point cloud; format from the extension")
+    s.add_argument("--voxel", type=float, default=None,
+                   help="keep one point per voxel of this size (m)")
     s.set_defaults(func=_cmd_convert)
 
-    s = sub.add_parser("ground", help="classify ground, build DTM and add height attribute")
-    s.add_argument("input")
-    s.add_argument("output")
-    s.add_argument("--method", choices=["csf", "pmf"], default="csf")
-    s.add_argument("--resolution", type=float, default=0.5)
+    s = sub.add_parser("ground", help="classify ground, build DTM and add height attribute", **fmt)
+    s.add_argument("input", help="point cloud, z up")
+    s.add_argument("output", help="cloud with classification (2 = ground) and height attributes")
+    s.add_argument("--method", choices=["csf", "pmf"], default="csf",
+                   help="cloth simulation or progressive morphological filter")
+    s.add_argument("--resolution", type=float, default=0.5,
+                   help="cloth / filter cell and DTM resolution (m)")
     s.add_argument("--dtm", help="also write the DTM (.tif needs rasterio, else .asc)")
     s.set_defaults(func=_cmd_ground)
 
-    s = sub.add_parser("trees", help="detect stems and DBH from a height-normalised cloud")
-    s.add_argument("input")
-    s.add_argument("-o", "--output", help="CSV of trees (default: stdout)")
-    s.add_argument("--min-dbh", type=float, default=0.05)
+    s = sub.add_parser("trees", help="detect stems and DBH from a height-normalised cloud", **fmt)
+    s.add_argument("input", help="cloud with a height attribute (from `sylva ground`)")
+    s.add_argument("-o", "--output",
+                   help="CSV of trees, one row each with crown metrics (default: stdout)")
+    s.add_argument("--min-dbh", type=float, default=0.05,
+                   help="smallest stem diameter detected (m)")
     s.add_argument("--min-height", type=float, default=3.0,
                    help="drop candidates whose segment is lower than this (m)")
     s.add_argument("--segment", help="write a cloud with tree_id attribute to this path")
     s.set_defaults(func=_cmd_trees)
 
-    s = sub.add_parser("chm", help="canopy height model from a height-normalised cloud")
-    s.add_argument("input")
-    s.add_argument("output")
-    s.add_argument("--resolution", type=float, default=0.5)
+    s = sub.add_parser("chm", help="canopy height model from a height-normalised cloud", **fmt)
+    s.add_argument("input", help="cloud with a height attribute")
+    s.add_argument("output", help=".tif (needs rasterio) or .asc")
+    s.add_argument("--resolution", type=float, default=0.5, help="cell size (m)")
     s.set_defaults(func=_cmd_chm)
 
-    s = sub.add_parser("pad", help="plant area density profile (voxel method)")
-    s.add_argument("input")
-    s.add_argument("--voxel", type=float, default=0.5)
+    s = sub.add_parser("pad", help="plant area density profile (voxel method), CSV on stdout",
+                       **fmt)
+    s.add_argument("input", help="cloud with a height attribute")
+    s.add_argument("--voxel", type=float, default=0.5, help="voxel size and layer thickness (m)")
     s.set_defaults(func=_cmd_pad)
 
-    s = sub.add_parser("qsm", help="build a cylinder model of a single tree")
-    s.add_argument("input")
+    s = sub.add_parser("qsm", help="build a cylinder model of a single tree", **fmt)
+    s.add_argument("input", help="one tree's wood points")
     s.add_argument("output", help="CSV of cylinders")
-    s.add_argument("--bin-length", type=float, default=0.3)
+    s.add_argument("--bin-length", type=float, default=0.3, help="geodesic shell width (m)")
     s.set_defaults(func=_cmd_qsm)
 
-    s = sub.add_parser("shots", help="convert a ray cloud to a sylva shots file (.parquet)")
+    s = sub.add_parser("shots", help="convert a ray cloud to a sylva shots file (.parquet)", **fmt)
     s.add_argument("input", help="ray cloud with sx,sy,sz or nx,ny,nz attributes")
     s.add_argument("output", help="shots file (.parquet)")
     s.add_argument("--double", action="store_true", help="double-precision angles and ranges")
     s.set_defaults(func=_cmd_shots)
 
-    s = sub.add_parser("voxel", help="ray-traced voxel grid (AMAPVox-style) from pulse data")
+    s = sub.add_parser("voxel", help="ray-traced voxel grid (AMAPVox-style) from pulse data", **fmt)
     s.add_argument("input", help="shots file (.parquet, streamed) or ray cloud")
     s.add_argument("output", help=".vox (AMAPVox) or .txt")
-    s.add_argument("--voxel", type=float, default=0.1)
-    s.add_argument("--bounds", type=float, nargs=6, metavar=("X0", "Y0", "Z0", "X1", "Y1", "Z1"))
+    s.add_argument("--voxel", type=float, default=0.1, help="voxel size (m)")
+    s.add_argument("--bounds", type=float, nargs=6, metavar=("X0", "Y0", "Z0", "X1", "Y1", "Z1"),
+                   help="grid corners (default: extent of the echoes)")
     s.add_argument("--dtm", help="ESRI ASCII grid of terrain heights")
-    s.add_argument("--ground-class", type=int)
-    s.add_argument("--ground-distance", type=float, default=0.2)
-    s.add_argument("--leaf-classes", type=int, nargs="*", default=[])
-    s.add_argument("--wood-classes", type=int, nargs="*", default=[])
-    s.add_argument("--class-attr", default="classification")
+    s.add_argument("--ground-class", type=int, help="class code of ground echoes")
+    s.add_argument("--ground-distance", type=float, default=0.2,
+                   help="echoes this close above the DTM are ground (m)")
+    s.add_argument("--leaf-classes", type=int, nargs="*", default=[],
+                   help="class codes of leaf echoes")
+    s.add_argument("--wood-classes", type=int, nargs="*", default=[],
+                   help="class codes of wood echoes")
+    s.add_argument("--class-attr", default="classification",
+                   help="echo attribute holding class codes")
     s.add_argument("--weighting", default="equal",
-                   choices=["equal", "full", "first", "relative", "strongest"])
+                   choices=["equal", "full", "first", "relative", "strongest"],
+                   help="share of a pulse carried by each echo")
     s.add_argument("--attenuation", nargs="+", default=["fpl"],
-                   choices=["fpl", "ppl", "transmittance", "bailey"])
+                   choices=["fpl", "ppl", "transmittance", "bailey"], help="attenuation estimators")
     s.add_argument("--laser", help="scanner name, e.g. VZ-400")
-    s.add_argument("--beam", type=float, nargs=2, metavar=("DIAMETER", "DIVERGENCE"))
-    s.add_argument("--lad", default="spherical")
-    s.add_argument("--lad-params", type=float, nargs="*", default=[])
+    s.add_argument("--beam", type=float, nargs=2, metavar=("DIAMETER", "DIVERGENCE"),
+                   help="beam exit diameter (m) and divergence (rad), instead of --laser")
+    s.add_argument("--lad", default="spherical", help="analytic leaf angle distribution")
+    s.add_argument("--lad-params", type=float, nargs="*", default=[],
+                   help="parameters of an ellipsoidal or beta distribution")
     s.add_argument("--inclination", action="store_true",
                    help="estimate per-tree inclination angle distributions")
     s.add_argument("--iad", help="write the per-tree inclination distributions to this CSV")
-    s.add_argument("--occlusion", action="store_true")
-    s.add_argument("--flat-top", action="store_true")
-    s.add_argument("--neighbour-priors", type=int, default=0, metavar="MIN_RAYS")
-    s.add_argument("--subvoxel-split", type=int, default=0)
-    s.add_argument("--average-leaf-area", type=float, default=0.005)
+    s.add_argument("--occlusion", action="store_true", help="trace beyond each pulse's last echo")
+    s.add_argument("--flat-top", action="store_true",
+                   help="start paths in each column's top voxel at the highest echo")
+    s.add_argument("--neighbour-priors", type=int, default=0, metavar="MIN_RAYS",
+                   help="top up voxels with fewer weighted beams from their neighbours (0 = off)")
+    s.add_argument("--subvoxel-split", type=int, default=0,
+                   help="N for an N^3 sub-voxel exploration grid (0 = off)")
+    s.add_argument("--average-leaf-area", type=float, default=0.005,
+                   help="mean leaf area (m2) of the free path correction (0 = off)")
     s.add_argument("--qsm", nargs="*", help="QSM cylinder CSVs to rasterise as wood volume")
     s.add_argument("--write-empty", action="store_true", help="also write unobserved voxels")
-    s.add_argument("--filled-only", action="store_true")
+    s.add_argument("--filled-only", action="store_true", help="only write voxels holding echoes")
     s.set_defaults(func=_cmd_voxel)
 
     args = p.parse_args(argv)
-    args.func(args)
+    try:
+        args.func(args)
+    except (OSError, ValueError, KeyError, ImportError) as e:
+        p.exit(1, f"sylva: error: {e}\n")
 
 
 if __name__ == "__main__":

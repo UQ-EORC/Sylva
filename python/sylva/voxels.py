@@ -38,8 +38,25 @@ EXCLUDED, PLANT, LEAF, WOOD = 0, 1, 2, 3
 
 
 def laser_spec(name: str) -> tuple[float, float]:
-    """``(beam diameter at exit [m], divergence [rad])`` of a scanner known to
-    AMAPVox, e.g. ``"VZ-400"``, ``"LMS-Q780"``, ``"FARO-FOCUS-X330"``."""
+    """Beam geometry of a scanner known to AMAPVox.
+
+    Parameters
+    ----------
+    name
+        Scanner name, e.g. ``"VZ-400"``, ``"LMS-Q780"``,
+        ``"FARO-FOCUS-X330"``.
+
+    Returns
+    -------
+    diameter, divergence : float
+        Beam diameter at exit (m) and full divergence (rad).
+
+    Raises
+    ------
+    ValueError
+        For an unknown scanner; pass ``beam=(diameter, divergence)`` to
+        :func:`ray_voxelize` instead.
+    """
     spec = _core.laser_spec(name)
     if spec is None:
         raise ValueError(f"unknown laser {name!r}")
@@ -47,11 +64,36 @@ def laser_spec(name: str) -> tuple[float, float]:
 
 
 def leaf_projection(theta, lad: str = "spherical", lad_params: Sequence[float] = ()) -> np.ndarray:
-    """Projection function G(theta) of an analytic leaf angle distribution, for
-    beam zenith ``theta`` in radians. ``lad`` is one of ``spherical``,
-    ``uniform``, ``planophile``, ``erectophile``, ``plagiophile``,
-    ``extremophile``, ``ellipsoidal`` (``lad_params=[chi]``) or
-    ``twoParamBeta`` (``[mu, nu]``)."""
+    """Leaf projection function G(θ) of an analytic leaf angle distribution.
+
+    G is the mean projected leaf area per unit leaf area in the beam
+    direction; area density is attenuation over G.
+
+    Parameters
+    ----------
+    theta
+        Beam zenith angle(s) in radians.
+    lad
+        ``spherical`` (G = 0.5 everywhere), ``uniform``, ``planophile``,
+        ``erectophile``, ``plagiophile``, ``extremophile``, ``ellipsoidal``
+        (``lad_params=[chi]``) or ``twoParamBeta`` (``[mu, nu]``).
+    lad_params
+        Parameters of the ellipsoidal or beta distribution.
+
+    Returns
+    -------
+    numpy.ndarray
+        G for each angle.
+
+    Raises
+    ------
+    ValueError
+        For an unknown distribution or wrong parameters.
+
+    See Also
+    --------
+    sylva.leaves.LeafAngleDistribution.g : G from a measured distribution.
+    """
     t = np.ascontiguousarray(np.atleast_1d(theta), dtype=np.float64)
     return _core.leaf_projection(t, lad, list(lad_params))
 
@@ -66,6 +108,40 @@ class RayVoxelGrid:
     attenuation method ``m``) are available by name or as attributes::
 
         grid["num_hits"]; grid.path_length; grid.pad_fpl; grid.transmittance
+
+    Notes
+    -----
+    Main raw fields (sums over the pulses crossing each voxel):
+
+    | Field | Meaning |
+    |---|---|
+    | ``num_beams`` | pulses entering the voxel |
+    | ``num_hits`` | echoes in the voxel (``num_hit_leaf``, ``_wood``, ``_plant`` by class) |
+    | ``num_beams_occluded`` | pulses reaching it only after their last echo (``occlusion=True``) |
+    | ``path_length`` | potential path length: full chords of the entering pulses (m) |
+    | ``free_path_length`` | path actually travelled inside the voxel (m) |
+    | ``bs_entering``, ``bs_intercepted`` | beam section entering and stopped (m², needs ``beam``) |
+    | ``wood_volume`` | QSM wood (m³) after :meth:`add_wood_volume` |
+
+    Derived metrics:
+
+    | Metric | Meaning |
+    |---|---|
+    | ``state`` | 0 unobserved, 1 occluded, 2 empty, 3 filled (:data:`STATES`) |
+    | ``attenuation_<m>`` | attenuation λ (m⁻¹) by method ``m`` (see ``attenuation``) |
+    | ``pad_<m>``, ``lad_<m>``, ``wad_<m>`` | plant, leaf, wood area density λ / G (m² m⁻³) |
+    | ``pad_g0_5`` | plant area density with G = 0.5 |
+    | ``pad_g_corrected`` | PAD with G at the voxel's mean beam zenith, first attenuation method |
+    | ``surface_area`` | ``pad_g0_5`` × voxel volume (m²) |
+    | ``transmittance`` | beam-section transmittance (0-1) |
+    | ``mean_zenith_angle``, ``mean_azimuth_angle`` | mean beam direction (degrees) |
+    | ``azimuth_concentration`` | 0 (all azimuths) to 1 (one azimuth) |
+    | ``mean_laser_dist`` | mean distance from the scanner (m) |
+    | ``sd_path_length`` | spread of the chord lengths (m) |
+    | ``distance_from_ground`` | voxel centre above the DTM (m, needs ``dtm``) |
+    | ``exploration_rate`` | share of sub-voxels crossed (``subvoxel_split``) |
+    | ``g_plant``, ``g_leaf``, ``g_wood`` | G used per voxel |
+    | ``wood_volume_density`` | QSM wood volume per voxel volume (m³ m⁻³) |
     """
 
     def __init__(self, core) -> None:
@@ -74,23 +150,27 @@ class RayVoxelGrid:
 
     @property
     def origin(self) -> np.ndarray:
+        """Minimum corner of the grid, ``(x, y, z)``."""
         return self._core.origin
 
     @property
     def voxel_size(self) -> float:
+        """Voxel edge (m)."""
         return self._core.voxel_size
 
     @property
     def shape(self) -> tuple[int, int, int]:
-        """``(nx, ny, nz)``."""
+        """Grid size as ``(nx, ny, nz)``; arrays are ``(nz, ny, nx)``."""
         return self._core.shape
 
     @property
     def fields(self) -> list[str]:
+        """Names of the raw accumulators this grid holds (depends on the options)."""
         return self._core.field_names()
 
     @property
     def metrics(self) -> list[str]:
+        """Names of the derived metrics; see the class notes."""
         return self._core.metric_names()
 
     def __repr__(self) -> str:
@@ -113,7 +193,7 @@ class RayVoxelGrid:
 
     @property
     def observed(self) -> np.ndarray:
-        """Voxels crossed by at least one pulse before its last echo."""
+        """Boolean ``(nz, ny, nx)``: voxels crossed by at least one pulse before its last echo."""
         return self["state"] >= STATES["empty"]
 
     def occlusion_profile(self, min_height: float = 0.0, max_height: float | None = None) -> dict:
@@ -127,6 +207,20 @@ class RayVoxelGrid:
         it), ``occluded`` (only pulses already stopped reached it; needs
         ``occlusion=True``) and ``unobserved``, the mean pulses entering a
         voxel (``mean_beams``), and plot totals under ``"total"``.
+
+        Parameters
+        ----------
+        min_height
+            Bottom of the canopy space (m above ground).
+        max_height
+            Top of the canopy space; the highest filled voxel if None.
+
+        Returns
+        -------
+        dict
+            Arrays ``height``, ``n_voxels``, ``observed``, ``occluded``,
+            ``unobserved``, ``mean_beams`` (one value per layer) and
+            ``total``: ``{"observed", "occluded", "unobserved", "top"}``.
         """
         state = self["state"]
         if "distance_from_ground" in self.metrics and np.isfinite(self["distance_from_ground"]).any():
@@ -155,8 +249,19 @@ class RayVoxelGrid:
         return out
 
     def observed_map(self, min_height: float = 0.0, max_height: float | None = None) -> np.ndarray:
-        """Share of each column's canopy space (see :meth:`occlusion_profile`)
-        that was observed, ``(ny, nx)``; NaN for columns with none."""
+        """Map of how much of each column's canopy space was observed.
+
+        Parameters
+        ----------
+        min_height, max_height
+            Canopy space, as for :meth:`occlusion_profile`.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(ny, nx)`` share observed; NaN for columns with no canopy
+            space. Useful to find the parts of a plot to rescan.
+        """
         state = self["state"]
         if "distance_from_ground" in self.metrics and np.isfinite(self["distance_from_ground"]).any():
             h = self["distance_from_ground"]
@@ -169,10 +274,23 @@ class RayVoxelGrid:
             return (space & (state >= STATES["empty"])).sum(axis=0) / space.sum(axis=0)
 
     def z_levels(self) -> np.ndarray:
+        """Bottom z of each voxel layer.
+
+        Returns
+        -------
+        numpy.ndarray
+            Length ``nz``, bottom first (m).
+        """
         return self.origin[2] + np.arange(self.shape[2]) * self.voxel_size
 
     def centers(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Voxel-centre coordinate grids ``(X, Y, Z)``."""
+        """Voxel-centre coordinates.
+
+        Returns
+        -------
+        X, Y, Z : numpy.ndarray
+            Each ``(nz, ny, nx)``, aligned with the voxel arrays.
+        """
         axes = [self.origin[a] + (np.arange(n) + 0.5) * self.voxel_size
                 for a, n in enumerate(self.shape)]
         Z, Y, X = np.meshgrid(axes[2], axes[1], axes[0], indexing="ij")
@@ -181,7 +299,22 @@ class RayVoxelGrid:
     def profile(self, name: str = "pad_fpl", min_beams: int = 1) -> np.ndarray:
         """Mean of a metric per vertical layer over voxels crossed by at least
         ``min_beams`` pulses (unobserved voxels do not count as empty).
-        Multiply by the voxel size and sum for a plant area index."""
+        Multiply by the voxel size and sum for a plant area index.
+
+        Parameters
+        ----------
+        name
+            Field or metric, e.g. ``"pad_fpl"`` or ``"pad_ppl"``.
+        min_beams
+            Minimum pulses for a voxel to count. Raise it (5-10) to keep
+            poorly sampled voxels out of the mean.
+
+        Returns
+        -------
+        numpy.ndarray
+            One value per layer, bottom first; NaN where no voxel qualifies.
+            Layers are in grid z, not height above ground.
+        """
         ok = self["num_beams"] >= min_beams
         values = np.where(ok, self[name], 0.0).sum(axis=(1, 2))
         count = ok.sum(axis=(1, 2))
@@ -192,19 +325,44 @@ class RayVoxelGrid:
         """Per-tree inclination angle distributions: normalised ``liad`` /
         ``wiad`` / ``piad`` histograms over ``bin_centres`` (rad), the
         angle-integrated ``g_leaf`` / ``g_wood`` / ``g_plant`` and the closest
-        de Wit type of each. Empty unless ``inclination=True``."""
+        de Wit type of each. Empty unless ``inclination=True``.
+
+        Returns
+        -------
+        dict
+            ``{tree_id: {...}}``.
+        """
         return self._core.tree_iad()
 
     def add_wood_volume(self, qsms: QSM | Iterable[QSM]) -> None:
-        """Rasterise QSM cylinders into the ``wood_volume`` (m³) field and the
-        ``wood_volume_density`` (m³ m⁻³) metric. Repeated calls add up."""
+        """Add QSM wood volume to the grid.
+
+        Rasterises QSM cylinders into the ``wood_volume`` (m³) field and the
+        ``wood_volume_density`` (m³ m⁻³) metric. Repeated calls add up.
+
+        Parameters
+        ----------
+        qsms
+            One QSM or several, in the grid's frame.
+        """
         for q in [qsms] if isinstance(qsms, QSM) else qsms:
             self._core.add_wood_volume(q.cylinders)
         self._cache.pop("wood_volume", None)
         self._cache.pop("wood_volume_density", None)
 
     def to_dict(self, names: Iterable[str] | None = None) -> dict[str, np.ndarray]:
-        """Arrays by name (default: every raw field)."""
+        """Copy arrays out by name.
+
+        Parameters
+        ----------
+        names
+            Fields and metrics to include; every raw field if None.
+
+        Returns
+        -------
+        dict
+            ``{name: (nz, ny, nx) array}``, e.g. for ``np.savez``.
+        """
         return {n: self[n] for n in (self.fields if names is None else names)}
 
     def write(self, path: str | Path, format: str | None = None, include_unobserved: bool = False,
@@ -212,13 +370,37 @@ class RayVoxelGrid:
         """Write an AMAPVox ``.vox`` file, or a space-delimited ``.txt`` table
         with voxel centres (``format`` ``"vox"`` / ``"text"``, by default from
         the extension). Observed and occluded voxels are written unless
-        ``filled_only`` or ``include_unobserved``. Returns the voxel count."""
+        ``filled_only`` or ``include_unobserved``.
+
+        Parameters
+        ----------
+        path
+            Output file; overwritten.
+        format : {"vox", "text"}, optional
+            From the extension if None (``.vox`` is AMAPVox, anything else text).
+        include_unobserved
+            Also write voxels no pulse reached.
+        filled_only
+            Only write voxels holding echoes.
+
+        Returns
+        -------
+        int
+            Number of voxels written.
+        """
         if format is None:
             format = "vox" if Path(path).suffix.lower() == ".vox" else "text"
         return self._core.write(str(path), format, include_unobserved, filled_only)
 
     def write_iad_csv(self, path: str | Path) -> None:
-        """One row per tree: de Wit types and inclination histograms."""
+        """Write per-tree inclination distributions as CSV.
+
+        Parameters
+        ----------
+        path
+            Output file: one row per tree with de Wit types and inclination
+            histograms. Needs ``inclination=True``.
+        """
         self._core.write_iad_csv(str(path))
 
 
@@ -272,6 +454,14 @@ def ray_voxelize(
 
     Parameters
     ----------
+    shots
+        Pulses in one frame (every scan of a plot together), or the path of
+        a shots file. Must include the misses: from
+        :meth:`sylva.Shots.fill_missing`, a ray cloud or a shots file made
+        from either.
+    voxel_size
+        Voxel edge (m). 0.1-0.5 m is usual; memory is about 0.25 kB per
+        voxel while tracing, so a 50 x 50 x 40 m plot at 0.1 m needs ~25 GB.
     bounds
         ``(min_xyz, max_xyz)``; by default the extent of the echoes. The max
         corner is snapped up to a whole number of voxels.
@@ -317,6 +507,18 @@ def ray_voxelize(
         Mean leaf area (m²) of the effective free path correction; 0 disables.
     unbounded_range
         How far pulses without an echo are traced (default: to the grid edge).
+
+    Returns
+    -------
+    RayVoxelGrid
+
+    Raises
+    ------
+    ValueError
+        For inconsistent options (``laser`` and ``beam``; arrays with a shots
+        file; arrays of the wrong length; unknown methods).
+    KeyError
+        If a named echo attribute is missing.
     """
     methods = [attenuation] if isinstance(attenuation, str) else list(attenuation)
     if laser is not None:
@@ -410,6 +612,26 @@ def tree_sampling(grid: RayVoxelGrid, cloud, labels, min_beams: float = 10.0,
 
     Also ``tree_id``, ``n_voxels`` and ``volume`` of the envelope and its
     ``observed_fraction``, ``occluded_fraction``, ``unobserved_fraction``.
+
+    Parameters
+    ----------
+    grid
+        Grid from :func:`ray_voxelize` with ``occlusion=True``, covering the
+        trees.
+    cloud
+        A :class:`~sylva.PointCloud` or ``(N, 3)`` array in the grid's frame.
+    labels
+        Tree id per point (e.g. from :func:`sylva.trees.segment_trees`).
+    min_beams
+        Pulses for a voxel to count as well sampled.
+    above
+        Height (m) above each tree's top that is checked.
+
+    Returns
+    -------
+    dict
+        The columns above as arrays, one row per tree; ready for
+        ``pandas.DataFrame``.
     """
     xyz = np.ascontiguousarray(cloud.xyz if hasattr(cloud, "xyz") else cloud, dtype=float)
     lab = np.ascontiguousarray(labels, dtype=np.int64)

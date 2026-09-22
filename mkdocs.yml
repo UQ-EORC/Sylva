@@ -6,8 +6,8 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
-  logo: assets/icon.svg
-  favicon: assets/icon.svg
+  logo: assets/logo.png
+  favicon: assets/favicon.png
   features:
     - navigation.sections
     - navigation.top
@@ -28,12 +28,16 @@ nav:
   - Install: install.md
   - Guide:
       - Plot workflow: guide/quickstart.md
+      - Point clouds and files: guide/io.md
+      - Filtering and registration: guide/preprocessing.md
+      - Trees and crowns: guide/trees.md
       - Pulse data: guide/pulses.md
       - Ray-traced voxels: guide/voxels.md
       - QSMs: guide/qsm.md
       - Leaves on a QSM: guide/leaves.md
       - Scan quality: guide/quality.md
       - Command line: guide/cli.md
+      - Operational use: guide/operational.md
   - Examples:
       - Overview: examples/index.md
       - 1. Point clouds and I/O: examples/01_pointclouds_io.ipynb
@@ -50,6 +54,7 @@ nav:
       - QSMs: benchmarks/qsm.md
       - Canopy gap profiles: benchmarks/canopy.md
   - API reference:
+      - Function index: api/index.md
       - PointCloud, Raster: api/pointcloud.md
       - io: api/io.md
       - Shots, RiSCAN: api/shots.md
@@ -62,6 +67,7 @@ nav:
       - qsm: api/qsm.md
       - leaves: api/leaves.md
       - quality: api/quality.md
+      - synthetic: api/synthetic.md
   - Development: development.md
   - Releasing: release.md
   - References: references.md
@@ -72,6 +78,9 @@ hooks:
 exclude_docs: |
   hooks.py
   examples/build_notebooks.py
+  examples/make_litch_subset.py
+  examples/data/*.laz
+  examples/data/*.parquet
 
 plugins:
   - search

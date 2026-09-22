@@ -67,6 +67,35 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
     ``wood_params`` are that filter's options (``threshold`` is passed as
     ``high_threshold``).
 
+    Parameters
+    ----------
+    cloud
+        One segmented tree.
+    voxel_size
+        Work on the cloud thinned to this spacing (m); every input point gets
+        the label of its nearest thinned point. 0 uses every point.
+    method : {"gbs", "passage"}
+        Classifier; see above.
+    **wood_params
+        For ``"gbs"``: ``intervals`` (shell thicknesses, m), ``max_angle``
+        (rad), ``linearity`` [0.9], ``circle_error`` [0.2, relative to the
+        radius], ``graph_k`` [8], ``max_edge`` [1.0], ``base_height``
+        [0.25], ``min_points`` [10]. For ``"passage"``: the options of
+        :func:`sylva.qsm.wood_points`.
+
+    Returns
+    -------
+    numpy.ndarray
+        Boolean per input point, True for wood.
+
+    Raises
+    ------
+    ValueError
+        For an unknown method.
+
+    See Also
+    --------
+    sylva.qsm.wood_points : the filter that prepares QSM input.
     """
     if method == "gbs":
         xyz = _xyz(cloud)
@@ -86,7 +115,26 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
 @dataclass
 class LeafAngleDistribution:
     """Leaf inclination angle distribution (inclination = angle between the
-    leaf normal and the vertical; 0 deg is a horizontal leaf)."""
+    leaf normal and the vertical; 0 deg is a horizontal leaf).
+
+    Build with :func:`leaf_angle_distribution` from points, or
+    :meth:`from_type` for a textbook distribution.
+
+    Attributes
+    ----------
+    bin_centres
+        Inclination bin centres over 0-π/2 (rad).
+    density
+        Probability per bin, sums to 1.
+    mean, std
+        Mean and standard deviation of the inclination (rad).
+    beta_a, beta_b
+        Beta distribution fitted on t = 2θ/π.
+    chi
+        Campbell's ellipsoidal parameter (1 spherical, > 1 planophile).
+    de_wit
+        Nearest de Wit type by name.
+    """
 
     bin_centres: np.ndarray  #: rad, over [0, pi/2]
     density: np.ndarray  #: probability per bin, sums to 1
@@ -99,17 +147,46 @@ class LeafAngleDistribution:
 
     @property
     def mean_deg(self) -> float:
+        """Mean leaf inclination in degrees (57.3 for spherical)."""
         return float(np.degrees(self.mean))
 
     def g(self, beam_zenith) -> np.ndarray:
-        """Projection function G for beams at the given zenith angles (rad)."""
+        """Leaf projection function G for this distribution.
+
+        Parameters
+        ----------
+        beam_zenith
+            Beam zenith angle(s) in radians.
+
+        Returns
+        -------
+        numpy.ndarray
+            G per angle (0.5 everywhere for a spherical distribution).
+        """
         z = np.atleast_1d(np.asarray(beam_zenith, dtype=float))
         return np.array(_core.leaf_projection_histogram(self.bin_centres, self.density, z))
 
     @classmethod
     def from_type(cls, name: str = "spherical", n_bins: int = 18) -> "LeafAngleDistribution":
-        """An analytic de Wit distribution: ``spherical``, ``uniform``,
-        ``planophile``, ``erectophile``, ``plagiophile`` or ``extremophile``."""
+        """A textbook de Wit distribution.
+
+        Parameters
+        ----------
+        name
+            ``spherical``, ``uniform``, ``planophile``, ``erectophile``,
+            ``plagiophile`` or ``extremophile``.
+        n_bins
+            Bins over 0-90 degrees.
+
+        Returns
+        -------
+        LeafAngleDistribution
+
+        Raises
+        ------
+        KeyError
+            For an unknown name.
+        """
         t = (np.arange(n_bins) + 0.5) * (np.pi / 2) / n_bins
         f = {"spherical": np.sin(t), "uniform": np.full(n_bins, 1.0),
              "planophile": 1 + np.cos(2 * t), "erectophile": 1 - np.cos(2 * t),
@@ -127,6 +204,34 @@ def leaf_angle_distribution(leaf_points, k: int = 12, n_bins: int = 18, weights=
     for, so densely scanned leaves do not dominate; pass ``res=None`` to use
     every point equally. With ``inclinations=True`` the first argument is an
     array of inclinations (rad) instead of points.
+
+    Parameters
+    ----------
+    leaf_points
+        Leaf points of a tree or plot (:class:`~sylva.PointCloud` or
+        ``(N, 3)``), e.g. ``tree[~classify_leaf_wood(tree)]``; or
+        inclinations with ``inclinations=True``.
+    k
+        Neighbours for the PCA normals. Too many blur across leaves; too
+        few follow scanner noise.
+    n_bins
+        Histogram bins over 0-90 degrees.
+    weights
+        Weights for inclinations or for unthinned points (``res=None``).
+    inclinations
+        Treat the first argument as inclinations.
+    res
+        Thinning cube size (m); 0 picks 3.5 × the median spacing; None
+        disables thinning and area weighting.
+
+    Returns
+    -------
+    LeafAngleDistribution
+
+    Notes
+    -----
+    Range noise tilts point normals towards random, which biases planophile
+    canopies towards spherical. Use well-registered, close-range data.
     """
     if inclinations:
         incl = np.ascontiguousarray(leaf_points, dtype=float)
@@ -142,7 +247,20 @@ def leaf_angle_distribution(leaf_points, k: int = 12, n_bins: int = 18, weights=
 
 @dataclass
 class LeafAreaGrid:
-    """One-sided leaf area density on a regular grid."""
+    """One-sided leaf area density on a regular grid.
+
+    Build with :func:`leaf_area_density` (from points) or
+    :meth:`from_voxels` (from a ray-traced grid).
+
+    Attributes
+    ----------
+    origin
+        Minimum corner, ``(x, y, z)``.
+    voxel_size
+        Voxel edge (m).
+    density
+        Leaf area density (m² m⁻³), ``(nz, ny, nx)``.
+    """
 
     origin: np.ndarray  #: min corner (3,)
     voxel_size: float
@@ -150,25 +268,54 @@ class LeafAreaGrid:
 
     @property
     def area(self) -> np.ndarray:
-        """Leaf area per voxel (m2)."""
+        """Leaf area per voxel (m²), shaped like ``density``."""
         return self.density * self.voxel_size**3
 
     @property
     def total_area(self) -> float:
+        """Total one-sided leaf area (m²)."""
         return float(np.nansum(self.area))
 
     def scaled_to(self, total_area: float) -> "LeafAreaGrid":
-        """Same spatial pattern, total leaf area set to ``total_area`` (m2)."""
+        """Rescale to a known total leaf area, keeping the spatial pattern.
+
+        Use with an independent total, e.g. from allometry, litter traps or
+        a ray-traced grid, since point-based totals miss occluded foliage.
+
+        Parameters
+        ----------
+        total_area
+            Target one-sided leaf area (m²).
+
+        Returns
+        -------
+        LeafAreaGrid
+        """
         t = self.total_area
         return LeafAreaGrid(self.origin, self.voxel_size, self.density * (total_area / t if t > 0 else 0.0))
 
     def profile(self) -> tuple[np.ndarray, np.ndarray]:
-        """Height of each layer's centre and its leaf area (m2)."""
+        """Vertical leaf area profile.
+
+        Returns
+        -------
+        z, area : numpy.ndarray
+            z of each layer's centre (grid frame, not height above ground)
+            and its leaf area (m²).
+        """
         z = self.origin[2] + (np.arange(self.density.shape[0]) + 0.5) * self.voxel_size
         return z, np.nansum(self.area, axis=(1, 2))
 
     def cells(self) -> tuple[np.ndarray, np.ndarray]:
-        """Centres and leaf area of the voxels that hold any."""
+        """Voxels that hold leaf area.
+
+        Returns
+        -------
+        centres : numpy.ndarray
+            ``(n, 3)`` voxel centres.
+        area : numpy.ndarray
+            Leaf area of each (m²).
+        """
         a = np.nan_to_num(self.area)
         k, j, i = np.nonzero(a > 0)
         centres = self.origin + (np.column_stack([i, j, k]) + 0.5) * self.voxel_size
@@ -176,8 +323,21 @@ class LeafAreaGrid:
 
     @classmethod
     def from_voxels(cls, grid, field: str = "pad_fpl") -> "LeafAreaGrid":
-        """Leaf (or plant) area density of a :class:`sylva.voxels.RayVoxelGrid`
-        field, e.g. a leaf area density computed with ``leaf_classes``."""
+        """Leaf area density from a ray-traced grid.
+
+        Parameters
+        ----------
+        grid
+            A :class:`sylva.voxels.RayVoxelGrid`.
+        field
+            Density field; ``"lad_fpl"`` for leaf area when the grid was
+            built with ``leaf_classes``, ``"pad_fpl"`` for plant area.
+
+        Returns
+        -------
+        LeafAreaGrid
+            NaN (unobserved) voxels become 0.
+        """
         return cls(np.asarray(grid.origin, float), float(grid.voxel_size), np.nan_to_num(np.asarray(grid[field], float)))
 
 
@@ -192,6 +352,23 @@ def leaf_area_density(leaf_points, voxel_size: float = 0.25, res: float | None =
     overcount at the edges); by default it is 3.5 times the median
     nearest-neighbour spacing, within about 15 % on unoccluded synthetic
     leaves. Only foliage the scanner saw is counted.
+
+    Parameters
+    ----------
+    leaf_points
+        Leaf points (:class:`~sylva.PointCloud` or ``(N, 3)``).
+    voxel_size
+        Output grid resolution (m).
+    res
+        Thinning cube size (m); None picks 3.5 × the median spacing.
+    k
+        Neighbours for the normals.
+
+    Returns
+    -------
+    LeafAreaGrid
+        Aligned to multiples of ``voxel_size``. A lower bound on the true
+        leaf area wherever foliage was occluded.
     """
     pts, area, _ = _core.point_leaf_area(_xyz(leaf_points), float(res or 0.0), int(k))
     if len(pts) == 0:
@@ -206,7 +383,18 @@ def leaf_area_density(leaf_points, voxel_size: float = 0.25, res: float | None =
 
 
 def single_leaf_area(length: float, width: float) -> float:
-    """One-sided area (m2) of the leaf shape used by :func:`add_leaves`."""
+    """One-sided area of the leaf shape used by :func:`add_leaves`.
+
+    Parameters
+    ----------
+    length, width
+        Leaf length and width (m).
+
+    Returns
+    -------
+    float
+        Area (m²), 0.562 × length × width for the built-in outline.
+    """
     x, y = np.array(_OUTLINE).T
     return float(0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) * length * width)
 
@@ -217,6 +405,8 @@ _OUTLINE = [(0.0, 0.0), (0.2, 0.36), (0.45, 0.5), (1.0, 0.0), (0.45, -0.5), (0.2
 
 @dataclass
 class LeafMesh:
+    """Leaf polygons from :func:`add_leaves`; ``len()`` is the leaf count."""
+
     vertices: np.ndarray  #: (V, 3)
     faces: np.ndarray  #: (F, 3) into ``vertices``
     centres: np.ndarray  #: (L, 3) one per leaf
@@ -230,9 +420,17 @@ class LeafMesh:
 
     @property
     def total_area(self) -> float:
+        """One-sided leaf area of all leaves (m²)."""
         return self.leaf_area * len(self)
 
     def to_obj(self, path: str | Path) -> None:
+        """Write the leaves as one OBJ object named ``leaves``.
+
+        Parameters
+        ----------
+        path
+            Output file.
+        """
         write_obj(path, [(self.vertices, self.faces)], names=["leaves"])
 
 
@@ -248,6 +446,34 @@ def add_leaves(model: QSM | None, leaf_area: LeafAreaGrid | float, angles: LeafA
     ``angles`` (a distribution or a de Wit type name) and a uniform azimuth;
     blades within ``max_branch_distance`` of a cylinder point away from it.
     Leaves may intersect: no collision test is made.
+
+    Parameters
+    ----------
+    model
+        The tree's QSM, or None for leaves without wood.
+    leaf_area
+        Where and how much leaf area: a grid, or a total (m²).
+    angles
+        Leaf angle distribution, or a de Wit type name.
+    leaf_points
+        Leaf points to centre leaves on; required with a total area.
+    leaf_length, leaf_width
+        Leaf size (m); area per leaf is :func:`single_leaf_area`.
+    max_branch_distance
+        Leaves within this distance (m) of a cylinder are attached to it.
+    jitter
+        Random offset (m) of leaf centres.
+    seed
+        Random seed; the same inputs and seed give the same leaves.
+
+    Returns
+    -------
+    LeafMesh
+
+    Raises
+    ------
+    ValueError
+        With a total area but no ``leaf_points``.
     """
     if isinstance(angles, str):
         angles = LeafAngleDistribution.from_type(angles)
@@ -271,6 +497,18 @@ def add_leaves(model: QSM | None, leaf_area: LeafAreaGrid | float, angles: LeafA
 
 
 def write_tree_obj(path: str | Path, model: QSM, leaf_mesh: LeafMesh, sides: int = 12) -> None:
-    """Wood cylinders and leaves in one OBJ, as two named objects."""
+    """Write wood cylinders and leaves to one OBJ, as objects ``wood`` and ``leaves``.
+
+    Parameters
+    ----------
+    path
+        Output file.
+    model
+        The tree's QSM.
+    leaf_mesh
+        Leaves from :func:`add_leaves`.
+    sides
+        Facets around each cylinder.
+    """
     v, f, _ = model.mesh(sides)
     write_obj(path, [(v, f), (leaf_mesh.vertices, leaf_mesh.faces)], names=["wood", "leaves"])

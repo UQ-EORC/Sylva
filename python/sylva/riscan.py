@@ -28,6 +28,19 @@ __all__ = ["ScanPosition", "RiscanProject", "read_riscan_project"]
 
 @dataclass
 class ScanPosition:
+    """One scan position of a RiSCAN project.
+
+    Attributes
+    ----------
+    name
+        Position name, e.g. ``ScanPos001``.
+    scans
+        Every ``.rxp`` of the position, monitoring and residual files
+        excluded.
+    instrument
+        Scanner model from ``project.rsp`` (None for legacy projects).
+    """
+
     name: str
     rxp: Path | None
     """First non-monitoring ``.rxp`` of the position (``None`` if no scan)."""
@@ -41,12 +54,42 @@ class ScanPosition:
     ``phi_count`` (azimuth). Lets missing (no-return) pulses be reconstructed."""
 
     def transform(self, pop: np.ndarray | None = None) -> np.ndarray:
-        """SOP, optionally composed with the POP (project -> global)."""
+        """Scanner-to-project (or scanner-to-global) transform.
+
+        Parameters
+        ----------
+        pop
+            Project-to-global matrix (:attr:`RiscanProject.pop`). If given,
+            the result is ``pop @ sop``.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(4, 4)`` matrix; the identity if the position has no SOP.
+        """
         m = np.eye(4) if self.sop is None else self.sop
         return m if pop is None else pop @ m
 
     def read(self, pop: np.ndarray | None = None, **options) -> PointCloud:
-        """Read the scan in project (or global, with ``pop``) coordinates."""
+        """Read the scan as points in project (or global) coordinates.
+
+        Parameters
+        ----------
+        pop
+            Also apply this project-to-global matrix.
+        **options
+            Passed to :func:`sylva.io.read_rxp` (``shot_stride``,
+            ``min_range``, ``echoes``, ...).
+
+        Returns
+        -------
+        PointCloud
+
+        Raises
+        ------
+        FileNotFoundError
+            If the position has no ``.rxp``.
+        """
         if self.rxp is None:
             raise FileNotFoundError(f"scan position {self.name} has no .rxp")
         return read_rxp(self.rxp, **options).transform(self.transform(pop))
@@ -55,8 +98,27 @@ class ScanPosition:
                    **options) -> Shots:
         """Read the scan as pulses in project (or global) coordinates.
 
-        ``fill_missing=True`` reconstructs the no-return pulses from the scan
-        pattern (see :meth:`Shots.fill_missing`) before applying the SOP.
+        Parameters
+        ----------
+        pop
+            Also apply this project-to-global matrix.
+        fill_missing
+            Reconstruct the no-return pulses from the scan pattern (see
+            :meth:`sylva.Shots.fill_missing`) before applying the SOP. Needed
+            for gap fraction and ray tracing.
+        **options
+            Passed to :func:`sylva.io.read_rxp_shots`.
+
+        Returns
+        -------
+        Shots
+
+        Raises
+        ------
+        FileNotFoundError
+            If the position has no ``.rxp``.
+        ValueError
+            If ``fill_missing`` is set but ``project.rsp`` has no scan pattern.
         """
         if self.rxp is None:
             raise FileNotFoundError(f"scan position {self.name} has no .rxp")
@@ -70,6 +132,24 @@ class ScanPosition:
 
 @dataclass
 class RiscanProject:
+    """A parsed RiSCAN PRO project; build with :func:`read_riscan_project`.
+
+    Index by position number or name: ``project[0]``,
+    ``project["ScanPos003"]``. ``len(project)`` is the number of positions.
+
+    Attributes
+    ----------
+    path
+        The ``.RiSCAN`` directory.
+    positions
+        Every scan position, in project order.
+    pop
+        Project-to-global matrix, or None. Often geocentric (ECEF), so it is
+        never applied unless passed explicitly.
+    name
+        Project name.
+    """
+
     path: Path
     positions: list[ScanPosition]
     pop: np.ndarray | None = None
@@ -88,14 +168,29 @@ class RiscanProject:
 
     @property
     def names(self) -> list[str]:
+        """Position names, in project order."""
         return [p.name for p in self.positions]
 
     def with_scans(self) -> list[ScanPosition]:
-        """Positions that have both an ``.rxp`` and a SOP."""
+        """Positions that can be read into project coordinates.
+
+        Returns
+        -------
+        list of ScanPosition
+            Positions that have both an ``.rxp`` and a SOP.
+        """
         return [p for p in self.positions if p.rxp is not None and p.sop is not None]
 
     def origins(self) -> np.ndarray:
-        """Scanner origins in project coordinates, ``(n, 3)``."""
+        """Scanner positions in project coordinates.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(n, 3)`` SOP translations, one row per position that has a SOP
+            (positions without one are skipped, so rows may not line up
+            with :attr:`positions`).
+        """
         return np.array([p.sop[:3, 3] for p in self.positions if p.sop is not None])
 
 
@@ -188,7 +283,28 @@ def _from_legacy(root: Path) -> RiscanProject:
 
 
 def read_riscan_project(path: str | Path) -> RiscanProject:
-    """Parse a RiSCAN PRO project directory (``project.rsp`` or legacy layout)."""
+    """Parse a RiSCAN PRO project directory.
+
+    Reads no scan data, only the project structure and matrices.
+
+    Parameters
+    ----------
+    path
+        The ``.RiSCAN`` directory. With ``project.rsp``, SOPs and scan
+        patterns come from it (falling back to ``DAT/<pos>.DAT``). Without
+        it, the legacy layout is read: ``all_sop.csv`` (roll/pitch/yaw in
+        degrees and x, y, z), ``project.pop`` and ``SCANS/ScanPos*`` or
+        ``*.SCNPOS`` folders.
+
+    Returns
+    -------
+    RiscanProject
+
+    Examples
+    --------
+    >>> project = sylva.read_riscan_project("plot.RiSCAN")
+    >>> shots = [p.read_shots(fill_missing=True, shot_stride=4) for p in project.with_scans()]
+    """
     root = Path(path)
     rsp = root / "project.rsp"
     if rsp.exists():

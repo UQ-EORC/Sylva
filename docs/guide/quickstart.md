@@ -1,6 +1,9 @@
 # Plot workflow
 
 From a plot point cloud to a stem map, segmented trees and a density profile.
+To follow along on real data, use the Litchfield tile the
+[example notebooks](../examples/index.md) run on
+(`docs/examples/data/litch_tile.laz`).
 
 ```python
 import sylva

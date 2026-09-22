@@ -24,7 +24,20 @@ DEFAULT_TREES = [(5.0, 5.0, 0.30, 12.0), (14.0, 6.0, 0.20, 9.0), (8.0, 15.0, 0.4
 
 
 def terrain_height(x, y, slope: float = 0.05) -> np.ndarray:
-    """Ground elevation of the synthetic scenes: a gentle slope with a ripple."""
+    """Ground elevation of the synthetic scenes: a gentle slope with a ripple.
+
+    Parameters
+    ----------
+    x, y
+        Coordinates (m).
+    slope
+        Rise per metre along x.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``slope * x + 0.2 * sin(y / 3)``.
+    """
     return slope * np.asarray(x) + 0.2 * np.sin(np.asarray(y) / 3)
 
 
@@ -48,6 +61,25 @@ def tree(x: float = 0.0, y: float = 0.0, dbh: float = 0.3, height: float = 12.0,
     small flat leaf discs around the limb ends.
 
     The ``classification`` attribute is 5 for wood and 4 for leaves.
+
+    Parameters
+    ----------
+    x, y, z0
+        Stem base position.
+    dbh
+        Diameter at the base (m); the stem tapers to a quarter of it.
+    height
+        Tree height (m).
+    n_branches
+        Limbs.
+    leaf_points
+        Approximate number of leaf points (12 per leaf disc).
+    seed
+        Random seed.
+
+    Returns
+    -------
+    PointCloud
     """
     rng = np.random.default_rng(seed)
     r = dbh / 2
@@ -82,9 +114,19 @@ def tree(x: float = 0.0, y: float = 0.0, dbh: float = 0.3, height: float = 12.0,
 
 
 def leaf_area(cloud: PointCloud) -> float:
-    """One-sided area (m²) of the leaf discs in a synthetic cloud, from its
-    ``classification == 4`` points: the truth that leaf area estimates can be
-    checked against."""
+    """True one-sided leaf area of a synthetic cloud.
+
+    Parameters
+    ----------
+    cloud
+        From :func:`tree` or :func:`forest`.
+
+    Returns
+    -------
+    float
+        Area (m²) of the leaf discs, counted from ``classification == 4``
+        points; what leaf-area estimates can be checked against.
+    """
     n_leaves = np.sum(cloud.attrs["classification"] == 4) / _POINTS_PER_LEAF
     return float(n_leaves * np.pi * LEAF_RADIUS**2)
 
@@ -99,6 +141,23 @@ def forest(trees=None, size: float = 20.0, ground_points: int = 40000, margin: f
     :data:`DEFAULT_TREES`. Attributes: ``classification`` (2 ground, 4 leaf,
     5 wood) and ``tree_id`` (0 for ground, then 1.. in list order) as ground
     truth to compare results against.
+
+    Parameters
+    ----------
+    trees
+        ``(x, y, dbh, height)`` per tree.
+    size
+        Side of the plot square (m).
+    ground_points
+        Points on the terrain.
+    margin
+        Terrain beyond the plot edge (m).
+    seed
+        Random seed.
+
+    Returns
+    -------
+    PointCloud
     """
     rng = np.random.default_rng(seed)
     trees = DEFAULT_TREES if trees is None else trees
@@ -124,6 +183,26 @@ def scan(cloud: PointCloud, origin=(10.0, 10.0, 1.5), resolution_deg: float = 0.
     which a real scanner's point stream would not show, but which carry the
     free-space information ray tracing needs. Echo attributes are copied from
     the points, so ``classification`` and ``tree_id`` survive.
+
+    Parameters
+    ----------
+    cloud
+        Scene to scan, e.g. :func:`forest`.
+    origin
+        Scanner position.
+    resolution_deg
+        Angular step in zenith and azimuth (degrees).
+    max_zenith_deg
+        Pulses are fired from straight up to this zenith.
+    max_echoes
+        Echoes per pulse.
+    echo_separation
+        Minimum range (m) between echoes of one pulse.
+
+    Returns
+    -------
+    Shots
+        One pulse per angular cell, misses included.
     """
     origin = np.asarray(origin, float)
     d = cloud.xyz - origin

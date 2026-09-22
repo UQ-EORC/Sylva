@@ -46,9 +46,22 @@ __all__ = ["StemNoise", "stem_noise", "scan_ids_from_origins"]
 
 
 def scan_ids_from_origins(origins, tolerance: float = 0.05) -> np.ndarray:
-    """Scan position of each point from its sensor origin (one row per point,
-    e.g. ``shots.origin[shots.shot_of_echo()]``): origins within
-    ``tolerance`` metres are one position. Returns ``0 .. n-1``."""
+    """Scan position of each point, from its sensor origin.
+
+    Parameters
+    ----------
+    origins
+        ``(N, 3)`` sensor position of each point, e.g.
+        ``shots.origin[shots.shot_of_echo()]`` or a ray cloud's end point
+        plus ``nx, ny, nz``.
+    tolerance
+        Origins on the same ``tolerance`` (m) grid cell are one position.
+
+    Returns
+    -------
+    numpy.ndarray
+        int64 id per point, ``0 .. n-1`` in sorted order of the origins.
+    """
     o = np.asarray(origins, dtype=float)
     key = np.round(o / tolerance).astype(np.int64)
     _, ids = np.unique(key, axis=0, return_inverse=True)
@@ -67,13 +80,48 @@ def _wmedian(x, w):
 
 @dataclass
 class StemNoise:
+    """Result of :func:`stem_noise`; tables are dicts of equal-length arrays.
+
+    Attributes
+    ----------
+    slices
+        Per stem slice: ``stem``, ``height``, ``cx``, ``cy``, ``radius``,
+        ``n_points``, ``sigma`` (after moving scans back), ``sigma_first``
+        (as the cloud stands), ``arc`` (degrees seen) and ``tail_fraction``.
+    scan_slices
+        Per scan and slice: ``scan``, ``slice``, ``n_points``,
+        ``median_residual``, ``sigma_within``, ``sigma_local``.
+    scans
+        Per scan: ``scan``, ``n_points``, ``n_slices``, ``tx``, ``ty``
+        (horizontal offset, m), ``sigma_within``, ``sigma_local``.
+    residual
+        Radial residual of each input point (m); NaN where not used.
+    """
+
     slices: dict  #: per stem slice: stem, height, cx, cy, radius, n_points, sigma, sigma_first, arc, tail_fraction
     scan_slices: dict  #: per scan and slice: scan, slice, n_points, median_residual, sigma_within, sigma_local
     scans: dict  #: per scan: scan, n_points, n_slices, tx, ty, sigma_within, sigma_local
     residual: np.ndarray  #: per input point (NaN where not used), after the scans were moved back
 
     def summary(self) -> dict:
-        """Plot-level figures (metres): see the module docstring."""
+        """Plot-level quality figures, in metres.
+
+        Returns
+        -------
+        dict
+            ``n_stems``, ``n_slices``, ``n_scans``; point-weighted medians
+            ``sigma_total``, ``sigma_corrected``, ``sigma_within``,
+            ``sigma_local``; ``tail_fraction``; and with several scans
+            ``registration_rms``, ``registration_max`` and ``worst_scan``.
+            Only the counts are present if no slice qualified.
+
+        Notes
+        -----
+        On the TERN CUP 2022 plot ``sigma_local`` was 6.7 mm and
+        ``registration_rms`` 4.7 mm; two halves of the stems agreed to
+        1.1 mm. Compare scans and dates with the same settings, not with
+        a fixed threshold.
+        """
         sl, ss, sc = self.slices, self.scan_slices, self.scans
         n = len(sl["height"])
         out = {"n_stems": int(len(np.unique(sl["stem"]))) if n else 0, "n_slices": int(n),
@@ -108,6 +156,32 @@ def stem_noise(cloud: PointCloud, scan_id=None, stems=None, height_attr: str = "
     ``min_inlier_fraction=0.5``, ``cut_min=0.05`` and ``cut_fraction=0.3``
     (points further than ``max(cut_min, cut_fraction * r)`` from the circle
     are not stem), ``min_scan_points=30``. ``iterations`` of offset refinement.
+
+    Parameters
+    ----------
+    cloud
+        Registered multi-scan cloud (or one scan) covering 1-3 m of the stems.
+    scan_id
+        Scan position per point, as above.
+    stems
+        Stem positions, as above.
+    height_attr
+        Attribute holding height above ground.
+    iterations
+        Rounds of moving the scans back and refitting.
+    **params
+        The slice and fit settings above.
+
+    Returns
+    -------
+    StemNoise
+        Call :meth:`StemNoise.summary` for plot-level numbers.
+
+    Notes
+    -----
+    Needs stems that are roughly round and seen from most sides: at least
+    ``min_arc`` degrees of each slice, so single scans of isolated trees
+    usually qualify only with a lower ``min_arc``.
     """
     xyz = np.ascontiguousarray(cloud.xyz, dtype=float)
     if height_attr in cloud.attrs:
