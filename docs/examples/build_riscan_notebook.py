@@ -353,20 +353,30 @@ for t in big:
                  "crown_area": m["crown"]["projected_area"]}})
 print(f"{{len(big)}} QSMs in {{time.time() - t0:.0f}} s")
 pd.DataFrame(rows).round(3)""",
-    """tid = big[0].tree_id
+    """from matplotlib.collections import PolyCollection
+
+
+def side_view(model, axis=0):
+    # Each cylinder as its true-width outline seen from the side (axis 0: x-z, 1: y-z).
+    a, b = model.start[:, [axis, 2]], model.end[:, [axis, 2]]
+    d = b - a
+    n = np.c_[-d[:, 1], d[:, 0]] / np.maximum(np.hypot(*d.T), 1e-9)[:, None] * model.column("radius")[:, None]
+    return PolyCollection(np.stack([a + n, b + n, b - n, a - n], axis=1), facecolor="saddlebrown", edgecolor="saddlebrown", lw=0.3)
+
+
+tid = big[0].tree_id
 tree, model = models[tid]
-fig = plt.figure(figsize=(10, 5))
-ax = fig.add_subplot(1, 2, 1, projection="3d")
-s = tree[np.random.default_rng(0).choice(len(tree), min(len(tree), 60_000), replace=False)]
-ax.scatter(*s.xyz.T, s=0.2, c="0.6")
-ax.set_title(f"tree {{tid}}: points")
-ax = fig.add_subplot(1, 2, 2, projection="3d")
-for a, b, r in zip(model.start, model.end, model.column("radius")):
-    ax.plot(*np.c_[a, b], color="saddlebrown", lw=max(0.3, r * 40))
-ax.set_title(f"QSM, {{len(model)}} cylinders")
-for a in fig.axes:
-    a.set_box_aspect(np.ptp(tree.xyz, axis=0))
-    a.set_axis_off()""",
+s = tree[np.random.default_rng(0).choice(len(tree), min(len(tree), 80_000), replace=False)]
+fig, axes = plt.subplots(1, 3, figsize=(12, 6), sharey=True)
+axes[0].scatter(s.x, s.z, s=0.1, c="0.6")
+axes[0].set_title(f"tree {{tid}}: points (x-z)")
+for ax, k, lab in [(axes[1], 0, "x-z"), (axes[2], 1, "y-z")]:
+    ax.scatter(s.xyz[:, k], s.z, s=0.1, c="0.85")
+    ax.add_collection(side_view(model, k))
+    ax.set_title(f"QSM ({{lab}}), {{len(model)}} cylinders")
+for ax in axes:
+    ax.set_aspect("equal")
+    ax.autoscale_view()""",
     """wood = leaves.classify_leaf_wood(tree)
 foliage = tree[~wood]
 angles = leaves.leaf_angle_distribution(foliage)

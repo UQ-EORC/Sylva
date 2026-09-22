@@ -475,12 +475,19 @@ r0, r1, L = 0.35 / 2 * 1.05, 0.35 / 2 * 0.25, 14.0 * 0.9
 true_stem = np.pi * L / 3 * (r0**2 + r0 * r1 + r1**2)
 print(f"stem volume: model {model.stem_volume:.3f} m3, truth {true_stem:.3f} m3;  DBH: model {model.dbh:.3f} m, truth 0.35 m")""",
     """\
-start, end = model.start, model.end
+from matplotlib.collections import PolyCollection
+
+# Each cylinder drawn at its true width: the outline of its side view.
+a, b = model.start[:, [0, 2]], model.end[:, [0, 2]]
+d = b - a
+n = np.c_[-d[:, 1], d[:, 0]] / np.maximum(np.hypot(*d.T), 1e-9)[:, None] * model.column("radius")[:, None]
 order = model.column("branch_order").astype(int)
 fig, ax = plt.subplots(figsize=(5, 6))
-for s, e, r, o in zip(start, end, model.column("radius"), order):
-    ax.plot([s[0], e[0]], [s[2], e[2]], color=f"C{min(o, 9)}", lw=max(0.6, r * 120), solid_capstyle="round")
-ax.set(aspect="equal", xlabel="x (m)", ylabel="z (m)", title="cylinders, coloured by branch order");""",
+ax.add_collection(PolyCollection(np.stack([a + n, b + n, b - n, a - n], axis=1),
+                                 facecolor=[f"C{min(o, 9)}" for o in order],
+                                 edgecolor=[f"C{min(o, 9)}" for o in order], lw=0.3))
+ax.autoscale_view()
+ax.set(aspect="equal", xlabel="x (m)", ylabel="z (m)", title="cylinders at true width, coloured by branch order");""",
     md("""## A real tree, and why to check `measured_volume_fraction`
 
 The same steps on the tallest tree of the Litchfield tile (notebook 5). The
