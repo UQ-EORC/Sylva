@@ -7,7 +7,7 @@ authors:
     family-names: Devereux
     email: devereux.tj@gmail.com
     affiliation: The University of Queensland
-repository-code: "https://github.com/TerraSpatial/Sylva"
+repository-code: "https://github.com/Leaf2Landscape/Sylva"
 abstract: >-
   Terrestrial laser scanning processing for forest ecology and remote
   sensing: ground classification, tree segmentation, quantitative structure

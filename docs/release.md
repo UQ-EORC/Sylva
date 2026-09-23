@@ -21,7 +21,7 @@ Both registries use trusted publishing (OpenID Connect from GitHub Actions), so
 no API tokens are stored in the repository.
 
 1. **PyPI.** On <https://pypi.org/manage/account/publishing/> add a *pending
-   publisher*: project `sylva-rs`, owner `TerraSpatial`, repository `Sylva`,
+   publisher*: project `sylva-rs`, owner `Leaf2Landscape`, repository `Sylva`,
    workflow `release.yml`, environment `pypi`. The first release creates the
    project.
 2. **crates.io.** Trusted publishing can only be switched on for a crate that
@@ -34,7 +34,7 @@ no API tokens are stored in the repository.
     ```
 
     Then, in each crate's settings on crates.io, add a trusted publisher:
-    repository `TerraSpatial/Sylva`, workflow `release.yml`, environment
+    repository `Leaf2Landscape/Sylva`, workflow `release.yml`, environment
     `crates-io`.
 3. **GitHub.** Create the environments `pypi` and `crates-io` (Settings →
    Environments); add yourself as a required reviewer if releases should wait

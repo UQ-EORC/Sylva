@@ -1,7 +1,7 @@
 # sylva-rs
 
 Terrestrial laser scanning (TLS) processing for forest ecology: the Rust core
-of [Sylva](https://github.com/TerraSpatial/Sylva), which also ships as the
+of [Sylva](https://github.com/Leaf2Landscape/Sylva), which also ships as the
 `sylva-rs` Python package (`import sylva`) and the `sylva` command
 (`cargo install sylva-cli`).
 
