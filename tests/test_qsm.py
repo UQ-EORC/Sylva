@@ -249,6 +249,36 @@ def test_build_plot_models_every_tree(rng, tmp_path):
         qsm.build_plot(cloud, labels[:-1])
 
 
+def test_build_plot_flags_a_cloud_too_sparse_to_fit():
+    """A stem sampled every 6 cm: the shells hold too little to fit."""
+    import warnings
+
+    rng = np.random.default_rng(11)
+    from conftest import make_stem
+
+    pts = make_stem(rng, 0.0, 0.0, 0.15, 6.0, density=3000)
+    cloud = PointCloud(pts, {"height": pts[:, 2].copy()})
+    sparse = filters.voxel_downsample(cloud, 0.06)
+    labels = np.ones(len(sparse), int)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        plot = qsm.build_plot(sparse, labels, wood=False, voxel_size=0.0, min_points=500)
+        assert any("too sparse" in str(c.message) for c in caught), [str(c.message) for c in caught]
+    row = plot.table()[0]
+    assert row["measured_length"] < 0.2          # hardly any of it was fitted
+    assert 0.0 <= row["measured_volume"] <= 1.0
+    # The same tree at full resolution fits, and says so.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        good = qsm.build_plot(cloud, np.ones(len(cloud), int), wood=False, min_points=500)
+        assert not [c for c in caught if "too sparse" in str(c.message)]
+    assert good.table()[0]["measured_length"] > 0.5
+    # Unfitted radii come from the priors, so the two disagree; which way
+    # depends on the tree (a crown full of twigs feeds the pipe model and
+    # runs fat, a bare stem runs thin).
+    assert abs(good.table()[0]["dbh_m"] - plot.table()[0]["dbh_m"]) > 0.02
+
+
 def test_build_plot_takes_stem_centres(rng):
     from conftest import make_stem
 

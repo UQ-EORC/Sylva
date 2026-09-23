@@ -12,6 +12,7 @@ fits a RANSAC cylinder to each and links parents.
 from __future__ import annotations
 
 import csv
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -1041,13 +1042,16 @@ class PlotQSMs:
         -------
         list of dict
             ``tree_id``, ``points``, ``volume_m3``, ``dbh_m``, ``height_m``,
-            ``n_cylinders``, ``buttress_m3`` and ``buttress_top_m`` (blank
-            without a buttress).
+            ``n_cylinders``, ``measured_volume`` and ``measured_length`` (the
+            share of the model that was fitted to points rather than taken
+            from the taper and pipe-model priors), and ``buttress_m3`` /
+            ``buttress_top_m`` (blank without a buttress).
         """
         rows = []
         for t, m in sorted(self.models.items()):
             b = self.buttresses.get(t)
             s = m.summary()
+            fit = m.metrics()
             rows.append({
                 "tree_id": t,
                 "points": self._points.get(t, ""),
@@ -1055,6 +1059,8 @@ class PlotQSMs:
                 "dbh_m": round(s["dbh_m"], 4),
                 "height_m": round(self._heights.get(t, float("nan")), 2),
                 "n_cylinders": s["n_cylinders"],
+                "measured_volume": round(fit["measured_volume_fraction"], 3),
+                "measured_length": round(fit["measured_length_fraction"], 3),
                 "buttress_m3": round(b.volume, 5) if b is not None else "",
                 "buttress_top_m": round(b.top, 2) if b is not None else "",
             })
@@ -1209,6 +1215,14 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
     Volumes are the cylinders' own unless a buttress was meshed, in which
     case :meth:`PlotQSMs.volume` is the mesh below its top plus the cylinders
     above it.
+
+    A QSM needs points on the stem surface: with roughly 1 cm spacing the
+    default 0.1 m shells hold plenty, but a cloud thinned to 3-5 cm leaves
+    most shells with too few, and those cylinders take their radius from the
+    taper and pipe-model priors instead. That runs large - on one 20 m
+    savanna tree, 0.34 m DBH at full resolution against 1.10 m at 5 cm - so
+    ``build_plot`` warns when the median model was hardly fitted at all, and
+    ``measured_length`` in :meth:`PlotQSMs.table` says so per tree.
     """
     from . import filters, progress, trees as _trees
 
@@ -1251,6 +1265,18 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
     out = PlotQSMs(models, bases, skipped)
     object.__setattr__(out, "_points", points)
     object.__setattr__(out, "_heights", tops)
+    if models:
+        # A model whose cylinders were never fitted to points is the taper and
+        # pipe-model priors talking, and those inflate. The usual cause is a
+        # cloud too sparse for the shell width.
+        share = float(np.median([m.metrics()["measured_length_fraction"] for m in models.values()]))
+        if share < 0.1:
+            warnings.warn(
+                f"only {share:.0%} of the median model's length was fitted to points: "
+                f"the cloud may be too sparse for bin_length={params.get('bin_length', 0.1)} m. "
+                "Radii then come from the priors and run large; check measured_length in the table.",
+                stacklevel=2,
+            )
     return out
 
 

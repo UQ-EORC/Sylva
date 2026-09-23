@@ -154,6 +154,30 @@ From the command line, on a cloud that carries a `tree_id` attribute (what
 sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/ --meshes meshes/
 ```
 
+## How fine does the cloud have to be?
+
+Fine enough that every geodesic shell holds points on the stem surface. With
+roughly 1 cm spacing the default 0.1 m shells do; a cloud thinned to 3-5 cm
+leaves most of them with too few points, and those cylinders take their
+radius from the taper and pipe-model priors instead of the data. That is not
+a small error: on a 21 m savanna tree whose stem the points put at 0.17 m
+radius,
+
+| cloud | DBH | volume | of the model fitted to points |
+|---|---|---|---|
+| full resolution (~1 cm) | 0.34 m | 1.92 m³ | most |
+| thinned to 5 cm | 1.10 m | 9.76 m³ | 0.8 % of its length |
+
+and over that plot the total came to 96 m³ against 36 m³ for the same trees
+at full resolution. Widening the shells does not rescue it: `bin_length=0.3`
+fixes that tree but merges the saplings, and the plot total goes up again.
+
+So thin for segmentation if you like, but **fit QSMs on the full-resolution
+points**. `build_plot` warns when the median model was hardly fitted at all,
+and `measured_length` (with `measured_volume`) in `PlotQSMs.table` reports it
+per tree: values near 1 mean the cylinders follow the points, values near 0
+mean they follow the priors.
+
 ## Buttresses
 
 A cylinder cannot follow a buttressed base. At 1.3 m a large tropical tree can
