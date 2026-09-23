@@ -3,7 +3,7 @@ from collections import Counter
 import numpy as np
 import pytest
 
-from sylva import PointCloud, qsm, synthetic
+from sylva import PointCloud, filters, qsm, synthetic, trees
 
 
 def test_fit_cylinder(rng):
@@ -198,6 +198,58 @@ def test_crown_shape(rng):
     assert c["offset"] == pytest.approx(1.0, abs=0.05) and abs(c["offset_direction"]) < 5
     assert c["asymmetry"] == pytest.approx(0.5, abs=0.05)
     assert c["top_height"] == pytest.approx(11, abs=0.05)
+
+
+def test_build_plot_models_every_tree(rng, tmp_path):
+    from conftest import make_stem
+
+    # Three stems of different size, plus a clump too small to model.
+    parts, labels = [], []
+    for tid, (x, r, h) in enumerate([(0.0, 0.15, 6.0), (6.0, 0.10, 4.0), (12.0, 0.2, 7.0)], start=1):
+        pts = make_stem(rng, x, 0.0, r, h, density=3000)
+        parts.append(pts)
+        labels.append(np.full(len(pts), tid))
+    clump = make_stem(rng, 20.0, 0.0, 0.05, 0.4, density=300)
+    parts.append(clump)
+    labels.append(np.full(len(clump), 4))
+    xyz = np.vstack(parts)
+    labels = np.concatenate(labels)
+    cloud = PointCloud(xyz, {"height": xyz[:, 2].copy()})
+
+    plot = qsm.build_plot(cloud, labels, wood=False, min_points=2000)
+    assert set(plot.models) == {1, 2, 3} and set(plot.skipped) == {4}
+    assert "points" in plot.skipped[4]
+    assert plot.total_volume == pytest.approx(sum(m.total_volume for m in plot.models.values()))
+    # The same as fitting that tree on its own.
+    alone = qsm.build_qsm(filters.voxel_downsample(cloud[labels == 1], 0.01),
+                          base_xy=tuple(np.median(cloud.xyz[labels == 1][:, :2], axis=0)))
+    assert plot.models[1].total_volume == pytest.approx(alone.total_volume, rel=1e-9)
+    # Volume rises with stem size, as the stems were built.
+    assert plot.volume(3) > plot.volume(1) > plot.volume(2)
+
+    rows = plot.table()
+    assert len(rows) == 3 and rows[0]["tree_id"] == 1
+    assert rows[0]["points"] > 0 and rows[0]["height_m"] == pytest.approx(6.0, abs=0.2)
+    plot.to_csv(tmp_path / "trees.csv")
+    assert (tmp_path / "trees.csv").read_text().startswith("tree_id,points,volume_m3")
+    plot.write_cylinders(tmp_path / "qsms")
+    assert sorted(p.name for p in (tmp_path / "qsms").glob("*.csv")) == ["tree1.csv", "tree2.csv", "tree3.csv"]
+
+    with pytest.raises(ValueError):
+        qsm.build_plot(cloud, labels[:-1])
+
+
+def test_build_plot_takes_stem_centres(rng):
+    from conftest import make_stem
+
+    pts = make_stem(rng, 3.0, -2.0, 0.12, 5.0, density=3000)
+    cloud = PointCloud(pts, {"height": pts[:, 2].copy()})
+    labels = np.ones(len(pts), int)
+    stem = trees.Tree(tree_id=1, x=3.0, y=-2.0, dbh=0.24)
+    plot = qsm.build_plot(cloud, labels, [stem], wood=False)
+    assert len(plot) == 1
+    base = plot.models[1].start[0]
+    assert np.hypot(base[0] - 3.0, base[1] + 2.0) < 0.2
 
 
 def test_buttress_mesh_of_a_flanged_base():

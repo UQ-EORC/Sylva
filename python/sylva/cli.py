@@ -103,6 +103,24 @@ def _cmd_qsm(args):
         print(f"{k}: {v}")
 
 
+def _cmd_qsm_plot(args):
+    cloud = io.read(args.input)
+    if args.tree_attr not in cloud.attrs:
+        raise KeyError(f"{args.input} has no '{args.tree_attr}' attribute; "
+                       f"segment it first (sylva trees --segment)")
+    labels = cloud.attrs[args.tree_attr].astype(int)
+    plot = qsm.build_plot(cloud, labels, voxel_size=args.voxel, wood=not args.no_wood,
+                          buttress=args.buttress, min_points=args.min_points,
+                          bin_length=args.bin_length)
+    plot.to_csv(args.output)
+    if args.cylinders:
+        plot.write_cylinders(args.cylinders)
+    print(f"{len(plot)} QSMs, {len(plot.skipped)} skipped, "
+          f"{plot.total_volume:.3f} m3 of wood -> {args.output}")
+    for tid, why in list(plot.skipped.items())[:5]:
+        print(f"  skipped {tid}: {why}")
+
+
 def _cmd_shots(args):
     shots = Shots.from_ray_cloud(io.read(args.input))
     shots.save(args.output, double=args.double)
@@ -195,6 +213,21 @@ def main(argv=None):
     s.add_argument("output", help="CSV of cylinders")
     s.add_argument("--bin-length", type=float, default=0.3, help="geodesic shell width (m)")
     s.set_defaults(func=_cmd_qsm)
+
+    s = sub.add_parser("qsm-plot", help="build a QSM for every tree of a segmented cloud", **fmt)
+    s.add_argument("input", help="height-normalised cloud with a tree id attribute")
+    s.add_argument("output", help="CSV, one row per tree")
+    s.add_argument("--tree-attr", default="tree_id", help="attribute holding the tree id")
+    s.add_argument("--cylinders", default=None, metavar="DIR",
+                   help="also write one cylinder CSV per tree into this directory")
+    s.add_argument("--voxel", type=float, default=0.01, help="thin each tree to this spacing (m)")
+    s.add_argument("--bin-length", type=float, default=0.1, help="geodesic shell width (m)")
+    s.add_argument("--min-points", type=int, default=2000, help="skip trees with fewer points")
+    s.add_argument("--buttress", action="store_true",
+                   help="mesh a buttressed base and count it in the volume")
+    s.add_argument("--no-wood", action="store_true",
+                   help="skip the leaf/wood filter (the cloud is wood already)")
+    s.set_defaults(func=_cmd_qsm_plot)
 
     s = sub.add_parser("shots", help="convert a ray cloud to a sylva shots file (.parquet)", **fmt)
     s.add_argument("input", help="ray cloud with sx,sy,sz or nx,ny,nz attributes")

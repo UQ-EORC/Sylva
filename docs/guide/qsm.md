@@ -111,6 +111,42 @@ The crown volume is low for the same reason the wood volume is. The
 QSMs recover only about a third of the length of twigs under 1 cm, and
 those twigs mark the crown's outer edge.
 
+## A whole plot
+
+`build_plot` is the loop around `build_qsm`: it takes a segmented cloud and
+models every tree, thinning, filtering wood, catching the trees that cannot
+be fitted and reporting progress as it goes.
+
+```python
+from sylva import ground, qsm, trees
+
+cloud = ground.normalize_height(cloud, dtm)
+stems = trees.detect_stems(cloud)
+labels = trees.segment_trees(cloud, stems)
+stems, labels = trees.prune_trees(stems, labels)
+
+plot = qsm.build_plot(cloud, labels, stems)       # {tree_id: QSM}, and why any were skipped
+print(len(plot), plot.total_volume, plot.skipped)
+plot.to_csv("trees.csv")                          # a row per tree
+plot.write_cylinders("qsms/")                     # tree<id>.csv each
+```
+
+`stems` only supplies the stem centre each model is built around; without it
+the centre comes from the tree's own points between 0.5 and 1.5 m. Trees with
+fewer than `min_points` points, and trees whose fit fails, land in
+`plot.skipped` with the reason rather than stopping the run.
+
+`buttress=True` additionally looks for a flanged base on each tree and meshes
+it, so `plot.volume(tree_id)` is the buttress mesh below its top plus the
+cylinders above it (see below). It costs a slice-rasterising pass per tree.
+
+From the command line, on a cloud that carries a `tree_id` attribute (what
+`sylva trees --segment` writes):
+
+```bash
+sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/
+```
+
 ## Buttresses
 
 A cylinder cannot follow a buttressed base. At 1.3 m a large tropical tree can

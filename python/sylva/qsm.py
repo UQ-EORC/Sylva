@@ -11,6 +11,7 @@ fits a RANSAC cylinder to each and links parents.
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,7 +20,7 @@ import numpy as np
 from . import _core
 from .pointcloud import PointCloud
 
-__all__ = ["QSM", "fit_cylinder", "fit_cylinder_ransac", "skeletonize", "build_qsm", "wood_points",
+__all__ = ["QSM", "PlotQSMs", "build_plot", "fit_cylinder", "fit_cylinder_ransac", "skeletonize", "build_qsm", "wood_points",
            "write_obj", "write_ply_mesh", "Buttress", "buttress_mesh", "TreeMesh"]
 
 COLUMNS = ("sx", "sy", "sz", "ax", "ay", "az", "length", "radius", "parent", "branch_order",
@@ -988,6 +989,215 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
                         branch_min_inlier_fraction, cluster_eps, centre_fit_points,
                         radius_smooth_steps, butt_swell, butt_vertical_run, butt_max_lean_deg, chain_max_d, fourier_min_radius)
     return QSM(d["cylinders"])
+
+
+@dataclass
+class PlotQSMs:
+    """Every tree of a plot modelled; build with :func:`build_plot`.
+
+    Attributes
+    ----------
+    models
+        ``{tree_id: QSM}`` for the trees that were fitted.
+    buttresses
+        ``{tree_id: Buttress}`` where a buttress was found and meshed.
+    skipped
+        ``{tree_id: reason}`` for the trees that were not modelled: too few
+        points, or the message of the fit that failed.
+    """
+
+    models: dict[int, QSM]
+    buttresses: dict[int, "Buttress"]
+    skipped: dict[int, str]
+
+    def __len__(self) -> int:
+        return len(self.models)
+
+    def volume(self, tree_id: int) -> float:
+        """Wood volume of one tree (m³), buttress included where there is one.
+
+        Parameters
+        ----------
+        tree_id
+            Which tree.
+
+        Returns
+        -------
+        float
+        """
+        m = self.models[tree_id]
+        b = self.buttresses.get(tree_id)
+        return b.total_volume(m) if b is not None else m.total_volume
+
+    @property
+    def total_volume(self) -> float:
+        """Wood volume of the whole plot (m³)."""
+        return float(sum(self.volume(t) for t in self.models))
+
+    def table(self) -> list[dict]:
+        """One row per tree, ready for a CSV.
+
+        Returns
+        -------
+        list of dict
+            ``tree_id``, ``points``, ``volume_m3``, ``dbh_m``, ``height_m``,
+            ``n_cylinders``, ``buttress_m3`` and ``buttress_top_m`` (blank
+            without a buttress).
+        """
+        rows = []
+        for t, m in sorted(self.models.items()):
+            b = self.buttresses.get(t)
+            s = m.summary()
+            rows.append({
+                "tree_id": t,
+                "points": self._points.get(t, ""),
+                "volume_m3": round(self.volume(t), 5),
+                "dbh_m": round(s["dbh_m"], 4),
+                "height_m": round(self._heights.get(t, float("nan")), 2),
+                "n_cylinders": s["n_cylinders"],
+                "buttress_m3": round(b.volume, 5) if b is not None else "",
+                "buttress_top_m": round(b.top, 2) if b is not None else "",
+            })
+        return rows
+
+    def to_csv(self, path: str | Path) -> None:
+        """Write :meth:`table` as a CSV.
+
+        Parameters
+        ----------
+        path
+            Output file.
+        """
+        rows = self.table()
+        with open(path, "w", newline="") as fh:
+            w = csv.DictWriter(fh, list(rows[0]) if rows else ["tree_id"])
+            w.writeheader()
+            w.writerows(rows)
+
+    def write_cylinders(self, directory: str | Path, prefix: str = "tree") -> None:
+        """Write one cylinder CSV per tree into ``directory``.
+
+        Parameters
+        ----------
+        directory
+            Created if it does not exist.
+        prefix
+            File name stem; files are ``<prefix><tree_id>.csv``.
+        """
+        d = Path(directory)
+        d.mkdir(parents=True, exist_ok=True)
+        for t, m in self.models.items():
+            m.to_csv(d / f"{prefix}{t}.csv")
+
+    #: filled in by build_plot
+    _points: dict = None
+    _heights: dict = None
+
+    def __post_init__(self) -> None:
+        if self._points is None:
+            object.__setattr__(self, "_points", {})
+        if self._heights is None:
+            object.__setattr__(self, "_heights", {})
+
+
+def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
+               wood: bool = True, buttress: bool = False, min_points: int = 2000,
+               height_attr: str = "height", **params) -> PlotQSMs:
+    """A QSM for every tree of a segmented plot.
+
+    The loop that :func:`build_qsm` needs around it: each tree's points are
+    taken from ``labels``, thinned, put through the wood filter and fitted,
+    and a tree that cannot be fitted is recorded rather than raising. Progress
+    is reported (:mod:`sylva.progress`), so a plot of a few hundred trees is
+    not silent.
+
+    Parameters
+    ----------
+    cloud
+        The whole plot, height-normalised (needed for ``buttress``).
+    labels
+        Tree id per point, as :func:`sylva.trees.segment_trees` returns;
+        anything below 0 is not part of a tree.
+    stems
+        The detected trees, used for the stem centre each model is built
+        around. Without them the centre is the middle of the tree's own
+        points between 0.5 and 1.5 m.
+    voxel_size
+        Thin each tree to this spacing first (m); 0 keeps every point.
+    wood
+        Run :func:`wood_points` on each tree first. Turn it off for clouds
+        that are wood already.
+    buttress
+        Look for a buttress on each tree (:func:`sylva.trees.detect_buttress`)
+        and mesh it, so the volume of a flanged base is not left to the
+        cylinders. Needs ``height_attr`` on the cloud.
+    min_points
+        Trees with fewer points than this are skipped.
+    height_attr
+        Attribute holding height above ground.
+    **params
+        Passed to :func:`build_qsm`.
+
+    Returns
+    -------
+    PlotQSMs
+        The models, any buttresses, and why a tree was skipped.
+
+    Examples
+    --------
+    >>> labels = trees.segment_trees(cloud, stems)          # doctest: +SKIP
+    >>> plot = qsm.build_plot(cloud, labels, stems)         # doctest: +SKIP
+    >>> plot.total_volume, len(plot), plot.skipped          # doctest: +SKIP
+    >>> plot.to_csv("trees.csv"); plot.write_cylinders("qsms/")   # doctest: +SKIP
+
+    Notes
+    -----
+    Volumes are the cylinders' own unless a buttress was meshed, in which
+    case :meth:`PlotQSMs.volume` is the mesh below its top plus the cylinders
+    above it.
+    """
+    from . import filters, progress, trees as _trees
+
+    labels = np.asarray(labels)
+    if len(labels) != len(cloud):
+        raise ValueError("labels must have one value per point")
+    ids = [int(t) for t in np.unique(labels) if t >= 0]
+    centres = {int(s.tree_id): (s.x, s.y) for s in stems} if stems is not None else {}
+    heights = cloud.attrs.get(height_attr)
+    models, bases, skipped, points, tops = {}, {}, {}, {}, {}
+    with progress.task("fitting QSMs", len(ids)) as prog:
+        for tid in ids:
+            prog.update()
+            m = labels == tid
+            n = int(m.sum())
+            if n < min_points:
+                skipped[tid] = f"{n} points"
+                continue
+            tree = cloud[m]
+            points[tid] = n
+            if heights is not None:
+                tops[tid] = float(heights[m].max())
+            thin = filters.voxel_downsample(tree, voxel_size) if voxel_size > 0 else tree
+            base = centres.get(tid)
+            if base is None:
+                h = thin.attrs.get(height_attr)
+                low = thin.xyz[(h > 0.5) & (h < 1.5)] if h is not None else thin.xyz
+                base = tuple(np.median(low[:, :2] if len(low) > 20 else thin.xyz[:, :2], axis=0))
+            try:
+                models[tid] = build_qsm(wood_points(thin) if wood else thin, base_xy=base, **params)
+            except (ValueError, RuntimeError) as e:
+                skipped[tid] = str(e)
+                continue
+            if buttress and heights is not None:
+                found = _trees.detect_buttress(tree, base_xy=base, height_attr=height_attr)
+                if found["buttressed"]:
+                    b = buttress_mesh(tree, found["centre"], height_attr=height_attr, top=found["top"])
+                    if len(b.faces):
+                        bases[tid] = b
+    out = PlotQSMs(models, bases, skipped)
+    object.__setattr__(out, "_points", points)
+    object.__setattr__(out, "_heights", tops)
+    return out
 
 
 def wood_points(cloud: PointCloud, k: int = 20, threshold: float = 0.85,

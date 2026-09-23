@@ -16,6 +16,7 @@ sylva pad plot_norm.laz --voxel 0.5 > pad.csv
 sylva shots rays.laz plot.parquet                  # ray cloud -> shots file
 sylva voxel plot.parquet plot.vox --voxel 0.25 --ground-class 2 --laser VZ-400 --attenuation fpl ppl
 sylva qsm tree.ply tree_qsm.csv
+sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/
 ```
 
 `crates/sylva-cli` builds a standalone Rust binary with the same commands
@@ -68,6 +69,25 @@ contact-frequency profile on stdout, and the PAI on stderr.
 `sylva qsm INPUT OUTPUT [--bin-length 0.3]`: builds a cylinder model of one
 tree (ideally its wood points), writes the cylinders as CSV and prints the
 summary.
+
+### `qsm-plot`
+
+`sylva qsm-plot INPUT OUTPUT [options]`: builds a QSM for every tree of a
+segmented cloud (one that carries a `tree_id` attribute, as `sylva trees
+--segment` writes) and puts a row per tree in `OUTPUT`.
+
+| Option | Default | What |
+|---|---|---|
+| `--tree-attr NAME` | `tree_id` | attribute holding the tree id |
+| `--cylinders DIR` | none | also write `tree<id>.csv` cylinders per tree |
+| `--voxel M` | 0.01 | thin each tree to this spacing first |
+| `--bin-length M` | 0.1 | geodesic shell width |
+| `--min-points N` | 2000 | skip trees with fewer points |
+| `--buttress` | off | mesh a flanged base and count it in the volume |
+| `--no-wood` | off | skip the leaf/wood filter (the cloud is wood already) |
+
+Trees that are too small or that cannot be fitted are listed on stdout rather
+than stopping the run.
 
 ### `shots`
 
