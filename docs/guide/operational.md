@@ -159,3 +159,49 @@ occluded).
 
 A plot with no detectable stems returns an empty list, not an error, so check
 counts before indexing.
+
+## Watching a long run
+
+Segmenting a plot, tracing pulses or fitting a few hundred QSMs runs for
+minutes. The core counts what it has done in atomics, which costs nothing
+while nobody is watching; ask to watch and a thread reads those counts a few
+times a second:
+
+```python
+from sylva import progress, trees
+
+with progress.bar():
+    labels = trees.segment_trees(cloud, stems)
+```
+
+```
+🌿 segmenting trees  ▕█████████▎                  ▏  33%  2/5  19s
+```
+
+The sapling grows into a tree as the stage fills. Stages nest, so a run that
+traces pulses inside a plot pipeline shows both; a stage whose length is not
+known yet sways instead of filling. Nothing is drawn unless the stream is a
+terminal, so piped output and notebooks stay clean (`force=True` overrides,
+`SYLVA_PROGRESS_ASCII=1` keeps to plain characters).
+
+The `sylva` command draws the bar by default; `--no-progress` turns it off.
+
+A script that wants the numbers rather than a bar passes a callback, called
+with the running stages as `(label, done, total)`:
+
+```python
+with progress.bar(lambda stages: logging.info("%s %d/%d", *stages[-1])):
+    ...
+```
+
+Loops of your own report the same way, and appear in the same bar:
+
+```python
+with progress.task("fitting QSMs", len(trees)) as t:
+    for tree in trees:
+        ...
+        t.update()
+```
+
+Reported by the core: tree segmentation, QSM building, pulse tracing, buttress
+meshing and leaf placement; from Python: scan pair registration.

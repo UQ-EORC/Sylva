@@ -300,8 +300,10 @@ pub fn insert_leaves(cells: &[(Point, f64)], voxel_size: f64, seeds: &[Point], a
 
     let mut rng = Rng::new(p.seed.max(1));
     let unit = |rng: &mut Rng| (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
+    let task = crate::progress::start("placing leaves", cells.len() as u64);
     let mut carry = 0.0; // fractional leaves carried between cells so the total is met
     for (centre, area) in cells {
+        task.inc(1);
         if !(*area > 0.0) {
             continue;
         }

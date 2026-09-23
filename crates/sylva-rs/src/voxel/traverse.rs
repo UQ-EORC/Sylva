@@ -585,12 +585,14 @@ impl Engine {
             echo_w: Vec<f32>,
             seg_w: Vec<f32>,
             hits: Vec<PplHit>,
+            done: u64,
         }
+        let task = crate::progress::start("tracing pulses", shots.n_shots() as u64);
         let mut hits: Vec<PplHit> = (0..shots.n_shots())
             .into_par_iter()
             .with_min_len(256)
             .fold(
-                || Local { rets: Vec::new(), echo_w: Vec::new(), seg_w: Vec::new(), hits: Vec::new() },
+                || Local { rets: Vec::new(), echo_w: Vec::new(), seg_w: Vec::new(), hits: Vec::new(), done: 0 },
                 |mut l, s| {
                     let (o, d) = (shots.origin[s], shots.direction[s]);
                     let first = shots.echo_start[s];
@@ -611,6 +613,10 @@ impl Engine {
                         l.rets.push(Ret { pos: end, range: norm(&sub(&end, &o)), bound: false, intensity: 0.0, foliage: foliage::EXCLUDED });
                     }
                     tracer.process(&o, &l.rets, &mut l.echo_w, &mut l.seg_w, &mut l.hits);
+                    l.done += 1;
+                    if l.done % 4096 == 0 {
+                        task.inc(4096);
+                    }
                     l
                 },
             )

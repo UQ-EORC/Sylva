@@ -13,7 +13,7 @@ import sys
 
 import numpy as np
 
-from . import __version__, canopy, filters, ground, io, qsm, trees, voxels
+from . import __version__, canopy, filters, ground, io, progress, qsm, trees, voxels
 from .raster import Raster
 from .shots import Shots
 
@@ -137,6 +137,8 @@ def main(argv=None):
                                 description="Terrestrial laser scanning for forest ecology.",
                                 epilog="Run `sylva <command> --help` for the options of a command.")
     p.add_argument("--version", action="version", version=f"sylva {__version__}")
+    p.add_argument("--no-progress", action="store_true",
+                   help="do not draw the progress bar (it is drawn on a terminal by default)")
     sub = p.add_subparsers(dest="command", required=True)
     fmt = {"formatter_class": argparse.ArgumentDefaultsHelpFormatter}
 
@@ -242,7 +244,11 @@ def main(argv=None):
 
     args = p.parse_args(argv)
     try:
-        args.func(args)
+        if args.no_progress:
+            args.func(args)
+        else:
+            with progress.bar():
+                args.func(args)
     except (OSError, ValueError, KeyError, ImportError) as e:
         p.exit(1, f"sylva: error: {e}\n")
 

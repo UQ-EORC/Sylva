@@ -20,6 +20,7 @@ pub mod io;
 pub mod leaves;
 pub mod optim;
 pub mod pointcloud;
+pub mod progress;
 pub mod qsm;
 pub mod quality;
 pub mod raster;

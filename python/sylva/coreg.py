@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from . import _core, filters, ground, trees
+from . import _core, filters, ground, progress, trees
 from .pointcloud import PointCloud
 
 __all__ = [
@@ -1310,15 +1310,13 @@ def register_scans(
             todo.append((i, j))
     log(f"registering {len(todo)} pairs of {n} scans ...")
     t0 = time.perf_counter()
-    with ThreadPoolExecutor(max(workers, 1)) as ex:
-        pairs = list(
-            ex.map(
-                lambda ij: register_pair(
-                    scans[ij[0]], scans[ij[1]], i=ij[0], j=ij[1], match=match, icp=icp, **accept
-                ),
-                todo,
-            )
-        )
+    with progress.task("registering scan pairs", len(todo)) as prog, ThreadPoolExecutor(max(workers, 1)) as ex:
+        def one(ij):
+            r = register_pair(scans[ij[0]], scans[ij[1]], i=ij[0], j=ij[1], match=match, icp=icp, **accept)
+            prog.update()
+            return r
+
+        pairs = list(ex.map(one, todo))
     if priors is not None:
         for p in pairs:
             if p.success:

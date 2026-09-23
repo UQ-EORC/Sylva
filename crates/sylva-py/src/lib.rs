@@ -1446,6 +1446,53 @@ fn qsm_summary<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>) -> PyResu
     qsm_to_py(py, &qsm_from_rows(cylinders)?)
 }
 
+/// The stages running now, as (label, done, total). Safe to call from
+/// another thread while the work runs: the core holds the counts in atomics.
+#[pyfunction]
+fn progress_state() -> Vec<(String, u64, u64)> {
+    sylva_rs::progress::state()
+}
+
+/// A stage opened by Python (a loop over trees, scans, files). The handle
+/// closes it; dropping it takes it off the list.
+#[pyclass(name = "ProgressTask")]
+struct PyProgressTask {
+    task: Option<sylva_rs::progress::Task>,
+}
+
+#[pymethods]
+impl PyProgressTask {
+    #[new]
+    #[pyo3(signature = (label, total=0))]
+    fn new(label: &str, total: u64) -> Self {
+        PyProgressTask { task: Some(sylva_rs::progress::start(label, total)) }
+    }
+
+    #[pyo3(signature = (n=1))]
+    fn inc(&self, n: u64) {
+        if let Some(t) = &self.task {
+            t.inc(n);
+        }
+    }
+
+    fn set(&self, done: u64) {
+        if let Some(t) = &self.task {
+            t.set(done);
+        }
+    }
+
+    fn set_total(&self, total: u64) {
+        if let Some(t) = &self.task {
+            t.set_total(total);
+        }
+    }
+
+    /// End the stage.
+    fn close(&mut self) {
+        self.task = None;
+    }
+}
+
 #[pyfunction]
 #[pyo3(signature = (cylinders, sides=12, contiguous=false))]
 fn qsm_mesh<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>, sides: usize, contiguous: bool) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray2<u32>>, Bound<'py, PyArray1<u32>>)> {
@@ -1469,6 +1516,7 @@ fn qsm_write_treefile(cylinders: PyReadonlyArray2<f64>, path: PathBuf) -> PyResu
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    m.add_class::<PyProgressTask>()?;
     m.add_class::<PyRayVoxels>()?;
     for f in [
         wrap_pyfunction!(read, m)?,
@@ -1549,6 +1597,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(qsm_summary, m)?,
         wrap_pyfunction!(qsm_write_csv, m)?,
         wrap_pyfunction!(qsm_mesh, m)?,
+        wrap_pyfunction!(progress_state, m)?,
         wrap_pyfunction!(qsm_write_treefile, m)?,
     ] {
         m.add_function(f)?;

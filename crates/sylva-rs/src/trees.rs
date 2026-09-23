@@ -202,6 +202,7 @@ impl Default for SegmentParams {
 /// Assign points to the nearest stem by shortest path through a kNN graph
 /// (multi-source Dijkstra from stem seeds). Unreachable points get `-1`.
 pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &SegmentParams) -> Vec<i64> {
+    let task = crate::progress::start("segmenting trees", 5);
     let above: Vec<usize> = (0..points.len()).filter(|&i| heights[i] >= p.cut_above_ground).collect();
     let above_pts: Vec<Point> = above.iter().map(|&i| points[i]).collect();
     let work_idx: Vec<usize> = if p.voxel_size > 0.0 {
@@ -211,13 +212,16 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
     };
     let work: Vec<Point> = work_idx.iter().map(|&i| points[i]).collect();
     let hw: Vec<f64> = work_idx.iter().map(|&i| heights[i]).collect();
+    task.inc(1); // thinned
     let wood: Option<Vec<bool>> = if p.wood_costs {
         let (_, vals) = crate::filters::local_pca(&work, p.wood_k);
         Some(vals.iter().map(|[l1, _, l3]| *l3 > 1e-14 && (l3 - l1) / l3 > p.wood_threshold).collect())
     } else {
         None
     };
+    task.inc(1); // wood costs
     let graph = directed_knn_graph_wood(&work, p.k, p.max_edge, p.power, p.angle_penalty, wood.as_deref());
+    task.inc(1); // graph
     let mut seeds = Vec::new();
     let mut seed_tree = Vec::new();
     let mut seed_xy = Vec::new();
@@ -263,10 +267,11 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
         }
     }
     let (dist, src, _) = dijkstra_scaled(&graph, &seeds, Some(&seed_xy), p.gravity, if p.height_prior { Some(&seed_scale) } else { None });
+    task.inc(1); // paths
     let labels_work: Vec<i64> = (0..work.len()).map(|i| if dist[i].is_finite() { seed_tree[src[i]] } else { -1 }).collect();
     let tree = KdTree::new(&work);
     let base: std::collections::HashMap<i64, (f64, f64, f64)> = trees.iter().map(|t| (t.tree_id, (t.x, t.y, p.low_radius.max(1.5 * t.dbh)))).collect();
-    points
+    let labels = points
         .par_iter()
         .zip(heights)
         .map(|(q, &h)| {
@@ -283,7 +288,9 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
             }
             l
         })
-        .collect()
+        .collect();
+    task.inc(1); // labelled
+    labels
 }
 
 /// Drop stem candidates that are really branches or secondary stems of

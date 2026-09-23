@@ -67,6 +67,7 @@ nav:
       - qsm: api/qsm.md
       - leaves: api/leaves.md
       - quality: api/quality.md
+      - progress: api/progress.md
       - synthetic: api/synthetic.md
   - Development: development.md
   - Releasing: release.md
