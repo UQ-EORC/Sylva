@@ -75,7 +75,7 @@ Build the site with `pip install -e '.[docs]' && mkdocs serve`.
 
 ## Author
 
-Tim Devereux, The University of Queensland (<devereux.tj@gmail.com>).
+Tim Devereux, The University of Queensland.
 
 ## Licence
 
