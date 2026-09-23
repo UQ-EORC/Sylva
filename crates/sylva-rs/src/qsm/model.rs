@@ -125,8 +125,8 @@ impl Qsm {
             for k in 0..sides as u32 {
                 let k1 = (k + 1) % sides as u32;
                 let (a0, a1, b0, b1) = (base + k, base + k1, base + sides as u32 + k, base + sides as u32 + k1);
-                tris.push([a0, b0, a1]);
-                tris.push([a1, b0, b1]);
+                tris.push([a0, a1, b0]);
+                tris.push([a1, b1, b0]);
                 tris.push([c0, a1, a0]);
                 tris.push([c1, b0, b1]);
                 owner.extend([ci as u32; 4]);
@@ -169,7 +169,7 @@ impl Qsm {
         let mut verts: Vec<Point> = Vec::new();
         let mut tris: Vec<[u32; 3]> = Vec::new();
         let mut owner: Vec<u32> = Vec::new();
-        let mut ring = |verts: &mut Vec<Point>, centre: Point, u: Point, v: Point, r: f64| -> u32 {
+        let ring = |verts: &mut Vec<Point>, centre: Point, u: Point, v: Point, r: f64| -> u32 {
             let base = verts.len() as u32;
             for k in 0..sides {
                 let a = k as f64 / sides as f64 * std::f64::consts::TAU;
@@ -221,8 +221,8 @@ impl Qsm {
                 let top = ring(&mut verts, c.end(), u, v, r_end);
                 for k in 0..sides as u32 {
                     let k1 = (k + 1) % sides as u32;
-                    tris.push([base + k, top + k, base + k1]);
-                    tris.push([base + k1, top + k, top + k1]);
+                    tris.push([base + k, base + k1, top + k]);
+                    tris.push([base + k1, top + k1, top + k]);
                     owner.extend([i as u32; 2]);
                 }
                 match follow {
@@ -1401,8 +1401,12 @@ fn isotonic_fill(chain: &[usize], radius: &mut [f64], weight: &[f64], apex_radiu
 
 /// [`skeletonize`] then [`fit_cylinders`].
 pub fn build_qsm(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParams) -> Result<Qsm> {
+    let task = crate::progress::start("building a QSM", 2);
     let skel = skeletonize(xyz, base_xy, p)?;
-    fit_cylinders(xyz, &skel, p)
+    task.inc(1); // skeleton
+    let qsm = fit_cylinders(xyz, &skel, p);
+    task.inc(1); // cylinders
+    qsm
 }
 
 #[allow(dead_code)]

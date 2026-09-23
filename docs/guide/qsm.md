@@ -125,7 +125,7 @@ b = trees.detect_buttress(tree)                 # tree: one tree's points with "
 if b["buttressed"]:
     base = qsm.buttress_mesh(tree, b["centre"], top=b["top"])
     volume = base.total_volume(model)           # mesh below the top + QSM above it
-    base.to_ply("buttress.ply")
+    base.fuse(model).to_ply("tree.ply")         # both as one mesh of the whole tree
 ```
 
 **Detection** (`trees.detect_buttress`) uses only bark-like points: locally
@@ -156,14 +156,43 @@ shape works:
   and the part of a slice kept is the part connected to it. The core then
   carries down where near the ground only the outsides of the flanges were
   seen.
+- A section may widen by no more than `max_flare` metres per metre of drop
+  (default 1.0, that is 45°). Flanges flare well within that. Without it, a
+  single scan line lying on the ground and ringing the stem encloses
+  everything inside it when the outline is filled, and the base comes out
+  wearing a slab: on one tropical tree that was 6.6 m² of ground at the foot
+  of a 3.2 m² base, 13 % of the buttress volume.
 - Where an outline stays open, the seen bark is kept, thickened to the closing
   radius, plus a circle where the points form a good arc.
 
-The stacked sections become a watertight surface (surface nets). The volume is
-the sum of the slice areas.
+The stacked sections become a watertight surface (surface nets), closed where
+the solid meets the ground and the edge of its raster. A few edges are shared
+by four faces where two voxels touch only corner to corner, which some tools
+call non-manifold; the surface is still closed, and the volume it encloses
+agrees with the reported one. The volume itself is the sum of the slice areas.
+
+**Fusing** (`Buttress.fuse`) puts the base and the cylinders in one mesh of the
+whole stem. The buttress replaces the wood below its top: `QSM.above(top_z)`
+cuts the model at that plane, cutting through any cylinder that crosses it, and
+the two surfaces meet there, so nothing is counted twice and the volume is the
+one `total_volume` reports:
+
+```python
+fused = base.fuse(model, contiguous=True)
+fused.volume, fused.buttress_volume, fused.wood_volume
+fused.to_obj("tree.obj")        # objects "buttress" and "wood"
+fused.to_ply("tree.ply")        # one mesh, the base in bark brown
+```
+
+The two parts stay watertight and separately labelled (`fused.part` per face)
+rather than being welded into a single shell: a boolean union of a flanged base
+and a few thousand tubes is not something a triangle mesh survives cleanly, and
+the seam at the top plane is where the two volumes already meet.
 
 On the 15 Cameroon harvest trees it detects as buttressed, the QSM alone has a
 −10.1 % volume bias against the felled volume. With the buttress mesh below
 the top, the bias is +2.3 % (RMSE 18.1 % and 17.7 %). Whether the published
 felled volumes include the stump below the cut is not recorded, so treat this
-as indicative.
+as indicative. That run predates the flare limit, which on three of those
+trees moves the buttress volume by −1.1 to −5.5 % (so the combined figure by
+under a percent); it is worth re-running.

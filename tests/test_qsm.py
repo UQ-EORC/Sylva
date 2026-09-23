@@ -1,3 +1,5 @@
+from collections import Counter
+
 import numpy as np
 import pytest
 
@@ -217,6 +219,92 @@ def test_buttress_mesh_of_a_flanged_base():
     model = qsm.QSM(np.array([[0, 0, 0, 0, 0, 1, 4.0, 0.3, -1, 0, 0, 10]], float))
     assert model.volume_above(2.0) == pytest.approx(model.total_volume / 2)
     assert b.total_volume(model) == pytest.approx(b.volume + model.total_volume / 2)
+    # The mesh closes on the ground, so it holds the volume it reports.
+    edges = Counter()
+    for t in b.faces:
+        for k in range(3):
+            e = (min(int(t[k]), int(t[(k + 1) % 3])), max(int(t[k]), int(t[(k + 1) % 3])))
+            edges[e] += 1
+    assert all(n % 2 == 0 for n in edges.values())  # 4 where voxels touch corner to corner
+    v, f = b.vertices, b.faces
+    enclosed = float(np.einsum("ij,ij->i", v[f[:, 0]], np.cross(v[f[:, 1]], v[f[:, 2]])).sum() / 6)
+    assert enclosed == pytest.approx(b.volume, rel=0.1)
+
+
+def test_ground_around_the_base_is_not_closed_into_the_buttress():
+    # A plain 0.3 m stem, with one scan line on the ground ringing it at 1.5 m.
+    t = np.linspace(0, 2 * np.pi, 400, endpoint=False)
+    stem = [np.column_stack([0.3 * np.cos(t), 0.3 * np.sin(t), np.full(len(t), h)])
+            for h in np.arange(0.02, 1.5, 0.02)]
+    ring = np.column_stack([1.5 * np.cos(t), 1.5 * np.sin(t), np.full(len(t), 0.01)])
+    xyz = np.vstack(stem + [ring])
+    cloud = PointCloud(xyz, {"height": xyz[:, 2].copy()})
+    truth = np.pi * 0.3**2 * 1.4
+    # The ring encloses the stem, so a flood fill would take the whole disc.
+    loose = qsm.buttress_mesh(cloud, (0.0, 0.0), ground_z=0.0, top=1.4, max_flare=0.0)
+    assert loose.areas[0] > 6.0 and loose.volume > 1.6 * truth
+    b = qsm.buttress_mesh(cloud, (0.0, 0.0), ground_z=0.0, top=1.4)
+    assert b.areas[0] < 0.6 and b.volume == pytest.approx(truth, rel=0.1)
+
+
+def test_above_cuts_the_model_at_a_plane():
+    # A stem of four 1 m cylinders with a branch off the second.
+    rows = [[0, 0, float(k), 0, 0, 1, 1.0, 0.2, k - 1, 0, 0, 10] for k in range(4)]
+    rows.append([0, 0, 1.5, 1, 0, 0, 1.0, 0.1, 1, 1, 1, 10])   # horizontal, below the plane
+    model = qsm.QSM(np.array(rows, float))
+    cut = model.above(2.0)
+    assert len(cut) == 2 and cut.total_volume == pytest.approx(model.volume_above(2.0))
+    assert cut.start[:, 2].min() == pytest.approx(2.0)
+    np.testing.assert_array_equal(cut.column("parent"), [-1, 0])  # the base cylinder is gone
+    # A cylinder crossing the plane keeps only its upper part.
+    lean = qsm.QSM(np.array([[0, 0, 0, 0, 0.6, 0.8, 5.0, 0.2, -1, 0, 0, 10]], float))
+    kept = lean.above(2.0)
+    assert kept.column("length")[0] == pytest.approx(5.0 - 2.0 / 0.8)
+    assert lean.above(100.0).cylinders.shape == (0, 12) and model.above(-1.0).total_volume == pytest.approx(model.total_volume)
+
+
+def test_fuse_joins_a_buttress_to_the_model():
+    t = np.linspace(0, 2 * np.pi, 360, endpoint=False)
+    pts = []
+    for k in range(50):
+        h = (k + 0.5) * 0.04
+        r = 0.3 * (1 + 3 * max(1 - h / 2, 0) * np.cos(2.5 * t) ** 8)
+        pts.append(np.column_stack([r * np.cos(t), r * np.sin(t), np.full(len(t), h)]))
+    xyz = np.vstack(pts)
+    cloud = PointCloud(xyz, {"height": xyz[:, 2].copy()})
+    b = qsm.buttress_mesh(cloud, (0.0, 0.0), ground_z=0.0, top=1.0)
+    model = qsm.QSM(np.array([[0, 0, 0, 0, 0, 1, 4.0, 0.3, -1, 0, 0, 10],
+                              [0, 0, 4, 0, 0, 1, 2.0, 0.2, 0, 0, 0, 10]], float))
+    fused = b.fuse(model)
+    assert fused.buttress_volume == pytest.approx(b.volume)
+    assert fused.wood_volume == pytest.approx(model.volume_above(b.top_z))
+    assert fused.volume == pytest.approx(b.total_volume(model))
+    assert len(fused.faces) == len(fused.part) and set(np.unique(fused.part)) == {0, 1}
+    assert len(fused.faces) > len(b.faces)  # the wood is in there too
+    # The wood reaches down inside the base by `overlap`, and volumes ignore it.
+    def wood_bottom(m):
+        return m.vertices[m.faces[m.part == 1]].reshape(-1, 3)[:, 2].min()
+    assert wood_bottom(fused) == pytest.approx(b.top_z - 0.1)
+    assert wood_bottom(b.fuse(model, overlap=0.0)) == pytest.approx(b.top_z)
+    assert b.fuse(model, overlap=0.5).volume == pytest.approx(fused.volume)
+    # The stem sits over its base, so the join is nearly concentric.
+    assert fused.offset < 0.05 and fused.overhang < 0.05
+    # Shift the stem half a metre sideways and the join reports it.
+    off = qsm.QSM(np.array([[0.5, 0, 0, 0, 0, 1, 4.0, 0.3, -1, 0, 0, 10]], float))
+    assert b.fuse(off).offset > 0.3 and b.fuse(off).overhang > 0.3
+
+
+def test_fused_mesh_writes_both_parts(tmp_path):
+    b = qsm.Buttress(np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1.0]]),
+                     np.array([[0, 2, 1], [0, 1, 3], [1, 2, 3], [0, 3, 2]], np.uint32),
+                     0.16, 1.0, 1.0, np.array([0.0]), np.array([0.5]), np.array([0.9]), np.array([False]))
+    model = qsm.QSM(np.array([[0, 0, 0, 0, 0, 1, 3.0, 0.2, -1, 0, 0, 10]], float))
+    fused = b.fuse(model, sides=8)
+    fused.to_obj(tmp_path / "tree.obj")
+    text = (tmp_path / "tree.obj").read_text()
+    assert "o buttress" in text and "o wood" in text
+    fused.to_ply(tmp_path / "tree.ply")
+    assert (tmp_path / "tree.ply").read_bytes()[:3] == b"ply"
 
 
 def test_contiguous_mesh_is_closed_and_smaller():
@@ -231,15 +319,29 @@ def test_contiguous_mesh_is_closed_and_smaller():
         return all(c == 2 for c in edges.values())
 
     def enclosed(v, f):
-        return abs(float(np.einsum("ij,ij->i", v[f[:, 0]],
-                                   np.cross(v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]])).sum() / 6))
+        """Signed volume: positive when the triangles face outwards."""
+        return float(np.einsum("ij,ij->i", v[f[:, 0]],
+                               np.cross(v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]])).sum() / 6)
+
+    def oriented(f):
+        """Every edge is walked once each way, so the winding is consistent."""
+        seen = set()
+        for t in f:
+            for k in range(3):
+                e = (int(t[k]), int(t[(k + 1) % 3]))
+                if e in seen:
+                    return False
+                seen.add(e)
+        return all((b, a) in seen for a, b in seen)
 
     v0, f0, o0 = model.mesh(12)
     v1, f1, o1 = model.mesh(12, contiguous=True)
     assert closed(f0) and closed(f1)
     assert len(f1) < 0.7 * len(f0) and len(v1) < 0.7 * len(v0)
     assert len(o1) == len(f1) and o1.max() < len(model)
-    # One tube per branch: no caps inside a branch, so the mesh encloses the
-    # cylinders' volume. The per-cylinder mesh double-covers every joint.
+    # Both meshes are wound outwards, so the volume they enclose is positive
+    # and near the cylinders' own: the tube mitres the joints slightly away,
+    # the per-cylinder mesh keeps every drum whole.
+    assert oriented(f0) and oriented(f1)
     assert enclosed(v1, f1) == pytest.approx(model.total_volume, rel=0.1)
-    assert enclosed(v0, f0) < 0.5 * model.total_volume
+    assert enclosed(v0, f0) == pytest.approx(model.total_volume, rel=0.1)

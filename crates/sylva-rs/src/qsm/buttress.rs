@@ -48,6 +48,10 @@ pub struct ButtressParams {
     pub min_top: f64,
     /// Slices with fewer points are rebuilt from their neighbours.
     pub min_points: usize,
+    /// How fast a section may widen going down (m out per m down). It stops
+    /// litter and ground around the base being closed into the solid.
+    /// Zero or not finite lifts the limit.
+    pub max_flare: f64,
     /// Taubin smoothing passes over the mesh vertices.
     pub smooth: usize,
 }
@@ -65,6 +69,7 @@ impl Default for ButtressParams {
             round_run: 4,
             min_top: 0.5,
             min_points: 30,
+            max_flare: 1.0,
             smooth: 10,
         }
     }
@@ -301,19 +306,20 @@ fn surface_nets(g: &Grid, occ: &[Vec<bool>], dz: f64, z0: f64) -> (Vec<Point>, V
             faces.push([a, c, d]);
         }
     };
-    // A face for each pair of face-adjacent voxels that differ.
+    // A face for each pair of face-adjacent voxels that differ, including
+    // where the solid meets the edge of the grid, so the surface closes.
     for k in 0..=nz as isize {
         for j in 0..=g.ny as isize {
             for i in 0..=g.nx as isize {
                 let here = at(i, j, k);
                 let (iu, ju, ku) = (i as usize, j as usize, k as usize);
-                if i >= 1 && at(i - 1, j, k) != here && j < g.ny as isize && k < nz as isize {
+                if at(i - 1, j, k) != here && j < g.ny as isize && k < nz as isize {
                     quad(v(iu, ju, ku), v(iu, ju + 1, ku), v(iu, ju + 1, ku + 1), v(iu, ju, ku + 1), here);
                 }
-                if j >= 1 && at(i, j - 1, k) != here && i < g.nx as isize && k < nz as isize {
+                if at(i, j - 1, k) != here && i < g.nx as isize && k < nz as isize {
                     quad(v(iu, ju, ku), v(iu, ju, ku + 1), v(iu + 1, ju, ku + 1), v(iu + 1, ju, ku), here);
                 }
-                if k >= 1 && at(i, j, k - 1) != here && i < g.nx as isize && j < g.ny as isize {
+                if at(i, j, k - 1) != here && i < g.nx as isize && j < g.ny as isize {
                     quad(v(iu, ju, ku), v(iu + 1, ju, ku), v(iu + 1, ju + 1, ku), v(iu, ju + 1, ku), here);
                 }
             }
@@ -395,9 +401,18 @@ pub fn buttress_mesh(points: &[Point], heights: &[f64], cx: f64, cy: f64, ground
     // contains the one above, and the part of a slice that belongs to the stem
     // is the part that connects to the section above. That carries the core
     // down where near the ground only the outsides of the flanges were seen.
+    // A section may only widen so fast on the way down.
+    let flare_cells = (p.max_flare * p.slice / p.resolution).round();
+    let flare = (p.max_flare > 0.0 && flare_cells.is_finite() && flare_cells < g.nx.max(g.ny) as f64)
+        .then(|| disk((flare_cells as isize).max(1)));
+    let task = crate::progress::start("rebuilding the stem base", nz as u64);
     let mut above: Option<Vec<bool>> = None;
     for k in (0..nz).rev() {
+        task.inc(1);
         let reach = above.as_ref().filter(|a| a.iter().any(|&v| v)).map(|a| dilate(&g, a, &kernel));
+        let limit = flare
+            .as_ref()
+            .and_then(|f| above.as_ref().filter(|a| a.iter().any(|&v| v)).map(|a| dilate(&g, a, f)));
         let pick = |cells: &[bool]| -> Vec<bool> {
             let touching = reach.as_ref().map(|r| keep_touching(&g, cells, r));
             match touching {
@@ -453,6 +468,11 @@ pub fn buttress_mesh(points: &[Point], heights: &[f64], cx: f64, cy: f64, ground
             // Too few points: the section above.
             above.clone().unwrap_or_else(|| vec![false; g.nx * g.ny])
         };
+        if let Some(l) = &limit {
+            for (m, &v) in mask.iter_mut().zip(l) {
+                *m &= v;
+            }
+        }
         if let Some(a) = &above {
             for (m, &v) in mask.iter_mut().zip(a) {
                 *m |= v;

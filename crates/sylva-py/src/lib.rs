@@ -867,9 +867,9 @@ fn match_stem_maps<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, source_d
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, heights, cx, cy, ground_z, resolution=0.02, slice=0.05, close_radius=0.08, max_radius=4.0, max_height=6.0, top=None, solidity=0.9, round_run=4, min_top=0.5, min_points=30, smooth=10))]
+#[pyo3(signature = (xyz, heights, cx, cy, ground_z, resolution=0.02, slice=0.05, close_radius=0.08, max_radius=4.0, max_height=6.0, top=None, solidity=0.9, round_run=4, min_top=0.5, min_points=30, max_flare=1.0, smooth=10))]
 #[allow(clippy::too_many_arguments)]
-fn buttress_mesh<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, cx: f64, cy: f64, ground_z: f64, resolution: f64, slice: f64, close_radius: f64, max_radius: f64, max_height: f64, top: Option<f64>, solidity: f64, round_run: usize, min_top: f64, min_points: usize, smooth: usize) -> PyResult<Bound<'py, PyDict>> {
+fn buttress_mesh<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, cx: f64, cy: f64, ground_z: f64, resolution: f64, slice: f64, close_radius: f64, max_radius: f64, max_height: f64, top: Option<f64>, solidity: f64, round_run: usize, min_top: f64, min_points: usize, max_flare: f64, smooth: usize) -> PyResult<Bound<'py, PyDict>> {
     let pts = xyz_from_py(xyz)?;
     let h = heights.as_array().to_vec();
     if h.len() != pts.len() {
@@ -878,7 +878,7 @@ fn buttress_mesh<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRe
     if resolution <= 0.0 || slice <= 0.0 || max_height <= 0.0 {
         return Err(PyValueError::new_err("resolution, slice and max_height must be positive"));
     }
-    let p = qsm::buttress::ButtressParams { resolution, slice, close_radius, max_radius, max_height, top, solidity, round_run, min_top, min_points, smooth };
+    let p = qsm::buttress::ButtressParams { resolution, slice, close_radius, max_radius, max_height, top, solidity, round_run, min_top, min_points, max_flare, smooth };
     let b = py.detach(|| qsm::buttress::buttress_mesh(&pts, &h, cx, cy, ground_z, &p));
     let d = PyDict::new(py);
     let v: Vec<f64> = b.vertices.iter().flatten().copied().collect();

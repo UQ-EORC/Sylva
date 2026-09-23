@@ -16,7 +16,7 @@ from . import _core
 from .pointcloud import PointCloud
 
 __all__ = ["QSM", "fit_cylinder", "fit_cylinder_ransac", "skeletonize", "build_qsm", "wood_points",
-           "write_obj", "write_ply_mesh", "Buttress", "buttress_mesh"]
+           "write_obj", "write_ply_mesh", "Buttress", "buttress_mesh", "TreeMesh"]
 
 COLUMNS = ("sx", "sy", "sz", "ax", "ay", "az", "length", "radius", "parent", "branch_order",
            "branch_id", "n_points")
@@ -315,6 +315,48 @@ class QSM:
         share = np.where(hi <= z, 0.0, np.where(lo >= z, 1.0, (hi - z) / span))
         return float((self.volumes * share).sum())
 
+    def above(self, z: float) -> QSM:
+        """The model above a horizontal plane, cutting cylinders that cross it.
+
+        The companion of :meth:`volume_above`: a cylinder crossing the plane
+        keeps the part above it, one below it is dropped, and a child whose
+        parent went is made a branch of its own. Use it to leave room for a
+        :class:`Buttress` under the wood.
+
+        Parameters
+        ----------
+        z
+            Absolute height of the plane (e.g. ``Buttress.top_z``).
+
+        Returns
+        -------
+        QSM
+            A new model; the original is unchanged.
+
+        Notes
+        -----
+        A cylinder is cut where its axis crosses the plane, so a leaning one
+        keeps a slanted stub rather than being squared off.
+        """
+        rows = self.cylinders.copy()
+        s, a, L = self.start, self.axis, self.column("length")
+        e = self.end
+        keep = np.maximum(s[:, 2], e[:, 2]) > z
+        dz = a[:, 2] * L
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t = np.where(np.abs(dz) > 1e-12, (z - s[:, 2]) / np.where(np.abs(dz) > 1e-12, dz, 1.0), 0.0)
+        cut = keep & (s[:, 2] < z) & (np.abs(dz) > 1e-12)  # starts below, so trim the base
+        t = np.clip(t, 0.0, 1.0)
+        rows[cut, 0:3] = s[cut] + a[cut] * (t[cut] * L[cut])[:, None]
+        rows[cut, 6] = L[cut] * (1.0 - t[cut])
+        # Renumber: a dropped parent leaves its children as branch bases.
+        idx = np.full(len(self), -1)
+        idx[keep] = np.arange(int(keep.sum()))
+        rows = rows[keep]
+        par = rows[:, 8].astype(int)
+        rows[:, 8] = np.where(par >= 0, idx[np.clip(par, 0, len(idx) - 1)], -1)
+        return QSM(rows)
+
     def to_ply(self, path: str | Path, sides: int = 12, color=None, contiguous: bool = False) -> None:
         """Write the cylinder mesh as a binary PLY with face colours.
 
@@ -390,6 +432,57 @@ class Buttress:
         """
         return self.volume + model.volume_above(self.top_z)
 
+    def fuse(self, model: QSM, sides: int = 12, contiguous: bool = True,
+             overlap: float = 0.1) -> "TreeMesh":
+        """Join this buttress to a QSM as one mesh of the whole stem.
+
+        The buttress replaces the cylinders below its top: the model is cut
+        at ``top_z`` (:meth:`QSM.above`) and both surfaces go into one mesh,
+        so nothing is counted twice and the volume is the one
+        :meth:`total_volume` reports. The parts stay watertight and
+        separately labelled rather than being welded into a single shell — a
+        boolean union of a flanged base and a thousand tubes is not something
+        a triangle mesh survives cleanly.
+
+        A cut tube ends square to its own axis, so a leaning stem would hang
+        over the buttress top by up to its radius times the lean. ``overlap``
+        cuts the wood that much lower, letting it reach down inside the base
+        where the seam cannot be seen. It changes no volume: those are read
+        from ``top_z`` either way.
+
+        Parameters
+        ----------
+        model
+            The tree's cylinder model, in the same frame as the buttress.
+        sides
+            Facets around each cylinder.
+        contiguous
+            One continuous tube per branch (see :meth:`QSM.mesh`).
+        overlap
+            How far below ``top_z`` (m) the wood is cut, so that it meets the
+            buttress inside it. 0 abuts the two exactly at the plane.
+
+        Returns
+        -------
+        TreeMesh
+            Vertices, faces, a part label per face, and the volumes.
+
+        Examples
+        --------
+        >>> b = buttress_mesh(cloud, base_xy=(x, y))          # doctest: +SKIP
+        >>> b.fuse(model).to_ply("tree.ply")                  # doctest: +SKIP
+        """
+        wv, wf, _ = model.above(self.top_z - float(overlap)).mesh(sides, contiguous)
+        v = np.vstack([self.vertices, wv]) if len(wv) else np.asarray(self.vertices, float)
+        f = np.vstack([self.faces, wf + len(self.vertices)]) if len(wf) else np.asarray(self.faces)
+        part = np.concatenate([np.zeros(len(self.faces), np.uint8), np.ones(len(wf), np.uint8)])
+        # How the two meet: the stem should sit inside the base at the join.
+        base = _section(np.asarray(self.vertices, float), np.asarray(self.faces), self.top_z - 0.05)
+        stem = _section(wv, wf, self.top_z + 0.05) if len(wf) else np.zeros((0, 2, 2))
+        offset, overhang = _join_fit(base, stem)
+        return TreeMesh(v, f.astype(np.uint32), part, self.volume,
+                        model.volume_above(self.top_z), self.top_z, offset, overhang)
+
     def to_obj(self, path: str | Path) -> None:
         """Write the mesh as a Wavefront OBJ object named ``buttress``.
 
@@ -411,11 +504,143 @@ class Buttress:
         write_ply_mesh(path, self.vertices, self.faces)
 
 
+def _section(vertices: np.ndarray, faces: np.ndarray, z: float) -> np.ndarray:
+    """Segments where a mesh crosses the plane ``z``, as ``(n, 2, 2)`` in xy."""
+    t = vertices[faces]
+    d = t[:, :, 2] - z
+    hit = ~((d > 0).all(1) | (d < 0).all(1))
+    t, d = t[hit], d[hit]
+    if not len(t):
+        return np.zeros((0, 2, 2))
+    ends = []
+    for a, b in ((0, 1), (1, 2), (2, 0)):
+        da, db = d[:, a], d[:, b]
+        cross = (da > 0) != (db > 0)
+        w = np.where(cross, da / np.where(da == db, 1e-12, da - db), np.nan)[:, None]
+        ends.append((t[:, a] + w * (t[:, b] - t[:, a]))[:, :2])
+    e = np.stack(ends, 1)
+    ok = ~np.isnan(e).any(2)
+    keep = ok.sum(1) >= 2
+    e, ok = e[keep], ok[keep]
+    first = np.argmax(ok, 1)
+    second = ok.shape[1] - 1 - np.argmax(ok[:, ::-1], 1)
+    i = np.arange(len(e))
+    return np.stack([e[i, first], e[i, second]], 1)
+
+
+def _inside(section: np.ndarray, points: np.ndarray) -> np.ndarray:
+    """Even-odd test of ``points`` against a soup of segments (:func:`_section`)."""
+    hits = np.zeros(len(points), int)
+    for (x0, y0), (x1, y1) in section:
+        if y0 == y1:
+            continue
+        lo, hi = min(y0, y1), max(y0, y1)
+        m = (points[:, 1] >= lo) & (points[:, 1] < hi)
+        if not m.any():
+            continue
+        f = (points[m, 1] - y0) / (y1 - y0)
+        hits[m] += (x0 + f * (x1 - x0)) > points[m, 0]
+    return hits % 2 == 1
+
+
+def _join_fit(base: np.ndarray, wood: np.ndarray, cell: float = 0.02) -> tuple[float, float]:
+    """How well the wood sits inside the base: centre offset (m) and the share
+    of the wood's cross-section outside it."""
+    if not len(base) or not len(wood):
+        return float("nan"), float("nan")
+    offset = float(np.linalg.norm(wood.reshape(-1, 2).mean(0) - base.reshape(-1, 2).mean(0)))
+    lo = wood.reshape(-1, 2).min(0) - cell
+    hi = wood.reshape(-1, 2).max(0) + cell
+    gx, gy = np.meshgrid(np.arange(lo[0], hi[0], cell), np.arange(lo[1], hi[1], cell))
+    p = np.column_stack([gx.ravel(), gy.ravel()])
+    inw = _inside(wood, p)
+    if not inw.any():
+        return offset, float("nan")
+    return offset, float((inw & ~_inside(base, p)).sum() / inw.sum())
+
+
+@dataclass
+class TreeMesh:
+    """A buttress and a QSM as one mesh; build with :meth:`Buttress.fuse`.
+
+    Attributes
+    ----------
+    vertices, faces
+        The two surfaces in one mesh (``(n, 3)`` coordinates, ``(m, 3)``
+        0-based vertex indices).
+    part
+        Per face: 0 for the buttress, 1 for the wood above it.
+    buttress_volume, wood_volume
+        Volume below and above ``top_z`` (m³).
+    top_z
+        Absolute height where the buttress ends and the cylinders start.
+    offset
+        Distance (m) between the middle of the base and the middle of the wood
+        at the join. A stem that sits over its base is a few centimetres out.
+    overhang
+        Share of the wood's cross-section at the join that lies outside the
+        base. Anything much above zero means the two do not agree about where
+        the stem is: usually a buttress top found too low, a stem axis pulled
+        off by the flanges, or a neighbour's wood in the cloud.
+    """
+
+    vertices: np.ndarray
+    faces: np.ndarray
+    part: np.ndarray
+    buttress_volume: float
+    wood_volume: float
+    top_z: float
+    offset: float = float("nan")
+    overhang: float = float("nan")
+
+    @property
+    def volume(self) -> float:
+        """Whole-stem volume (m³): buttress plus the wood above it."""
+        return self.buttress_volume + self.wood_volume
+
+    def to_obj(self, path: str | Path) -> None:
+        """Write the mesh as objects ``buttress`` and ``wood``.
+
+        Parameters
+        ----------
+        path
+            Output file.
+        """
+        parts, names = [], []
+        for k, name in ((0, "buttress"), (1, "wood")):
+            f = self.faces[self.part == k]
+            if len(f):
+                used, inv = np.unique(f, return_inverse=True)
+                parts.append((self.vertices[used], inv.reshape(f.shape)))
+                names.append(name)
+        write_obj(path, parts, names=names)
+
+    def to_ply(self, path: str | Path, color=None) -> None:
+        """Write the mesh as a binary PLY, the buttress darker than the wood.
+
+        Parameters
+        ----------
+        path
+            Output file.
+        color
+            One RGB triple (0-255) for every face; by default the buttress is
+            bark brown and the wood keeps the stem colour.
+        """
+        if color is None:
+            face_rgb = np.where(self.part[:, None] == 0, _BUTTRESS_COLOR, _ORDER_COLORS[0]).astype(np.uint8)
+        else:
+            face_rgb = np.tile(np.asarray(color, dtype=np.uint8), (len(self.faces), 1))
+        write_ply_mesh(path, self.vertices, self.faces, face_rgb)
+
+
+_BUTTRESS_COLOR = np.array([101, 67, 33], dtype=np.uint8)
+
+
 def buttress_mesh(cloud: PointCloud, base_xy, ground_z: float | None = None,
                   height_attr: str = "height", resolution: float = 0.02,
                   slice_height: float = 0.05, close_radius: float = 0.08, max_radius: float = 4.0,
                   max_height: float = 6.0, top: float | None = None,
-                  solidity: float = 0.9, smooth: int = 10) -> Buttress:
+                  solidity: float = 0.9, max_flare: float = 1.0, smooth: int = 10) -> Buttress:
     """Rebuild a buttressed or otherwise irregular stem base as a closed mesh.
 
     A cylinder cannot follow a flanged base: a circle fitted to a star-shaped
@@ -433,9 +658,11 @@ def buttress_mesh(cloud: PointCloud, base_xy, ground_z: float | None = None,
        where the points form a good arc of a round stem.
     3. Slices are built from the top down. A buttress only widens towards
        the ground, so each section contains the one above, and the part of a
-       slice kept is the part connected to the section above: neighbouring
-       stems, shrubs and logs stay out, and the core carries down where near
-       the ground only the outsides of the flanges were seen.
+       slice kept is the part connected to the section above, and no wider
+       than ``max_flare`` allows: neighbouring stems, shrubs and logs stay
+       out, litter and ground around the base are not closed into the solid,
+       and the core carries down where near the ground only the outsides of
+       the flanges were seen.
     4. The buttress ends where the section turns convex (solidity at or above
        ``solidity`` for four slices), unless ``top`` is given.
     5. The stacked sections become a watertight surface (surface nets,
@@ -469,6 +696,11 @@ def buttress_mesh(cloud: PointCloud, base_xy, ground_z: float | None = None,
         Buttress top (m above ground); found from the solidity if None.
     solidity
         Solidity at which a section counts as a round stem.
+    max_flare
+        How fast a section may widen going down (m out per m down); the
+        default 1.0 is 45°. Flanges flare well within this, while litter and
+        the ground around the base do not, so a scan line that rings the stem
+        is no longer closed into the solid. 0 lifts the limit.
     smooth
         Taubin smoothing passes over the mesh.
 
@@ -491,7 +723,7 @@ def buttress_mesh(cloud: PointCloud, base_xy, ground_z: float | None = None,
         ground_z = float(np.median(base))
     d = _core.buttress_mesh(cloud.xyz, h, cx, cy, float(ground_z), resolution, slice_height,
                             close_radius, max_radius, max_height, top, solidity, 4, 0.5, 30,
-                            int(smooth))
+                            float(max_flare), int(smooth))
     return Buttress(d["vertices"], d["faces"], d["volume"], d["top"], d["top_z"], d["heights"],
                     d["areas"], d["solidities"], d["open"])
 
