@@ -20,12 +20,18 @@ numpy-friendly API (`import sylva`) and a `sylva` command.
 
 ## Install
 
-Requires Python ≥ 3.10 and a Rust toolchain.
+A conda environment keeps the Python and the Rust toolchain together, which
+is the easiest way to build the extension:
 
 ```bash
-pip install maturin
-maturin develop --release        # builds the extension into the active environment
+conda create -n sylva -c conda-forge python=3.12 rust maturin
+conda activate sylva
+maturin develop --release        # builds the Rust core into the environment
 ```
+
+`pip install -e .` works as well once the environment is active. Without
+conda, any Python >= 3.10 with a Rust toolchain (`rustup`) and `pip install
+maturin` does the same job.
 
 ## A first look
 
