@@ -196,7 +196,7 @@ def detect_stems(cloud: PointCloud, height_attr: str = "height", **params) -> li
 
 
 def prune_trees(trees: list[Tree], labels: np.ndarray, min_height: float = 3.0,
-                merge_radius: float = 0.5, max_dbh: float | None = None,
+                merge_radius: float = 0.2, max_dbh: float | None = None,
                 min_quality_short: float = 0.0,
                 short_slices: int = 4) -> tuple[list[Tree], np.ndarray]:
     """Drop short candidates and merge duplicates after segmentation.
@@ -218,6 +218,9 @@ def prune_trees(trees: list[Tree], labels: np.ndarray, min_height: float = 3.0,
     min_height
         Minimum tree height (m).
     merge_radius
+        Candidates closer together than this are treated as one stem. A
+        coppice stool or a low fork puts real stems 0.3 m apart, so this is
+        deliberately small; raise it where a single stem is scanned twice.
         Stems closer than this (m) are merged.
     max_dbh
         Drop stems wider than this (m), e.g. to remove walls or rocks.
@@ -305,7 +308,7 @@ def dbh_profile(cloud: PointCloud, center_xy, height_attr: str = "height",
 
 def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "height",
                   k: int = 10, max_edge: float = 1.0, voxel_size: float = 0.05,
-                  seed_height: float = 1.5, seed_radius: float = 0.5, power: float = 3.0,
+                  seed_height: float = 1.5, seed_radius: float = 0.25, power: float = 3.0,
                   angle_penalty: bool = True, gravity: float = 0.0,
                   cut_above_ground: float = 0.25, height_prior: bool = True,
                   height_prior_radius: float = 1.5, low_height: float = 0.5,
