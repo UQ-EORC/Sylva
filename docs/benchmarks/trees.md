@@ -97,6 +97,29 @@ as the savanna shrubs: real vegetation the benchmark does not count as a
 tree. `prune_trees(min_quality_short=0.15)` trims about a quarter of them for
 two found trees.
 
+Two ideas from other systems were implemented and measured, and both made
+things worse on this data:
+
+- **A lateral-offset prior** — raycloudtools multiplies every edge by
+  `1 + g·(horizontal offset from the seed)²`, which is how it stops a
+  dominant reaching sideways into a neighbour. Sylva has it as `gravity`.
+  Ofental barely moves (F1 0.667 → 0.674 at g = 1, with mean IoU falling
+  0.718 → 0.694) and Robson falls apart: 0.521 → 0.487 → 0.450 → 0.437 for
+  g = 0.1, 0.3, 1. In raycloudtools the term multiplies a cost already
+  normalised by canopy height; here it stacks on `length⁴`, so a 10 m-wide
+  rainforest crown pays about ×31 on every edge.
+- **Edge weight as the gap between clusters rather than the distance
+  travelled** — TLS2trees' documented fix for a path that prefers a
+  suppressed tree's base. Grouping points into 0.25 m cubes and pricing each
+  edge by the closest approach between two groups gives Ofental F1 0.667 →
+  0.158 and Robson 0.521 → 0.150. The reason is instructive: with gap
+  weights, groups that touch cost nothing, so in a closed canopy the whole
+  plot becomes one cheap component and a single seed takes it. TLS2trees
+  avoids this by running the gap graph on **wood points only**, with clusters
+  from 0.2 m slices, and attaching foliage afterwards from the branch tips of
+  the finished skeletons. Done that way it might work; done naively it does
+  not, and the code was removed rather than shipped as a knob.
+
 Tried on Ofental and rejected, in case it saves someone the experiment:
 softening the height prior, which is what hands a dominant its suppressed
 neighbour's crown (`height_prior_power` 1 → 0.75 → 0.5 → 0.25 gives 68 → 68 →
