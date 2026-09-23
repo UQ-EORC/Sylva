@@ -172,11 +172,34 @@ and over that plot the total came to 96 m³ against 36 m³ for the same trees
 at full resolution. Widening the shells does not rescue it: `bin_length=0.3`
 fixes that tree but merges the saplings, and the plot total goes up again.
 
-So thin for segmentation if you like, but **fit QSMs on the full-resolution
-points**. `build_plot` warns when the median model was hardly fitted at all,
-and `measured_length` (with `measured_volume`) in `PlotQSMs.table` reports it
-per tree: values near 1 mean the cylinders follow the points, values near 0
-mean they follow the priors.
+Sylva now sets those from the cloud rather than assuming: the circle band,
+the shell length and `fit_min_points` are scaled to the median spacing
+(`spacing_scale`, 0 to switch it off), and past 2.5 cm spacing the radius
+comes from a power mean of the distances to the section axis instead of a
+circle fit (`radius_power`, after raycloudtools). That is a different failure
+mode on purpose: a low power mean is dominated by the near points, so a
+section that caught foliage reads slightly small rather than wildly large,
+and nothing has to lie inside a band for it to work at all.
+
+Against the exact volumes of 8 synthetic trees, as the same cloud is thinned:
+
+| spacing | median volume error | IQR | worst tree |
+|---|---|---|---|
+| ~1 cm | −5.6 % | −7..+1 | +8.0 % |
+| 2 cm | −3.7 % | −6..0 | −6.8 % |
+| 5 cm | +9.5 % | +4..+14 | +21.1 % |
+| 8 cm | +0.2 % | −4..+4 | +14.5 % |
+
+Before this, the same trees at 5 cm had one tree at **+418 %** and at 8 cm one
+at −99 %. The savanna tree above goes from 1.10 m DBH and 9.76 m³ to 0.343 m
+and 2.29 m³, against 0.338 m and 1.88 m³ at full resolution.
+
+It is still better to fit on the full-resolution points — the bias is
+smallest there — but a thinned cloud now degrades gently instead of
+inventing stems. `build_plot` warns when the median model was hardly fitted
+at all, and `measured_length` (with `measured_volume`) in `PlotQSMs.table`
+reports it per tree: values near 1 mean the cylinders follow the points,
+values near 0 mean they follow the priors.
 
 ## Buttresses
 

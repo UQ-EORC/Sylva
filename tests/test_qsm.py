@@ -249,8 +249,8 @@ def test_build_plot_models_every_tree(rng, tmp_path):
         qsm.build_plot(cloud, labels[:-1])
 
 
-def test_build_plot_flags_a_cloud_too_sparse_to_fit():
-    """A stem sampled every 6 cm: the shells hold too little to fit."""
+def test_a_thinned_cloud_is_fitted_at_its_own_spacing():
+    """Shells and the circle band follow the spacing, or nothing gets fitted."""
     import warnings
 
     rng = np.random.default_rng(11)
@@ -260,23 +260,44 @@ def test_build_plot_flags_a_cloud_too_sparse_to_fit():
     cloud = PointCloud(pts, {"height": pts[:, 2].copy()})
     sparse = filters.voxel_downsample(cloud, 0.06)
     labels = np.ones(len(sparse), int)
+
+    # Held to the settings of a centimetre cloud, the 6 cm points fall outside
+    # every band and the model is the priors talking, which build_plot says.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        plot = qsm.build_plot(sparse, labels, wood=False, voxel_size=0.0, min_points=500)
+        held = qsm.build_plot(sparse, labels, wood=False, voxel_size=0.0, min_points=500,
+                              spacing_scale=0.0)
         assert any("too sparse" in str(c.message) for c in caught), [str(c.message) for c in caught]
-    row = plot.table()[0]
-    assert row["measured_length"] < 0.2          # hardly any of it was fitted
-    assert 0.0 <= row["measured_volume"] <= 1.0
-    # The same tree at full resolution fits, and says so.
+    assert held.table()[0]["measured_length"] < 0.2
+
+    # Scaled to the cloud's own spacing (the default) it is measured again.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        good = qsm.build_plot(cloud, np.ones(len(cloud), int), wood=False, min_points=500)
+        scaled = qsm.build_plot(sparse, labels, wood=False, voxel_size=0.0, min_points=500)
         assert not [c for c in caught if "too sparse" in str(c.message)]
-    assert good.table()[0]["measured_length"] > 0.5
-    # Unfitted radii come from the priors, so the two disagree; which way
-    # depends on the tree (a crown full of twigs feeds the pipe model and
-    # runs fat, a bare stem runs thin).
-    assert abs(good.table()[0]["dbh_m"] - plot.table()[0]["dbh_m"]) > 0.02
+    assert scaled.table()[0]["measured_length"] > 0.5
+    assert scaled.table()[0]["dbh_m"] == pytest.approx(0.30, abs=0.06)   # the stem is 0.15 m
+
+
+def test_the_power_mean_radius_survives_foliage():
+    """A section that caught leaves: the circle is dragged out, the mean is not."""
+    rng = np.random.default_rng(3)
+    from conftest import make_stem
+
+    stem = make_stem(rng, 0.0, 0.0, 0.15, 6.0, density=3000)
+    # A shell of leaf points around the stem between 2 and 3 m.
+    n = 4000
+    a = rng.uniform(0, 2 * np.pi, n)
+    d = rng.uniform(0.35, 0.6, n)
+    leaves = np.column_stack([d * np.cos(a), d * np.sin(a), rng.uniform(2.0, 3.0, n)])
+    cloud = PointCloud(np.vstack([stem, leaves]))
+    band = lambda m: m.column("radius")[(m.start[:, 2] > 2.0) & (m.start[:, 2] < 3.0)
+                                        & (m.column("branch_order") == 0)]
+    circle = band(qsm.build_qsm(cloud, base_xy=(0.0, 0.0)))
+    power = band(qsm.build_qsm(cloud, base_xy=(0.0, 0.0), radius_power=0.25))
+    assert len(circle) and len(power)
+    assert np.median(power) < np.median(circle)          # leaves pull it down, not up
+    assert np.median(power) == pytest.approx(0.15, abs=0.06)
 
 
 def test_build_plot_takes_stem_centres(rng):

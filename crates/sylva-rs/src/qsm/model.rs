@@ -347,6 +347,23 @@ pub struct QsmParams {
     /// Spatial radius for clustering points within a geodesic shell (a
     /// DBSCAN eps); 0 falls back to components of the geodesic graph.
     pub cluster_eps: f64,
+    /// Scale the band, the shell length and the fit threshold to the cloud's
+    /// own point spacing, so a thinned cloud does not silently fall back to
+    /// the priors. 0 leaves the given values alone.
+    pub spacing_scale: f64,
+    /// Radius from a power mean of the distances to the axis, after
+    /// raycloudtools: `r = (mean d^q)^(1/q)`. A low power is dominated by the
+    /// near points, so foliage pulls the radius down rather than up, and
+    /// nothing has to lie within a band for it to work. 0 uses the circle fit.
+    pub radius_power: f64,
+    /// Spacing (m) at or above which the power mean takes over from the circle
+    /// fit, when `radius_power` is 0 and scaling is on. Circle fits are the
+    /// better of the two while the points are fine enough to fit circles to,
+    /// and the worse once they are not. 0 never switches.
+    pub power_above_spacing: f64,
+    /// Range noise floor in the weight a power-mean measurement carries
+    /// (`accuracy = r / (mean |d - r| + noise)`), after raycloudtools.
+    pub sensor_noise: f64,
     /// Clusters with at least this many points get a circle-fitted centre; 0 disables.
     pub centre_fit_points: usize,
     /// Taubin smoothing passes over radii along each axis.
@@ -372,7 +389,7 @@ pub struct QsmParams {
 
 impl Default for QsmParams {
     fn default() -> Self {
-        QsmParams { k: 15, max_edge: 1.0, bin_length: 0.1, min_points: 1, ransac_threshold: 0.02, max_radius: 1.0, taper_limit: 1.1, max_rmse: 0.03, smooth_steps: 10, apex_radius: 0.0025, min_arc_deg: 90.0, min_inlier_fraction: 0.05, prune_points: 5, fit_min_points: 50, crop_length: 0.0, butt_height: 0.6, relative_tolerance: 0.08, base_radius: 0.0, allometry_tolerance: 0.3, buttress_equivalent_area: true, buttress_max_inlier_fraction: 0.3, pipe_slack: 1.2, branch_min_inlier_fraction: 0.3, cluster_eps: 0.1, centre_fit_points: 100, radius_smooth_steps: 15, butt_swell: 1.1, butt_vertical_run: 4, butt_max_lean_deg: 50.0, chain_max_d: 0.1, fourier_min_radius: 0.15 }
+        QsmParams { k: 15, max_edge: 1.0, bin_length: 0.1, min_points: 1, ransac_threshold: 0.02, max_radius: 1.0, taper_limit: 1.1, max_rmse: 0.03, smooth_steps: 10, apex_radius: 0.0025, min_arc_deg: 90.0, min_inlier_fraction: 0.05, prune_points: 5, fit_min_points: 50, crop_length: 0.0, butt_height: 0.6, relative_tolerance: 0.08, base_radius: 0.0, allometry_tolerance: 0.3, buttress_equivalent_area: true, buttress_max_inlier_fraction: 0.3, pipe_slack: 1.2, branch_min_inlier_fraction: 0.3, spacing_scale: 1.5, radius_power: 0.0, power_above_spacing: 0.025, sensor_noise: 0.02, cluster_eps: 0.1, centre_fit_points: 100, radius_smooth_steps: 15, butt_swell: 1.1, butt_vertical_run: 4, butt_max_lean_deg: 50.0, chain_max_d: 0.1, fourier_min_radius: 0.15 }
     }
 }
 
@@ -759,6 +776,9 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
                     [dot(&d, &u), dot(&d, &v)]
                 })
                 .collect();
+            if p.radius_power > 0.0 {
+                return power_mean_radius(&xy, p);
+            }
             let mut rng = crate::filters::Rng::new(s as u64 + 1);
             let (cx0, cy0, r0, _) = crate::stems::ransac_circle(&xy, &circle_params, &mut rng)?;
             // Rough bark on thick stems spans more than the RANSAC band, and a
@@ -1404,8 +1424,95 @@ fn isotonic_fill(chain: &[usize], radius: &mut [f64], weight: &[f64], apex_radiu
 }
 
 /// [`skeletonize`] then [`fit_cylinders`].
+/// The parameters that are tied to how far apart the points are, rescaled to
+/// this cloud.
+///
+/// A circle band of 2 cm and shells of 10 cm suit a centimetre cloud. Thin it
+/// to 5 cm and no point lies within the band of an honest circle, so the fit
+/// falls to whatever wide circle catches strays, and the shells hold fewer
+/// points than `fit_min_points`, so most sections are never measured at all.
+/// Both failures are silent and both inflate. Here the band, the shell length
+/// and the count are set from the cloud's own median spacing, and none of them
+/// is ever made tighter than asked for.
+/// Radius of a cross-section from a power mean of the distances to its axis,
+/// after raycloudtools (`raytrees.cpp`, `power = 0.25`).
+///
+/// `r = (mean d^q)^(1/q)` with `q` well below 1 is dominated by the nearest
+/// points, so a shell that caught foliage or a neighbour reads slightly small
+/// rather than wildly large: the opposite failure to a circle fit, which is
+/// dragged outward by the same points and, on a sparse shell, is free to pick
+/// any wide circle at all. Nothing has to lie within a band, so it degrades
+/// gently as the cloud thins.
+///
+/// Returns the same tuple as the circle fit: radius, points, angular coverage
+/// and a confidence in `[0, 1]` from `r / (mean |d - r| + sensor_noise)`,
+/// which falls as the section's points scatter.
+fn power_mean_radius(xy: &[[f64; 2]], p: &QsmParams) -> Option<(f64, usize, f64, f64)> {
+    let n = xy.len();
+    if n < 3 {
+        return None;
+    }
+    // `xy` is already in the section's own frame, so the axis is the origin:
+    // the points' centroid sits on the surface when a scan only sees one side.
+    let mut d: Vec<f64> = xy.iter().map(|q| q[0].hypot(q[1])).collect();
+    // Drop what is clearly not this section's bark before averaging: a shell
+    // that caught a branch or a leaf cluster has a tail far off the axis, and
+    // even a low power mean is moved by enough of it (raycloudtools trims the
+    // same way in `removeDistantPoints`).
+    let mut sorted = d.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let med = sorted[sorted.len() / 2];
+    if med > 0.0 {
+        d.retain(|&x| x <= 2.0 * med);
+    }
+    let n = d.len();
+    if n < 3 {
+        return None;
+    }
+    let q = p.radius_power;
+    let mean = d.iter().map(|&x| x.max(1e-6).powf(q)).sum::<f64>() / n as f64;
+    let r = mean.powf(1.0 / q);
+    if !(r.is_finite() && r >= p.apex_radius && r <= p.max_radius) {
+        return None;
+    }
+    let e = d.iter().map(|&x| (x - r).abs()).sum::<f64>() / n as f64;
+    let accuracy = r / (e + p.sensor_noise);
+    let (_, arc) = crate::stems::angular_coverage(xy, 0.0, 0.0);
+    // Map the accuracy onto the [0, 1] confidence the rest of the model reads
+    // as an inlier fraction: 1 is a section whose points sit on a circle to
+    // within the noise floor.
+    let frac = (accuracy / (accuracy + 4.0)).clamp(1e-3, 1.0);
+    Some((r, n, arc, frac))
+}
+
+pub fn scaled_to_spacing(xyz: &[Point], p: &QsmParams) -> QsmParams {
+    let mut out = p.clone();
+    if p.spacing_scale <= 0.0 || xyz.len() < 100 {
+        return out;
+    }
+    let spacing = crate::leaves::median_spacing(xyz);
+    if !(spacing > 0.0) {
+        return out;
+    }
+    out.ransac_threshold = p.ransac_threshold.max(p.spacing_scale * spacing);
+    out.max_rmse = p.max_rmse.max(out.ransac_threshold);
+    // A shell must be a few points deep, and its circumference a few points
+    // round, before a radius means anything.
+    out.bin_length = p.bin_length.max(4.0 * spacing);
+    // Points per shell fall with the square of the spacing.
+    let coarser = (spacing / 0.01).max(1.0);
+    out.fit_min_points = ((p.fit_min_points as f64 / (coarser * coarser)).round() as usize).max(8);
+    // Past a few centimetres a circle has too little to bite on, and the
+    // robust mean is both less biased and far less prone to a runaway.
+    if out.radius_power <= 0.0 && p.power_above_spacing > 0.0 && spacing >= p.power_above_spacing {
+        out.radius_power = 0.25;
+    }
+    out
+}
+
 pub fn build_qsm(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParams) -> Result<Qsm> {
     let task = crate::progress::start("building a QSM", 2);
+    let p = &scaled_to_spacing(xyz, p);
     let skel = skeletonize(xyz, base_xy, p)?;
     task.inc(1); // skeleton
     let qsm = fit_cylinders(xyz, &skel, p);
