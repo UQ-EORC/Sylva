@@ -175,6 +175,9 @@ pub struct SegmentParams {
     /// tall trees win contested crown points over understorey stems.
     pub height_prior: bool,
     pub height_prior_radius: f64,
+    /// Seed a ring around the stem surface rather than a disc around its
+    /// axis, so a trunk wider than `seed_radius` still gets seeds.
+    pub seed_ring: bool,
     /// How hard the height prior leans: cost is divided by `h^this`. 1 gives
     /// a tall tree its full advantage, which in a dense stand hands it its
     /// suppressed neighbour's crown as well; 0 is no prior at all.
@@ -203,7 +206,7 @@ pub struct SegmentParams {
 
 impl Default for SegmentParams {
     fn default() -> Self {
-        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.03, seed_height: 1.5, seed_radius: 0.25, power: 4.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, height_prior: true, height_prior_radius: 1.5, height_prior_power: 1.0, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 10.0, understorey_band: 0.5 }
+        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.03, seed_height: 1.5, seed_radius: 0.25, power: 4.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, seed_ring: true, height_prior: true, height_prior_radius: 1.5, height_prior_power: 1.0, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 10.0, understorey_band: 0.5 }
     }
 }
 
@@ -243,8 +246,14 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
         } else {
             1.0
         };
+        // Seed the bark, not the axis: on a stem wider than `seed_radius` a
+        // disc around the centre lies inside the trunk, where a scan has no
+        // points at all, and the tree starts with nothing (arbor seeds a whole
+        // synthetic trunk shell for the same reason).
+        let inner = if p.seed_ring { 0.5 * t.dbh } else { 0.0 };
         for (i, q) in work.iter().enumerate() {
-            if (q[0] - t.x).hypot(q[1] - t.y) <= p.seed_radius && (hw[i] - p.seed_height).abs() < 0.5 {
+            let d = (q[0] - t.x).hypot(q[1] - t.y);
+            if (d - inner).abs() <= p.seed_radius && (hw[i] - p.seed_height).abs() < 0.5 {
                 seeds.push(i);
                 seed_tree.push(t.tree_id);
                 seed_xy.push([t.x, t.y]);

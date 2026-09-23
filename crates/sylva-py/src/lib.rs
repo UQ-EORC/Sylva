@@ -962,24 +962,24 @@ fn dbh_profile<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRead
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, heights, trees_list, k=6, max_edge=1.0, voxel_size=0.03, seed_height=1.5, seed_radius=0.25, power=4.0, angle_penalty=true, gravity=0.0, cut_above_ground=0.25, height_prior=true, height_prior_radius=1.5, height_prior_power=1.0, low_height=0.5, low_radius=1.0, wood_costs=false, wood_k=20, wood_threshold=0.9, understorey_height=10.0, understorey_band=0.5))]
+#[pyo3(signature = (xyz, heights, trees_list, k=6, max_edge=1.0, voxel_size=0.03, seed_height=1.5, seed_radius=0.25, seed_ring=true, power=4.0, angle_penalty=true, gravity=0.0, cut_above_ground=0.25, height_prior=true, height_prior_radius=1.5, height_prior_power=1.0, low_height=0.5, low_radius=1.0, wood_costs=false, wood_k=20, wood_threshold=0.9, understorey_height=10.0, understorey_band=0.5))]
 #[allow(clippy::too_many_arguments)]
-fn segment_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, trees_list: &Bound<'_, PyList>, k: usize, max_edge: f64, voxel_size: f64, seed_height: f64, seed_radius: f64, power: f64, angle_penalty: bool, gravity: f64, cut_above_ground: f64, height_prior: bool, height_prior_radius: f64, height_prior_power: f64, low_height: f64, low_radius: f64, wood_costs: bool, wood_k: usize, wood_threshold: f64, understorey_height: f64, understorey_band: f64) -> PyResult<Bound<'py, PyArray1<i64>>> {
+fn segment_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, trees_list: &Bound<'_, PyList>, k: usize, max_edge: f64, voxel_size: f64, seed_height: f64, seed_radius: f64, seed_ring: bool, power: f64, angle_penalty: bool, gravity: f64, cut_above_ground: f64, height_prior: bool, height_prior_radius: f64, height_prior_power: f64, low_height: f64, low_radius: f64, wood_costs: bool, wood_k: usize, wood_threshold: f64, understorey_height: f64, understorey_band: f64) -> PyResult<Bound<'py, PyArray1<i64>>> {
     let p = xyz_from_py(xyz)?;
     let h = heights.as_array().to_vec();
     let t = trees_from_py(trees_list)?;
-    let params = trees::SegmentParams { k, max_edge, voxel_size, seed_height, seed_radius, power, angle_penalty, gravity, cut_above_ground, height_prior, height_prior_radius, height_prior_power, low_height, low_radius, wood_costs, wood_k, wood_threshold, understorey_height, understorey_band };
+    let params = trees::SegmentParams { k, max_edge, voxel_size, seed_height, seed_radius, seed_ring, power, angle_penalty, gravity, cut_above_ground, height_prior, height_prior_radius, height_prior_power, low_height, low_radius, wood_costs, wood_k, wood_threshold, understorey_height, understorey_band };
     Ok(py.detach(|| trees::segment_trees(&p, &h, &t, &params)).into_pyarray(py))
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, heights, trees_list, k=10, max_edge=1.0, voxel_size=0.1, seed_height=1.5, seed_radius=0.5, power=3.0, angle_penalty=true, cut_above_ground=0.25, ground_height=0.5, trunk_scale=1.5, trunk_min=0.15, search_radius=6.0))]
+#[pyo3(signature = (xyz, heights, trees_list, k=10, max_edge=1.0, voxel_size=0.1, seed_height=1.5, seed_radius=0.5, seed_ring=true, power=3.0, angle_penalty=true, cut_above_ground=0.25, ground_height=0.5, trunk_scale=1.5, trunk_min=0.15, search_radius=6.0))]
 #[allow(clippy::too_many_arguments)]
-fn merge_branches<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, trees_list: &Bound<'_, PyList>, k: usize, max_edge: f64, voxel_size: f64, seed_height: f64, seed_radius: f64, power: f64, angle_penalty: bool, cut_above_ground: f64, ground_height: f64, trunk_scale: f64, trunk_min: f64, search_radius: f64) -> PyResult<(Bound<'py, PyList>, Bound<'py, PyArray1<i64>>)> {
+fn merge_branches<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, trees_list: &Bound<'_, PyList>, k: usize, max_edge: f64, voxel_size: f64, seed_height: f64, seed_radius: f64, seed_ring: bool, power: f64, angle_penalty: bool, cut_above_ground: f64, ground_height: f64, trunk_scale: f64, trunk_min: f64, search_radius: f64) -> PyResult<(Bound<'py, PyList>, Bound<'py, PyArray1<i64>>)> {
     let p = xyz_from_py(xyz)?;
     let h = heights.as_array().to_vec();
     let t = trees_from_py(trees_list)?;
-    let params = trees::SegmentParams { k, max_edge, voxel_size, seed_height, seed_radius, power, angle_penalty, gravity: 0.0, cut_above_ground, height_prior: false, height_prior_radius: 1.5, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, ..Default::default() };
+    let params = trees::SegmentParams { k, max_edge, voxel_size, seed_height, seed_radius, seed_ring, power, angle_penalty, gravity: 0.0, cut_above_ground, height_prior: false, height_prior_radius: 1.5, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, ..Default::default() };
     let (kept, merged) = py.detach(|| trees::merge_branches(&p, &h, &t, &params, ground_height, trunk_scale, trunk_min, search_radius));
     let list = PyList::empty(py);
     for tr in &kept {

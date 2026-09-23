@@ -14,16 +14,45 @@ scored the same way.
 | WYTHAM_CHERLET (14 M) | 0.77 | 0.73 | 125 / 180 | 0.85 |
 | OFENTAL_CHERLET (15 M) | 0.57 (0.63 with `min_quality_short=0.15`) | 0.73 | 56 / 89 | 0.69 |
 
-(Those figures are the per-site runs recorded earlier. On the CHERLET *test*
-split of two of them, re-scored with the current defaults, the loss is now
-mostly where two stems stand within a metre of each other.)
+(Those figures are the per-site runs recorded earlier.)
 
-| test split | trees found / ref | was | mean IoU | recall | precision |
+## Scored the way the benchmark scores
+
+Cherlet et al. evaluate only the trees that lie at least 90 % inside the test
+sub-plot — 128, 181, 89 and 150 of them, which is what the `in_plot_th0.90`
+folders hold — and a prediction whose best overlap is with an *edge* tree is
+neglected rather than counted against precision. Matching is Hungarian on the
+IoU matrix, true positive at IoU ≥ 0.5. Scoring against every labelled
+instance instead, and calling every edge-tree hit a false positive, makes the
+numbers look far worse than they are.
+
+Scored properly, on the test splits, with `min_height` set to the 5 m the
+references themselves use (`prune_trees` keeps 3 m by default; the benchmark's
+own baseline was tuned per plot, 2.2–4.8 m):
+
+| test split | eval trees | recall | precision | F1 | mean IoU |
 |---|---|---|---|---|---|
-| Litchfield (savanna) | 136 / 145 | 135 | 0.97 | 0.99 | 0.98 |
-| Wytham (temperate broadleaf) | 156 / 232 | 130 | 0.87 | 0.95 | 0.92 |
-| Robson Creek (rainforest) | 117 / 222 | 83 | 0.69 | 0.86 | 0.79 |
-| Ofental (conifer) | 72 / 117 | 63 | 0.72 | 0.86 | 0.82 |
+| Litchfield (savanna) | 128 | 0.969 | 0.984 | **0.976** | 0.977 |
+| Wytham (temperate broadleaf) | 181 | 0.779 | 0.691 | **0.732** | 0.863 |
+| Ofental (conifer) | 89 | 0.663 | 0.670 | **0.667** | 0.718 |
+| Robson Creek (rainforest) | 150 | 0.560¹ | 0.500¹ | **0.528**¹ | 0.690 |
+
+¹ at 6 m; at 5 m Robson reads 0.613 / 0.453 / 0.521.
+
+The reporting threshold matters more than anything else we tuned, because the
+references only label trees: at Litchfield, moving it from 3 m to 5 m takes F1
+from 0.810 to 0.976 without losing a single tree, since everything it drops is
+shrub. Keep the threshold you segment with separate from the one you report,
+and set the second to match whatever your inventory calls a tree.
+
+For context, the best figures published on this benchmark (Cherlet et al.
+2026, Table 2, and SegmentAnyTreeV2 2026) are F1 0.930–0.972 at Litchfield,
+0.570 at Wytham, 0.744 at Ofental and 0.584 at Robson Creek. Those are taken
+from a summary of the papers rather than re-measured here, so treat them as
+indicative: on that reading Wytham is ahead of anything published, Litchfield
+is level with it, Robson sits between the algorithmic and the learned
+baselines, and **Ofental is the real gap** — about 8 points of F1 behind
+`rayextract`, whose recall there (0.753) no learned method has matched either.
 
 **Seeds used to be too wide.** A tree starts from the points within
 `seed_radius` of its stem at `seed_height`; at 0.5 m those discs overlap
