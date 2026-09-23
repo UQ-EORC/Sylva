@@ -1,0 +1,13 @@
+# conda env create -f environment.yml && conda activate sylva && maturin develop --release
+name: sylva
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - rust
+  - c-compiler        # rustc links through `cc`; conda's rust does not bring one
+  - maturin
+  - numpy>=1.24
+  - pytest
+  - matplotlib        # the example notebooks
+  - jupyterlab

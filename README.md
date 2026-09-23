@@ -20,18 +20,24 @@ numpy-friendly API (`import sylva`) and a `sylva` command.
 
 ## Install
 
-A conda environment keeps the Python and the Rust toolchain together, which
-is the easiest way to build the extension:
+A conda environment keeps the Python, the Rust toolchain and the C linker
+together, which is the easiest way to build the extension:
 
 ```bash
-conda create -n sylva -c conda-forge python=3.12 rust maturin
+conda create -n sylva -c conda-forge python=3.12 rust maturin c-compiler
 conda activate sylva
 maturin develop --release        # builds the Rust core into the environment
 ```
 
-`pip install -e .` works as well once the environment is active. Without
-conda, any Python >= 3.10 with a Rust toolchain (`rustup`) and `pip install
-maturin` does the same job.
+`c-compiler` matters: `rustc` links through a program called `cc`, which
+conda's `rust` package does not provide, so without it the build stops at
+``error: linker `cc` not found``. The repository's `environment.yml` has the
+same list plus the test and notebook extras (`conda env create -f
+environment.yml`).
+
+Without conda, any Python >= 3.10 with a Rust toolchain (`rustup`), a system
+C compiler (`gcc`, `build-essential`, or Xcode's command line tools) and
+`pip install maturin` does the same job.
 
 ## A first look
 
