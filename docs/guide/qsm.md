@@ -129,6 +129,7 @@ plot = qsm.build_plot(cloud, labels, stems)       # {tree_id: QSM}, and why any 
 print(len(plot), plot.total_volume, plot.skipped)
 plot.to_csv("trees.csv")                          # a row per tree
 plot.write_cylinders("qsms/")                     # tree<id>.csv each
+plot.write_meshes("meshes/", contiguous=True)     # tree<id>.ply each, fused where buttressed
 ```
 
 `stems` only supplies the stem centre each model is built around; without it
@@ -140,11 +141,17 @@ fewer than `min_points` points, and trees whose fit fails, land in
 it, so `plot.volume(tree_id)` is the buttress mesh below its top plus the
 cylinders above it (see below). It costs a slice-rasterising pass per tree.
 
+`write_meshes` gives one surface per tree: a tree with a buttress is written
+fused, so the flanged base and the cylinders above it are one file (named
+objects `buttress` and `wood` in OBJ), and every other tree is its cylinder
+mesh. `fmt="obj"` for text and named parts, the default `"ply"` for binary
+with face colours.
+
 From the command line, on a cloud that carries a `tree_id` attribute (what
 `sylva trees --segment` writes):
 
 ```bash
-sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/
+sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/ --meshes meshes/
 ```
 
 ## Buttresses

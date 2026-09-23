@@ -1074,6 +1074,60 @@ class PlotQSMs:
             w.writeheader()
             w.writerows(rows)
 
+    def write_meshes(self, directory: str | Path, fmt: str = "ply", sides: int = 12,
+                     contiguous: bool = True, prefix: str = "tree") -> list[Path]:
+        """Write a surface mesh per tree into ``directory``.
+
+        A tree with a buttress is written fused (:meth:`Buttress.fuse`), so
+        the flanged base and the cylinders above it come out as one file;
+        every other tree is its cylinder mesh.
+
+        Parameters
+        ----------
+        directory
+            Created if it does not exist.
+        fmt : {"ply", "obj"}
+            PLY is binary and carries face colours; OBJ is text and keeps the
+            buttress and the wood as named objects.
+        sides
+            Facets around each cylinder.
+        contiguous
+            One continuous tube per branch (see :meth:`QSM.mesh`).
+        prefix
+            File name stem; files are ``<prefix><tree_id>.<fmt>``.
+
+        Returns
+        -------
+        list of pathlib.Path
+            The files written, in tree order.
+
+        Raises
+        ------
+        ValueError
+            For an unknown format.
+        """
+        if fmt not in ("ply", "obj"):
+            raise ValueError("fmt must be 'ply' or 'obj'")
+        from . import progress
+
+        d = Path(directory)
+        d.mkdir(parents=True, exist_ok=True)
+        out = []
+        with progress.task("writing meshes", len(self.models)) as prog:
+            for t, m in sorted(self.models.items()):
+                path = d / f"{prefix}{t}.{fmt}"
+                b = self.buttresses.get(t)
+                mesh = b.fuse(m, sides=sides, contiguous=contiguous) if b is not None else None
+                if mesh is not None:
+                    mesh.to_ply(path) if fmt == "ply" else mesh.to_obj(path)
+                elif fmt == "ply":
+                    m.to_ply(path, sides=sides, contiguous=contiguous)
+                else:
+                    m.to_obj(path, sides=sides, contiguous=contiguous)
+                out.append(path)
+                prog.update()
+        return out
+
     def write_cylinders(self, directory: str | Path, prefix: str = "tree") -> None:
         """Write one cylinder CSV per tree into ``directory``.
 

@@ -234,6 +234,16 @@ def test_build_plot_models_every_tree(rng, tmp_path):
     assert (tmp_path / "trees.csv").read_text().startswith("tree_id,points,volume_m3")
     plot.write_cylinders(tmp_path / "qsms")
     assert sorted(p.name for p in (tmp_path / "qsms").glob("*.csv")) == ["tree1.csv", "tree2.csv", "tree3.csv"]
+    # Surface meshes, one file per tree, in either format.
+    written = plot.write_meshes(tmp_path / "meshes")
+    assert [p.name for p in written] == ["tree1.ply", "tree2.ply", "tree3.ply"]
+    assert (tmp_path / "meshes" / "tree1.ply").read_bytes()[:3] == b"ply"
+    plot.write_meshes(tmp_path / "obj", fmt="obj", sides=8)
+    text = (tmp_path / "obj" / "tree2.obj").read_text()
+    assert text.startswith("#") or text.startswith("o ") or text.startswith("v ")
+    assert text.count("\nv ") > 50
+    with pytest.raises(ValueError):
+        plot.write_meshes(tmp_path / "nope", fmt="stl")
 
     with pytest.raises(ValueError):
         qsm.build_plot(cloud, labels[:-1])

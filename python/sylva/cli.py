@@ -115,6 +115,9 @@ def _cmd_qsm_plot(args):
     plot.to_csv(args.output)
     if args.cylinders:
         plot.write_cylinders(args.cylinders)
+    if args.meshes:
+        n = plot.write_meshes(args.meshes, fmt=args.mesh_format)
+        print(f"{len(n)} meshes -> {args.meshes}")
     print(f"{len(plot)} QSMs, {len(plot.skipped)} skipped, "
           f"{plot.total_volume:.3f} m3 of wood -> {args.output}")
     for tid, why in list(plot.skipped.items())[:5]:
@@ -220,6 +223,10 @@ def main(argv=None):
     s.add_argument("--tree-attr", default="tree_id", help="attribute holding the tree id")
     s.add_argument("--cylinders", default=None, metavar="DIR",
                    help="also write one cylinder CSV per tree into this directory")
+    s.add_argument("--meshes", default=None, metavar="DIR",
+                   help="also write one surface mesh per tree into this directory")
+    s.add_argument("--mesh-format", choices=("ply", "obj"), default="ply",
+                   help="format for --meshes")
     s.add_argument("--voxel", type=float, default=0.01, help="thin each tree to this spacing (m)")
     s.add_argument("--bin-length", type=float, default=0.1, help="geodesic shell width (m)")
     s.add_argument("--min-points", type=int, default=2000, help="skip trees with fewer points")

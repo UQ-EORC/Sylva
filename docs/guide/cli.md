@@ -16,7 +16,7 @@ sylva pad plot_norm.laz --voxel 0.5 > pad.csv
 sylva shots rays.laz plot.parquet                  # ray cloud -> shots file
 sylva voxel plot.parquet plot.vox --voxel 0.25 --ground-class 2 --laser VZ-400 --attenuation fpl ppl
 sylva qsm tree.ply tree_qsm.csv
-sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/
+sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/ --meshes meshes/
 ```
 
 `crates/sylva-cli` builds a standalone Rust binary with the same commands
@@ -80,6 +80,8 @@ segmented cloud (one that carries a `tree_id` attribute, as `sylva trees
 |---|---|---|
 | `--tree-attr NAME` | `tree_id` | attribute holding the tree id |
 | `--cylinders DIR` | none | also write `tree<id>.csv` cylinders per tree |
+| `--meshes DIR` | none | also write a surface mesh per tree, fused with its buttress |
+| `--mesh-format ply\|obj` | `ply` | format for `--meshes` |
 | `--voxel M` | 0.01 | thin each tree to this spacing first |
 | `--bin-length M` | 0.1 | geodesic shell width |
 | `--min-points N` | 2000 | skip trees with fewer points |
