@@ -120,6 +120,38 @@ things worse on this data:
   the finished skeletons. Done that way it might work; done naively it does
   not, and the code was removed rather than shipped as a knob.
 
+### Rays do not tell two crowns apart
+
+Sylva is the only method in this comparison that can read the pulses rather
+than the points, so it was worth asking whether ray geometry separates two
+interlocking crowns: a pulse that flew through a place proves the place was
+empty.
+
+Testing it needed data that does not exist publicly — a plot with both a
+reference segmentation and the original pulses — so one was simulated:
+six of the synthetic trees placed 8 m apart in a single HELIOS++ scene,
+scanned from seven positions, 17.7 M returns, each carrying its scanner
+origin and the mesh it hit. (Composing the *existing* single-tree clouds
+does not work: each tree was scanned alone, so 9 % of its pulses fly through
+neighbours that were not there. In the simulated plot that falls to 2 %.)
+
+Three ray cues, scored on how well they separate a link between two points of
+the same tree from a link between two trees:
+
+| cue | same-tree | cross-tree | AUC |
+|---|---|---|---|
+| free space along the link (0.7–1 m links) | 17.6 | 10.7 | 0.566 |
+| visibility signature, which positions saw both | 0.866 | 0.845 | 0.549 |
+| range jump at a position that saw both | 0.407 m | 0.448 m | 0.585 |
+
+None of them is usable: an AUC of 0.55–0.61 will not repair a structural
+failure. The sign of the first is the interesting part — with the occlusion
+simulated properly, the space *between* two crowns holds **less** measured
+free space than the inside of one crown, because it is precisely where pulses
+are blocked from every direction. The expectation was "provably empty"; the
+reality in a closed canopy is "never observed", which is a different thing
+and does not separate the two cases.
+
 Tried on Ofental and rejected, in case it saves someone the experiment:
 softening the height prior, which is what hands a dominant its suppressed
 neighbour's crown (`height_prior_power` 1 → 0.75 → 0.5 → 0.25 gives 68 → 68 →
