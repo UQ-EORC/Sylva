@@ -199,7 +199,7 @@ pub struct SegmentParams {
 
 impl Default for SegmentParams {
     fn default() -> Self {
-        SegmentParams { k: 10, max_edge: 1.0, voxel_size: 0.05, seed_height: 1.5, seed_radius: 0.25, power: 3.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, height_prior: true, height_prior_radius: 1.5, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 10.0, understorey_band: 0.5 }
+        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.05, seed_height: 1.5, seed_radius: 0.25, power: 4.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, height_prior: true, height_prior_radius: 1.5, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 10.0, understorey_band: 0.5 }
     }
 }
 

@@ -962,7 +962,7 @@ fn dbh_profile<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRead
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, heights, trees_list, k=10, max_edge=1.0, voxel_size=0.05, seed_height=1.5, seed_radius=0.25, power=3.0, angle_penalty=true, gravity=0.0, cut_above_ground=0.25, height_prior=true, height_prior_radius=1.5, low_height=0.5, low_radius=1.0, wood_costs=false, wood_k=20, wood_threshold=0.9, understorey_height=10.0, understorey_band=0.5))]
+#[pyo3(signature = (xyz, heights, trees_list, k=6, max_edge=1.0, voxel_size=0.05, seed_height=1.5, seed_radius=0.25, power=4.0, angle_penalty=true, gravity=0.0, cut_above_ground=0.25, height_prior=true, height_prior_radius=1.5, low_height=0.5, low_radius=1.0, wood_costs=false, wood_k=20, wood_threshold=0.9, understorey_height=10.0, understorey_band=0.5))]
 #[allow(clippy::too_many_arguments)]
 fn segment_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, trees_list: &Bound<'_, PyList>, k: usize, max_edge: f64, voxel_size: f64, seed_height: f64, seed_radius: f64, power: f64, angle_penalty: bool, gravity: f64, cut_above_ground: f64, height_prior: bool, height_prior_radius: f64, low_height: f64, low_radius: f64, wood_costs: bool, wood_k: usize, wood_threshold: f64, understorey_height: f64, understorey_band: f64) -> PyResult<Bound<'py, PyArray1<i64>>> {
     let p = xyz_from_py(xyz)?;

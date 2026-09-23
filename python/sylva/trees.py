@@ -307,8 +307,8 @@ def dbh_profile(cloud: PointCloud, center_xy, height_attr: str = "height",
 
 
 def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "height",
-                  k: int = 10, max_edge: float = 1.0, voxel_size: float = 0.05,
-                  seed_height: float = 1.5, seed_radius: float = 0.25, power: float = 3.0,
+                  k: int = 6, max_edge: float = 1.0, voxel_size: float = 0.05,
+                  seed_height: float = 1.5, seed_radius: float = 0.25, power: float = 4.0,
                   angle_penalty: bool = True, gravity: float = 0.0,
                   cut_above_ground: float = 0.25, height_prior: bool = True,
                   height_prior_radius: float = 1.5, low_height: float = 0.5,
