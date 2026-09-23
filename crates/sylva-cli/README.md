@@ -15,4 +15,4 @@ sylva voxel plot.parquet plot.vox --voxel 0.25 --ground-class 2
 ```
 
 See the [Sylva repository](https://github.com/TerraSpatial/Sylva) for the
-documentation. Licence: MIT.
+documentation. Licence: GPL-3.0-or-later.

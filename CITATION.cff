@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+title: "Sylva: terrestrial laser scanning processing for forest ecology"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - given-names: Tim
+    family-names: Devereux
+    email: devereux.tj@gmail.com
+    affiliation: The University of Queensland
+repository-code: "https://github.com/TerraSpatial/Sylva"
+abstract: >-
+  Terrestrial laser scanning processing for forest ecology and remote
+  sensing: ground classification, tree segmentation, quantitative structure
+  models, ray-traced voxels and canopy metrics, with a Rust core and a
+  Python API.
+keywords:
+  - lidar
+  - terrestrial laser scanning
+  - forest ecology
+  - point cloud
+  - quantitative structure model
+license: GPL-3.0-or-later
+year: 2026

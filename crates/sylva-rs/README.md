@@ -26,4 +26,4 @@ let heights = ground::heights_above(&cloud.xyz, &dtm);
 let stems = trees::detect_stems(&cloud.xyz, &heights, &trees::StemParams::default());
 ```
 
-Licence: MIT.
+Licence: GPL-3.0-or-later.

@@ -67,6 +67,16 @@ The documentation lives in [`docs/`](https://github.com/TerraSpatial/Sylva/blob/
 
 Build the site with `pip install -e '.[docs]' && mkdocs serve`.
 
+## Author
+
+Tim Devereux, The University of Queensland (<devereux.tj@gmail.com>).
+
 ## Licence
 
-MIT
+GNU General Public License v3.0 or later; see [LICENSE](LICENSE). Anything
+distributed that builds on Sylva carries the same licence.
+
+## Citing
+
+Devereux, T. (2026). *Sylva: terrestrial laser scanning processing for
+forest ecology*. The University of Queensland. <https://github.com/TerraSpatial/Sylva>

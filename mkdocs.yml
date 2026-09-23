@@ -1,5 +1,7 @@
 site_name: Sylva
 site_description: Terrestrial laser scanning processing for forest ecology, with a Rust core
+site_author: Tim Devereux, The University of Queensland
+copyright: "&copy; 2026 Tim Devereux, The University of Queensland &middot; GPL-3.0-or-later"
 repo_url: https://github.com/TerraSpatial/Sylva
 repo_name: TerraSpatial/Sylva
 edit_uri: edit/main/docs/

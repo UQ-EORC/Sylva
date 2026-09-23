@@ -8,12 +8,14 @@ version = "0.1.0"
 description = "Terrestrial laser scanning (TLS) processing for forest ecology and remote sensing, with a Rust core"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "Tim Devereux", email = "devereux.tj@gmail.com" }]
+maintainers = [{ name = "Tim Devereux", email = "devereux.tj@gmail.com" }]
 keywords = ["lidar", "tls", "forestry", "point cloud", "qsm", "remote sensing", "rust"]
 classifiers = [
     "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Rust",

@@ -2,6 +2,10 @@
 
 The heavy lifting is done by a Rust core (``sylva._core``); this package
 provides a numpy-friendly API on top of it.
+
+Copyright (C) 2026 Tim Devereux, The University of Queensland.
+Free software under the GNU General Public License v3.0 or later; see the
+LICENSE file. There is no warranty, to the extent permitted by law.
 """
 
 from . import canopy, coreg, filters, ground, io, leaves, progress, qsm, quality, registration, riscan, synthetic, trees, voxels

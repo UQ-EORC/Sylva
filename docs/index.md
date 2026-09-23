@@ -65,3 +65,14 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 - [raycloudtools](https://github.com/csiro-robotics/raycloudtools) — ray
   clouds, which `sylva.read` and `Shots.from_ray_cloud` accept.
 - Everything Sylva implements is cited on the [references](references.md) page.
+
+## Author and licence
+
+Tim Devereux, The University of Queensland.
+
+Free software under the GNU General Public License v3.0 or later: you may
+use, study, change and share it, and anything you distribute that builds on
+it carries the same licence. See the LICENSE file in the repository.
+
+Cite it as: Devereux, T. (2026). *Sylva: terrestrial laser scanning
+processing for forest ecology*. The University of Queensland.
