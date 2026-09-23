@@ -76,6 +76,10 @@ Tim Devereux, The University of Queensland (<devereux.tj@gmail.com>).
 GNU General Public License v3.0 or later; see [LICENSE](LICENSE). Anything
 distributed that builds on Sylva carries the same licence.
 
+Sylva was MIT-licensed up to commit `8b0e62e`; a copy taken at or before that
+commit keeps the MIT terms it was given under. Everything from `cf886c2`
+onwards is GPL.
+
 ## Citing
 
 Devereux, T. (2026). *Sylva: terrestrial laser scanning processing for

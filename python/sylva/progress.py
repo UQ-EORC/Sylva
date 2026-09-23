@@ -1,3 +1,7 @@
+# Sylva: terrestrial laser scanning processing for forest ecology.
+# Copyright (C) 2026 Tim Devereux, The University of Queensland.
+# Free software under the GNU General Public License v3.0 or later;
+# see the LICENSE file. There is no warranty, to the extent permitted by law.
 """Progress reporting for the work that takes a while.
 
 Segmenting a plot, tracing a few million pulses or fitting a QSM can run for

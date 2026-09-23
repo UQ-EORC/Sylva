@@ -1,3 +1,7 @@
+// Sylva: terrestrial laser scanning processing for forest ecology.
+// Copyright (C) 2026 Tim Devereux, The University of Queensland.
+// Free software under the GNU General Public License v3.0 or later;
+// see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! LAS / LAZ via the `las` crate, with typed extra-bytes dimensions.
 
 use std::path::Path;
