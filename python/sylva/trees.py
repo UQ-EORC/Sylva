@@ -307,11 +307,12 @@ def dbh_profile(cloud: PointCloud, center_xy, height_attr: str = "height",
 
 
 def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "height",
-                  k: int = 6, max_edge: float = 1.0, voxel_size: float = 0.05,
+                  k: int = 6, max_edge: float = 1.0, voxel_size: float = 0.03,
                   seed_height: float = 1.5, seed_radius: float = 0.25, power: float = 4.0,
                   angle_penalty: bool = True, gravity: float = 0.0,
                   cut_above_ground: float = 0.25, height_prior: bool = True,
-                  height_prior_radius: float = 1.5, low_height: float = 0.5,
+                  height_prior_radius: float = 1.5, height_prior_power: float = 1.0,
+                  low_height: float = 0.5,
                   low_radius: float = 1.0, wood_costs: bool = False,
                   wood_k: int = 20, wood_threshold: float = 0.9, understorey_height: float = 10.0,
                   understorey_band: float = 0.5) -> np.ndarray:
@@ -403,6 +404,7 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
     return _core.segment_trees(cloud.xyz, h, [t._to_core() for t in trees], k, max_edge,
                                voxel_size, seed_height, seed_radius, power, angle_penalty,
                                gravity, cut_above_ground, height_prior, height_prior_radius,
+                               height_prior_power,
                                low_height, low_radius, wood_costs, wood_k, wood_threshold,
                                understorey_height, understorey_band)
 

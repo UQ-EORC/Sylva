@@ -175,6 +175,10 @@ pub struct SegmentParams {
     /// tall trees win contested crown points over understorey stems.
     pub height_prior: bool,
     pub height_prior_radius: f64,
+    /// How hard the height prior leans: cost is divided by `h^this`. 1 gives
+    /// a tall tree its full advantage, which in a dense stand hands it its
+    /// suppressed neighbour's crown as well; 0 is no prior at all.
+    pub height_prior_power: f64,
     /// Points below this height stay labelled only within `low_radius`
     /// (or 1.5 DBH) of their tree's base: the ground remnants, litter and
     /// understorey the graph reaches along the surface are left unassigned
@@ -199,7 +203,7 @@ pub struct SegmentParams {
 
 impl Default for SegmentParams {
     fn default() -> Self {
-        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.05, seed_height: 1.5, seed_radius: 0.25, power: 4.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, height_prior: true, height_prior_radius: 1.5, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 10.0, understorey_band: 0.5 }
+        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.03, seed_height: 1.5, seed_radius: 0.25, power: 4.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, height_prior: true, height_prior_radius: 1.5, height_prior_power: 1.0, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 10.0, understorey_band: 0.5 }
     }
 }
 
@@ -235,7 +239,7 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
             let mut hs: Vec<f64> = work.iter().zip(&hw).filter(|(q, _)| (q[0] - t.x).hypot(q[1] - t.y) <= p.height_prior_radius).map(|(_, &h)| h).collect();
             hs.sort_by(|a, b| a.partial_cmp(b).unwrap());
             let h95 = hs.get(((hs.len() as f64 * 0.95) as usize).min(hs.len().saturating_sub(1))).copied().unwrap_or(2.0);
-            1.0 / h95.max(2.0)
+            1.0 / h95.max(2.0).powf(p.height_prior_power)
         } else {
             1.0
         };
