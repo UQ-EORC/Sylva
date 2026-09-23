@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import _core
+from . import _core, limits
 from .pointcloud import PointCloud
 
 __all__ = ["QSM", "PlotQSMs", "build_plot", "fit_cylinder", "fit_cylinder_ransac", "skeletonize", "build_qsm", "wood_points",
@@ -727,6 +727,12 @@ def buttress_mesh(cloud: PointCloud, base_xy, ground_z: float | None = None,
         near = np.hypot(cloud.x - cx, cloud.y - cy) <= 1.0
         base = (cloud.z - h)[near] if near.any() else cloud.z - h
         ground_z = float(np.median(base))
+    # The raster is fixed by the settings, not by the cloud, so a fine
+    # resolution over a wide reach is a large grid whatever was scanned.
+    nx = ny = int(2 * max_radius / max(resolution, 1e-6)) + 1
+    nz = int(max_height / max(slice_height, 1e-6)) + 1
+    limits.check(nx * ny * nz, 2, f"a {nx} x {ny} x {nz} buttress raster at {resolution} m",
+                 "a coarser resolution, a smaller max_radius, or a lower max_height")
     d = _core.buttress_mesh(cloud.xyz, h, cx, cy, float(ground_z), resolution, slice_height,
                             close_radius, max_radius, max_height, top, solidity, 4, 0.5, 30,
                             float(max_flare), int(smooth))

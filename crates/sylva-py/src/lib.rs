@@ -962,7 +962,7 @@ fn dbh_profile<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRead
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, heights, trees_list, k=10, max_edge=1.0, voxel_size=0.05, seed_height=1.5, seed_radius=0.5, power=3.0, angle_penalty=true, gravity=0.0, cut_above_ground=0.25, height_prior=true, height_prior_radius=1.5, low_height=0.5, low_radius=1.0, wood_costs=false, wood_k=20, wood_threshold=0.9, understorey_height=10.0, understorey_band=0.5))]
+#[pyo3(signature = (xyz, heights, trees_list, k=10, max_edge=1.0, voxel_size=0.05, seed_height=1.5, seed_radius=0.25, power=3.0, angle_penalty=true, gravity=0.0, cut_above_ground=0.25, height_prior=true, height_prior_radius=1.5, low_height=0.5, low_radius=1.0, wood_costs=false, wood_k=20, wood_threshold=0.9, understorey_height=10.0, understorey_band=0.5))]
 #[allow(clippy::too_many_arguments)]
 fn segment_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, trees_list: &Bound<'_, PyList>, k: usize, max_edge: f64, voxel_size: f64, seed_height: f64, seed_radius: f64, power: f64, angle_penalty: bool, gravity: f64, cut_above_ground: f64, height_prior: bool, height_prior_radius: f64, low_height: f64, low_radius: f64, wood_costs: bool, wood_k: usize, wood_threshold: f64, understorey_height: f64, understorey_band: f64) -> PyResult<Bound<'py, PyArray1<i64>>> {
     let p = xyz_from_py(xyz)?;
@@ -1450,6 +1450,30 @@ fn qsm_summary<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>) -> PyResu
     qsm_to_py(py, &qsm_from_rows(cylinders)?)
 }
 
+/// Memory the system says is free (bytes), or None where it will not say.
+#[pyfunction]
+fn memory_available() -> Option<u64> {
+    sylva_rs::limits::available()
+}
+
+/// The most one allocation may ask for (bytes), or None when nothing is known.
+#[pyfunction]
+fn memory_budget() -> Option<u64> {
+    sylva_rs::limits::budget()
+}
+
+/// Set that budget in bytes; 0 goes back to reading the system.
+#[pyfunction]
+fn set_memory_budget(bytes: u64) {
+    sylva_rs::limits::set_budget(bytes);
+}
+
+/// Raise if `cells * per_cell` bytes would not fit, naming what and what to try.
+#[pyfunction]
+fn memory_check(cells: u128, per_cell: u64, what: &str, hint: &str) -> PyResult<()> {
+    sylva_rs::limits::check_cells(cells, per_cell, what, hint).map_err(err)
+}
+
 /// The stages running now, as (label, done, total). Safe to call from
 /// another thread while the work runs: the core holds the counts in atomics.
 #[pyfunction]
@@ -1602,6 +1626,10 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(qsm_write_csv, m)?,
         wrap_pyfunction!(qsm_mesh, m)?,
         wrap_pyfunction!(progress_state, m)?,
+        wrap_pyfunction!(memory_available, m)?,
+        wrap_pyfunction!(memory_budget, m)?,
+        wrap_pyfunction!(set_memory_budget, m)?,
+        wrap_pyfunction!(memory_check, m)?,
         wrap_pyfunction!(qsm_write_treefile, m)?,
     ] {
         m.add_function(f)?;

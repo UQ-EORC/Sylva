@@ -393,6 +393,17 @@ pub fn buttress_mesh(points: &[Point], heights: &[f64], cx: f64, cy: f64, ground
         res: p.resolution,
     };
     let nz = (p.max_height / p.slice).ceil() as usize;
+    if let Err(e) = crate::limits::check_cells(
+        (g.nx as u128) * (g.ny as u128) * (nz as u128),
+        2,
+        &format!("a {} x {} x {} buttress raster at {} m", g.nx, g.ny, nz, p.resolution),
+        "a coarser resolution, a smaller max_radius, or a lower max_height",
+    ) {
+        // Nothing here can carry an error back; refusing loudly still beats
+        // taking the machine down. The Python layer checks first, so this is
+        // the last line rather than the one anybody should meet.
+        panic!("{e}");
+    }
     let mut slices: Vec<Vec<[f64; 2]>> = vec![Vec::new(); nz];
     for &i in &sel {
         slices[((heights[i] / p.slice) as usize).min(nz - 1)].push([points[i][0], points[i][1]]);

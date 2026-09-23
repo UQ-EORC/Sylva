@@ -21,6 +21,7 @@ pub mod error;
 pub mod filters;
 pub mod ground;
 pub mod io;
+pub mod limits;
 pub mod leaves;
 pub mod optim;
 pub mod pointcloud;

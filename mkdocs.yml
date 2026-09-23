@@ -70,6 +70,7 @@ nav:
       - leaves: api/leaves.md
       - quality: api/quality.md
       - progress: api/progress.md
+      - limits: api/limits.md
       - synthetic: api/synthetic.md
   - Development: development.md
   - Releasing: release.md

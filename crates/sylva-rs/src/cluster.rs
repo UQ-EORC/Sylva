@@ -88,6 +88,19 @@ pub fn graph_from_directed(adj: Vec<Vec<(u32, f64)>>) -> Graph {
 /// horizontal costs x63 and downward x100 -- so shortest paths from stem
 /// seeds climb through the tree rather than leaking across the ground.
 /// The neighbour set is symmetrised so the graph is connected both ways.
+/// What a k-nearest-neighbour graph over `n` points will cost, and whether it
+/// fits: each edge is stored both ways, as a `u32` and an `f64`, plus the
+/// per-node vectors that build it.
+fn check_graph(n: usize, k: usize) -> crate::error::Result<()> {
+    let edges = (n as u128) * (2 * k as u128 + 2);
+    crate::limits::check_cells(
+        edges,
+        (std::mem::size_of::<u32>() + std::mem::size_of::<f64>()) as u64 + 8,
+        &format!("a {k}-neighbour graph over {n} points"),
+        "thinning the cloud (filters.voxel_downsample), a smaller k, or working tile by tile",
+    )
+}
+
 pub fn directed_knn_graph(points: &[Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool) -> Graph {
     directed_knn_graph_wood(points, k, max_distance, power, angle_penalty, None)
 }
@@ -97,6 +110,11 @@ pub fn directed_knn_graph(points: &[Point], k: usize, max_distance: f64, power: 
 /// leaf->wood x1. Paths run along the woody skeleton and may enter it from
 /// foliage, but almost never leave it, so foliage cannot bridge two trees.
 pub fn directed_knn_graph_wood(points: &[Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&[bool]>) -> Graph {
+    if let Err(e) = check_graph(points.len(), k) {
+        // The callers of this one cannot carry an error; refusing loudly is
+        // still better than the machine going down.
+        panic!("{e}");
+    }
     let tree = KdTree::new(points);
     let mut adj: Vec<Vec<u32>> = points
         .par_iter()
@@ -145,6 +163,9 @@ pub fn directed_knn_graph_wood(points: &[Point], k: usize, max_distance: f64, po
 
 /// Symmetric k-nearest-neighbour graph; edges longer than `max_distance` are dropped.
 pub fn knn_graph(points: &[Point], k: usize, max_distance: f64) -> Graph {
+    if let Err(e) = check_graph(points.len(), k) {
+        panic!("{e}");
+    }
     let tree = KdTree::new(points);
     let adj: Vec<Vec<(u32, f64)>> = points
         .par_iter()

@@ -18,7 +18,7 @@ PAGES = {
     "riscan": "shots.md", "filters": "filters.md", "registration": "registration.md",
     "coreg": "coreg.md", "ground": "ground.md", "trees": "trees.md", "canopy": "canopy.md", "voxels": "voxels.md",
     "qsm": "qsm.md", "leaves": "leaves.md", "quality": "quality.md", "synthetic": "synthetic.md",
-    "progress": "progress.md",
+    "progress": "progress.md", "limits": "limits.md",
 }
 
 

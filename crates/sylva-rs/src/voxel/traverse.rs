@@ -157,7 +157,7 @@ fn fadd(a: &AtomicU64, v: f64) {
 /// Everything a pulse adds to one voxel, side by side: a traversal touches
 /// most fields of each voxel it visits, so a voxel should be one stretch of
 /// memory rather than an entry in twenty arrays.
-struct Cell {
+pub(crate) struct Cell {
     f: [AtomicU64; F::COUNT],
     i: [AtomicI32; I::COUNT],
 }

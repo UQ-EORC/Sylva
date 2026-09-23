@@ -205,3 +205,36 @@ with progress.task("fitting QSMs", len(trees)) as t:
 
 Reported by the core: tree segmentation, QSM building, pulse tracing, buttress
 meshing and leaf placement; from Python: scan pair registration.
+
+
+## When it will not fit in memory
+
+A voxel grid is `nx * ny * nz` cells whatever the cloud holds, so a hectare
+asked for at 1 cm is tens of billions of them. Sylva now sizes the
+allocations that scale that way before making them, and refuses the ones that
+cannot fit:
+
+```python
+>>> voxels.ray_voxelize(shots, 0.002, bounds=plot)
+ValueError: a 50000 x 50000 x 20000 voxel grid at 0.002 m needs 11250.0 TB,
+and only 38.4 GB is available: try a larger voxel, a smaller area, or
+splitting the plot into tiles. Set SYLVA_MEM_BUDGET (GB) to raise the limit.
+```
+
+The budget is 80 % of what the system reports as free, or `SYLVA_MEM_BUDGET`
+in gigabytes, or whatever `sylva.limits.set_budget(gb)` was given:
+
+```python
+from sylva import limits
+
+limits.available(), limits.budget()      # bytes, or None off Linux
+limits.set_budget(8)                     # 8 GB for this process
+limits.set_budget(None)                  # back to reading the system
+```
+
+Checked so far: ray-traced voxel grids, neighbour graphs (tree segmentation
+and QSM skeletons) and the buttress raster. It is a guard against the obvious
+mistake rather than a guarantee — nothing tracks what is already held, and a
+machine can still be pushed over by many smaller pieces. Where the check
+cannot be reached in time (a core routine with no way to report), the same
+message is raised as an error rather than the process dying silently.

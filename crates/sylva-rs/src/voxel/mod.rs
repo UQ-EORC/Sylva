@@ -452,6 +452,17 @@ impl Voxelizer {
             }
             shape[k] = ((hi[k] - lo[k]) / params.voxel_size).ceil().max(1.0) as usize;
         }
+        // A grid is nx*ny*nz cells whatever the cloud holds: a plot asked for
+        // at a centimetre is tens of billions of them.
+        let cells = shape.iter().map(|&n| n as u128).product::<u128>();
+        let per_cell = std::mem::size_of::<traverse::Cell>() as u64
+            + (params.subvoxel_split.max(1).pow(3) as u64);
+        crate::limits::check_cells(
+            cells,
+            per_cell,
+            &format!("a {} x {} x {} voxel grid at {} m", shape[0], shape[1], shape[2], params.voxel_size),
+            "a larger voxel, a smaller area, or splitting the plot into tiles",
+        )?;
         let ground_height = dtm.map(|dtm| {
             let mut g = Vec::with_capacity(shape[0] * shape[1]);
             for j in 0..shape[1] {
