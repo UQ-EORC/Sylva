@@ -14,12 +14,23 @@ from __future__ import annotations
 import argparse
 import csv
 import sys
+from pathlib import Path
 
 import numpy as np
 
 from . import __version__, canopy, filters, ground, io, progress, qsm, trees, voxels
 from .raster import Raster
 from .shots import Shots
+
+
+def _beside(path: str, suffix: str, ext: str | None = None) -> str:
+    """A path beside ``path``: its stem plus ``suffix``, and ``ext`` if given.
+
+    Every command writes next to its input unless told otherwise, so
+    ``sylva ground plot.laz`` writes ``plot_norm.laz`` in the same folder.
+    """
+    p = Path(path)
+    return str(p.with_name(p.stem + suffix + (ext if ext is not None else p.suffix)))
 
 
 def _cmd_info(args):
@@ -40,6 +51,7 @@ def _cmd_convert(args):
 
 
 def _cmd_ground(args):
+    args.output = args.output or _beside(args.input, "_norm")
     cloud = io.read(args.input)
     if args.method == "csf":
         cloud = ground.classify_ground_csf(cloud, cloth_resolution=args.resolution)
@@ -57,6 +69,9 @@ def _cmd_ground(args):
 
 
 def _cmd_trees(args):
+    args.output = args.output or _beside(args.input, "_trees", ".csv")
+    if args.segment == "":                       # --segment with no path
+        args.segment = _beside(args.input, "_segmented")
     cloud = io.read(args.input)
     found = trees.detect_stems(cloud, min_radius=args.min_dbh / 2)
     labels = trees.segment_trees(cloud, found)
@@ -66,17 +81,19 @@ def _cmd_trees(args):
     if args.segment:
         io.write(cloud.with_attrs(tree_id=labels.astype(np.int32)), args.segment)
     rows = [{**t.as_dict(), **crowns.get(t.tree_id, {})} for t in found]
-    out = open(args.output, "w", newline="") if args.output else sys.stdout
+    to_file = args.output != "-"
+    out = open(args.output, "w", newline="") if to_file else sys.stdout
     if rows:
         w = csv.DictWriter(out, fieldnames=list(rows[0]))
         w.writeheader()
         w.writerows(rows)
-    if args.output:
+    if to_file:
         out.close()
         print(f"{len(found)} trees -> {args.output}")
 
 
 def _cmd_chm(args):
+    args.output = args.output or _beside(args.input, "_chm", ".asc")
     cloud = io.read(args.input)
     chm = ground.make_chm(cloud, resolution=args.resolution)
     if args.output.lower().endswith((".tif", ".tiff")):
@@ -96,6 +113,7 @@ def _cmd_pad(args):
 
 
 def _cmd_qsm(args):
+    args.output = args.output or _beside(args.input, "_qsm", ".csv")
     cloud = io.read(args.input)
     model = qsm.build_qsm(cloud, bin_length=args.bin_length)
     model.to_csv(args.output)
@@ -104,6 +122,11 @@ def _cmd_qsm(args):
 
 
 def _cmd_qsm_plot(args):
+    args.output = args.output or _beside(args.input, "_trees", ".csv")
+    if args.cylinders == "":                     # --cylinders with no path
+        args.cylinders = _beside(args.input, "_cylinders", "")
+    if args.meshes == "":
+        args.meshes = _beside(args.input, "_meshes", "")
     cloud = io.read(args.input)
     if args.tree_attr not in cloud.attrs:
         raise KeyError(f"{args.input} has no '{args.tree_attr}' attribute; "
@@ -125,12 +148,14 @@ def _cmd_qsm_plot(args):
 
 
 def _cmd_shots(args):
+    args.output = args.output or _beside(args.input, "", ".parquet")
     shots = Shots.from_ray_cloud(io.read(args.input))
     shots.save(args.output, double=args.double)
     print(f"{shots.n_shots} pulses, {shots.n_echoes} echoes -> {args.output}")
 
 
 def _cmd_voxel(args):
+    args.output = args.output or _beside(args.input, "", ".vox")
     # Shots files are streamed; ray clouds have to be loaded whole.
     streamed = args.input.lower().endswith(".parquet")
     shots = args.input if streamed else Shots.from_ray_cloud(io.read(args.input))
@@ -180,7 +205,9 @@ def main(argv=None):
 
     s = sub.add_parser("ground", help="classify ground, build DTM and add height attribute", **fmt)
     s.add_argument("input", help="point cloud, z up")
-    s.add_argument("output", help="cloud with classification (2 = ground) and height attributes")
+    s.add_argument("output", nargs="?", default=None,
+                   help="cloud with classification (2 = ground) and height attributes "
+                        "(default: <input>_norm beside the input)")
     s.add_argument("--method", choices=["csf", "pmf"], default="csf",
                    help="cloth simulation or progressive morphological filter")
     s.add_argument("--resolution", type=float, default=0.5,
@@ -191,17 +218,21 @@ def main(argv=None):
     s = sub.add_parser("trees", help="detect stems and DBH from a height-normalised cloud", **fmt)
     s.add_argument("input", help="cloud with a height attribute (from `sylva ground`)")
     s.add_argument("-o", "--output",
-                   help="CSV of trees, one row each with crown metrics (default: stdout)")
+                   help="CSV of trees, one row each with crown metrics "
+                        "(default: <input>_trees.csv beside the input; - for stdout)")
     s.add_argument("--min-dbh", type=float, default=0.05,
                    help="smallest stem diameter detected (m)")
     s.add_argument("--min-height", type=float, default=3.0,
                    help="drop candidates whose segment is lower than this (m)")
-    s.add_argument("--segment", help="write a cloud with tree_id attribute to this path")
+    s.add_argument("--segment", nargs="?", const="", default=None, metavar="PATH",
+                   help="write a cloud with a tree_id attribute (bare flag: <input>_segmented "
+                        "beside the input)")
     s.set_defaults(func=_cmd_trees)
 
     s = sub.add_parser("chm", help="canopy height model from a height-normalised cloud", **fmt)
     s.add_argument("input", help="cloud with a height attribute")
-    s.add_argument("output", help=".tif (needs rasterio) or .asc")
+    s.add_argument("output", nargs="?", default=None,
+                   help=".tif (needs rasterio) or .asc (default: <input>_chm.asc beside the input)")
     s.add_argument("--resolution", type=float, default=0.5, help="cell size (m)")
     s.set_defaults(func=_cmd_chm)
 
@@ -213,18 +244,22 @@ def main(argv=None):
 
     s = sub.add_parser("qsm", help="build a cylinder model of a single tree", **fmt)
     s.add_argument("input", help="one tree's wood points")
-    s.add_argument("output", help="CSV of cylinders")
+    s.add_argument("output", nargs="?", default=None,
+                   help="CSV of cylinders (default: <input>_qsm.csv beside the input)")
     s.add_argument("--bin-length", type=float, default=0.3, help="geodesic shell width (m)")
     s.set_defaults(func=_cmd_qsm)
 
     s = sub.add_parser("qsm-plot", help="build a QSM for every tree of a segmented cloud", **fmt)
     s.add_argument("input", help="height-normalised cloud with a tree id attribute")
-    s.add_argument("output", help="CSV, one row per tree")
+    s.add_argument("output", nargs="?", default=None,
+                   help="CSV, one row per tree (default: <input>_trees.csv beside the input)")
     s.add_argument("--tree-attr", default="tree_id", help="attribute holding the tree id")
-    s.add_argument("--cylinders", default=None, metavar="DIR",
-                   help="also write one cylinder CSV per tree into this directory")
-    s.add_argument("--meshes", default=None, metavar="DIR",
-                   help="also write one surface mesh per tree into this directory")
+    s.add_argument("--cylinders", nargs="?", const="", default=None, metavar="DIR",
+                   help="also write one cylinder CSV per tree (bare flag: <input>_cylinders "
+                        "beside the input)")
+    s.add_argument("--meshes", nargs="?", const="", default=None, metavar="DIR",
+                   help="also write a surface mesh per tree (bare flag: <input>_meshes "
+                        "beside the input)")
     s.add_argument("--mesh-format", choices=("ply", "obj"), default="ply",
                    help="format for --meshes")
     s.add_argument("--voxel", type=float, default=0.01, help="thin each tree to this spacing (m)")
@@ -238,13 +273,15 @@ def main(argv=None):
 
     s = sub.add_parser("shots", help="convert a ray cloud to a sylva shots file (.parquet)", **fmt)
     s.add_argument("input", help="ray cloud with sx,sy,sz or nx,ny,nz attributes")
-    s.add_argument("output", help="shots file (.parquet)")
+    s.add_argument("output", nargs="?", default=None,
+                   help="shots file (default: <input>.parquet beside the input)")
     s.add_argument("--double", action="store_true", help="double-precision angles and ranges")
     s.set_defaults(func=_cmd_shots)
 
     s = sub.add_parser("voxel", help="ray-traced voxel grid (AMAPVox-style) from pulse data", **fmt)
     s.add_argument("input", help="shots file (.parquet, streamed) or ray cloud")
-    s.add_argument("output", help=".vox (AMAPVox) or .txt")
+    s.add_argument("output", nargs="?", default=None,
+                   help=".vox (AMAPVox) or .txt (default: <input>.vox beside the input)")
     s.add_argument("--voxel", type=float, default=0.1, help="voxel size (m)")
     s.add_argument("--bounds", type=float, nargs=6, metavar=("X0", "Y0", "Z0", "X1", "Y1", "Z1"),
                    help="grid corners (default: extent of the echoes)")

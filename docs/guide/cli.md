@@ -19,6 +19,32 @@ sylva qsm tree.ply tree_qsm.csv
 sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/ --meshes meshes/
 ```
 
+## Where the outputs go
+
+Every output is optional: leave it out and the command writes beside its
+input, under the input's own name. A whole plot, without naming a single
+output path:
+
+```bash
+sylva ground plot.laz                     # -> plot_norm.laz
+sylva trees plot_norm.laz --segment       # -> plot_norm_trees.csv, plot_norm_segmented.laz
+sylva qsm-plot plot_norm_segmented.laz --cylinders --meshes
+                                          # -> ..._trees.csv, ..._cylinders/, ..._meshes/
+```
+
+| Command | Default output |
+|---|---|
+| `ground` | `<input>_norm<ext>`, plus `--dtm PATH` if asked |
+| `trees` | `<input>_trees.csv`; `--segment` alone gives `<input>_segmented<ext>`; `-o -` writes stdout |
+| `chm` | `<input>_chm.asc` |
+| `qsm` | `<input>_qsm.csv` |
+| `qsm-plot` | `<input>_trees.csv`; `--cylinders` / `--meshes` alone give `<input>_cylinders/` and `<input>_meshes/` |
+| `shots` | `<input>.parquet` |
+| `voxel` | `<input>.vox` |
+
+`convert` is the exception: its format comes from the output extension, so it
+needs one. `pad` prints to stdout by design.
+
 `crates/sylva-cli` builds a standalone Rust binary with the same commands
 and no Python dependency (`cargo install --path crates/sylva-cli`). Its
 options can differ in detail, so check its `--help`.
