@@ -458,3 +458,29 @@ def test_contiguous_mesh_is_closed_and_smaller():
     assert oriented(f0) and oriented(f1)
     assert enclosed(v1, f1) == pytest.approx(model.total_volume, rel=0.1)
     assert enclosed(v0, f0) == pytest.approx(model.total_volume, rel=0.1)
+
+
+def test_taper_model_radii_follow_one_taper_per_tree():
+    """raycloudtools' model: radius = tree height x taper x a topological scale."""
+    rng = np.random.default_rng(5)
+    from conftest import make_stem
+
+    stem = make_stem(rng, 0.0, 0.0, 0.15, 6.0, density=3000)
+    n = 1500
+    t = rng.uniform(0, 2.0, n)
+    th = rng.uniform(0, 2 * np.pi, n)
+    r = 0.05 + rng.normal(0, 0.002, n)
+    branch = np.column_stack([0.15 + t, r * np.cos(th), 4.0 + 0.3 * t + r * np.sin(th)])
+    cloud = PointCloud(np.vstack([stem, branch]))
+
+    m = qsm.build_qsm(cloud, base_xy=(0.0, 0.0), taper_model=True)
+    rad, order = m.column("radius"), m.column("branch_order")
+    assert m.total_volume > 0 and len(m) > 20
+    # Radius falls from stem to branch, and never rises along the stem.
+    assert np.median(rad[order == 0]) > np.median(rad[order >= 1])
+    stem_r = rad[order == 0][np.argsort(m.start[order == 0][:, 2])]
+    assert (np.diff(stem_r) <= 1e-9).all()      # area is conserved at every fork
+    # The prior takes over when a tree is given nothing to measure.
+    thin = filters.voxel_downsample(cloud, 0.25)
+    sparse = qsm.build_qsm(thin, base_xy=(0.0, 0.0), taper_model=True, global_taper=0.02)
+    assert 0.0 < sparse.total_volume < 10 * m.total_volume

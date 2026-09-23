@@ -356,6 +356,14 @@ pub struct QsmParams {
     /// near points, so foliage pulls the radius down rather than up, and
     /// nothing has to lie within a band for it to work. 0 uses the circle fit.
     pub radius_power: f64,
+    /// Take every radius from one taper per tree instead of the section fits,
+    /// after raycloudtools: `r = tree_height * taper * radius_scale`.
+    pub taper_model: bool,
+    /// Taper (radius per unit length) the per-tree taper is shrunk toward.
+    pub global_taper: f64,
+    /// 1 pools one taper for the whole cloud, 0 keeps each tree's own; the
+    /// prior's weight goes as the cube of this.
+    pub global_taper_factor: f64,
     /// Spacing (m) at or above which the power mean takes over from the circle
     /// fit, when `radius_power` is 0 and scaling is on. Circle fits are the
     /// better of the two while the points are fine enough to fit circles to,
@@ -389,7 +397,7 @@ pub struct QsmParams {
 
 impl Default for QsmParams {
     fn default() -> Self {
-        QsmParams { k: 15, max_edge: 1.0, bin_length: 0.1, min_points: 1, ransac_threshold: 0.02, max_radius: 1.0, taper_limit: 1.1, max_rmse: 0.03, smooth_steps: 10, apex_radius: 0.0025, min_arc_deg: 90.0, min_inlier_fraction: 0.05, prune_points: 5, fit_min_points: 50, crop_length: 0.0, butt_height: 0.6, relative_tolerance: 0.08, base_radius: 0.0, allometry_tolerance: 0.3, buttress_equivalent_area: true, buttress_max_inlier_fraction: 0.3, pipe_slack: 1.2, branch_min_inlier_fraction: 0.3, spacing_scale: 1.5, radius_power: 0.0, power_above_spacing: 0.025, sensor_noise: 0.02, cluster_eps: 0.1, centre_fit_points: 100, radius_smooth_steps: 15, butt_swell: 1.1, butt_vertical_run: 4, butt_max_lean_deg: 50.0, chain_max_d: 0.1, fourier_min_radius: 0.15 }
+        QsmParams { k: 15, max_edge: 1.0, bin_length: 0.1, min_points: 1, ransac_threshold: 0.02, max_radius: 1.0, taper_limit: 1.1, max_rmse: 0.03, smooth_steps: 10, apex_radius: 0.0025, min_arc_deg: 90.0, min_inlier_fraction: 0.05, prune_points: 5, fit_min_points: 50, crop_length: 0.0, butt_height: 0.6, relative_tolerance: 0.08, base_radius: 0.0, allometry_tolerance: 0.3, buttress_equivalent_area: true, buttress_max_inlier_fraction: 0.3, pipe_slack: 1.2, branch_min_inlier_fraction: 0.3, taper_model: false, global_taper: 0.012, global_taper_factor: 0.3, spacing_scale: 1.5, radius_power: 0.0, power_above_spacing: 0.025, sensor_noise: 0.02, cluster_eps: 0.1, centre_fit_points: 100, radius_smooth_steps: 15, butt_swell: 1.1, butt_vertical_run: 4, butt_max_lean_deg: 50.0, chain_max_d: 0.1, fourier_min_radius: 0.15 }
     }
 }
 
@@ -1101,6 +1109,9 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
             }
         }
     }
+    if p.taper_model {
+        radius = taper_model_radii(&fits, &children, &roots, &topo, &centre, &sub_len, p);
+    }
     for r in &mut radius {
         if !r.is_finite() {
             *r = p.apex_radius;
@@ -1434,6 +1445,122 @@ fn isotonic_fill(chain: &[usize], radius: &mut [f64], weight: &[f64], apex_radiu
 /// Both failures are silent and both inflate. Here the band, the shell length
 /// and the count are set from the cloud's own median spacing, and none of them
 /// is ever made tighter than asked for.
+/// Every radius from one taper per tree, after raycloudtools
+/// (`raytrees.cpp:372`): `r = tree_height * meanTaper * radius_scale`.
+///
+/// Nothing a single section measures becomes a radius. A measurement is
+/// turned into an observation of the tree's taper, `r / (scale * H)`, and
+/// pooled with weight `(scale * H)^3 * confidence`, so the trunk decides the
+/// taper and a twig cannot move it. `radius_scale` carries that taper down
+/// the tree by topology alone: at a fork the children divide the parent's
+/// cross-section by `d_i / sqrt(sum d_j^2)` (Leonardo's rule, with `d` the
+/// length still to run), so area is conserved and radius falls monotonically
+/// to the tips. A tree with little measured weight falls back to
+/// `global_taper`, which is what makes the result insensitive to how sparse
+/// the cloud is.
+#[allow(clippy::too_many_arguments)]
+fn taper_model_radii(
+    fits: &[Option<(f64, usize, f64, f64)>],
+    children: &[Vec<usize>],
+    roots: &[usize],
+    topo: &[usize],
+    centre: &[Point],
+    sub_len: &[f64],
+    p: &QsmParams,
+) -> Vec<f64> {
+    let n = fits.len();
+    let mut root_of = vec![usize::MAX; n];
+    let mut scale = vec![1.0f64; n];
+    for &r in roots {
+        root_of[r] = r;
+    }
+    for &s in topo {
+        if root_of[s] == usize::MAX {
+            continue;
+        }
+        let kids = &children[s];
+        if kids.len() == 1 {
+            root_of[kids[0]] = root_of[s];
+            scale[kids[0]] = scale[s];
+        } else if kids.len() > 1 {
+            // Each child keeps the share of the parent's area that its
+            // remaining length claims.
+            let d: Vec<f64> = kids.iter().map(|&c| (sub_len[c] + 1e-6).max(1e-6)).collect();
+            let total = d.iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-9);
+            for (&c, di) in kids.iter().zip(&d) {
+                root_of[c] = root_of[s];
+                scale[c] = scale[s] * di / total;
+            }
+        }
+    }
+    // Tree height: the tallest node above each root.
+    let mut height: Vec<f64> = vec![0.01; n];
+    for &s in topo {
+        let r = root_of[s];
+        if r != usize::MAX {
+            height[r] = height[r].max(centre[s][2] - centre[r][2]);
+        }
+    }
+    // Pool the taper observations per tree, and over the whole cloud.
+    let (mut sum_t, mut sum_w, mut sum_w2) = (vec![0.0; n], vec![0.0; n], vec![0.0; n]);
+    let (mut forest_t, mut forest_w, mut forest_w2) = (0.0f64, 0.0f64, 0.0f64);
+    for s in 0..n {
+        let (r, _, _, conf) = match fits[s] {
+            Some(f) => f,
+            None => continue,
+        };
+        let root = root_of[s];
+        if root == usize::MAX {
+            continue;
+        }
+        let h = height[root].max(0.01);
+        let l = scale[s] * h;
+        let w = l * l * l * conf;
+        if !(w > 0.0) {
+            continue;
+        }
+        // Normalise the measurement to the trunk it implies before pooling:
+        // a twig of radius r at scale q is an observation of r / (q * H).
+        let obs = r / (scale[s] * h).max(1e-9);
+        sum_t[root] += obs * w;
+        sum_w[root] += w;
+        sum_w2[root] += w * w;
+        forest_t += obs * w;
+        forest_w += w;
+        forest_w2 += w * w;
+    }
+    let global = if p.global_taper > 0.0 {
+        p.global_taper
+    } else if forest_w > 0.0 {
+        forest_t / forest_w
+    } else {
+        0.012
+    };
+    let blend = p.global_taper_factor.powi(3).clamp(0.0, 1.0);
+    let forest_n = if forest_w > 0.0 { forest_w2 / forest_w } else { 0.0 };
+    let mut taper = vec![global; n];
+    for &root in roots {
+        let w = sum_w[root];
+        let own = if w > 0.0 { sum_t[root] / w } else { global };
+        let prior_w = forest_n * blend;
+        let own_w = w * (1.0 - blend);
+        taper[root] = if prior_w + own_w > 0.0 {
+            (global * prior_w + own * own_w) / (prior_w + own_w)
+        } else {
+            global
+        };
+    }
+    (0..n)
+        .map(|s| {
+            let root = root_of[s];
+            if root == usize::MAX {
+                return p.apex_radius;
+            }
+            (height[root].max(0.01) * taper[root] * scale[s]).clamp(p.apex_radius, p.max_radius)
+        })
+        .collect()
+}
+
 /// Radius of a cross-section from a power mean of the distances to its axis,
 /// after raycloudtools (`raytrees.cpp`, `power = 0.25`).
 ///

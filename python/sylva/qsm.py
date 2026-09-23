@@ -881,7 +881,9 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
               relative_tolerance: float = 0.08, base_radius: float = 0.0,
               allometry_tolerance: float = 0.3, buttress_equivalent_area: bool = True,
               buttress_max_inlier_fraction: float = 0.3, pipe_slack: float = 1.2,
-              branch_min_inlier_fraction: float = 0.3, spacing_scale: float = 1.5,
+              branch_min_inlier_fraction: float = 0.3, taper_model: bool = False,
+              global_taper: float = 0.012, global_taper_factor: float = 0.3,
+              spacing_scale: float = 1.5,
               radius_power: float = 0.0, power_above_spacing: float = 0.025,
               sensor_noise: float = 0.02, cluster_eps: float = 0.1,
               centre_fit_points: int = 100, radius_smooth_steps: int = 15,
@@ -989,7 +991,8 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
                         prune_points, fit_min_points, crop_length, butt_height,
                         relative_tolerance, base_radius, allometry_tolerance,
                         buttress_equivalent_area, buttress_max_inlier_fraction, pipe_slack,
-                        branch_min_inlier_fraction, spacing_scale, radius_power, power_above_spacing, sensor_noise,
+                        branch_min_inlier_fraction, taper_model, global_taper, global_taper_factor,
+                        spacing_scale, radius_power, power_above_spacing, sensor_noise,
                         cluster_eps, centre_fit_points,
                         radius_smooth_steps, butt_swell, butt_vertical_run, butt_max_lean_deg, chain_max_d, fourier_min_radius)
     return QSM(d["cylinders"])
