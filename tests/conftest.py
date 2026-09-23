@@ -27,6 +27,11 @@ def make_crown(rng, cx, cy, zc, radius, n=3000):
 
 @pytest.fixture(scope="session")
 def rng():
+    """Shared across the session, so the fixtures below draw from it in order.
+
+    A test that draws from it shifts every later test's numbers: make your
+    own ``np.random.default_rng(seed)`` in a test that needs a lot of data.
+    """
     return np.random.default_rng(42)
 
 

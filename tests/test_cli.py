@@ -28,8 +28,12 @@ def test_qsm_writes_beside_its_input(single_tree, tmp_path, capsys):
     assert (tmp_path / "elsewhere.csv").exists()
 
 
-def _two_tree_plot(rng):
+def _two_tree_plot():
+    """Its own generator: the rng fixture is session-scoped, so drawing from
+    it here would shift every later test's random numbers."""
     from conftest import make_stem
+
+    rng = np.random.default_rng(7)
 
     parts, ids = [], []
     for tid, x in enumerate([0.0, 6.0], start=1):
@@ -41,9 +45,9 @@ def _two_tree_plot(rng):
                             "tree_id": np.concatenate(ids).astype(np.int32)})
 
 
-def test_qsm_plot_defaults_its_outputs(rng, tmp_path, capsys):
+def test_qsm_plot_defaults_its_outputs(tmp_path, capsys):
     src = tmp_path / "plot.laz"
-    io.write(_two_tree_plot(rng), src)
+    io.write(_two_tree_plot(), src)
     cli.main(["qsm-plot", str(src), "--no-wood", "--cylinders", "--meshes"])
     assert (tmp_path / "plot_trees.csv").exists()
     assert sorted(p.name for p in (tmp_path / "plot_cylinders").glob("*")) == ["tree1.csv", "tree2.csv"]
@@ -58,9 +62,9 @@ def test_qsm_plot_says_so_without_tree_ids(single_tree, tmp_path):
         cli.main(["qsm-plot", str(src)])
 
 
-def test_trees_can_still_write_to_stdout(rng, tmp_path, capsys):
+def test_trees_can_still_write_to_stdout(tmp_path, capsys):
     src = tmp_path / "plot.laz"
-    io.write(_two_tree_plot(rng), src)
+    io.write(_two_tree_plot(), src)
     cli.main(["trees", str(src), "-o", "-"])
     out = capsys.readouterr().out
     assert out.startswith("tree_id,") and "\n" in out
