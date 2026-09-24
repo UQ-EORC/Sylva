@@ -50,6 +50,15 @@ docker build -t sylva .
 docker run --rm -v "$PWD":/data sylva trees plot_norm.laz
 ```
 
+Each push to `main` also publishes the image to GitHub's container registry
+as `ghcr.io/uq-eorc/sylva` (`:latest`, and `:X.Y.Z` for releases). It is
+private like the repository, so `docker login ghcr.io` with a GitHub token
+that can read packages first:
+
+```bash
+docker run --rm -v "$PWD":/data ghcr.io/uq-eorc/sylva trees plot_norm.laz
+```
+
 RIEGL does not allow RiVLib to be redistributed, so it isn't in the image.
 Mount your own copy at `/opt/rivlib` to read `.rxp`:
 

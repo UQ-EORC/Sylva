@@ -1,0 +1,69 @@
+name: container
+
+# The Dockerfile's runtime image -> ghcr.io/uq-eorc/sylva (a package of this
+# repository, private while the repository is).
+#   main          :latest, :main, :sha-<short>
+#   tag vX.Y.Z    :X.Y.Z, :X.Y
+#   docker pull ghcr.io/uq-eorc/sylva      (after `docker login ghcr.io`)
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - Cargo.toml
+      - Cargo.lock
+      - pyproject.toml
+      - README.md
+      - "crates/**"
+      - "python/**"
+      - .github/workflows/container.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}   # lower-cased by the action
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+          labels: |
+            org.opencontainers.image.title=Sylva
+            org.opencontainers.image.description=Terrestrial laser scanning for forest ecology: the sylva command. Mount RiVLib at /opt/rivlib to read .rxp.
+            org.opencontainers.image.licenses=GPL-3.0-or-later
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test
+        run: docker run --rm ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA::7} --version
