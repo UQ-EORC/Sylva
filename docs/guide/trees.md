@@ -88,6 +88,16 @@ paths.
 closer than `merge_radius`. In conifer stands with many low branches,
 `min_quality_short=0.15` removes the remaining false stems.
 
+`basal_area` sums the stems' cross-sections at breast height, in m²/ha.
+Keep only the stems inside the plot so that they and `area` cover the same
+ground; `min_dbh` sets an inventory threshold:
+
+```python
+radius = 50.0
+in_plot = [t for t in stems if np.hypot(t.x, t.y) <= radius]
+ba = trees.basal_area(in_plot, np.pi * radius**2, min_dbh=0.1)   # m²/ha
+```
+
 Against manually segmented plots (F1 at IoU ≥ 0.5; see
 [Benchmarks](../benchmarks/trees.md)):
 

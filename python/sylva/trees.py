@@ -14,7 +14,8 @@ from . import _core
 from .pointcloud import PointCloud
 
 __all__ = [
-    "Tree", "fit_circle", "fit_circle_ransac", "detect_stems", "prune_trees", "dbh_profile",
+    "Tree", "fit_circle", "fit_circle_ransac", "detect_stems", "prune_trees", "basal_area",
+    "dbh_profile",
     "merge_branches", "segment_trees", "tree_heights", "crown_metrics", "crown_metrics_all",
     "convex_hull_area", "crown_shape", "detect_buttress",
 ]
@@ -266,6 +267,43 @@ def prune_trees(trees: list[Tree], labels: np.ndarray, min_height: float = 3.0,
         out.append(Tree(new_id[t.tree_id], t.x, t.y, t.dbh, t.height, n, t.inlier_fraction,
                         t.n_slices, t.rmse, t.lean_deg, t.quality, dict(t.extra)))
     return out, out_labels
+
+
+def basal_area(trees, area: float, min_dbh: float = 0.0) -> float:
+    """Basal area of a plot (m²/ha): the stems' cross-sections at breast height.
+
+    ``sum(pi * (dbh / 2) ** 2) / area * 1e4`` over stems with ``dbh >=
+    min_dbh``; stems without a DBH (NaN) are left out. Restrict ``trees`` to
+    the plot first (e.g. stems within the plot radius) so that stems and
+    ``area`` cover the same ground.
+
+    Parameters
+    ----------
+    trees
+        Trees (DBH from :func:`detect_stems`, usually after
+        :func:`prune_trees`), or their DBHs (m) as an array.
+    area
+        Plot area (m²), e.g. ``np.pi * radius**2`` for a circular plot.
+    min_dbh
+        Smallest DBH counted (m); 0.1 is a common inventory threshold.
+
+    Returns
+    -------
+    float
+        Basal area in m²/ha.
+
+    Examples
+    --------
+    >>> radius = 50.0
+    >>> in_plot = [t for t in stems if np.hypot(t.x, t.y) <= radius]
+    >>> trees.basal_area(in_plot, np.pi * radius**2, min_dbh=0.1)
+    """
+    if not area > 0:
+        raise ValueError(f"area must be positive, got {area}")
+    dbh = np.array([getattr(t, "dbh", t) for t in np.ravel(np.asarray(trees, dtype=object))],
+                   dtype=float)
+    dbh = dbh[np.isfinite(dbh) & (dbh >= min_dbh)]
+    return float(np.sum(np.pi * (dbh / 2) ** 2) / area * 1e4)
 
 
 def dbh_profile(cloud: PointCloud, center_xy, height_attr: str = "height",

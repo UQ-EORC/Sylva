@@ -148,3 +148,17 @@ def test_detect_buttress(rng):
     round_ = trees.detect_buttress(_base(rng, False, True), base_xy=(0, 0))
     assert not round_["buttressed"], round_
     assert abs(round_["stem_radius"] - 0.25) < 0.03
+
+
+def test_basal_area():
+    stems = [trees.Tree(1, 0, 0, dbh=0.2), trees.Tree(2, 1, 0, dbh=0.4),
+             trees.Tree(3, 2, 0, dbh=0.05), trees.Tree(4, 3, 0)]  # NaN DBH is left out
+    area = 1000.0
+    expected = np.pi * (0.1**2 + 0.2**2 + 0.025**2) / area * 1e4
+    assert trees.basal_area(stems, area) == pytest.approx(expected)
+    assert trees.basal_area(stems, area, min_dbh=0.1) == pytest.approx(
+        np.pi * (0.1**2 + 0.2**2) / area * 1e4)
+    assert trees.basal_area(np.array([0.2, 0.4, 0.05]), area) == pytest.approx(expected)
+    assert trees.basal_area([], area) == 0.0
+    with pytest.raises(ValueError):
+        trees.basal_area(stems, 0.0)
