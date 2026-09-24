@@ -36,7 +36,7 @@ positions (36 on a 20 m grid inside the plot, 28 on a ring around it).
 |---|---|---|
 | 1. Project | `read_riscan_project` | scan positions, SOPs, scan pattern |
 | 2. Read | `io.read_rxp_shots`, `Shots.fill_missing`, `filters.voxel_downsample` | 2 cm plot cloud, pulse file with misses |
-| 3. Registration | `coreg.prepare_scan`, `coreg.register_scans` | the ring registered into the inner grid, checked on the ground |
+| 3. Registration | `coreg.prepare_scan`, `coreg.coregister_prepared` | the ring registered into the inner grid, checked on the ground |
 | 4. Ground | `ground.classify_ground_csf`, `make_dtm`, `normalize_height`, `make_chm` | DTM, CHM, heights |
 | 5. Trees | `trees.detect_stems`, `merge_branches`, `segment_trees`, `prune_trees`, `crown_metrics_all` | tree table, segmented cloud |
 | 6. Scan quality | `quality.stem_noise` | range noise, per-scan horizontal registration |
@@ -194,10 +194,11 @@ above that DTM. A scan registered with the others sits a few centimetres
 above it (grass and litter)."""),
     """t0 = time.time()
 fixed = {{k: np.eye(4) for k in np.flatnonzero(in_plot)}}
-reg = coreg.register_scans(features, positions=origins, fixed=fixed, priors=[np.eye(4)] * len(positions),
-                           max_pair_distance=40.0, workers=8, log=None)
+reg = coreg.coregister_prepared(features, coreg.CoregConfig(max_pair_distance=40.0, workers=8, verbose=False),
+                                approximate_positions=origins, fixed=fixed, priors=[np.eye(4)] * len(positions))
 corr = reg.poses                                  # correction applied on top of each SOP
-print(f"{{reg.registered.sum()}} of {{len(positions)}} scans registered in {{time.time() - t0:.0f}} s; "
+registered = np.asarray(reg.registered)
+print(f"{{registered.sum()}} of {{len(positions)}} scans registered in {{time.time() - t0:.0f}} s; "
       f"{{sum(p.success for p in reg.pairs)}} accepted pairs")
 ring = pd.DataFrame({{
     "scan": [positions[k].name for k in np.flatnonzero(~in_plot)],
@@ -228,7 +229,7 @@ def ground_offset(xyz, origin):
 
 
 before = np.array([ground_offset(c5.xyz[sid == k], origins[k]) for k in range(len(positions))])
-after = np.array([ground_offset(coreg._transform(corr[k], c5.xyz[sid == k]), features[k].location(corr[k]))
+after = np.array([ground_offset(coreg.transform_points(corr[k], c5.xyz[sid == k]), features[k].location(corr[k]))
                   for k in range(len(positions))])
 del c5
 print(f"ring scans: {{np.nanmin(before[~in_plot]):+.2f}} to {{np.nanmax(before[~in_plot]):+.2f}} m before, "
@@ -245,18 +246,18 @@ fig.colorbar(sc_, ax=axes, label="m", shrink=0.8);""",
 has to be read again. With the ring left as delivered, the DTM stepped down
 by metres in wedges behind the misregistered positions, and ghost stems
 appeared at the plot edge. From here on all 64 scans are used."""),
-    """use = reg.registered
+    """use = registered
 for k in range(len(positions)):
     if use[k] and not np.allclose(corr[k], np.eye(4)):
         m = cloud.attrs["scan_id"] == k
-        cloud.xyz[m] = coreg._transform(corr[k], cloud.xyz[m])
+        cloud.xyz[m] = coreg.transform_points(corr[k], cloud.xyz[m])
 cloud = cloud[use[cloud.attrs["scan_id"]]]
 start = np.r_[0, np.cumsum(ray_counts)]
 origin, direction = shots.origin.copy(), shots.direction.copy()
 keep = np.zeros(shots.n_shots, bool)
 for k in np.flatnonzero(use):
     s_, e_ = start[k], start[k + 1]
-    origin[s_:e_] = coreg._transform(corr[k], origin[s_:e_])
+    origin[s_:e_] = coreg.transform_points(corr[k], origin[s_:e_])
     direction[s_:e_] = direction[s_:e_] @ corr[k][:3, :3].T
     keep[s_:e_] = True
 shots = sylva.Shots(origin, direction, shots.echo_start, shots.echo_count, shots.echo_range).subset(keep)

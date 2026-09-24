@@ -180,6 +180,12 @@ pub fn statistical_outlier_removal(cloud: &PointCloud, k: usize, std_ratio: f64)
 }
 
 /// Radius outlier removal mask: keep points with at least `min_neighbors` others within `radius`.
+/// Number of points within `radius` of every point, itself included.
+pub fn count_within(points: &[Point], radius: f64) -> Vec<usize> {
+    let tree = KdTree::new(points);
+    points.par_iter().map(|p| tree.count_within(p, radius)).collect()
+}
+
 pub fn radius_outlier_mask(points: &[Point], radius: f64, min_neighbors: usize) -> Vec<bool> {
     let tree = KdTree::new(points);
     points.par_iter().map(|p| tree.count_within(p, radius).saturating_sub(1) >= min_neighbors).collect()

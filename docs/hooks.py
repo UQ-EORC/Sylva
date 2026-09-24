@@ -36,11 +36,18 @@ def _index(src: Path) -> str:
     for name, page in PAGES.items():
         mod = pkg[name]
         rows = []
-        for member in mod.members.values():
+        # A package (sylva.coreg) is indexed through its public submodules.
+        if mod.is_package:
+            modules = [(f"{name}.{sub}", m) for sub, m in mod.modules.items()
+                       if not sub.startswith("_")]
+        else:
+            modules = [(name, mod)]
+        members = [(where, member) for where, m in modules for member in m.members.values()]
+        for where, member in members:
             kind = member.kind.value
             if member.is_alias or member.name.startswith("_") or kind not in ("class", "function"):
                 continue
-            path = f"sylva.{name}.{member.name}"
+            path = f"sylva.{where}.{member.name}"
             rows.append(f"| [`{member.name}`]({page}#{path}) | {kind} | {_summary(member)} |")
             if kind == "class":
                 for sub in member.members.values():

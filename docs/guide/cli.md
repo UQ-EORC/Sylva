@@ -17,6 +17,7 @@ sylva shots rays.laz plot.parquet                  # ray cloud -> shots file
 sylva voxel plot.parquet plot.vox --voxel 0.25 --ground-class 2 --laser VZ-400 --attenuation fpl ppl
 sylva qsm tree.ply tree_qsm.csv
 sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/ --meshes meshes/
+sylva coreg survey.PROJ -o survey_coreg/ --merged survey.laz
 ```
 
 ## Where the outputs go
@@ -41,6 +42,7 @@ sylva qsm-plot plot_norm_segmented.laz --cylinders --meshes
 | `qsm-plot` | `<input>_trees.csv`; `--cylinders` / `--meshes` alone give `<input>_cylinders/` and `<input>_meshes/` |
 | `shots` | `<input>.parquet` |
 | `voxel` | `<input>.vox` |
+| `coreg` | `<project>_coreg/` (`transforms.json`, `report.txt`, one `.dat` per scan) |
 
 `convert` is the exception: its format comes from the output extension, so it
 needs one. `pad` prints to stdout by design.
@@ -151,3 +153,38 @@ memory stays small) or a ray cloud.
 | `--write-empty` / `--filled-only` | off | also write unobserved voxels / only filled ones |
 
 See [Ray-traced voxels](voxels.md) for what the options do.
+
+### `coreg`
+
+`sylva coreg INPUT... [-o DIR] [options]`: registers the scan positions of a
+survey from the trees, with no targets or initial alignment
+(:mod:`sylva.coreg`, a port of tlsalign). `INPUT` is a RiSCAN PRO project or
+a scanner `.PROJ` directory, or a list of scan files. For a project, tilted
+scans are levelled with the scanner's attitude (or, failing that, the rotation
+of the SOP), the scanner's GNSS fixes skip pairs too far apart, and its
+reflective targets are used ahead of stems where scans share three.
+
+Writes `transforms.json` (a `world_from_scan` matrix per scan, with the
+quality of every pair), `report.txt` (every scan and pair, and the stem
+agreement per pair under the final poses: the median distance between the
+same tree seen from both scans, a check that needs no ground truth) and a
+`<scan>.dat` matrix per registered scan.
+
+| Option | Default | What |
+|---|---|---|
+| `--reference NAME` | first scan | scan whose frame is the world frame |
+| `--level` | `auto` | `attitude`, `sop` or `none`; `auto` is the attitude, else the SOP rotation |
+| `--sop-priors` | off | use the SOPs as priors: refuse results that move a scanner more than 5 m from its SOP, and place scans with too few stems from their SOP |
+| `--refine` | off | joint multi-view refinement of all poses |
+| `--no-reflectors` | off | ignore reflective targets |
+| `--max-pair-distance` | 40 | skip pairs further apart by GNSS (m) |
+| `--min-range`, `--max-range` | none | echo range bounds (m) |
+| `--min-deviation`, `--max-deviation` | none | pulse deviation bounds |
+| `--min-reflectance`, `--max-reflectance` | none | reflectance bounds (dB) |
+| `--min-amplitude`, `--max-amplitude` | none | amplitude bounds (dB) |
+| `--riscan-export-settings FILE` | none | bounds from a RiSCAN PRO export filter settings file (`attribute, min, max` per line); explicit bounds override it |
+| `--riscan-filter` | `none` | RiSCAN PRO's RXP import filter: `current` drops echoes within 0.5 m of the scanner (a current import, 99.7 % agreement); `legacy` also drops the weak, isolated echoes the older conversion discarded (a fifth to a third of a scan) |
+| `--trust-reflectors N` | 5 | accept a reflector match of at least N targets within 3 cm even when ICP fails its fitness test (scans far apart share targets before they share surface); 0 always asks ICP to agree, as tlsalign |
+| `--workers` | 0 | scans and pairs processed at once; 0 picks from cores and memory |
+| `--merged PATH` | none | also write the merged, registered cloud |
+| `--voxel` | 0.02 | thinning of the merged cloud (m) |

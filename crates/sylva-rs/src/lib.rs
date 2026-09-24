@@ -17,6 +17,9 @@
 pub mod canopy;
 pub mod cluster;
 pub mod coreg;
+pub mod coreg_ground;
+pub mod coreg_geometry;
+pub mod coreg_icp;
 pub mod error;
 pub mod filters;
 pub mod ground;

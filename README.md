@@ -13,6 +13,7 @@ numpy-friendly API (`import sylva`) and a `sylva` command.
 | `sylva.canopy` | voxel grids, contact-frequency PAD profiles, zenith-ring gap fraction, hinge/Miller LAI, ray-traced density grids from pulse data, Jupp gap-probability profiles with hinge / linear / weighted PAI, clumping index and canopy height |
 | `sylva.voxels` | AMAPVox-style ray-traced voxels (port of raycloudtools `rayvoxel`): echo-weighted free / potential path lengths, FPL / PPL / transmittance / Bailey attenuation, analytic or estimated leaf-angle `G`, PAD / LAD / WAD, occlusion, sub-voxel exploration, QSM wood volume, `.vox` export, occlusion profiles and per-tree sampling (is the top real?) |
 | `sylva.registration` | Kabsch, point-to-point / point-to-plane (trimmed) ICP, scan merging |
+| `sylva.coreg` | marker-free coregistration of scan positions from the trees (a port of tlsalign): terrain model, stem maps, global stem-map and reflector matching, robust point-to-plane ICP, pose graph with outlier rejection, recovery of stragglers, joint multi-view refinement, stem agreement report; tilted scans levelled with the scanner attitude; scanner `.PROJ` projects |
 | `sylva.qsm` | cylinder fitting, geodesic skeletonisation, cylinder QSMs with volumes and branch orders, `_trees.txt` export, tree metrics (branch table, taper, lean, sweep, crown, share of the model fitted to points) |
 | `sylva.leaves` | leaf / wood labels, leaf angle distribution, leaf area density from points or voxels, leaf meshes placed on a QSM |
 | `sylva.quality` | scan quality from stems: range noise with the stem shape removed, per-scan registration offsets, mixed-pixel tails |
@@ -57,6 +58,7 @@ grid = voxels.ray_voxelize(shots, 0.25, ground_class=2)  # ray-traced plant area
 ```bash
 sylva ground plot.laz plot_norm.laz --dtm dtm.asc
 sylva trees plot_norm.laz -o trees.csv --segment plot_trees.laz
+sylva coreg survey.PROJ -o survey_coreg/ --merged survey.laz
 sylva voxel plot.parquet plot.vox --voxel 0.25 --ground-class 2
 ```
 

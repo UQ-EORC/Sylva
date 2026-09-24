@@ -69,3 +69,30 @@ def single_tree(rng):
         0.15 + t, r * np.cos(theta), 4.0 + 0.3 * t + r * np.sin(theta)
     ])
     return PointCloud(np.vstack([stem, branch]))
+
+
+# --------------------------------------------------------------------------- #
+# sylva.coreg: simulated surveys, as tlsalign's test fixtures (same seeds).
+# Built once per session; the coarse angular step keeps them quick.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture(scope="session")
+def plot():
+    from sylva.coreg import simulate_plot
+
+    return simulate_plot(size=36.0, n_trees=30, seed=5)
+
+
+@pytest.fixture(scope="session")
+def survey(plot):
+    from sylva.coreg import simulate_survey
+
+    return simulate_survey(n_scans=3, plot=plot, seed=5, angular_step=0.004, max_range=26.0)
+
+
+@pytest.fixture(scope="session")
+def small_survey(plot):
+    from sylva.coreg import simulate_survey
+
+    return simulate_survey(n_scans=2, plot=plot, seed=9, angular_step=0.005, max_range=22.0)

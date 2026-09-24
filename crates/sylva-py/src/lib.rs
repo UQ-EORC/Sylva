@@ -15,7 +15,7 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use sylva_rs::pointcloud::Attr;
-use sylva_rs::{canopy, cluster, coreg, filters, ground, io, qsm, registration, trees, voxel, Point, PointCloud, Raster, Shots, Transform};
+use sylva_rs::{canopy, cluster, coreg, coreg_geometry, coreg_ground, coreg_icp as coreg_icp_rs, filters, ground, io, qsm, registration, trees, voxel, Point, PointCloud, Raster, Shots, Transform};
 
 fn err(e: sylva_rs::Error) -> PyErr {
     match e {
@@ -388,6 +388,14 @@ fn wood_mask<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, k: usize, high_th
 fn euclidean_clusters<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, radius: f64, min_points: usize) -> PyResult<Bound<'py, PyArray1<i64>>> {
     let p = xyz_from_py(xyz)?;
     Ok(py.detach(|| cluster::euclidean_clusters(&p, radius, min_points)).into_pyarray(py))
+}
+
+/// Points within `radius` of each point, itself included.
+#[pyfunction]
+fn count_within<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, radius: f64) -> PyResult<Bound<'py, PyArray1<i64>>> {
+    let p = xyz_from_py(xyz)?;
+    let counts = py.detach(|| filters::count_within(&p, radius));
+    Ok(counts.into_iter().map(|c| c as i64).collect::<Vec<_>>().into_pyarray(py))
 }
 
 #[pyfunction]
@@ -870,6 +878,230 @@ fn match_stem_maps<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, source_d
     stem_match_to_py(py, &r)
 }
 
+// ------------------------------------------------------- coreg ground model
+
+/// View a C-contiguous `(N, K)` float64 array as `&[[f64; K]]`, or copy it
+/// row by row when it is not contiguous.
+fn rows_from_py<'a, const K: usize>(a: &'a PyReadonlyArray2<'_, f64>, name: &str) -> PyResult<std::borrow::Cow<'a, [[f64; K]]>> {
+    let v = a.as_array();
+    if v.ncols() != K {
+        return Err(PyValueError::new_err(format!("{name} must have shape (N, {K}), got (N, {})", v.ncols())));
+    }
+    if let Ok(s) = a.as_slice() {
+        // SAFETY: `[f64; K]` has the size and alignment of K consecutive f64.
+        let rows = unsafe { std::slice::from_raw_parts(s.as_ptr() as *const [f64; K], s.len() / K) };
+        return Ok(std::borrow::Cow::Borrowed(rows));
+    }
+    Ok(std::borrow::Cow::Owned(v.rows().into_iter().map(|r| std::array::from_fn(|k| r[k])).collect()))
+}
+
+#[pyfunction]
+#[pyo3(signature = (xyz, cell_size=0.5, percentile=5.0, max_slope=1.0, smooth_cells=3, opening_cells=5, min_points_per_cell=1, pit_depth=3.0, pit_window=9, max_points=8_000_000, seed=0))]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn coreg_fit_ground<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, cell_size: f64, percentile: f64, max_slope: f64, smooth_cells: usize, opening_cells: usize, min_points_per_cell: usize, pit_depth: f64, pit_window: usize, max_points: usize, seed: u64) -> PyResult<(Bound<'py, PyArray2<f64>>, (f64, f64), Bound<'py, PyArray2<bool>>)> {
+    let pts = rows_from_py::<3>(&xyz, "xyz")?;
+    let p = coreg_ground::GroundParams { cell_size, percentile, max_slope, smooth_cells, opening_cells, min_points_per_cell, pit_depth, pit_window, max_points: (max_points > 0).then_some(max_points), seed };
+    let pts: &[[f64; 3]] = &pts;
+    let g = py.detach(|| coreg_ground::fit_ground(pts, &p)).map_err(err)?;
+    let (ny, nx) = (g.ny, g.nx);
+    Ok((PyArray1::from_vec(py, g.elevation).reshape([ny, nx])?, (g.origin[0], g.origin[1]), PyArray1::from_vec(py, g.observed).reshape([ny, nx])?))
+}
+
+#[pyfunction]
+fn coreg_ground_height<'py>(py: Python<'py>, elevation: PyReadonlyArray2<f64>, x0: f64, y0: f64, cell_size: f64, xy: PyReadonlyArray2<f64>) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let (ny, nx) = (elevation.shape()[0], elevation.shape()[1]);
+    if ny == 0 || nx == 0 {
+        return Err(PyValueError::new_err("elevation grid is empty"));
+    }
+    let e: Vec<f64> = elevation.as_array().iter().cloned().collect();
+    let q = rows_from_py::<2>(&xy, "xy")?;
+    let q: &[[f64; 2]] = &q;
+    Ok(py.detach(|| coreg_ground::height_at_many(&e, nx, ny, [x0, y0], cell_size, q)).into_pyarray(py))
+}
+
+#[pyfunction]
+fn coreg_ground_support<'py>(py: Python<'py>, observed: PyReadonlyArray2<bool>, x0: f64, y0: f64, cell_size: f64, xy: PyReadonlyArray2<f64>) -> PyResult<Bound<'py, PyArray1<bool>>> {
+    let (ny, nx) = (observed.shape()[0], observed.shape()[1]);
+    if ny == 0 || nx == 0 {
+        return Err(PyValueError::new_err("observed grid is empty"));
+    }
+    let o: Vec<bool> = observed.as_array().iter().cloned().collect();
+    let q = rows_from_py::<2>(&xy, "xy")?;
+    let q: &[[f64; 2]] = &q;
+    Ok(py.detach(|| coreg_ground::support_many(&o, nx, ny, [x0, y0], cell_size, q)).into_pyarray(py))
+}
+
+// ------------------------------------------------- co-registration (tlsalign)
+
+fn matrix4_from_py(m: PyReadonlyArray2<f64>) -> PyResult<coreg_icp_rs::Mat4> {
+    Ok(matrix_from_py(Some(m))?.expect("matrix").0)
+}
+
+fn matrix4_to_py<'py>(py: Python<'py>, m: &coreg_icp_rs::Mat4) -> Bound<'py, PyArray2<f64>> {
+    matrix_to_py(py, &Transform(*m))
+}
+
+/// tlsalign `voxel_downsample(..., return_counts=True)`: `(points, counts)`.
+#[pyfunction]
+#[pyo3(signature = (xyz, voxel, centroid=true))]
+fn coreg_voxel_centroids<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel: f64, centroid: bool) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<i64>>)> {
+    if voxel.is_nan() || voxel <= 0.0 {
+        return Err(PyValueError::new_err("voxel size must be positive"));
+    }
+    let p = xyz_from_py(xyz)?;
+    let (c, n) = py.detach(|| coreg_geometry::voxel_centroids(&p, voxel, centroid));
+    Ok((xyz_to_py(py, &c), n.into_iter().map(|v| v as i64).collect::<Vec<_>>().into_pyarray(py)))
+}
+
+/// tlsalign local PCA: `(normals, planarity, valid, evals)` with ascending eigenvalues.
+#[pyfunction]
+#[pyo3(signature = (xyz, k=20, radius=None))]
+fn coreg_local_pca<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, k: usize, radius: Option<f64>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<bool>>, Bound<'py, PyArray2<f64>>)> {
+    let p = xyz_from_py(xyz)?;
+    let (normals, planarity, valid, evals) = py.detach(|| {
+        if p.len() < 3 {
+            let n = p.len();
+            return (vec![[0.0; 3]; n], vec![0.0; n], vec![false; n], vec![[0.0; 3]; n]);
+        }
+        let pca = coreg_geometry::local_pca(&p, k, radius);
+        let (n, pl) = coreg_geometry::normals_from_pca(&pca);
+        (n, pl, pca.valid, pca.evals)
+    });
+    Ok((xyz_to_py(py, &normals), planarity.into_pyarray(py), valid.into_pyarray(py), xyz_to_py(py, &evals)))
+}
+
+/// tlsalign `planar_filter`.
+#[pyfunction]
+#[pyo3(signature = (xyz, min_planarity=0.35, voxel=Some(0.05), k=20, radius=Some(0.15)))]
+fn coreg_planar_filter<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, min_planarity: f64, voxel: Option<f64>, k: usize, radius: Option<f64>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    if matches!(voxel, Some(v) if v < 0.0) {
+        return Err(PyValueError::new_err("voxel size must be positive"));
+    }
+    let p = xyz_from_py(xyz)?;
+    let out = py.detach(|| coreg_geometry::planar_filter(&p, min_planarity, voxel, k, radius));
+    Ok(xyz_to_py(py, &out))
+}
+
+/// tlsalign `icp()`: point-to-plane / point-to-point ICP over a voxel pyramid.
+#[pyfunction]
+#[pyo3(signature = (source, target, initial=None, voxel_sizes=vec![0.30, 0.15, 0.07, 0.05], max_distances=Some(vec![0.80, 0.40, 0.20, 0.12]), max_iterations=30, method="point_to_plane", robust="huber", robust_scale=0.05, trim_fraction=0.85, trim_ramp=3, min_planarity=0.25, normal_neighbours=20, translation_tolerance=1e-4, rotation_tolerance=2e-5, fitness_threshold=0.10, damping=1e-6, max_points=120_000, plateau_tolerance=0.0, plateau_patience=3, seed=0, prepared=None))]
+#[allow(clippy::too_many_arguments)]
+fn coreg_icp<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, target: Option<PyReadonlyArray2<f64>>, initial: Option<PyReadonlyArray2<f64>>, voxel_sizes: Vec<f64>, max_distances: Option<Vec<f64>>, max_iterations: usize, method: &str, robust: &str, robust_scale: f64, trim_fraction: f64, trim_ramp: usize, min_planarity: f64, normal_neighbours: usize, translation_tolerance: f64, rotation_tolerance: f64, fitness_threshold: f64, damping: f64, max_points: usize, plateau_tolerance: f64, plateau_patience: usize, seed: u64, prepared: Option<PyRef<'_, PyCoregIcpTarget>>) -> PyResult<Bound<'py, PyDict>> {
+    let s = xyz_from_py(source)?;
+    let init = initial.map(matrix4_from_py).transpose()?;
+    let cfg = coreg_icp_rs::IcpConfig { voxel_sizes, max_distances, max_iterations, method: method.to_string(), robust: robust.to_string(), robust_scale, trim_fraction, trim_ramp, min_planarity, normal_neighbours, translation_tolerance, rotation_tolerance, fitness_threshold, damping, max_points, plateau_tolerance, plateau_patience, seed };
+    let r = match (prepared, target) {
+        (Some(pt), _) => {
+            let pt = pt.inner.clone();
+            py.detach(|| coreg_icp_rs::icp_prepared(&s, &pt, init, &cfg)).map_err(err)?
+        }
+        (None, Some(target)) => {
+            let t = xyz_from_py(target)?;
+            py.detach(|| coreg_icp_rs::icp(&s, &t, init, &cfg)).map_err(err)?
+        }
+        (None, None) => return Err(PyValueError::new_err("give a target or a prepared target")),
+    };
+    let d = PyDict::new(py);
+    d.set_item("transform", matrix4_to_py(py, &r.transform))?;
+    d.set_item("fitness", r.fitness)?;
+    d.set_item("inlier_rmse", r.inlier_rmse)?;
+    d.set_item("n_correspondences", r.n_correspondences)?;
+    d.set_item("iterations", r.iterations)?;
+    d.set_item("converged", r.converged)?;
+    d.set_item("history", r.history)?;
+    Ok(d)
+}
+
+/// tlsalign `evaluate_registration`: `(fitness, inlier_rmse, n_inliers)`.
+#[pyfunction]
+#[pyo3(signature = (source, target, transform, threshold=0.10, max_points=200_000, voxel=Some(0.05), seed=0))]
+#[allow(clippy::too_many_arguments)]
+fn coreg_evaluate(py: Python<'_>, source: PyReadonlyArray2<f64>, target: PyReadonlyArray2<f64>, transform: PyReadonlyArray2<f64>, threshold: f64, max_points: usize, voxel: Option<f64>, seed: u64) -> PyResult<(f64, f64, usize)> {
+    let s = xyz_from_py(source)?;
+    let t = xyz_from_py(target)?;
+    let m = matrix4_from_py(transform)?;
+    if matches!(voxel, Some(v) if v < 0.0) {
+        return Err(PyValueError::new_err("voxel size must be positive"));
+    }
+    Ok(py.detach(|| coreg_icp_rs::evaluate_registration(&s, &t, &m, threshold, max_points, voxel, seed)))
+}
+
+/// k-d tree with scipy `cKDTree.query(k=1)` conventions; 2-D points are
+/// padded with z = 0.
+/// A target scan's ICP pyramid, built once and reused for every scan registered
+/// against it (`coreg_icp(..., prepared=...)`).
+#[pyclass(name = "CoregIcpTarget", frozen)]
+struct PyCoregIcpTarget {
+    inner: std::sync::Arc<coreg_icp_rs::IcpTarget>,
+}
+
+#[pymethods]
+impl PyCoregIcpTarget {
+    #[new]
+    #[pyo3(signature = (target, voxel_sizes, max_points=120000, method="point_to_plane", normal_neighbours=20, seed=0))]
+    fn new(py: Python<'_>, target: PyReadonlyArray2<f64>, voxel_sizes: Vec<f64>, max_points: usize, method: &str, normal_neighbours: usize, seed: u64) -> PyResult<Self> {
+        let t = xyz_from_py(target)?;
+        let cfg = coreg_icp_rs::IcpConfig { voxel_sizes, max_points, method: method.to_string(), normal_neighbours, seed, ..Default::default() };
+        let inner = py.detach(|| coreg_icp_rs::IcpTarget::new(&t, &cfg));
+        Ok(PyCoregIcpTarget { inner: std::sync::Arc::new(inner) })
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+#[pyclass(name = "CoregKdTree")]
+struct PyCoregKdTree {
+    tree: coreg_geometry::CoregTree,
+    dim: usize,
+}
+
+fn padded_from_py(a: PyReadonlyArray2<f64>, what: &str) -> PyResult<(Vec<Point>, usize)> {
+    let a = a.as_array();
+    match a.ncols() {
+        3 => Ok((a.rows().into_iter().map(|r| [r[0], r[1], r[2]]).collect(), 3)),
+        2 => Ok((a.rows().into_iter().map(|r| [r[0], r[1], 0.0]).collect(), 2)),
+        c => Err(PyValueError::new_err(format!("{what} must have shape (N, 2) or (N, 3), got (N, {c})"))),
+    }
+}
+
+#[pymethods]
+impl PyCoregKdTree {
+    #[new]
+    fn new(py: Python<'_>, points: PyReadonlyArray2<f64>) -> PyResult<Self> {
+        let (p, dim) = padded_from_py(points, "points")?;
+        let tree = py.detach(|| coreg_geometry::CoregTree::new(&p));
+        Ok(PyCoregKdTree { tree, dim })
+    }
+
+    #[getter]
+    fn n(&self) -> usize {
+        self.tree.len()
+    }
+
+    #[getter]
+    fn m(&self) -> usize {
+        self.dim
+    }
+
+    fn __len__(&self) -> usize {
+        self.tree.len()
+    }
+
+    /// Nearest neighbour of each query: `(dist, index)`, with `inf` / `n`
+    /// where none lies strictly within `distance_upper_bound`.
+    #[pyo3(signature = (queries, distance_upper_bound=f64::INFINITY))]
+    fn query<'py>(&self, py: Python<'py>, queries: PyReadonlyArray2<f64>, distance_upper_bound: f64) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<i64>>)> {
+        let (q, dim) = padded_from_py(queries, "queries")?;
+        if dim != self.dim {
+            return Err(PyValueError::new_err(format!("queries have {dim} columns but the tree has {}", self.dim)));
+        }
+        let (d, i) = py.detach(|| self.tree.query(&q, distance_upper_bound));
+        Ok((d.into_pyarray(py), i.into_iter().map(|v| v as i64).collect::<Vec<_>>().into_pyarray(py)))
+    }
+}
+
 #[pyfunction]
 #[pyo3(signature = (xyz, heights, cx, cy, ground_z, resolution=0.02, slice=0.05, close_radius=0.08, max_radius=4.0, max_height=6.0, top=None, solidity=0.9, round_run=4, min_top=0.5, min_points=30, max_flare=1.0, smooth=10))]
 #[allow(clippy::too_many_arguments)]
@@ -923,18 +1155,70 @@ fn fit_circle_ransac<'py>(py: Python<'py>, xy: PyReadonlyArray2<f64>, threshold:
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, heights, slice_min=1.0, slice_max=5.0, slice_thickness=0.3, slice_step=0.25, reference_height=1.3, min_radius=0.015, max_radius=0.75, cluster_cell=0.06, min_cluster_points=12, max_cluster_extent=2.0, ransac_iterations=120, ransac_tolerance=0.02, max_circles_per_cluster=3, min_circle_inliers=10, min_coverage=0.12, min_arc_deg=0.0, max_circle_rmse=0.02, link_radius=0.2, link_radius_ratio=0.45, min_slices=3, max_lean_deg=25.0, link_radius_abs=0.02, prefilter=true, prefilter_k=16, prefilter_max_nz=0.6, prefilter_max_variation=0.15, seed=0))]
+#[pyo3(signature = (xyz, heights, slice_min=1.0, slice_max=5.0, slice_thickness=0.3, slice_step=0.25, reference_height=1.3, min_radius=0.015, max_radius=0.75, cluster_cell=0.06, min_cluster_points=12, max_cluster_extent=2.0, ransac_iterations=120, ransac_tolerance=0.02, max_circles_per_cluster=3, min_circle_inliers=10, min_coverage=0.12, min_arc_deg=0.0, max_circle_rmse=0.02, link_radius=0.2, link_radius_ratio=0.45, min_slices=3, max_lean_deg=25.0, link_radius_abs=0.02, prefilter=true, prefilter_k=16, prefilter_max_nz=0.6, prefilter_max_variation=0.15, seed=0, ransac_block=0, ransac_presample=false, recluster_wide=true, cluster_grid_at_slice_min=false, band_top_inclusive=false, shared_rng=false, taper_weight_power=1.0, min_total_points=0))]
 #[allow(clippy::too_many_arguments)]
-fn detect_stems<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, slice_min: f64, slice_max: f64, slice_thickness: f64, slice_step: f64, reference_height: f64, min_radius: f64, max_radius: f64, cluster_cell: f64, min_cluster_points: usize, max_cluster_extent: f64, ransac_iterations: usize, ransac_tolerance: f64, max_circles_per_cluster: usize, min_circle_inliers: usize, min_coverage: f64, min_arc_deg: f64, max_circle_rmse: f64, link_radius: f64, link_radius_ratio: f64, min_slices: usize, max_lean_deg: f64, link_radius_abs: f64, prefilter: bool, prefilter_k: usize, prefilter_max_nz: f64, prefilter_max_variation: f64, seed: u64) -> PyResult<Bound<'py, PyList>> {
+fn detect_stems<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, slice_min: f64, slice_max: f64, slice_thickness: f64, slice_step: f64, reference_height: f64, min_radius: f64, max_radius: f64, cluster_cell: f64, min_cluster_points: usize, max_cluster_extent: f64, ransac_iterations: usize, ransac_tolerance: f64, max_circles_per_cluster: usize, min_circle_inliers: usize, min_coverage: f64, min_arc_deg: f64, max_circle_rmse: f64, link_radius: f64, link_radius_ratio: f64, min_slices: usize, max_lean_deg: f64, link_radius_abs: f64, prefilter: bool, prefilter_k: usize, prefilter_max_nz: f64, prefilter_max_variation: f64, seed: u64, ransac_block: usize, ransac_presample: bool, recluster_wide: bool, cluster_grid_at_slice_min: bool, band_top_inclusive: bool, shared_rng: bool, taper_weight_power: f64, min_total_points: usize) -> PyResult<Bound<'py, PyList>> {
     let p = xyz_from_py(xyz)?;
     let h = heights.as_array().to_vec();
-    let params = sylva_rs::stems::StemParams { slice_min, slice_max, slice_thickness, slice_step, reference_height, min_radius, max_radius, cluster_cell, min_cluster_points, max_cluster_extent, ransac_iterations, ransac_tolerance, max_circles_per_cluster, min_circle_inliers, min_coverage, min_arc_deg, max_circle_rmse, link_radius, link_radius_ratio, min_slices, max_lean_deg, link_radius_abs, prefilter, prefilter_k, prefilter_max_nz, prefilter_max_variation, seed };
-    let found = py.detach(|| trees::detect_stems(&p, &h, &params));
+    if h.len() != p.len() {
+        return Err(PyValueError::new_err("heights must have one value per point"));
+    }
+    let params = sylva_rs::stems::StemParams { slice_min, slice_max, slice_thickness, slice_step, reference_height, min_radius, max_radius, cluster_cell, min_cluster_points, max_cluster_extent, ransac_iterations, ransac_tolerance, max_circles_per_cluster, min_circle_inliers, min_coverage, min_arc_deg, max_circle_rmse, link_radius, link_radius_ratio, min_slices, max_lean_deg, link_radius_abs, prefilter, prefilter_k, prefilter_max_nz, prefilter_max_variation, seed, ransac_block, ransac_presample, recluster_wide, cluster_grid_at_slice_min, band_top_inclusive, shared_rng, taper_weight_power, min_total_points };
+    let found = py.detach(|| sylva_rs::stems::detect_stems_full(&p, &h, &params));
     let list = PyList::empty(py);
-    for t in &found {
-        list.append(tree_to_py(py, t)?)?;
+    for s in &found {
+        let d = tree_to_py(py, &s.tree)?;
+        // Height above ground of the reported position (the reference height).
+        d.set_item("z_ref", s.z)?;
+        d.set_item("axis", s.axis.to_vec())?;
+        d.set_item("coverage", s.coverage)?;
+        list.append(d)?;
     }
     Ok(list)
+}
+
+/// Every default of tlsalign's `StemDetectionConfig`, as keyword arguments of
+/// `detect_stems` that make it follow tlsalign's detector.
+#[pyfunction]
+fn stems_tlsalign_defaults<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+    let p = sylva_rs::stems::StemParams::tlsalign();
+    let d = PyDict::new(py);
+    d.set_item("slice_min", p.slice_min)?;
+    d.set_item("slice_max", p.slice_max)?;
+    d.set_item("slice_thickness", p.slice_thickness)?;
+    d.set_item("slice_step", p.slice_step)?;
+    d.set_item("reference_height", p.reference_height)?;
+    d.set_item("min_radius", p.min_radius)?;
+    d.set_item("max_radius", p.max_radius)?;
+    d.set_item("cluster_cell", p.cluster_cell)?;
+    d.set_item("min_cluster_points", p.min_cluster_points)?;
+    d.set_item("max_cluster_extent", p.max_cluster_extent)?;
+    d.set_item("ransac_iterations", p.ransac_iterations)?;
+    d.set_item("ransac_tolerance", p.ransac_tolerance)?;
+    d.set_item("max_circles_per_cluster", p.max_circles_per_cluster)?;
+    d.set_item("min_circle_inliers", p.min_circle_inliers)?;
+    d.set_item("min_coverage", p.min_coverage)?;
+    d.set_item("min_arc_deg", p.min_arc_deg)?;
+    d.set_item("max_circle_rmse", p.max_circle_rmse)?;
+    d.set_item("link_radius", p.link_radius)?;
+    d.set_item("link_radius_ratio", p.link_radius_ratio)?;
+    d.set_item("min_slices", p.min_slices)?;
+    d.set_item("max_lean_deg", p.max_lean_deg)?;
+    d.set_item("link_radius_abs", p.link_radius_abs)?;
+    d.set_item("prefilter", p.prefilter)?;
+    d.set_item("prefilter_k", p.prefilter_k)?;
+    d.set_item("prefilter_max_nz", p.prefilter_max_nz)?;
+    d.set_item("prefilter_max_variation", p.prefilter_max_variation)?;
+    d.set_item("seed", p.seed)?;
+    d.set_item("ransac_block", p.ransac_block)?;
+    d.set_item("ransac_presample", p.ransac_presample)?;
+    d.set_item("recluster_wide", p.recluster_wide)?;
+    d.set_item("cluster_grid_at_slice_min", p.cluster_grid_at_slice_min)?;
+    d.set_item("band_top_inclusive", p.band_top_inclusive)?;
+    d.set_item("shared_rng", p.shared_rng)?;
+    d.set_item("taper_weight_power", p.taper_weight_power)?;
+    d.set_item("min_total_points", p.min_total_points)?;
+    Ok(d)
 }
 
 #[pyfunction]
@@ -1546,6 +1830,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyProgressTask>()?;
     m.add_class::<PyRayVoxels>()?;
+    m.add_class::<PyCoregKdTree>()?;
+    m.add_class::<PyCoregIcpTarget>()?;
     for f in [
         wrap_pyfunction!(read, m)?,
         wrap_pyfunction!(write, m)?,
@@ -1582,6 +1868,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(stem_noise, m)?,
         wrap_pyfunction!(euclidean_clusters, m)?,
         wrap_pyfunction!(knn, m)?,
+        wrap_pyfunction!(count_within, m)?,
         wrap_pyfunction!(csf_ground_mask, m)?,
         wrap_pyfunction!(pmf_ground_mask, m)?,
         wrap_pyfunction!(make_dtm, m)?,
@@ -1606,10 +1893,19 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(kabsch, m)?,
         wrap_pyfunction!(icp, m)?,
         wrap_pyfunction!(match_stem_maps, m)?,
+        wrap_pyfunction!(coreg_fit_ground, m)?,
+        wrap_pyfunction!(coreg_ground_height, m)?,
+        wrap_pyfunction!(coreg_ground_support, m)?,
+        wrap_pyfunction!(coreg_voxel_centroids, m)?,
+        wrap_pyfunction!(coreg_local_pca, m)?,
+        wrap_pyfunction!(coreg_planar_filter, m)?,
+        wrap_pyfunction!(coreg_icp, m)?,
+        wrap_pyfunction!(coreg_evaluate, m)?,
         wrap_pyfunction!(buttress_mesh, m)?,
         wrap_pyfunction!(fit_circle, m)?,
         wrap_pyfunction!(fit_circle_ransac, m)?,
         wrap_pyfunction!(detect_stems, m)?,
+        wrap_pyfunction!(stems_tlsalign_defaults, m)?,
         wrap_pyfunction!(dbh_profile, m)?,
         wrap_pyfunction!(segment_trees, m)?,
         wrap_pyfunction!(merge_branches, m)?,

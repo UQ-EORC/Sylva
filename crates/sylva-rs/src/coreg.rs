@@ -82,7 +82,7 @@ impl StemMap {
         self.positions.is_empty()
     }
 
-    /// Indices of the `n` highest-quality stems, best first.
+    /// Indices of the `n` highest-quality stems, best first (ties keep input order).
     fn top(&self, n: usize) -> Vec<usize> {
         let mut idx: Vec<usize> = (0..self.len()).collect();
         idx.sort_by(|&a, &b| self.qualities[b].partial_cmp(&self.qualities[a]).unwrap_or(std::cmp::Ordering::Equal));
@@ -131,28 +131,79 @@ impl StemMatch {
     }
 }
 
+/// `np.add.reduce` on a contiguous float64 array: numpy's pairwise summation,
+/// reproduced so sums agree with tlsalign to the bit.
+fn numpy_sum(a: &[f64]) -> f64 {
+    let n = a.len();
+    if n < 8 {
+        let mut r = 0.0;
+        for x in a {
+            r += x;
+        }
+        r
+    } else if n <= 128 {
+        let mut r = [0.0; 8];
+        r.copy_from_slice(&a[..8]);
+        let mut i = 8;
+        while i < n - n % 8 {
+            for j in 0..8 {
+                r[j] += a[i + j];
+            }
+            i += 8;
+        }
+        let mut res = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]));
+        for x in &a[i..] {
+            res += x;
+        }
+        res
+    } else {
+        let mut n2 = n / 2;
+        n2 -= n2 % 8;
+        numpy_sum(&a[..n2]) + numpy_sum(&a[n2..])
+    }
+}
+
 /// Least-squares yaw + 3-D translation between paired points.
+///
+/// Written as tlsalign's `kabsch_2d_yaw` computes it (uniform weights `1/n`,
+/// numpy's summation orders, the rotation from `so3_exp([0, 0, yaw])` and
+/// `R @ mu_s` as OpenBLAS's fused dgemv gives it), so that the hypothesis
+/// search takes the same decisions.
 pub fn kabsch_yaw(src: &[Point], dst: &[Point]) -> Transform {
-    let n = src.len().max(1) as f64;
+    let n = src.len().min(dst.len());
+    let w = 1.0 / n.max(1) as f64;
     let mut ms = [0.0; 3];
     let mut md = [0.0; 3];
-    for (a, b) in src.iter().zip(dst) {
+    for (i, (a, b)) in src.iter().zip(dst).enumerate() {
         for k in 0..3 {
-            ms[k] += a[k] / n;
-            md[k] += b[k] / n;
+            if i == 0 {
+                ms[k] = w * a[k];
+                md[k] = w * b[k];
+            } else {
+                ms[k] += w * a[k];
+                md[k] += w * b[k];
+            }
         }
     }
-    let (mut num, mut den) = (0.0, 0.0);
+    let mut num = Vec::with_capacity(n);
+    let mut den = Vec::with_capacity(n);
     for (a, b) in src.iter().zip(dst) {
         let (ax, ay) = (a[0] - ms[0], a[1] - ms[1]);
         let (bx, by) = (b[0] - md[0], b[1] - md[1]);
-        num += ax * by - ay * bx;
-        den += ax * bx + ay * by;
+        num.push(w * (ax * by - ay * bx));
+        den.push(w * (ax * bx + ay * by));
     }
-    let th = num.atan2(den);
-    let (s, c) = th.sin_cos();
-    let r = Matrix3::new(c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0);
-    let t = Vector3::new(md[0] - (c * ms[0] - s * ms[1]), md[1] - (s * ms[0] + c * ms[1]), md[2] - ms[2]);
+    let yaw = numpy_sum(&num).atan2(numpy_sum(&den));
+    // so3_exp([0, 0, yaw]) = I + sin(t)/t K + (1 - cos t)/t^2 K^2, t = |yaw|.
+    let th = (yaw * yaw).sqrt();
+    let (r00, r01, r10) = if th < 1e-8 {
+        (1.0 + 0.5 * -(yaw * yaw), -yaw, yaw)
+    } else {
+        let (s1, c1) = (th.sin() / th, (1.0 - th.cos()) / (th * th));
+        (1.0 + c1 * -(yaw * yaw), s1 * -yaw, s1 * yaw)
+    };
+    let r = Matrix3::new(r00, r01, 0.0, r10, r00, 0.0, 0.0, 0.0, 1.0);
+    let t = Vector3::new(md[0] - r00.mul_add(ms[0], r01 * ms[1]), md[1] - r10.mul_add(ms[0], r00 * ms[1]), md[2] - ms[2]);
     Transform::from_rt(r, t)
 }
 
@@ -161,6 +212,7 @@ struct Maps<'a> {
     dst: Vec<Point>,
     src_d: Vec<f64>,
     dst_d: Vec<f64>,
+    src_q: Vec<f64>,
     src_id: Vec<usize>,
     dst_id: Vec<usize>,
     p: &'a MatchParams,
@@ -186,7 +238,8 @@ impl Maps<'_> {
                     best = (j, d2);
                 }
             }
-            if best.1 <= tol2 && (!self.p.use_diameters || self.diameter_ok(self.src_d[i], self.dst_d[best.0])) {
+            // cKDTree's distance_upper_bound is exclusive.
+            if best.1 < tol2 && (!self.p.use_diameters || self.diameter_ok(self.src_d[i], self.dst_d[best.0])) {
                 hits.push((i, best.0, best.1.sqrt()));
             }
         }
@@ -199,7 +252,8 @@ impl Maps<'_> {
         if n == 0 {
             return out;
         }
-        let rmse = (hits.iter().map(|h| h.2 * h.2).sum::<f64>() / n as f64).sqrt();
+        let sq: Vec<f64> = hits.iter().map(|h| h.2 * h.2).collect();
+        let rmse = (numpy_sum(&sq) / n as f64).sqrt();
         out.n_inliers = n;
         out.inlier_rmse = rmse;
         // An extra inlier is worth more than a marginally tighter fit.
@@ -250,7 +304,9 @@ fn pair_table(xy: &[Point], lo: f64, hi: f64) -> Vec<(usize, usize, f64)> {
     let mut out = Vec::new();
     for i in 0..xy.len() {
         for j in i + 1..xy.len() {
-            let d = (xy[i][0] - xy[j][0]).hypot(xy[i][1] - xy[j][1]);
+            // As np.linalg.norm(axis=1) computes it (not hypot).
+            let (dx, dy) = (xy[i][0] - xy[j][0], xy[i][1] - xy[j][1]);
+            let d = (dx * dx + dy * dy).sqrt();
             if d >= lo && d <= hi {
                 out.push((i, j, d));
             }
@@ -268,11 +324,13 @@ pub fn match_stem_maps(source: &StemMap, target: &StemMap, p: &MatchParams) -> S
         dst: dst_id.iter().map(|&i| target.positions[i]).collect(),
         src_d: src_id.iter().map(|&i| source.diameters[i]).collect(),
         dst_d: dst_id.iter().map(|&i| target.diameters[i]).collect(),
+        src_q: src_id.iter().map(|&i| source.qualities[i].max(1e-3)).collect(),
         src_id,
         dst_id,
         p,
     };
-    let (ns, nd) = (source.len(), target.len());
+    // As tlsalign reports them: the sizes of the top-N maps that were matched.
+    let (ns, nd) = (m.src.len(), m.dst.len());
     let empty = StemMatch::empty(ns, nd);
     if m.src.len() < 2 || m.dst.len() < 2 {
         return empty;
@@ -284,8 +342,9 @@ pub fn match_stem_maps(source: &StemMap, target: &StemMap, p: &MatchParams) -> S
     }
     dst_pairs.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
     let dst_d: Vec<f64> = dst_pairs.iter().map(|x| x.2).collect();
-    // Pairs of the best stems first (the maps are already quality-sorted).
-    src_pairs.sort_by_key(|&(i, j, _)| i.max(j) * m.src.len() + i.min(j));
+    // Pairs of the most reliable stems first: descending product of the two
+    // qualities (floored at 1e-3), ties in (i, j) enumeration order.
+    src_pairs.sort_by(|a, b| (m.src_q[b.0] * m.src_q[b.1]).partial_cmp(&(m.src_q[a.0] * m.src_q[a.1])).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut best = StemMatch::empty(ns, nd);
     let mut runner = StemMatch::empty(ns, nd);

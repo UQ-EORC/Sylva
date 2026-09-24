@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import __version__, canopy, filters, ground, io, progress, qsm, trees, voxels
+from . import __version__, canopy, coreg, filters, ground, io, progress, qsm, riscan, trees, voxels
 from .raster import Raster
 from .shots import Shots
 
@@ -182,6 +182,71 @@ def _cmd_voxel(args):
     print(f"{n_shots} pulses -> {grid!r}; wrote {n} voxels to {args.output}")
 
 
+def _cmd_coreg(args):
+    inputs = [Path(x) for x in args.inputs]
+    positions = None
+    if len(inputs) == 1 and inputs[0].is_dir():
+        project = riscan.read_riscan_project(inputs[0])
+        positions = project.with_scans(require_sop=False)
+        if not positions:
+            raise ValueError(f"no scans found in {inputs[0]}")
+        clouds, names = [p.rxp for p in positions], [p.name for p in positions]
+        default_out = inputs[0].with_name(inputs[0].name + "_coreg")
+    else:
+        clouds, names = inputs, [p.stem for p in inputs]
+        default_out = inputs[0].with_name("coreg")
+    out = Path(args.output) if args.output else default_out
+    cfg = coreg.CoregConfig(refine_multiview=args.refine, use_reflectors=not args.no_reflectors,
+                            max_pair_distance=args.max_pair_distance, workers=args.workers,
+                            verbose=not args.quiet)
+    cfg.riscan_filter = args.riscan_filter
+    cfg.riegl_options = coreg.reading_options(
+        args.riscan_export_settings,
+        **{k: getattr(args, k) for k in ("min_range", "max_range", "min_deviation", "max_deviation",
+                                         "min_reflectance", "max_reflectance", "min_amplitude",
+                                         "max_amplitude")})
+    if args.trust_reflectors is not None:
+        cfg.trusted_reflector_matches = args.trust_reflectors
+    if args.reference is not None:
+        ref = args.reference
+        cfg.reference_scan = names.index(ref) if ref in names else int(ref)
+    levelling = reflectors = gnss = priors = None
+    if positions is not None:
+        def level(p):
+            if args.level in ("auto", "attitude") and p.levelling is not None:
+                return p.levelling
+            if args.level in ("auto", "sop") and p.sop is not None:
+                m = np.eye(4)
+                m[:3, :3] = p.sop[:3, :3]
+                return m
+            return None
+        levelling = [level(p) for p in positions]
+        reflectors = [p.reflectors() for p in positions]
+        gnss = riscan.gnss_to_local([p.gnss for p in positions])
+        if not np.isfinite(gnss).any():
+            gnss = None
+        if args.sop_priors:
+            # world_from_levelled = SOP @ scanner_from_levelled
+            priors = [None if p.sop is None
+                      else p.sop @ (np.eye(4) if lv is None else np.linalg.inv(lv))
+                      for p, lv in zip(positions, levelling, strict=True)]
+    result = coreg.coregister(clouds, cfg, names=names, levelling=levelling, reflectors=reflectors,
+                              approximate_positions=gnss, priors=priors)
+    result.save(out / "transforms.json")
+    (out / "report.txt").write_text(result.report() + "\n")
+    for k, name in enumerate(result.names):
+        if result.registered[k]:
+            np.savetxt(out / f"{name}.dat", result.transform_for(k), fmt="%.12f")
+    msg = f"{sum(result.registered)} of {len(names)} scans registered -> {out}"
+    if args.merged:
+        cloud = coreg.merge_clouds(clouds, result, voxel=args.voxel,
+                                   riegl_options=cfg.riegl_options,
+                                   riscan_filter=cfg.riscan_filter)
+        io.write(cloud, args.merged)
+        msg += f"; merged {len(cloud):,} points -> {args.merged}"
+    print(msg)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="sylva",
                                 description="Terrestrial laser scanning for forest ecology.",
@@ -322,6 +387,48 @@ def main(argv=None):
     s.add_argument("--write-empty", action="store_true", help="also write unobserved voxels")
     s.add_argument("--filled-only", action="store_true", help="only write voxels holding echoes")
     s.set_defaults(func=_cmd_voxel)
+
+    s = sub.add_parser("coreg", help="marker-free coregistration of scan positions (tlsalign)",
+                       **fmt)
+    s.add_argument("inputs", nargs="+",
+                   help="a RiSCAN / scanner .PROJ project directory, or scan files "
+                        "(.rxp, .laz, ...)")
+    s.add_argument("-o", "--output", help="output folder (default: <project>_coreg beside it)")
+    s.add_argument("--reference", help="scan name or index whose frame is the world frame")
+    s.add_argument("--level", choices=["auto", "attitude", "sop", "none"], default="auto",
+                   help="level tilted scans with the scanner's attitude, the SOP rotation, or not "
+                        "(auto: attitude, else SOP)")
+    s.add_argument("--sop-priors", action="store_true",
+                   help="use the project's SOPs as priors: refuse results far from them and place "
+                        "scans with too few stems from them")
+    s.add_argument("--refine", action="store_true", help="joint multi-view refinement of all poses")
+    s.add_argument("--no-reflectors", action="store_true", help="do not use reflective targets")
+    s.add_argument("--max-pair-distance", type=float, default=40.0,
+                   help="skip pairs further apart by GNSS (m)")
+    s.add_argument("--min-range", type=float, help="drop echoes closer to the scanner (m)")
+    s.add_argument("--max-range", type=float, help="drop echoes further from the scanner (m)")
+    s.add_argument("--min-deviation", type=float)
+    s.add_argument("--max-deviation", type=float, help="drop echoes with a larger pulse deviation")
+    s.add_argument("--min-reflectance", type=float)
+    s.add_argument("--max-reflectance", type=float)
+    s.add_argument("--min-amplitude", type=float)
+    s.add_argument("--max-amplitude", type=float)
+    s.add_argument("--riscan-export-settings", metavar="FILE",
+                   help="range/deviation/reflectance/amplitude intervals from a RiSCAN PRO export "
+                        "filter settings file ('attribute, min, max' per line); the bounds above "
+                        "override it")
+    s.add_argument("--riscan-filter", choices=["none", "current", "legacy"], default="none",
+                   help="RiSCAN PRO's RXP import filter: 'current' drops echoes within 0.5 m of "
+                        "the scanner, 'legacy' also the weak isolated echoes the older conversion "
+                        "discarded")
+    s.add_argument("--trust-reflectors", type=int, metavar="N",
+                   help="accept reflector matches of at least N targets (within 3 cm) even when "
+                        "ICP fails; 0 always asks ICP to agree (default 5)")
+    s.add_argument("--workers", type=int, default=0, help="scans and pairs at once (0: automatic)")
+    s.add_argument("--merged", help="also write the merged, registered cloud here")
+    s.add_argument("--voxel", type=float, default=0.02, help="thinning of the merged cloud (m)")
+    s.add_argument("--quiet", action="store_true", help="only print the summary")
+    s.set_defaults(func=_cmd_coreg)
 
     args = p.parse_args(argv)
     try:
