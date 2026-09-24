@@ -6,7 +6,7 @@ name: release
 #
 # Both registries use trusted publishing (OIDC), so there are no tokens to store:
 #   PyPI:      add a (pending) publisher for project "sylva-rs", repository
-#              Leaf2Landscape/Sylva, workflow release.yml, environment "pypi".
+#              UQ-EORC/Sylva, workflow release.yml, environment "pypi".
 #   crates.io: trusted publishing only works for a crate that already exists, so
 #              the first `cargo publish` of each crate is done by hand; afterwards
 #              add this repository and workflow in the crate's settings.
@@ -114,7 +114,7 @@ jobs:
           version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           todo=""
           for crate in sylva-rs sylva-cli; do      # the library first: the CLI depends on it
-            if curl -fsS -A "sylva-release (github.com/Leaf2Landscape/Sylva)" \
+            if curl -fsS -A "sylva-release (github.com/UQ-EORC/Sylva)" \
                  "https://crates.io/api/v1/crates/$crate/$version" >/dev/null 2>&1; then
               echo "$crate $version is already published; skipping"
             else
