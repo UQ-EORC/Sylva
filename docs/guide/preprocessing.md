@@ -74,3 +74,66 @@ merged = reg.merge_scans([scan_a, scan_b], [np.eye(4), T])   # adds scan_id
 - **Checking the result.** ICP's RMSE mixes noise with misregistration.
   `quality.stem_noise` separates the two, giving the horizontal offset of
   every scan measured on the stems (see [Scan quality](quality.md)).
+
+## Coregistering a survey
+
+`sylva.coreg` registers every scan position of a survey at once, with no
+targets and no starting alignment: it matches the stems each scan sees. It is
+a port of tlsalign. Where scans share RiSCAN targets, it uses them too.
+
+```python
+from sylva import coreg, read_riscan_project, riscan
+
+project = read_riscan_project("survey.PROJ")
+scans = project.with_scans(require_sop=False)
+config = coreg.CoregConfig(
+    riscan_filter="current",                              # or "legacy", "none"
+    riegl_options=coreg.reading_options("export.settings", min_reflectance=-20),
+)
+result = coreg.coregister(
+    [p.rxp for p in scans], config,
+    names=[p.name for p in scans],
+    levelling=[p.levelling for p in scans],               # tilted scans levelled first
+    reflectors=[p.reflectors() for p in scans],           # RiSCAN targets, if any
+    approximate_positions=riscan.gnss_to_local([p.gnss for p in scans]),
+)
+print(result.report())
+result.save("transforms.json")
+merged = coreg.merge_clouds([p.rxp for p in scans], result, voxel=0.02)
+```
+
+It works in three stages:
+
+1. **Each scan** gets a terrain model and a stem map. Only the locally
+   planar points (stems, ground, logs) are kept for ICP.
+2. **Each pair** is matched on shared targets where both scans saw three or
+   more. Otherwise the two stem maps are matched. A robust point-to-plane ICP
+   then refines the match. A pair is accepted only if it fits both overall
+   and above the ground, so a flat ground can't confirm a wrong match on its
+   own.
+3. **The whole survey** is solved as a pose graph, with outlier edges
+   rejected. Scans that are left over are retried against the combined
+   survey.
+
+Options:
+
+- **Trusted targets.** A pair that shares at least
+  `trusted_reflector_matches` (5) targets, with an RMSE under
+  `trusted_reflector_rmse` (3 cm), keeps the target solution instead of ICP.
+- **Fixed poses and priors.** `fixed={index: pose}` holds scans at trusted
+  poses, so new positions can join an existing project. `priors` (RiSCAN
+  SOPs, GNSS and compass) place scans that see too few stems to match (see
+  `coreg.place_from_prior`).
+- **RiSCAN filters.** `riegl_options` applies RiSCAN export bounds on range,
+  deviation, reflectance and amplitude, read from an export settings file
+  (explicit bounds override the file). `riscan_filter` drops what RiSCAN
+  drops: `"current"` removes echoes closer than 0.5 m, and `"legacy"` also
+  removes isolated weak echoes, as older RiSCAN versions did.
+- **Checking the result.** `result.report()` lists every pair. For each one it
+  gives how far apart the same trees land from the two scans, a check that
+  needs no ground truth.
+
+A survey where the positions share few trees may register only in part from
+stems. On a 14-scan VZ-400 survey, stems alone placed 4 scans; with the
+RiSCAN targets, all 14 landed within 7 cm of the target-based SOPs. The same
+pipeline is the `sylva coreg` command (see [Command line](cli.md)).

@@ -420,10 +420,23 @@ table = pd.DataFrame([{**t.as_dict(), **crowns.get(t.tree_id, {})} for t in stem
 table.to_csv("trees.csv", index=False)
 table[["tree_id", "x", "y", "dbh", "height", "crown_area", "crown_depth", "quality"]].head(8).round(2)""",
     md("""The candidates with a large DBH but a height of about 3 m are shrub
-and grass clumps that the slice fits read as wide stems; their `quality` is
-around 0.1 against 0.5 for the real trees, and `prune_trees(...,
-min_quality_short=0.15)` or a `max_dbh` removes them. Measure the taper on a
-tree that detection is confident about instead."""),
+and grass clumps that the slice fits read as wide stems. Their `quality` is
+mostly around 0.1, against 0.5 for the real trees, but not always: one here
+scores 0.16, so `prune_trees(..., min_quality_short=0.15)` misses it. A
+`max_dbh`, or dropping wide stems that are short, removes them all. Measure
+the taper on a tree that detection is confident about instead."""),
+    md("""## Basal area
+
+`basal_area` sums the stems' cross-sections at breast height, in m²/ha of the
+area given; the tile is 20 × 20 m, and `min_dbh` sets an inventory threshold.
+The shrub clumps dominate it, since basal area grows with DBH squared, so drop
+the wide, short candidates first."""),
+    """\
+area = 20.0 * 20.0
+real = [t for t in stems if not (t.dbh > 0.4 and t.height < 8)]
+print(f"every candidate:         {trees.basal_area(stems, area):5.1f} m2/ha")
+print(f"without wide and short:  {trees.basal_area(real, area):5.1f} m2/ha ({len(real)} stems)")
+print(f"  and DBH >= 10 cm:      {trees.basal_area(real, area, min_dbh=0.1):5.1f} m2/ha")""",
     md("## Taper and crown shape"),
     """\
 big = max(stems, key=lambda t: t.height)
