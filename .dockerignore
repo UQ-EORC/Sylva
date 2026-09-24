@@ -1,0 +1,21 @@
+# The image builds from pyproject.toml, README.md, LICENSE, Cargo.*, crates/ and python/.
+.git
+.github
+.claude
+.devcontainer
+.venv
+.cache
+.pytest_cache
+.ruff_cache
+target
+site
+docs
+tests
+**/__pycache__
+# a host build of the extension would be packed into the wheel
+**/*.so
+**/*.pyd
+*.las
+*.laz
+*.rxp
+*.rdbx

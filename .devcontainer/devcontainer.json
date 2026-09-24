@@ -1,0 +1,42 @@
+// Python, Rust and a C compiler (the Dockerfile's `dev` stage), with Sylva
+// installed editable into /opt/venv and the tests, lint and docs tools.
+// After a Rust change: `maturin develop --release`. Docs: `mkdocs serve -a 0.0.0.0:8000`.
+{
+  "name": "Sylva",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": "..",
+    "target": "dev"
+  },
+  // Cargo builds in a volume, apart from a host build in ./target.
+  "mounts": [
+    "source=sylva-target,target=/opt/target,type=volume"
+    // RiVLib (proprietary, from RIEGL) is needed only to read .rxp; mount it with e.g.
+    // , "source=${localEnv:HOME}/.local/lib/rivlib,target=/opt/rivlib,type=bind,readonly"
+  ],
+  "containerEnv": {
+    "CARGO_TARGET_DIR": "/opt/target"
+  },
+  // With rootless Podman, add: "runArgs": ["--userns=keep-id"]
+  "postCreateCommand": "pip install --no-cache-dir -e '.[dev,docs,examples,geotiff]'",
+  "forwardPorts": [8000, 8888],
+  "portsAttributes": {
+    "8000": { "label": "docs" },
+    "8888": { "label": "jupyter" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-toolsai.jupyter",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/venv/bin/python",
+        "python.testing.pytestEnabled": true
+      }
+    }
+  }
+}

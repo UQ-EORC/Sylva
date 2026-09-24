@@ -39,3 +39,35 @@ does the same job, in a virtual environment of your choice.
 Reading RIEGL `.rxp` files needs RiVLib's `libscanifc` (proprietary; download
 from RIEGL). Point `RIVLIB_PATH` at the extracted directory or pass
 `library=` to `sylva.io.read_rxp`.
+
+## Containers
+
+The `Dockerfile` builds an image with the `sylva` command and nothing else to
+install. Run it on the files in the current directory:
+
+```bash
+docker build -t sylva .
+docker run --rm -v "$PWD":/data sylva trees plot_norm.laz
+```
+
+RIEGL does not allow RiVLib to be redistributed, so it isn't in the image.
+Mount your own copy at `/opt/rivlib` to read `.rxp`:
+
+```bash
+docker run --rm -v ~/.local/lib/rivlib:/opt/rivlib:ro -v "$PWD":/data sylva coreg survey.PROJ
+```
+
+For development, `.devcontainer/` opens the repository in VS Code (or any
+dev-container tool) with Python, the Rust toolchain and a C compiler. Sylva
+is installed editable in `/opt/venv` with the test, lint and docs extras.
+After a Rust change, run `maturin develop --release`. Serve the docs with
+`mkdocs serve -a 0.0.0.0:8000`.
+
+Two things to know:
+
+- **RiVLib.** Uncomment the RiVLib mount in `devcontainer.json` to read
+  `.rxp`.
+- **Rootless Podman.** Add `"runArgs": ["--userns=keep-id"]` so files keep
+  your ownership.
+
+Podman works in place of Docker for both.
