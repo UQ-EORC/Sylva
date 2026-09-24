@@ -17,9 +17,11 @@ chm = ground.make_chm(cloud, resolution=0.5)
 dtm.to_geotiff("dtm.tif", crs="EPSG:28355")
 ```
 
-- **Merged multi-scan plots:** use `classify_ground_csf`. Set `rigidness` to 1
+- **Merged multi-scan plots:** use `classify_ground_csf`, the Cloth
+  Simulation Filter ([Zhang et al. 2016](../references.md)). Set `rigidness` to 1
   on steep slopes and 3 on flat ground.
-- **Single scans in dense forest:** use `classify_ground_pmf`. Occluded
+- **Single scans in dense forest:** use `classify_ground_pmf`, the
+  progressive morphological filter ([Zhang et al. 2003](../references.md)). Occluded
   cells whose lowest return is canopy can hold the cloth up.
 - **Comparable DTMs across dates:** pass the same `bounds` every time, so
   the grids line up.
@@ -35,7 +37,8 @@ stems[0]                                   # Tree(tree_id=1, x=..., y=..., dbh=.
 
 1. The 1–5 m band is cut into slices.
 2. Each slice is clustered in 2D.
-3. Circles are fitted by RANSAC, and their angular coverage is checked.
+3. Circles are fitted by RANSAC ([Fischler & Bolles 1981](../references.md)), and their
+   angular coverage is checked.
 4. Circles are linked upward into stems.
 5. DBH is read from a linear taper at 1.3 m.
 
@@ -65,7 +68,8 @@ cloud = cloud.with_attrs(tree_id=labels.astype("int32"))
 ```
 
 `segment_trees` grows every tree from its stem over a kNN graph by least-cost
-paths.
+paths, after raycloudtools' `rayextract trees`
+([Devereux et al. 2026](../references.md)).
 
 - **Cost.** Climbing is cheap, while horizontal and downward steps are
   expensive, so paths go up through a tree rather than across the
@@ -73,7 +77,7 @@ paths.
 - **`height_prior`** lets tall trees win contested crown points.
 - **`wood_costs=True`** stops foliage from bridging neighbouring crowns. It is
   slower.
-- **`voxel_size`** (5 cm) sets the graph resolution. Labels are copied to
+- **`voxel_size`** (3 cm) sets the graph resolution. Labels are copied to
   every point.
 - **Understorey competes** (`understorey_height`, on by default). After
   raycloudtools, near-ground points away from every detected stem are

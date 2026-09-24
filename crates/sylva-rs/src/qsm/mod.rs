@@ -5,7 +5,8 @@
 //! Quantitative structure models: skeletonisation and cylinder fitting.
 //!
 //! Pipeline: [`skeletonize`] bins geodesic distance from the base over a kNN
-//! graph and splits each bin into connected segments; [`fit_cylinders`] fits a
+//! graph and splits each bin into connected segments (Verroust & Lazarus 2000;
+//! Xu et al. 2007); [`fit_cylinders`] fits a
 //! cylinder per segment and links parents to build a [`Qsm`].
 
 pub mod buttress;

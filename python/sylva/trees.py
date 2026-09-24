@@ -91,8 +91,8 @@ class Tree:
 def fit_circle(xy: np.ndarray) -> tuple[float, float, float, float]:
     """Least-squares circle through 2D points.
 
-    An algebraic fit refined by Levenberg-Marquardt on the geometric
-    distance. Not robust to outliers; use :func:`fit_circle_ransac` on raw
+    An algebraic fit (Kåsa 1976) refined by Levenberg-Marquardt on the
+    geometric distance. Not robust to outliers; use :func:`fit_circle_ransac` on raw
     slices.
 
     Parameters
@@ -112,6 +112,9 @@ def fit_circle_ransac(xy: np.ndarray, threshold: float = 0.01, iterations: int =
                       min_radius: float = 0.02, max_radius: float = 1.5,
                       seed: int = 0) -> tuple[float, float, float, np.ndarray]:
     """Circle fit that tolerates outliers (twigs, noise, a second stem).
+
+    RANSAC (Fischler & Bolles 1981) on circles through three points, then a
+    least-squares refit on the inliers.
 
     Parameters
     ----------
@@ -146,9 +149,10 @@ def detect_stems(cloud: PointCloud, height_attr: str = "height", **params) -> li
     """Detect stems in a height-normalised cloud by linking circles across slices.
 
     The 1-5 m band is cut into 0.3 m layers every 0.25 m; each layer is
-    clustered in 2-D and circles fitted by RANSAC with an angular-coverage
-    check; circles are linked across layers into chains that must span
-    ``min_slices`` (3) layers and lean under ``max_lean_deg`` (25). DBH is
+    clustered in 2-D and circles fitted by RANSAC (Fischler & Bolles 1981)
+    with an angular-coverage check; circles are linked across layers into
+    chains that must span ``min_slices`` (3) layers and lean under
+    ``max_lean_deg`` (25). DBH is
     read from a linear taper at ``reference_height`` (1.3 m).
 
     Keyword parameters (defaults in brackets): ``slice_min`` [1.0],
@@ -356,7 +360,8 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
                   wood_k: int = 20, wood_threshold: float = 0.9, understorey_height: float = 10.0,
                   understorey_band: float = 0.5) -> np.ndarray:
     """Assign each point to a stem by least-cost path through a directed kNN
-    graph (multi-source Dijkstra from stem seeds).
+    graph (multi-source Dijkstra from stem seeds), after raycloudtools'
+    ``rayextract trees`` (Devereux et al. 2026).
 
     The edge cost is ``d ** power`` times an angle penalty
     ``min(exp(0.046 * deg_from_vertical), 100)`` -- climbing is free,
@@ -454,7 +459,7 @@ def merge_branches(cloud: PointCloud, trees: list[Tree], height_attr: str = "hei
     """Drop candidates that are branches or secondary stems of another candidate.
 
     Every graph node's least-cost path to the ground is traced (as in
-    raycloudtools); a candidate whose seed routes to the ground through
+    raycloudtools; Devereux et al. 2026); a candidate whose seed routes to the ground through
     another candidate's trunk (within ``max(trunk_scale * radius,
     trunk_min)`` of its axis, below its seed height) is merged into it.
     ``graph_params`` are the :func:`segment_trees` graph settings. Returns

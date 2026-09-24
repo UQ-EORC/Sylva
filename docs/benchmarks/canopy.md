@@ -5,7 +5,8 @@ positions each. `canopy.GapProfile` reads the raw RXPs: every 4th pulse with
 all its echoes, fired pulses rebuilt from the downward zenith lines, and a
 ground plane fitted per scan to its downward echoes. It is compared with:
 
-- **pylidar-tls-canopy's Jupp (2009) profiles** of the same scans (hinge
+- **[pylidar-tls-canopy](../references.md)'s [Jupp et al.
+  (2009)](../references.md) profiles** of the same scans (hinge
   PAI, pooled per plot and per scan);
 - **ray-traced 0.5 m voxel PAI** (raycloudtools `rayvoxel`, free-path-length
   attenuation, occlusion traced; not comparable in kind: voxels count all
@@ -35,7 +36,7 @@ ground plane fitted per scan to its downward echoes. It is compared with:
   report flags it (`saturated`).
 - **Against the photographs** taken within 120 days (5 plots), Sylva's
   effective hinge PAI gives r = 0.96 at 0.89 × the photo value. Correcting
-  for clumping (Lang–Xiang over scan-sector segments) overshoots it
+  for clumping ([Lang & Xiang 1986](../references.md) over scan-sector segments) overshoots it
   (1.76 ×), consistent with the photo values being effective too. The voxel
   PAI is 1.63 × the photos.
 - **Low woodland** (Calperum mallee, Alice mulga) is mostly at or below the

@@ -7,11 +7,13 @@
 //! A faithful port of `tlsalign.icp` (`icp`, `evaluate_registration`) and the
 //! SE(3) helpers it uses from `tlsalign.transforms`:
 //!
-//! * point-to-plane with a planarity gate on the *target* point, or weighted
-//!   Kabsch point-to-point;
-//! * Huber / Tukey IRLS weights with an adaptive scale floored at
-//!   `robust_scale`, plus distance trimming phased in over `trim_ramp`
-//!   iterations (cutoff = numpy's default linear quantile);
+//! * point-to-plane (Chen & Medioni 1992) with a planarity gate on the
+//!   *target* point, or weighted Kabsch point-to-point (Besl & McKay 1992;
+//!   Kabsch 1976);
+//! * Huber (1964) / Tukey biweight (Beaton & Tukey 1974) IRLS weights with an
+//!   adaptive scale floored at `robust_scale`, plus distance trimming in the
+//!   spirit of trimmed ICP (Chetverikov et al. 2002), phased in over
+//!   `trim_ramp` iterations (cutoff = numpy's default linear quantile);
 //! * a damped Gauss-Newton step on the SE(3) tangent space, over a
 //!   coarse-to-fine voxel pyramid.
 //!

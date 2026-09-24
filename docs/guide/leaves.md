@@ -23,7 +23,7 @@ leaves.write_tree_obj("tree.obj", model, mesh)         # objects "wood" and "lea
 ## The four steps
 
 **Leaf / wood labels.** `classify_leaf_wood` uses, by default, the graph-based
-separation of Tian et al. (2022). Shortest paths from the base give every
+separation of [Tian and Li (2022)](../references.md), following their GBSeparation code. Shortest paths from the base give every
 point a path length and a direction of growth; graph edges are cut where they
 are long for their neighbourhood or join points growing in different
 directions, which severs leaves from the branch they hang on before any shape
@@ -55,11 +55,12 @@ rRMSE 26 % against 20 %), so `qsm.wood_points` keeps the passage filter;
 `wood_points(method="gbs")` is there to try.
 
 **Leaf angle distribution.** Normals from a PCA over each leaf point's
-neighbours give inclinations (angle between the leaf normal and the vertical),
+neighbours ([Vicari et al. 2019](../references.md)) give inclinations (angle between the leaf normal and the vertical),
 weighted by the area each point stands for so densely scanned leaves do not
-dominate. The result carries the histogram, mean, a two-parameter beta fit,
-Campbell's ellipsoidal χ, the nearest de Wit type and the projection function
-`g(zenith)`. `LeafAngleDistribution.from_type("planophile")` gives the analytic
+dominate. The result carries the histogram, mean, a two-parameter beta fit
+([Goel and Strebel 1984](../references.md)), [Campbell's (1990)](../references.md) ellipsoidal χ, the
+nearest [de Wit (1965)](../references.md) type and the projection function `g(zenith)`
+([Wilson 1960](../references.md)). `LeafAngleDistribution.from_type("planophile")` gives the analytic
 types.
 
 **Leaf area density.** Without pulses, `leaf_area_density` counts the surface
@@ -78,7 +79,8 @@ step: `add_leaves(model, 85.0, angles, leaf_points=foliage)`.
 leaf points of that voxel (uniformly inside it if it has none), with normals
 drawn from the angle distribution and a uniform azimuth; blades within
 `max_branch_distance` of a cylinder point away from it and record that
-cylinder. Leaves may intersect each other: no collision test is made.
+cylinder. Leaves may intersect each other: no collision test is made, unlike
+the non-intersecting insertion of [Åkerblom et al. (2018)](../references.md).
 
 ## Leaf shape and size
 

@@ -1,11 +1,13 @@
 // Sylva: terrestrial laser scanning processing for forest ecology.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
+// Portions adapted from rayvoxel (raycloudtools fork, Josh Rivory), Copyright (c)
+// 2020 CSIRO, under the CSIRO licence in THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Ray-traced voxel grid with AMAPVox-style Beer–Lambert statistics.
 //!
-//! A port of the `rayvoxel` tool from the raycloudtools fork (G. Eaton,
-//! CSIRO), working on [`Shots`] instead of ray-cloud files. Every pulse is
+//! A port of the `rayvoxel` tool from the raycloudtools fork (J. Rivory),
+//! working on [`Shots`] instead of ray-cloud files. Every pulse is
 //! traced through the grid twice: once unweighted (beam counts, potential
 //! path length, sub-voxel exploration) and once per echo segment with the
 //! fraction of the beam still travelling (free path length, beam sections,

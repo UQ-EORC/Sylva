@@ -310,7 +310,7 @@ def canopy_cover(chm_data: np.ndarray, threshold: float = 2.0) -> float:
 
 @dataclass
 class DensityGrid:
-    """Ray-traced voxel statistics (raycloudtools / Lowe et al. 2020 style).
+    """Ray-traced voxel statistics (raycloudtools / Lowe et al. 2021 style).
 
     Arrays are ``[k, j, i]`` (z, y, x). ``density`` is
     ``2 (n-1)/n · hits / path_length`` per voxel (spherical leaf angles),
@@ -508,7 +508,7 @@ def fit_ground_plane(points, cell: float = 1.0, centre=None, radius: float | Non
     """Ground plane ``z = a x + b y + c`` through the lowest point of every
     ``cell`` (m) grid cell, optionally within ``radius`` of ``centre`` (xy),
     fitted with Huber-weighted least squares so tree bases and pits pull
-    little.
+    little (after Calders et al. 2014).
 
     Used for the single-scan gap profiles, where a plane around the scanner
     is enough and a DTM may not exist.
@@ -619,7 +619,8 @@ class GapProfile:
 
     Build it with :meth:`empty` and :meth:`add_scan` (one call per scan
     position), then read :meth:`report`. Returns are weighted ``1 / n`` per
-    echo of an ``n``-echo pulse; ``shots`` are pulses fired.
+    echo of an ``n``-echo pulse (equal weighting, Armston et al. 2013);
+    ``shots`` are pulses fired.
 
     Validated against pylidar on TERN plots (within 4 % where unsaturated)
     and against hemispherical photographs; see *Benchmarks > Canopy gap

@@ -1,5 +1,7 @@
 // Sylva: terrestrial laser scanning processing for forest ecology.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
+// Portions adapted from rayvoxel (raycloudtools fork, Josh Rivory), Copyright (c)
+// 2020 CSIRO, under the CSIRO licence in THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Pulse traversal: the accumulation half of rayvoxel (`VoxelProcessor`).
@@ -86,7 +88,7 @@ impl Geom {
     }
 }
 
-/// Amanatides & Woo walk in voxel units (raylib `walkGrid`). `visit(cell,
+/// Amanatides & Woo (1987) walk in voxel units (raylib `walkGrid`). `visit(cell,
 /// in_length, out_length, max_length)` returns `true` to stop.
 pub(crate) fn walk_grid(start: &Point, end: &Point, mut visit: impl FnMut([i64; 3], f64, f64, f64) -> bool) {
     let mut dir = sub(end, start);

@@ -1,5 +1,7 @@
 // Sylva: terrestrial laser scanning processing for forest ecology.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
+// Portions adapted from rayvoxel (raycloudtools fork, Josh Rivory), Copyright (c)
+// 2020 CSIRO, under the CSIRO licence in THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Per-voxel estimators: attenuation, projection functions, area densities.
@@ -11,7 +13,7 @@ use crate::error::{Error, Result};
 
 const EPS: f64 = 1e-10;
 
-/// Analytic leaf angle distribution (de Wit types and AMAPVox's parametric ones).
+/// Analytic leaf angle distribution (de Wit 1965 types and AMAPVox's parametric ones).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Lad {
     Spherical,
@@ -20,9 +22,9 @@ pub enum Lad {
     Erectophile,
     Plagiophile,
     Extremophile,
-    /// Campbell's ellipsoidal distribution with axis ratio `chi`.
+    /// Campbell's (1990) ellipsoidal distribution with axis ratio `chi`.
     Ellipsoidal(f64),
-    /// Two-parameter beta distribution (`mu`, `nu`).
+    /// Two-parameter beta distribution (`mu`, `nu`; Goel & Strebel 1984).
     TwoParamBeta(f64, f64),
 }
 
@@ -245,7 +247,8 @@ impl RayVoxels {
     /// falls back to `hits / path_length`.
     ///
     /// * FPL: intercepted beam section over the effective free path
-    ///   (hits over free path without beam metrics) — the biased MLE.
+    ///   (hits over free path without beam metrics) — the biased MLE of
+    ///   Pimont et al. (2018), with the beam footprint of Pimont et al. (2019).
     /// * Transmittance: `−ln(1 − intercepted / entering)`.
     /// * PPL: the exact solve where available, otherwise the mean-chord form
     ///   (Pimont et al. 2018).

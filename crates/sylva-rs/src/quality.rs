@@ -329,7 +329,7 @@ fn stem_noise_pass(points: &[Point], heights: &[f64], scan_ids: Option<&[i64]>, 
         out.scan_slices.push(ScanSlice { scan, slice: s, n_points: g.len(), median_residual: med, sigma_within, sigma_local });
     }
 
-    // Per scan: horizontal offset, Huber-weighted.
+    // Per scan: horizontal offset, Huber-weighted (Huber 1964; c = 1.345).
     let mut by_scan: HashMap<i64, Vec<(f64, [f64; 2])>> = HashMap::new();
     for &(i, _, rr, nrm) in &slice_of_point {
         by_scan.entry(scan_of(i)).or_default().push((rr, nrm));

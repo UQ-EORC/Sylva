@@ -23,7 +23,7 @@ q.residual                                       # per point, for mapping
 | `sigma_corrected` | the same after moving each scan back by its offset |
 | `sigma_within` | one scan's points about their own median in the slice: range noise, bark and stem shape over the arc it saw |
 | `sigma_local` | after removing a smooth curve along that arc (constant, first and second harmonics of the angle): range noise and bark only |
-| `tx`, `ty` | a scan's horizontal offset from `sum (r - t . n)^2` over its points on every stem, `n` the outward normal; refined by moving the scans back and refitting; relative to the mean of the scans |
+| `tx`, `ty` | a scan's horizontal offset from `sum (r - t . n)^2` over its points on every stem, `n` the outward normal, Huber-weighted ([Huber 1964](../references.md)); refined by moving the scans back and refitting; relative to the mean of the scans |
 | `tail_fraction` | stem points more than 4 σ off: mixed pixels at edges, ghosts |
 
 A whole-stem circle has a floor: stems are not perfect cylinders. On

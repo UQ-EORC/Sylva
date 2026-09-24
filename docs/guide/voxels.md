@@ -1,11 +1,13 @@
 # Ray-traced voxels
 
 `sylva.voxels` is a port of the `rayvoxel` tool from the raycloudtools fork
-(G. Eaton, CSIRO), which follows AMAPVox. Each pulse is traced through the
-grid twice: once whole, for beam counts and the potential path length (the
-full chord of every voxel it could have crossed), and once per echo segment
-carrying the share of the pulse still travelling, for free path lengths, beam
-sections and mean beam angles. Ground echoes and echo-less pulses are traced
+(J. Rivory), which follows AMAPVox ([Vincent et al.
+2017](../references.md)). Each pulse is traced through the grid voxel by
+voxel ([Amanatides & Woo 1987](../references.md)), twice: once whole, for
+beam counts and the potential path length (the full chord of every voxel it
+could have crossed), and once per echo segment carrying the share of the
+pulse still travelling, for free path lengths, beam sections and mean beam
+angles. Ground echoes and echo-less pulses are traced
 but never count as hits.
 
 ```python
@@ -37,17 +39,19 @@ the fallback and the beam-section estimate agree within 3 % in PAI.
 
 | Attenuation | Estimate of λ (m⁻¹) |
 |---|---|
-| `fpl` | intercepted beam section / effective free path length, minus the Pimont et al. (2018) bias term |
+| `fpl` | intercepted beam section / effective free path length, minus the [Pimont et al. (2018)](../references.md) bias term, with the beam footprint of [Pimont et al. (2019)](../references.md) |
 | `ppl` | exact maximum-likelihood solve of `Σ_hits s L / (e^{λL} − 1) = Σ_misses s L` over the beams of each voxel (capped at 20) |
 | `transmittance` | `−ln(1 − intercepted / entering)` beam section |
-| `bailey` | Bailey & Mahaffee (2017) eq. 10 per class, with `G` from triangle facets between neighbouring echoes |
+| `bailey` | [Bailey & Mahaffee (2017)](../references.md) eq. 10 per class, with `G` from triangle facets between neighbouring echoes |
 
 Area density is `λ / G`. `G` comes from an analytic leaf angle distribution
-(`lad=`: spherical, uniform, the four de Wit types, ellipsoidal, two-parameter
-beta) at each voxel's mean beam zenith, or with `inclination=True` from
+(`lad=`: spherical, uniform, the four [de Wit (1965)](../references.md) types,
+[Campbell's (1990)](../references.md) ellipsoidal, [Goel & Strebel's
+(1984)](../references.md) two-parameter beta) at each voxel's mean beam zenith, or with `inclination=True` from
 inclination angle distributions estimated per tree (`tree_id` echo attribute)
 from PCA normals of the echoes and integrated over the tree's own beam
-zeniths (Vicari et al. 2019); each voxel uses its predominant tree.
+zeniths ([Vicari et al. 2019](../references.md)); each voxel uses its
+predominant tree.
 
 Differences from the C++ tool: input is a `Shots` object, so ground, leaf /
 wood and tree labels are plain per-echo arrays, and an echo-less pulse is

@@ -240,7 +240,7 @@ pub fn canopy_cover(chm: &[f64], threshold: f64) -> f64 {
     valid.iter().filter(|&&&v| v >= threshold).count() as f64 / valid.len() as f64
 }
 
-/// Ray-traced density grid (raycloudtools / Lowe et al. 2020 style).
+/// Ray-traced density grid (raycloudtools / Lowe et al. 2021 style).
 ///
 /// Every shot is traced through the grid; each traversed voxel accumulates
 /// the path length and number of rays, and the voxel holding an echo counts
@@ -270,7 +270,8 @@ impl DensityGrid {
         }
     }
 
-    /// Trace a segment from `origin` along unit `dir` for `length` (∞ for unbounded).
+    /// Trace a segment from `origin` along unit `dir` for `length` (∞ for
+    /// unbounded), by the Amanatides & Woo (1987) traversal.
     /// Returns the flat index of the last voxel visited (where an echo lies).
     fn trace(&mut self, origin: &Point, dir: &Point, length: f64) -> Option<usize> {
         // Clip to the grid box (slab test).
@@ -438,7 +439,7 @@ pub struct PgapHistogram {
     pub height_bin: f64,
     pub n_heights: usize,
     /// Weighted returns `[ring][sector][height]`: each echo of a pulse with
-    /// `n` echoes counts `1 / n`. Heights at or above the top bin go in the
+    /// `n` echoes counts `1 / n` (equal weighting, Armston et al. 2013). Heights at or above the top bin go in the
     /// last bin.
     pub hits: Vec<f64>,
     /// Pulses fired `[ring][sector]`.

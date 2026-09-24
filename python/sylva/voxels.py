@@ -1,10 +1,12 @@
 # Sylva: terrestrial laser scanning processing for forest ecology.
 # Copyright (C) 2026 Tim Devereux, The University of Queensland.
+# Portions adapted from rayvoxel (raycloudtools fork, Josh Rivory), Copyright (c)
+# 2020 CSIRO, under the CSIRO licence in THIRD_PARTY_NOTICES.md.
 # Free software under the GNU General Public License v3.0 or later;
 # see the LICENSE file. There is no warranty, to the extent permitted by law.
 """Ray-traced voxel grids with AMAPVox-style Beer-Lambert statistics.
 
-A port of the ``rayvoxel`` tool from the raycloudtools fork (G. Eaton, CSIRO).
+A port of the ``rayvoxel`` tool from the raycloudtools fork (J. Rivory).
 Every pulse is traced through the grid, and each voxel accumulates beam
 counts, potential and free path lengths, beam sections and mean beam angles.
 From these the attenuation coefficient is estimated by free path length
@@ -79,8 +81,9 @@ def leaf_projection(theta, lad: str = "spherical", lad_params: Sequence[float] =
         Beam zenith angle(s) in radians.
     lad
         ``spherical`` (G = 0.5 everywhere), ``uniform``, ``planophile``,
-        ``erectophile``, ``plagiophile``, ``extremophile``, ``ellipsoidal``
-        (``lad_params=[chi]``) or ``twoParamBeta`` (``[mu, nu]``).
+        ``erectophile``, ``plagiophile``, ``extremophile`` (de Wit 1965),
+        ``ellipsoidal`` (Campbell 1990; ``lad_params=[chi]``) or
+        ``twoParamBeta`` (Goel & Strebel 1984; ``[mu, nu]``).
     lad_params
         Parameters of the ellipsoidal or beta distribution.
 
@@ -485,7 +488,8 @@ def ray_voxelize(
         Echo attribute grouping echoes into trees for the inclination
         distributions; all echoes are pooled as tree 0 when it is missing.
     weighting
-        Share of a pulse carried by each echo: ``equal``, ``full`` (last),
+        Share of a pulse carried by each echo: ``equal`` (``1 / n``, as
+        AMAPVox's ``EqualEchoWeight``), ``full`` (last),
         ``first``, ``relative`` or ``strongest`` (by ``intensity_attr``).
     attenuation
         One or more of ``fpl``, ``ppl``, ``transmittance``, ``bailey``; the
@@ -509,7 +513,8 @@ def ray_voxelize(
     subvoxel_split, subvoxel_min_beams
         ``N`` (2-4) for an ``N³`` sub-voxel grid giving ``exploration_rate``.
     average_leaf_area
-        Mean leaf area (m²) of the effective free path correction; 0 disables.
+        Mean leaf area (m²) of the effective free path correction for leaves
+        of finite size (Pimont et al. 2018, 2019); 0 disables.
     unbounded_range
         How far pulses without an echo are traced (default: to the grid edge).
 

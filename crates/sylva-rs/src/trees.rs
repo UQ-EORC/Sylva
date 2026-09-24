@@ -35,7 +35,7 @@ pub struct Tree {
 
 // ------------------------------------------------------------------ circles
 
-/// Kåsa algebraic circle fit: `(cx, cy, r)`.
+/// Kåsa (1976) algebraic circle fit: `(cx, cy, r)`.
 pub fn fit_circle_algebraic(xy: &[[f64; 2]]) -> Result<(f64, f64, f64)> {
     if xy.len() < 3 {
         return Err(Error::invalid("need >= 3 points"));
@@ -96,7 +96,8 @@ impl Default for RansacCircleParams {
     }
 }
 
-/// RANSAC circle fit: `(cx, cy, r, inlier mask)`, refit on the inliers.
+/// RANSAC circle fit (Fischler & Bolles 1981): `(cx, cy, r, inlier mask)`,
+/// refit on the inliers.
 pub fn fit_circle_ransac(xy: &[[f64; 2]], p: &RansacCircleParams) -> Result<(f64, f64, f64, Vec<bool>)> {
     let n = xy.len();
     if n < 3 {
@@ -211,7 +212,8 @@ impl Default for SegmentParams {
 }
 
 /// Assign points to the nearest stem by shortest path through a kNN graph
-/// (multi-source Dijkstra from stem seeds). Unreachable points get `-1`.
+/// (multi-source Dijkstra from stem seeds), after raycloudtools' `rayextract
+/// trees` (Devereux et al. 2026). Unreachable points get `-1`.
 pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &SegmentParams) -> Vec<i64> {
     let task = crate::progress::start("segmenting trees", 5);
     let above: Vec<usize> = (0..points.len()).filter(|&i| heights[i] >= p.cut_above_ground).collect();
@@ -248,8 +250,8 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
         };
         // Seed the bark, not the axis: on a stem wider than `seed_radius` a
         // disc around the centre lies inside the trunk, where a scan has no
-        // points at all, and the tree starts with nothing (arbor seeds a whole
-        // synthetic trunk shell for the same reason).
+        // points at all, and the tree starts with nothing (r-lidar's arbor seeds
+        // a whole synthetic trunk shell for the same reason).
         let inner = if p.seed_ring { 0.5 * t.dbh } else { 0.0 };
         for (i, q) in work.iter().enumerate() {
             let d = (q[0] - t.x).hypot(q[1] - t.y);
@@ -313,7 +315,8 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
 /// Drop stem candidates that are really branches or secondary stems of
 /// another candidate.
 ///
-/// After raycloudtools, every point's least-cost path to the ground is found
+/// After raycloudtools (Devereux et al. 2026), every point's least-cost path
+/// to the ground is found
 /// (multi-source Dijkstra from all points below `ground_height` on the
 /// upward-cheap directed graph). A candidate whose seed's path to the ground
 /// passes through another candidate's trunk region (within
@@ -416,7 +419,7 @@ pub fn tree_heights(heights: &[f64], labels: &[i64], trees: &mut [Tree], percent
     }
 }
 
-/// Convex hull (monotone chain) of 2-D points, counter-clockwise, without
+/// Convex hull (Andrew's 1979 monotone chain) of 2-D points, counter-clockwise, without
 /// repeating the first vertex. Fewer than 3 distinct points give them back.
 pub fn convex_hull(xy: &[[f64; 2]]) -> Vec<[f64; 2]> {
     let mut pts: Vec<[f64; 2]> = xy.iter().copied().filter(|p| p[0].is_finite() && p[1].is_finite()).collect();

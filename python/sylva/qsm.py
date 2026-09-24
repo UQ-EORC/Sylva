@@ -5,8 +5,9 @@
 """Quantitative structure models: skeletonisation and cylinder fitting.
 
 A QSM is a set of connected cylinders. :func:`build_qsm` bins geodesic
-distance from the base over a kNN graph, splits bins into connected segments,
-fits a RANSAC cylinder to each and links parents.
+distance from the base over a kNN graph, splits bins into connected segments
+(Verroust and Lazarus 2000; Xu et al. 2007), fits a RANSAC cylinder to each
+and links parents.
 """
 
 from __future__ import annotations
@@ -672,7 +673,7 @@ def buttress_mesh(cloud: PointCloud, base_xy, ground_z: float | None = None,
     4. The buttress ends where the section turns convex (solidity at or above
        ``solidity`` for four slices), unless ``top`` is given.
     5. The stacked sections become a watertight surface (surface nets,
-       Taubin-smoothed); the volume is the sum of slice areas, with the
+       Gibson 1998, smoothed as in Taubin 1995); the volume is the sum of slice areas, with the
        boundary cells counted as half.
 
     Parameters
@@ -903,8 +904,11 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
     regularised along every root-to-tip path: an allometric prior anchored
     on ``base_radius`` (pass the measured DBH / 2) replaces weak fits more
     than ``allometry_tolerance`` away, chains are made non-increasing, gaps
-    are interpolated and unmeasured branches take the prior. Leafy tips
-    shorter than ``crop_length`` are not reconstructed. Run
+    are interpolated and unmeasured branches take the prior, a pipe model
+    (Shinozaki et al. 1964) that shares a parent's cross-section among its
+    children. Past 2.5 cm point spacing the radius is a power mean of the
+    distances to the axis, after raycloudtools (Devereux et al. 2026).
+    Leafy tips shorter than ``crop_length`` are not reconstructed. Run
     :func:`wood_points` first on leafy trees.
 
     Parameters
@@ -1311,8 +1315,9 @@ def wood_points(cloud: PointCloud, k: int = 20, threshold: float = 0.85,
     next to wood already found; set it at or above ``threshold`` to skip
     the step, which on small leafy crowns pulls foliage in around the
     stem). Topology recovers what anisotropy
-    misses: shortest paths from the base over a kNN graph are traced to one
-    target per ``target_res`` cell, and any point that at least
+    misses (the path-frequency cue of Vicari et al. 2019): shortest paths
+    from the base over a kNN graph are traced to one target per
+    ``target_res`` cell, and any point that at least
     ``min_passage`` of those paths run through is wood, with its neighbours
     within ``assign_dist`` -- a roughly or thinly scanned trunk is neither
     planar nor linear locally but every path to the crown crosses it. A

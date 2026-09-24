@@ -14,7 +14,8 @@ use crate::spatial::KdTree;
 use crate::transform::{cross, dot, sub, Transform};
 use crate::{Point, PointCloud};
 
-/// Least-squares rigid transform mapping `source` onto `target` (Kabsch).
+/// Least-squares rigid transform mapping `source` onto `target` (Kabsch 1976,
+/// with Umeyama's 1991 reflection correction).
 pub fn kabsch(source: &[Point], target: &[Point]) -> Result<Transform> {
     if source.len() != target.len() || source.len() < 3 {
         return Err(Error::invalid("kabsch needs >= 3 paired points"));
@@ -72,7 +73,9 @@ fn normals_of(cloud: &PointCloud, k: usize) -> Vec<Point> {
     }
 }
 
-/// Iterative closest point (point-to-point or point-to-plane).
+/// Iterative closest point: point-to-point (Besl & McKay 1992) or
+/// point-to-plane (Chen & Medioni 1992), with an optional trimmed
+/// fraction of correspondences (Chetverikov et al. 2002).
 pub fn icp(source: &PointCloud, target: &PointCloud, init: Option<Transform>, p: &IcpParams) -> Result<IcpResult> {
     let tree = KdTree::new(&target.xyz);
     let normals = if p.method == "plane" { Some(normals_of(target, p.normal_k)) } else { None };

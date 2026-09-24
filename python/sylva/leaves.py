@@ -48,7 +48,7 @@ def _xyz(points) -> np.ndarray:
 def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str = "gbs", **wood_params) -> np.ndarray:
     """Wood (``True``) / leaf (``False``) for every point of one tree.
 
-    ``method="gbs"`` (default) is the graph-based separation of Tian et al.
+    ``method="gbs"`` (default) is the graph-based separation of Tian and Li
     (2022): edges joining points that grow in different directions are cut,
     the cut graph is split into shells of path length at several
     ``intervals`` and a piece is wood when it spans its shell and is
@@ -133,11 +133,11 @@ class LeafAngleDistribution:
     mean, std
         Mean and standard deviation of the inclination (rad).
     beta_a, beta_b
-        Beta distribution fitted on t = 2θ/π.
+        Beta distribution fitted on t = 2θ/π (Goel and Strebel 1984).
     chi
-        Campbell's ellipsoidal parameter (1 spherical, > 1 planophile).
+        Campbell's (1990) ellipsoidal parameter (1 spherical, > 1 planophile).
     de_wit
-        Nearest de Wit type by name.
+        Nearest de Wit (1965) type by name.
     """
 
     bin_centres: np.ndarray  #: rad, over [0, pi/2]
@@ -155,7 +155,7 @@ class LeafAngleDistribution:
         return float(np.degrees(self.mean))
 
     def g(self, beam_zenith) -> np.ndarray:
-        """Leaf projection function G for this distribution.
+        """Leaf projection function G for this distribution (Wilson 1960).
 
         Parameters
         ----------
@@ -172,7 +172,7 @@ class LeafAngleDistribution:
 
     @classmethod
     def from_type(cls, name: str = "spherical", n_bins: int = 18) -> "LeafAngleDistribution":
-        """A textbook de Wit distribution.
+        """A textbook de Wit (1965) distribution.
 
         Parameters
         ----------
@@ -203,7 +203,8 @@ def leaf_angle_distribution(leaf_points, k: int = 12, n_bins: int = 18, weights=
                             inclinations: bool = False, res: float | None = 0.0) -> LeafAngleDistribution:
     """Leaf angle distribution from leaf points.
 
-    Normals come from a PCA over ``k`` neighbours. By default the points are
+    Normals come from a PCA over ``k`` neighbours, as in Vicari et al.
+    (2019). By default the points are
     first thinned to ``res`` (0: chosen from the point spacing) and each is weighted by the leaf area it stands
     for, so densely scanned leaves do not dominate; pass ``res=None`` to use
     every point equally. With ``inclinations=True`` the first argument is an
@@ -660,7 +661,8 @@ def add_leaves(model: QSM | None, leaf_area: LeafAreaGrid | float, angles: LeafA
     there are any (uniformly inside it otherwise), with normals drawn from
     ``angles`` (a distribution or a de Wit type name) and a uniform azimuth;
     blades within ``max_branch_distance`` of a cylinder point away from it.
-    Leaves may intersect: no collision test is made.
+    Leaves may intersect: no collision test is made, unlike the insertion
+    of Åkerblom et al. (2018).
 
     Parameters
     ----------

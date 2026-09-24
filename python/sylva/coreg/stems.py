@@ -13,7 +13,8 @@ solved with no initial guess.
 
 The detector is the Rust one behind :func:`sylva.trees.detect_stems`, run in
 its tlsalign mode (0.4 m slice spacing, no prefilter, over-wide clusters
-skipped, RANSAC in blocks of 32), so the stem maps are tlsalign's.
+skipped, RANSAC (Fischler & Bolles 1981) in blocks of 32), so the stem
+maps are tlsalign's.
 """
 
 from __future__ import annotations

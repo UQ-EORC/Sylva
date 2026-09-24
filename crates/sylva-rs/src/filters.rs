@@ -151,7 +151,7 @@ pub fn range_filter(cloud: &PointCloud, origin: Point, min_range: f64, max_range
     cloud.filter(&mask)
 }
 
-/// Statistical outlier removal mask: `true` = keep.
+/// Statistical outlier removal mask (Rusu et al. 2008): `true` = keep.
 ///
 /// A point is dropped when its mean distance to `k` neighbours exceeds
 /// `mean + std_ratio * std` of that statistic over the cloud.
@@ -241,7 +241,8 @@ pub fn estimate_normals(points: &[Point], k: usize) -> Vec<Point> {
     local_pca(points, k).0
 }
 
-/// Planarity `(l2 - l1) / l3` and linearity `(l3 - l2) / l3` per point (eigenvalues ascending).
+/// Planarity `(l2 - l1) / l3` and linearity `(l3 - l2) / l3` per point (eigenvalues ascending),
+/// as in Weinmann et al. (2015).
 pub fn planarity_linearity(points: &[Point], k: usize) -> (Vec<f64>, Vec<f64>) {
     let (_, vals) = local_pca(points, k);
     vals.iter()

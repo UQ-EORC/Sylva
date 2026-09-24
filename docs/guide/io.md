@@ -40,8 +40,8 @@ are already flattened with `ground.flatten`.
 
 | Extension | Read | Write | Notes |
 |---|---|---|---|
-| `.las` `.laz` | yes | yes | Every standard dimension. Extra bytes read and written with their types, so `height` and `tree_id` round-trip. `point_format` (default 6) and `scale` (default 1 mm) on write. |
-| `.ply` | yes | yes | ASCII or binary; every vertex property becomes an attribute. raycloudtools ray clouds read as ordinary clouds with `nx ny nz`. |
+| `.las` `.laz` | yes | yes | ASPRS LAS 1.4; LAZ is LASzip (Isenburg 2013). Every standard dimension. Extra bytes read and written with their types, so `height` and `tree_id` round-trip. `point_format` (default 6) and `scale` (default 1 mm) on write. |
+| `.ply` | yes | yes | ASCII or binary; every vertex property becomes an attribute. raycloudtools ray clouds (Lowe & Stepanas 2021) read as ordinary clouds with `nx ny nz`. |
 | `.xyz` `.txt` `.asc` `.pts` `.csv` | yes | yes | Delimiter detected; header line gives names; PTS count line skipped. Written with a header, 0.1 mm precision. |
 | `.rxp` | yes | no | RIEGL, needs RiVLib (below). Points in the scanner frame. |
 | `.parquet` | `Shots.load` | `Shots.save` | Pulse data, see [Pulse data](pulses.md). |
@@ -50,6 +50,9 @@ Rasters (DTM, CHM) are `sylva.Raster` objects, written with
 `to_ascii_grid` (`.asc`) or `to_geotiff` (`.tif`, needs `rasterio`:
 `pip install sylva-rs[geotiff]`). Row 0 of `Raster.data` is the southern
 edge, and both writers flip it to north-up.
+
+The format specifications are listed on the [references](../references.md)
+page.
 
 ## RIEGL data
 

@@ -4,16 +4,18 @@
 # see the LICENSE file. There is no warranty, to the extent permitted by law.
 """Fine registration by iterative closest point, tuned for forests.
 
-Two departures from a textbook ICP matter:
+Two departures from a textbook ICP (Besl & McKay 1992) matter:
 
-* **Point-to-plane with a planarity gate.** Foliage is a view-dependent mess
-  whose normals are noise; the cost is kept to planar neighbourhoods (stems,
-  ground, logs), the parts stable between viewpoints.
+* **Point-to-plane with a planarity gate.** The point-to-plane cost of Chen
+  & Medioni (1992) is kept to planar neighbourhoods (stems, ground, logs),
+  the parts stable between viewpoints: foliage is a view-dependent mess
+  whose normals are noise.
 * **Robust, trimmed correspondences.** Forest scans overlap only partly, so
-  many source points have no true match. A Huber weight with an adaptive
-  scale and a trim that is phased in over the first iterations of each level
-  keep them from biasing the pose without discarding the far points that
-  carry the rotation.
+  many source points have no true match. A Huber (1964) weight with an
+  adaptive scale and a trim (as in the trimmed ICP of Chetverikov et al.
+  2002) phased in over the first iterations of each level keep them from
+  biasing the pose without discarding the far points that carry the
+  rotation.
 
 The solver is a damped Gauss-Newton on SE(3) with a capped step, over a
 coarse-to-fine voxel pyramid. The loop runs in the Rust core.

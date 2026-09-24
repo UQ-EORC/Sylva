@@ -4,8 +4,8 @@ The detect → segment → prune pipeline is scored
 against manually segmented reference plots (per-point tree labels) as
 instance segmentation: a reference tree counts as found when its
 best-overlapping sylva tree has IoU ≥ 0.5; predicted trees outside the
-reference coverage are ignored. raycloudtools' `rayextract trees` output is
-scored the same way.
+reference coverage are ignored. raycloudtools' `rayextract trees`
+([Devereux et al. 2026](../references.md)) output is scored the same way.
 
 | Site (points) | sylva F1 | raycloudtools F1 | sylva TP / ref | sylva mean IoU |
 |---|---|---|---|---|
@@ -18,7 +18,7 @@ scored the same way.
 
 ## Scored the way the benchmark scores
 
-Cherlet et al. evaluate only the trees that lie at least 90 % inside the test
+[Cherlet et al. (2026)](../references.md) evaluate only the trees that lie at least 90 % inside the test
 sub-plot — 128, 181, 89 and 150 of them, which is what the `in_plot_th0.90`
 folders hold — and a prediction whose best overlap is with an *edge* tree is
 neglected rather than counted against precision. Matching is Hungarian on the
@@ -46,7 +46,7 @@ shrub. Keep the threshold you segment with separate from the one you report,
 and set the second to match whatever your inventory calls a tree.
 
 For context, the best figures published on this benchmark (Cherlet et al.
-2026, Table 2, and SegmentAnyTreeV2 2026) are F1 0.930–0.972 at Litchfield,
+2026, Table 2, and SegmentAnyTreeV2, [Wielgosz et al. 2026](../references.md)) are F1 0.930–0.972 at Litchfield,
 0.570 at Wytham, 0.744 at Ofental and 0.584 at Robson Creek. Those are taken
 from a summary of the papers rather than re-measured here, so treat them as
 indicative: on that reading Wytham is ahead of anything published, Litchfield
@@ -109,7 +109,7 @@ things worse on this data:
   normalised by canopy height; here it stacks on `length⁴`, so a 10 m-wide
   rainforest crown pays about ×31 on every edge.
 - **Edge weight as the gap between clusters rather than the distance
-  travelled** — TLS2trees' documented fix for a path that prefers a
+  travelled** — TLS2trees' ([Wilkes et al. 2023](../references.md)) documented fix for a path that prefers a
   suppressed tree's base. Grouping points into 0.25 m cubes and pricing each
   edge by the closest approach between two groups gives Ofental F1 0.667 →
   0.158 and Robson 0.521 → 0.150. The reason is instructive: with gap

@@ -11,7 +11,8 @@ model.to_obj("tree7.obj")                       # 3-D mesh (Blender / MeshLab / 
 model.to_ply("tree7.ply")                       # binary mesh, faces coloured by branch order
 ```
 
-`wood_points` uses topology as well as local anisotropy: shortest paths from the base over a kNN graph are traced to one
+`wood_points` uses topology as well as local anisotropy, the path-frequency
+cue of [Vicari et al. (2019)](../references.md): shortest paths from the base over a kNN graph are traced to one
 target per 20 cm cell and every point that three or more of them run
 through is wood, so a sparsely scanned trunk -- neither planar nor linear
 at the neighbourhood scale, and dropped by the old filter -- is kept
@@ -25,10 +26,11 @@ against 17 % without it) but on small leafy crowns it pulls foliage in
 around the stem; pass `medium_threshold=1.0` to skip it for saplings.
 
 In the cylinder stage, points are binned into 10 cm geodesic
-shells from the base and clustered within each shell; cluster centres
+shells from the base and clustered within each shell, the level-set skeleton
+of [Verroust and Lazarus (2000)](../references.md) and [Xu et al. (2007)](../references.md); cluster centres
 (circle-fitted where the section is dense) are chained greedily, each node
 linking to the nearest unplaced centre of a higher shell and stragglers to
-their nearest placed centre, then Taubin-smoothed with the ends pinned. A
+their nearest placed centre, then Taubin-smoothed ([Taubin 1995](../references.md)) with the ends pinned. A
 trunk that starts by wandering through buttress arms is cut at the first run
 of near-vertical cylinders and replaced by a straight stump. Axes are chosen
 by subtree top height, then reassigned by subtree volume once radii exist.
@@ -38,9 +40,12 @@ take the equivalent-area radius of a Fourier contour instead, and fluted
 sections a circle cannot explain take that contour's area. On the stem a
 quadratic in subtree length through the accepted circles (or the tree
 allometry) replaces weak fits and fills gaps, non-increasing; everything
-unmeasured, branches included, comes from a pipe model, tapering
+unmeasured, branches included, comes from a pipe model ([Shinozaki et al.
+1964](../references.md)), tapering
 linearly with subtree length on straight runs and sharing the parent's
-cross-section by subtree length at every fork.
+cross-section by subtree length at every fork. At forks the children's
+summed cross-section is also held to at most `pipe_slack` times the parent's
+(Leonardo's rule, as in raycloudtools; [Devereux et al. 2026](../references.md)).
 
 Accuracy against felled trees and against raycloudtools is on the
 [QSM benchmark](../benchmarks/qsm.md) page.
@@ -92,6 +97,9 @@ b["order"], b["length"], b["base_radius"], b["insertion_angle"], b["zenith"]
 - `trees.crown_shape()` gives the same shape from any points (a tree's
   segmented points, say): projected area, stacked slice-hull volume and
   surface, and the crown's offset from the stem.
+- `path_fraction` is the mean base-to-tip path length over the longest one
+  ([Smith et al. 2014](../references.md)): 1 for a single stem or a perfectly symmetric
+  tree, lower as the branching grows lopsided.
 - `measured_volume_fraction` is the share of the volume in cylinders whose
   radius was fitted to points; the rest comes from the taper and pipe-model
   priors. It is a quality flag for the model itself.
@@ -176,7 +184,8 @@ Sylva now sets those from the cloud rather than assuming: the circle band,
 the shell length and `fit_min_points` are scaled to the median spacing
 (`spacing_scale`, 0 to switch it off), and past 2.5 cm spacing the radius
 comes from a power mean of the distances to the section axis instead of a
-circle fit (`radius_power`, after raycloudtools). That is a different failure
+circle fit (`radius_power`, after raycloudtools' `rayextract trees`;
+[Devereux et al. 2026](../references.md)). That is a different failure
 mode on purpose: a low power mean is dominated by the near points, so a
 section that caught foliage reads slightly small rather than wildly large,
 and nothing has to lie inside a band for it to work at all.
@@ -255,7 +264,8 @@ shape works:
 - Where an outline stays open, the seen bark is kept, thickened to the closing
   radius, plus a circle where the points form a good arc.
 
-The stacked sections become a watertight surface (surface nets), closed where
+The stacked sections become a watertight surface (surface nets, [Gibson
+1998](../references.md)), closed where
 the solid meets the ground and the edge of its raster. A few edges are shared
 by four faces where two voxels touch only corner to corner, which some tools
 call non-manifold; the surface is still closed, and the volume it encloses

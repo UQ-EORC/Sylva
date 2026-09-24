@@ -31,10 +31,10 @@ What each spread contains:
     measure closest to the scanner's own noise.
 ``tx, ty``
     the horizontal offset of each scan, from ``sum (r - t . n)^2`` over its
-    points on every stem (``n`` the outward normal), refined by moving the
-    scans back and refitting; relative to the mean of all scans, since a
-    common shift is invisible. Vertical misregistration does not show on
-    vertical stems.
+    points on every stem (``n`` the outward normal; Huber 1964 weights),
+    refined by moving the scans back and refitting; relative to the mean of
+    all scans, since a common shift is invisible. Vertical misregistration
+    does not show on vertical stems.
 """
 
 from __future__ import annotations

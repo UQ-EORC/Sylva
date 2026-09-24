@@ -22,7 +22,7 @@
 //! 4. The buttress ends where the cross-section becomes convex again
 //!    (solidity, area over convex-hull area).
 //! 5. The stacked cross-sections are turned into a watertight surface by
-//!    surface nets; the volume is the sum of slice areas.
+//!    surface nets (Gibson 1998); the volume is the sum of slice areas.
 
 use std::collections::VecDeque;
 
@@ -332,7 +332,7 @@ fn surface_nets(g: &Grid, occ: &[Vec<bool>], dz: f64, z0: f64) -> (Vec<Point>, V
     (verts, faces)
 }
 
-/// Taubin (lambda / mu) smoothing: removes the staircase without shrinking.
+/// Taubin (1995) lambda / mu smoothing: removes the staircase without shrinking.
 fn taubin(verts: &mut [Point], faces: &[[u32; 3]], passes: usize) {
     let mut nb: Vec<Vec<u32>> = vec![Vec::new(); verts.len()];
     for f in faces {

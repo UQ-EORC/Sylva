@@ -10,7 +10,8 @@
 //! the QSM has no measurements on the very cylinders that carry the volume.
 //! The answer here is topological: every path from the base to any part of
 //! the crown runs through the trunk and the branches, so points that many
-//! shortest paths pass through are wood whatever their local shape.
+//! shortest paths pass through are wood whatever their local shape (the
+//! path-frequency cue of Vicari et al. 2019).
 //!
 //! Steps: passage counting on a kNN graph from
 //! the base, with coarse target cells so the count does not depend on point
@@ -238,7 +239,7 @@ fn keep_components(points: &[Point], subset: &[usize], wood: &[bool], res: f64, 
     out
 }
 
-/// Graph-based leaf / wood separation after Tian et al. (2022, IEEE TGRS 60,
+/// Graph-based leaf / wood separation after Tian & Li (2022, IEEE TGRS 60,
 /// "GBSeparation").
 ///
 /// Shortest paths from the base give every point a path length and an
@@ -251,6 +252,10 @@ fn keep_components(points: &[Point], subset: &[usize], wood: &[bool], res: f64, 
 /// cross-section) or linear. A piece thicker than the wood below it on its
 /// path is rejected. Wood then spreads down every path to the base, to
 /// graph neighbours no further from the base, and to close neighbours.
+///
+/// The steps and thresholds follow the authors' Python implementation
+/// (Tian & Li, GBSeparation, 2022, <https://doi.org/10.5281/zenodo.6837613>,
+/// CC BY 4.0), rewritten in Rust with union-find in place of networkx.
 #[derive(Debug, Clone)]
 pub struct GbsParams {
     pub graph_k: usize,

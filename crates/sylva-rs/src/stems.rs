@@ -6,7 +6,7 @@
 //!
 //! Bottom-up, after tlsalign's detector: the stem band (1–5 m above ground)
 //! is cut into horizontal layers; each layer is clustered in 2-D and circles
-//! are fitted by RANSAC with an angular-coverage check; circles are linked
+//! are fitted by RANSAC (Fischler & Bolles 1981) with an angular-coverage check; circles are linked
 //! across layers into stem chains, which must span at least `min_slices`
 //! layers and lean less than `max_lean_deg`. A branch, a shrub or a foliage
 //! clump rarely produces consistent circles in three or more layers, which
@@ -211,7 +211,8 @@ fn circumcircle(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Option<(f64, f64, f64)
     Some((cx, cy, (a[0] - cx).hypot(a[1] - cy)))
 }
 
-/// Kåsa fit about the centroid followed by Gauss–Newton geometric refinement.
+/// Kåsa (1976) fit about the centroid followed by Gauss–Newton geometric
+/// refinement.
 pub(crate) fn fit_circle_refined(xy: &[[f64; 2]]) -> Option<(f64, f64, f64)> {
     let n = xy.len() as f64;
     if xy.len() < 3 {

@@ -82,12 +82,6 @@ pub fn graph_from_directed(adj: Vec<Vec<(u32, f64)>>) -> Graph {
     Graph { offsets, neighbors, weights, xy: Vec::new() }
 }
 
-/// Directed kNN graph with a direction-dependent cost:
-/// `cost(from -> to) = d^power * penalty(angle from vertical)`, where the
-/// penalty is `min(exp(0.046051 * deg), 100)` -- travelling up is free,
-/// horizontal costs x63 and downward x100 -- so shortest paths from stem
-/// seeds climb through the tree rather than leaking across the ground.
-/// The neighbour set is symmetrised so the graph is connected both ways.
 /// What a k-nearest-neighbour graph over `n` points will cost, and whether it
 /// fits: each edge is stored both ways, as a `u32` and an `f64`, plus the
 /// per-node vectors that build it.
@@ -101,6 +95,12 @@ fn check_graph(n: usize, k: usize) -> crate::error::Result<()> {
     )
 }
 
+/// Directed kNN graph with a direction-dependent cost:
+/// `cost(from -> to) = d^power * penalty(angle from vertical)`, where the
+/// penalty is `min(exp(0.046051 * deg), 100)` -- travelling up is free,
+/// horizontal costs x63 and downward x100 -- so shortest paths from stem
+/// seeds climb through the tree rather than leaking across the ground.
+/// The neighbour set is symmetrised so the graph is connected both ways.
 pub fn directed_knn_graph(points: &[Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool) -> Graph {
     directed_knn_graph_wood(points, k, max_distance, power, angle_penalty, None)
 }
@@ -277,7 +277,7 @@ pub fn dijkstra(graph: &Graph, sources: &[usize]) -> (Vec<f64>, Vec<usize>, Vec<
     dijkstra_gravity(graph, sources, None, 0.0)
 }
 
-/// [`dijkstra`] with raycloudtools' gravity term: each edge cost is scaled by
+/// [`dijkstra`] with raycloudtools' gravity term (Devereux et al. 2026): each edge cost is scaled by
 /// `1 + gravity * lateral^2`, the squared horizontal offset of the node being
 /// expanded from the seed its path started at (`seed_xy[source]`), so long
 /// horizontal reaches away from a stem are discouraged.

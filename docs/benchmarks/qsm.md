@@ -3,9 +3,10 @@
 ## Destructive harvest
 
 Single-tree QSMs are scored against felled-tree
-volumes: 72 trees from Momo Takoudjou 2017, Gonzalez de Tanago 2017 and Burt
-2021, with wood density assigned per tree and agreement statistics computed
-the same way for every method:
+volumes: 72 trees from [Momo Takoudjou et al. (2018)](../references.md), [Gonzalez de
+Tanago et al. (2018)](../references.md) and [Burt et al. (2021)](../references.md), with wood density assigned per tree and agreement statistics computed
+the same way for every method; rayextract is raycloudtools' tree
+reconstruction ([Devereux et al. 2026](../references.md)):
 
 | method | volume bias | rRMSE | CCC | DBH bias / rRMSE |
 |---|---|---|---|---|

@@ -15,7 +15,7 @@ __all__ = ["kabsch", "icp", "merge_scans", "rotation_z", "translation", "estimat
 
 
 def kabsch(source: np.ndarray, target: np.ndarray) -> np.ndarray:
-    """Best rigid transform between paired points (Kabsch / Umeyama, no scale).
+    """Best rigid transform between paired points (Kabsch 1976; Umeyama 1991, no scale).
 
     Use with matched targets (reflectors, tie points) to register scans.
 
@@ -40,10 +40,11 @@ def icp(source: PointCloud, target: PointCloud, init: np.ndarray | None = None,
         normal_k: int = 12) -> tuple[np.ndarray, dict]:
     """Iterative closest point.
 
-    ``method`` is ``"point"`` (point-to-point) or ``"plane"`` (point-to-plane,
-    using ``target.attrs['nx','ny','nz']`` if present else PCA normals).
-    ``trim`` keeps that fraction of closest correspondences per iteration
-    (trimmed ICP for partial overlap).
+    ``method`` is ``"point"`` (point-to-point, Besl & McKay 1992) or
+    ``"plane"`` (point-to-plane, Chen & Medioni 1992, linearised as in Low
+    2004; normals from ``target.attrs['nx','ny','nz']`` if present, else
+    PCA). ``trim`` keeps that fraction of closest correspondences per
+    iteration (trimmed ICP for partial overlap, Chetverikov et al. 2002).
 
     Parameters
     ----------

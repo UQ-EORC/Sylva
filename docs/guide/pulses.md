@@ -57,9 +57,10 @@ it peaks at 3.6 GB of memory instead of 37 GB.
 ## Gap probability profiles
 
 `canopy.GapProfile` pools scans into returns and fired pulses by zenith ring,
-azimuth sector and height above ground (Jupp et al. 2009). Each echo of an
-*n*-echo pulse counts 1/*n*. From that it gives plant area profiles and a plot
-summary:
+azimuth sector and height above ground ([Jupp et al. 2009](../references.md)).
+Each echo of an *n*-echo pulse counts 1/*n*, the equal weighting of
+[Armston et al. (2013)](../references.md). From that it gives plant area
+profiles and a plot summary:
 
 ```python
 from sylva import canopy, io
@@ -78,13 +79,15 @@ r["height"], r["pai_hinge_profile"], r["pavd_hinge"]
 ```
 
 - **Estimators** (all effective, not corrected for clumping):
-  - `hinge`: −1.1 ln P(57.5°);
+  - `hinge`: −1.1 ln P(57.5°), at the angle where G is close to 0.5 for any
+    leaf angle ([Wilson 1963](../references.md));
   - `linear`: Jupp's fit of −ln P(θ) against tan θ, which also gives a mean
     leaf angle;
-  - `weighted`: Miller's integral over the rings measured, assuming spherical
-    leaves.
-- **Clumping** is the Lang–Xiang index over every (scan, azimuth sector)
-  segment of the hinge ring. `pai_hinge_corrected` divides by it.
+  - `weighted`: [Miller's (1967)](../references.md) integral over the rings
+    measured, assuming spherical leaves.
+- **Clumping** is the [Lang–Xiang (1986)](../references.md) index over every
+  (scan, azimuth sector) segment of the hinge ring. `pai_hinge_corrected`
+  divides by it.
 - **Fired pulses.** RiVLib's stream drops the pulses that returned nothing,
   so `fired_pulses_per_ring` rebuilds the fired counts (in the scanner
   frame).
@@ -100,7 +103,9 @@ r["height"], r["pai_hinge_profile"], r["pavd_hinge"]
   - With `shot_stride` both sides are decimated alike.
   - Shots that already hold their misses (a ray cloud, `Shots.fill_missing`)
     need no `fired_per_ring`.
-- **Ground.** Heights are only used for the profile. Returns below the ground
+- **Ground.** `fit_ground_plane` fits a robust plane through the lowest
+  point of each grid cell, after [Calders et al. (2014)](../references.md).
+  Heights are only used for the profile. Returns below the ground
   model still count, in the lowest bin: an upward pulse cannot hit the
   ground.
 

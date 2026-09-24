@@ -14,7 +14,7 @@
 //!   neighbours, their inclinations are binned over `[0, 90]` degrees and
 //!   summarised by the mean, a two-parameter beta distribution (Goel &
 //!   Strebel 1984), Campbell's ellipsoidal `chi` (1990) and the nearest de
-//!   Wit type;
+//!   Wit (1965) type;
 //! * **area** -- a leaf area per voxel, either from ray-traced leaf area
 //!   density (`voxel`) or, without pulses, from the leaf points themselves: a
 //!   surface thinned to one point per cube of side `res` crosses
@@ -25,7 +25,8 @@
 //!   centred on leaf points of that voxel (or uniformly inside it), with
 //!   normals drawn from the angle distribution and a uniform azimuth, and the
 //!   blade pointing away from the nearest branch of the QSM. Leaves may
-//!   intersect each other; nothing here resolves collisions.
+//!   intersect each other; nothing here resolves collisions (unlike the
+//!   leaf insertion of Åkerblom et al. 2018).
 
 use std::collections::HashMap;
 use std::f64::consts::{FRAC_PI_2, PI, TAU};

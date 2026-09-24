@@ -86,7 +86,7 @@ def refine_joint(
 
     Levels run coarse to fine. At each, correspondences are associated
     ``rounds`` times under the current poses and each association is followed
-    by ``iterations`` Gauss-Newton steps with Huber reweighting.
+    by ``iterations`` Gauss-Newton steps with Huber (1964) reweighting.
 
     Stems are paired afresh at every association, mutually nearest within
     ``stem_radius`` horizontally, with a fixed Huber scale ``stem_scale``, and

@@ -176,7 +176,7 @@ def range_filter(cloud: PointCloud, origin=(0.0, 0.0, 0.0), min_range: float = 0
 
 def statistical_outlier_removal(cloud: PointCloud, k: int = 8, std_ratio: float = 2.0,
                                 return_mask: bool = False):
-    """Remove isolated points by their distance to neighbours.
+    """Remove isolated points by their distance to neighbours (Rusu et al. 2008).
 
     For each point the mean distance to its ``k`` nearest neighbours is
     computed; points where this exceeds ``mean + std_ratio * std`` over the
@@ -252,8 +252,8 @@ def planarity_linearity(cloud: PointCloud, k: int = 20) -> tuple[np.ndarray, np.
 
     With the covariance eigenvalues of the ``k`` neighbours sorted
     ``l1 <= l2 <= l3``, planarity is ``(l2 - l1) / l3`` and linearity is
-    ``(l3 - l2) / l3``. Both lie in 0-1; stems and branches are linear,
-    leaves and ground planar.
+    ``(l3 - l2) / l3`` (Weinmann et al. 2015). Both lie in 0-1; stems and
+    branches are linear, leaves and ground planar.
 
     Parameters
     ----------

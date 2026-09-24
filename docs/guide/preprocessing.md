@@ -28,7 +28,8 @@ clean = filters.radius_outlier_removal(cloud, radius=0.05, min_neighbors=4)
 keep = filters.statistical_outlier_removal(cloud, return_mask=True)      # boolean mask instead
 ```
 
-The statistical filter compares every point against global statistics.
+The statistical filter ([Rusu et al. 2008](../references.md)) compares every
+point's mean distance to its neighbours against global statistics.
 Where density varies a lot, run it per scan or after thinning, or it removes
 distant, sparse points that are real.
 
@@ -41,8 +42,10 @@ labels = filters.euclidean_clusters(cloud.xyz, radius=0.1, min_points=50)   # 0 
 dist, idx = filters.knn(cloud.xyz, queries, k=8)
 ```
 
-Stems and branches are linear, while leaves and ground are planar. These
-features drive the leaf/wood filters in `sylva.qsm` and `sylva.leaves`.
+Planarity and linearity are the eigenvalue features of [Weinmann et al.
+(2015)](../references.md). Stems and branches are linear, while leaves and
+ground are planar. These features drive the leaf/wood filters in `sylva.qsm`
+and `sylva.leaves`.
 
 ## Registration
 
@@ -66,11 +69,18 @@ info                    # {'rmse': ..., 'iterations': ..., 'n_correspondences': 
 merged = reg.merge_scans([scan_a, scan_b], [np.eye(4), T])   # adds scan_id
 ```
 
+`kabsch` is the closed-form least-squares rotation of Kabsch (1976) with
+Umeyama's (1991) guard against reflections. `icp` is point-to-point ICP
+(Besl & McKay 1992) or, with `method="plane"`, point-to-plane ICP (Chen &
+Medioni 1992) solved by Low's (2004) linearisation; see the
+[references](../references.md).
+
 - **Starting point.** ICP only converges from a start within about
   `max_correspondence_distance`, so give it the SOP or a Kabsch estimate.
   `reg.rotation_z` and `reg.translation` build simple starting guesses.
-- **Partial overlap.** `trim` below 1 drops the worst pairs each iteration,
-  which is what two scan positions of a forest plot need.
+- **Partial overlap.** `trim` below 1 drops the worst pairs each iteration
+  (trimmed ICP, Chetverikov et al. 2002), which is what two scan positions
+  of a forest plot need.
 - **Checking the result.** ICP's RMSE mixes noise with misregistration.
   `quality.stem_noise` separates the two, giving the horizontal offset of
   every scan measured on the stems (see [Scan quality](quality.md)).
@@ -108,10 +118,12 @@ It works in three stages:
    planar points (stems, ground, logs) are kept for ICP.
 2. **Each pair** is matched on shared targets where both scans saw three or
    more. Otherwise the two stem maps are matched. A robust point-to-plane ICP
-   then refines the match. A pair is accepted only if it fits both overall
+   (Chen & Medioni 1992, with Huber weights and a trimmed tail as in
+   Chetverikov et al. 2002) then refines the match. A pair is accepted only if it fits both overall
    and above the ground, so a flat ground can't confirm a wrong match on its
    own.
-3. **The whole survey** is solved as a pose graph, with outlier edges
+3. **The whole survey** is solved as a pose graph (Lu & Milios 1997) by
+   Levenberg–Marquardt with a Huber (1964) kernel, with outlier edges
    rejected. Scans that are left over are retried against the combined
    survey.
 
@@ -136,4 +148,5 @@ Options:
 A survey where the positions share few trees may register only in part from
 stems. On a 14-scan VZ-400 survey, stems alone placed 4 scans; with the
 RiSCAN targets, all 14 landed within 7 cm of the target-based SOPs. The same
-pipeline is the `sylva coreg` command (see [Command line](cli.md)).
+pipeline is the `sylva coreg` command (see [Command line](cli.md)). The
+methods it builds on are cited on the [references](../references.md) page.

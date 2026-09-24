@@ -7,11 +7,12 @@
 Pairwise registration leaves a survey inconsistent: going A->B->C->A does not
 return to the start, and the drift shows up as doubled stems. A pose graph
 finds the poses that best explain every pairwise measurement at once,
-spreading the closure error over the loop.
+spreading the closure error over the loop (Lu & Milios 1997).
 
 Nodes are ``world_from_scan`` poses; edges are measured relative transforms
 with an information matrix saying how far each is trusted. The solver is
-Levenberg-Marquardt on SE(3) with a Huber kernel and an explicit outlier pass,
+Levenberg-Marquardt (Levenberg 1944; Marquardt 1963) on SE(3) with a Huber
+(1964) kernel and an explicit outlier pass,
 because in a forest a pairwise match can be confidently and completely wrong
 when two parts of a stand have similar stem patterns.
 """

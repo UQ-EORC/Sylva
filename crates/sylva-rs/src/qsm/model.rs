@@ -352,7 +352,7 @@ pub struct QsmParams {
     /// the priors. 0 leaves the given values alone.
     pub spacing_scale: f64,
     /// Radius from a power mean of the distances to the axis, after
-    /// raycloudtools: `r = (mean d^q)^(1/q)`. A low power is dominated by the
+    /// raycloudtools (Devereux et al. 2026): `r = (mean d^q)^(1/q)`. A low power is dominated by the
     /// near points, so foliage pulls the radius down rather than up, and
     /// nothing has to lie within a band for it to work. 0 uses the circle fit.
     pub radius_power: f64,
@@ -465,7 +465,9 @@ fn subgraph_components(graph: &Graph, members: &[usize]) -> Vec<usize> {
     label
 }
 
-/// Graph-based skeleton of a single tree.
+/// Graph-based skeleton of a single tree: level sets of geodesic distance
+/// from the base, split into connected pieces (Verroust & Lazarus 2000;
+/// Xu et al. 2007).
 pub fn skeletonize(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParams) -> Result<Skeleton> {
     if xyz.is_empty() {
         return Err(Error::invalid("empty cloud"));
@@ -701,8 +703,8 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
         stack.extend(children[s].iter().copied());
     }
 
-    // 1. Taubin-smooth centres along chains (lambda 0.5, mu -0.53),
-    // with roots and tips pinned so the chain does not shrink.
+    // 1. Taubin-smooth centres along chains (Taubin 1995; lambda 0.5,
+    // mu -0.53), with roots and tips pinned so the chain does not shrink.
     let pinned: Vec<bool> = (0..n_seg).map(|s| !parent_of.contains_key(&s) || children[s].is_empty()).collect();
     let mut centre: Vec<Point> = skel.centres.clone();
     let laplacian = |c: &[Point], s: usize| -> Point {
@@ -979,9 +981,9 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
             }
         }
     }
-    // Branches: pipe-model reconstruction, top-down. Each node is
-    // anchored on its parent's final radius r_a and subtree length s_a: on a
-    // straight run the radius tapers linearly with subtree length,
+    // Branches: pipe-model reconstruction (Shinozaki et al. 1964), top-down.
+    // Each node is anchored on its parent's final radius r_a and subtree
+    // length s_a: on a straight run the radius tapers linearly with subtree length,
     // r = t + (r_a - t) s / s_a; at a fork (several unmeasured children, or
     // any measured one) the parent's cross-section is shared among all
     // children by subtree length, r_i = r_a s_i / sqrt(sum s_j^2), so area is
@@ -1067,7 +1069,7 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
         }
     }
 
-    // Leonardo's rule at forks (as in raycloudtools): the
+    // Leonardo's rule at forks (as in raycloudtools, Devereux et al. 2026): the
     // children's cross-section area may not exceed the parent's by more
     // than `pipe_slack`; unmeasured children are scaled down first, then all.
     if p.pipe_slack > 0.0 {
@@ -1423,19 +1425,8 @@ fn isotonic_fill(chain: &[usize], radius: &mut [f64], weight: &[f64], apex_radiu
     }
 }
 
-/// [`skeletonize`] then [`fit_cylinders`].
-/// The parameters that are tied to how far apart the points are, rescaled to
-/// this cloud.
-///
-/// A circle band of 2 cm and shells of 10 cm suit a centimetre cloud. Thin it
-/// to 5 cm and no point lies within the band of an honest circle, so the fit
-/// falls to whatever wide circle catches strays, and the shells hold fewer
-/// points than `fit_min_points`, so most sections are never measured at all.
-/// Both failures are silent and both inflate. Here the band, the shell length
-/// and the count are set from the cloud's own median spacing, and none of them
-/// is ever made tighter than asked for.
 /// Radius of a cross-section from a power mean of the distances to its axis,
-/// after raycloudtools (`raytrees.cpp`, `power = 0.25`).
+/// after raycloudtools (`raytrees.cpp`, `power = 0.25`; Devereux et al. 2026).
 ///
 /// `r = (mean d^q)^(1/q)` with `q` well below 1 is dominated by the nearest
 /// points, so a shell that caught foliage or a neighbour reads slightly small
@@ -1485,6 +1476,16 @@ fn power_mean_radius(xy: &[[f64; 2]], p: &QsmParams) -> Option<(f64, usize, f64,
     Some((r, n, arc, frac))
 }
 
+/// The parameters that are tied to how far apart the points are, rescaled to
+/// this cloud.
+///
+/// A circle band of 2 cm and shells of 10 cm suit a centimetre cloud. Thin it
+/// to 5 cm and no point lies within the band of an honest circle, so the fit
+/// falls to whatever wide circle catches strays, and the shells hold fewer
+/// points than `fit_min_points`, so most sections are never measured at all.
+/// Both failures are silent and both inflate. Here the band, the shell length
+/// and the count are set from the cloud's own median spacing, and none of them
+/// is ever made tighter than asked for.
 pub fn scaled_to_spacing(xyz: &[Point], p: &QsmParams) -> QsmParams {
     let mut out = p.clone();
     if p.spacing_scale <= 0.0 || xyz.len() < 100 {
@@ -1510,6 +1511,7 @@ pub fn scaled_to_spacing(xyz: &[Point], p: &QsmParams) -> QsmParams {
     out
 }
 
+/// [`skeletonize`] then [`fit_cylinders`].
 pub fn build_qsm(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParams) -> Result<Qsm> {
     let task = crate::progress::start("building a QSM", 2);
     let p = &scaled_to_spacing(xyz, p);
