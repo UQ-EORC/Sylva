@@ -417,12 +417,12 @@ analysis and manipulation of ray clouds. *IEEE Access*, *9*, 79712–79724.
 <https://doi.org/10.1109/ACCESS.2021.3084954>
 — ray clouds, which Sylva reads and writes, and `rayextract trees`, which it
 follows and is benchmarked against:
-<https://github.com/csiro-robotics/raycloudtools>. [`sylva.voxels`](api/voxels.md)
-is a port of `rayvoxel` (J. Rivory) from a raycloudtools fork, under CSIRO's
-licence; see `THIRD_PARTY_NOTICES.md`.
+<https://github.com/csiro-robotics/raycloudtools>.
 
 AMAPVox (UMR AMAP) — voxelisation of lidar data, the reference implementation
-of the attenuation estimators: <https://github.com/umr-amap/AMAPVox>. Its
+of the attenuation estimators: <https://github.com/umr-amap/AMAPVox>.
+[`sylva.voxels`](api/voxels.md) is a port of rayvoxel, J. Rivory's unpublished
+reimplementation of AMAPVox on raycloudtools; see `THIRD_PARTY_NOTICES.md`. Its
 estimators are documented in Vincent, G., Pimont, F., & Verley, P. (2021). *A
 note on PAD/LAD estimators implemented in AMAPVox 1.7*. DataSuds.
 <https://doi.org/10.23708/1AJNMP>

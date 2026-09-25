@@ -6,15 +6,25 @@ are compatible with the GPL and require these notices to accompany the source
 and any binary distribution (wheels, crates, container images). The methods
 Sylva follows without copying code are credited in `docs/references.md`.
 
-## raycloudtools / rayvoxel (CSIRO)
+## AMAPVox, through rayvoxel
 
-`crates/sylva-rs/src/voxel/` and `python/sylva/voxels.py` are a port of the
-`rayvoxel` tool (Glen Eaton) from a fork of raycloudtools
-(<https://github.com/csiro-robotics/raycloudtools>): the voxel walk, the path
-length and attenuation estimators, the leaf angle distributions and the laser
-specifications. Sylva also follows raycloudtools in `canopy.density_grid`
-(`DensityGrid`) and in the power-mean section radius of `qsm.build_qsm`
-(`raytrees.cpp`). The raycloudtools licence:
+`crates/sylva-rs/src/voxel/` and `python/sylva/voxels.py` are a port of
+rayvoxel, an unpublished tool by Josh Rivory that reimplements AMAPVox on
+raycloudtools functions. What AMAPVox contributes (the path length and
+attenuation estimators, the leaf angle distributions and the laser
+specifications) is the work of UMR AMAP (botAnique et Modélisation de
+l'Architecture des Plantes et des végétations), AMAPVox,
+<https://github.com/umr-amap/AMAPVox>, distributed under the CeCILL-B licence
+(<https://cecill.info/licences/Licence_CeCILL-B_V1-en.html>) according to its
+README. Estimators documented in Vincent, G., Pimont, F., & Verley, P. (2021),
+*A note on PAD/LAD estimators implemented in AMAPVox 1.7*,
+<https://doi.org/10.23708/1AJNMP>.
+
+## raycloudtools (CSIRO)
+
+Sylva follows raycloudtools (<https://github.com/csiro-robotics/raycloudtools>)
+in `canopy.density_grid` (its `DensityGrid` estimator) and in the power-mean
+section radius of `qsm.build_qsm` (`raytrees.cpp`). The raycloudtools licence:
 
 ```text
 CSIRO Open Source Software Licence Agreement (variation of the BSD / MIT License)

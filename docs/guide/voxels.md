@@ -1,8 +1,8 @@
 # Ray-traced voxels
 
-`sylva.voxels` is a port of the `rayvoxel` tool from the raycloudtools fork
-(J. Rivory), which follows AMAPVox ([Vincent et al.
-2017](../references.md)). Each pulse is traced through the grid voxel by
+`sylva.voxels` is a port of `rayvoxel`, J. Rivory's unpublished
+reimplementation of AMAPVox ([Vincent et al. 2017](../references.md)) on
+raycloudtools. Each pulse is traced through the grid voxel by
 voxel ([Amanatides & Woo 1987](../references.md)), twice: once whole, for
 beam counts and the potential path length (the full chord of every voxel it
 could have crossed), and once per echo segment carrying the share of the
