@@ -1,15 +1,17 @@
 """Generate and execute the RiSCAN project notebook (10_riscan_pipeline.ipynb).
 
-    python docs/examples/build_riscan_notebook.py [path/to/project.RiSCAN]
+    SYLVA_TERN_DIR=path/to/TERN_TLS_RAW python docs/examples/build_riscan_notebook.py
 
 Unlike the other examples this one reads a full RIEGL project from disk (the
 TERN Litchfield core plot, 64 scan positions, 35 GB), so it is kept out of
 ``build_notebooks.py`` and run by hand. It needs RiVLib and about 25 GB of
-memory; the first run takes 20-30 minutes, later runs reuse the cached read.
+memory; the first run takes 20-30 minutes, later runs reuse the cached read
+(in ``SYLVA_RUNS_DIR``, ``~/sylva_runs`` by default).
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -17,7 +19,6 @@ import nbformat
 from nbclient import NotebookClient
 
 HERE = Path(__file__).parent
-PROJECT = "/run/media/tim/EXTERNAL/TERN_TLS_RAW/LSS_2021_07_core.RiSCAN"
 
 
 class md(str):
@@ -53,7 +54,8 @@ Step 3 finds that the ring positions are not registered with the inner grid
 (metres off in height) and registers them into it with `sylva.coreg`, so
 everything after it uses all 64 scans. Checking registration before anything
 else is the lesson of this plot."""),
-    """from pathlib import Path
+    """import os
+from pathlib import Path
 import time
 
 import numpy as np
@@ -65,8 +67,9 @@ import pickle
 
 from sylva import canopy, coreg, filters, ground, io, leaves, qsm, quality, trees, voxels
 
-PROJECT = Path("{project}")
-OUT = Path.home() / "Data" / "sylva_runs" / PROJECT.stem      # cached read and every product
+# The TERN Litchfield core plot, in the folder SYLVA_TERN_DIR names.
+PROJECT = Path(os.environ.get("SYLVA_TERN_DIR", "TERN_TLS_RAW")) / "LSS_2021_07_core.RiSCAN"
+OUT = Path(os.environ.get("SYLVA_RUNS_DIR", Path.home() / "sylva_runs")) / PROJECT.stem   # cached read, products
 OUT.mkdir(parents=True, exist_ok=True)
 
 PLOT = (0.0, -100.0, 100.0, 0.0)    # xmin, ymin, xmax, ymax of the core hectare (project frame, m)
@@ -547,20 +550,22 @@ for f in sorted(OUT.iterdir()):
 ]
 
 
-def build(project: str) -> nbformat.NotebookNode:
+def build() -> nbformat.NotebookNode:
     nb = nbformat.v4.new_notebook()
     for c in CELLS:
         if isinstance(c, md):
             nb.cells.append(nbformat.v4.new_markdown_cell(str(c)))
         else:
-            nb.cells.append(nbformat.v4.new_code_cell(c.format(project=project)))
+            nb.cells.append(nbformat.v4.new_code_cell(c.format()))
     nb.metadata["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
     return nb
 
 
 if __name__ == "__main__":
-    project = sys.argv[1] if len(sys.argv) > 1 else PROJECT
-    nb = build(project)
+    tern = Path(os.environ.get("SYLVA_TERN_DIR", "TERN_TLS_RAW"))
+    if not (tern / "LSS_2021_07_core.RiSCAN").is_dir():
+        sys.exit(f"no LSS_2021_07_core.RiSCAN in {tern}: set SYLVA_TERN_DIR")
+    nb = build()
     path = HERE / "10_riscan_pipeline.ipynb"
     NotebookClient(nb, timeout=7200, kernel_name="python3", resources={"metadata": {"path": str(HERE)}}).execute()
     nbformat.write(nb, path)

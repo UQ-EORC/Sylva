@@ -6,7 +6,8 @@ import pytest
 
 from sylva import PointCloud, Shots, canopy, io, riscan
 
-TERN = Path(os.environ.get("SYLVA_TERN_DIR", "/run/media/tim/EXTERNAL/TERN_TLS_RAW"))
+# Folder holding the TERN RiSCAN projects; the tests that need them skip without it.
+TERN = Path(os.environ.get("SYLVA_TERN_DIR", "TERN_TLS_RAW"))
 ROBSON = TERN / "RobsonCreek.RiSCAN"
 
 RSP = """<?xml version="1.0"?>
@@ -69,7 +70,7 @@ def test_fill_missing_and_pattern_gap(rng):
     assert (g.n_rays > g.n_hits).any()
 
 
-needs_data = pytest.mark.skipif(not ROBSON.is_dir(), reason="TERN external drive not mounted")
+needs_data = pytest.mark.skipif(not ROBSON.is_dir(), reason="set SYLVA_TERN_DIR to the TERN data")
 
 
 @needs_data
