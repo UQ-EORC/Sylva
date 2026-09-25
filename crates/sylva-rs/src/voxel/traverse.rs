@@ -88,48 +88,59 @@ impl Geom {
     }
 }
 
-/// Amanatides & Woo (1987) walk in voxel units (raylib `walkGrid`). `visit(cell,
-/// in_length, out_length, max_length)` returns `true` to stop.
+/// How far short of `end` a segment stops, so that one ending exactly on a
+/// voxel face does not reach into the voxel beyond it.
+const FACE_TOLERANCE: f64 = 1e-10;
+
+/// The voxels a segment crosses, in order: the traversal of Amanatides & Woo
+/// (1987). Coordinates are in voxel units, voxel `i` spanning `[i, i + 1)` on
+/// each axis. `visit(cell, t_enter, t_exit, length)` receives the distances
+/// along the segment at which it enters and leaves `cell` (`t_exit` can pass
+/// `length` in the last voxel) and returns `true` to stop.
 pub(crate) fn walk_grid(start: &Point, end: &Point, mut visit: impl FnMut([i64; 3], f64, f64, f64) -> bool) {
-    let mut dir = sub(end, start);
-    let mut max_length = norm(&dir);
-    if !(max_length > 0.0) {
+    let span = sub(end, start);
+    let full = norm(&span);
+    if !(full > 0.0) {
         return;
     }
-    let mut p = [start[0].floor() as i64, start[1].floor() as i64, start[2].floor() as i64];
-    let step = [sign(dir[0]), sign(dir[1]), sign(dir[2])];
-    for d in &mut dir {
-        *d /= max_length;
-    }
-    // Stay out of the neighbouring voxel when the end point sits on a face.
-    max_length -= 1e-10f32 as f64;
-    let mut lengths = [0.0f64; 3];
-    let mut delta = [0.0f64; 3];
-    for j in 0..3 {
-        let to = if step[j] > 0 { p[j] as f64 + 1.0 - start[j] } else { start[j] - p[j] as f64 };
-        let d = dir[j].abs().max(f64::EPSILON);
-        lengths[j] = to / d;
-        delta[j] = 1.0 / d;
-    }
-    let nearest = |l: &[f64; 3]| if l[0] < l[1] && l[0] < l[2] { 0 } else if l[1] < l[2] { 1 } else { 2 };
-    let mut ax = nearest(&lengths);
-    if visit(p, 0.0, lengths[ax], max_length) {
-        return;
-    }
-    while lengths[ax] < max_length {
-        p[ax] += step[ax];
-        let in_length = lengths[ax];
-        lengths[ax] += delta[ax];
-        ax = nearest(&lengths);
-        if visit(p, in_length, lengths[ax], max_length) {
-            break;
+    let length = full - FACE_TOLERANCE;
+    // Per axis (the paper's X, Y, Z): the voxel, the step direction, the
+    // distance to the first boundary (tMax) and between boundaries (tDelta).
+    let mut cell = [0i64; 3];
+    let mut step = [0i64; 3];
+    let mut t_max = [f64::INFINITY; 3];
+    let mut t_delta = [f64::INFINITY; 3];
+    for axis in 0..3 {
+        let x = start[axis];
+        cell[axis] = x.floor() as i64;
+        let cosine = span[axis] / full;
+        if cosine > 0.0 {
+            step[axis] = 1;
+            t_delta[axis] = 1.0 / cosine;
+            t_max[axis] = ((cell[axis] + 1) as f64 - x) / cosine;
+        } else if cosine < 0.0 {
+            step[axis] = -1;
+            t_delta[axis] = -1.0 / cosine;
+            t_max[axis] = (x - cell[axis] as f64) / -cosine;
         }
     }
-}
-
-#[inline]
-fn sign(x: f64) -> i64 {
-    (x > 0.0) as i64 - (x < 0.0) as i64
+    let mut t_enter = 0.0;
+    loop {
+        // The boundary met first; ties go to the later axis, as in the paper.
+        let axis = if t_max[0] < t_max[1] {
+            if t_max[0] < t_max[2] { 0 } else { 2 }
+        } else if t_max[1] < t_max[2] {
+            1
+        } else {
+            2
+        };
+        if visit(cell, t_enter, t_max[axis], length) || t_max[axis] >= length {
+            return;
+        }
+        t_enter = t_max[axis];
+        cell[axis] += step[axis];
+        t_max[axis] += t_delta[axis];
+    }
 }
 
 /// Effective free path `−ln(1 − λ₁z) / λ₁` (`z` when `λ₁ = 0`).
