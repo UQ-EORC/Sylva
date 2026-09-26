@@ -1009,6 +1009,48 @@ fn coreg_icp<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, target: Option
     d.set_item("iterations", r.iterations)?;
     d.set_item("converged", r.converged)?;
     d.set_item("history", r.history)?;
+    set_plane_information(py, &d, r.information.as_ref())?;
+    Ok(d)
+}
+
+fn set_plane_information(py: Python<'_>, d: &Bound<'_, PyDict>, info: Option<&coreg_icp_rs::PlaneInformation>) -> PyResult<()> {
+    match info {
+        Some(info) => {
+            let h: Vec<Vec<f64>> = (0..6).map(|r| (0..6).map(|c| info.hessian[(r, c)]).collect()).collect();
+            d.set_item("hessian", PyArray2::from_vec2(py, &h)?)?;
+            d.set_item("plane_sigma", info.sigma)?;
+            d.set_item("plane_n", info.n)?;
+        }
+        None => d.set_item("hessian", py.None())?,
+    }
+    Ok(())
+}
+
+/// Point-to-plane information of `transform` (`coreg_icp_rs::plane_information`):
+/// a dict with `hessian` (None if unavailable), `plane_sigma` and `plane_n`.
+#[pyfunction]
+#[pyo3(signature = (source, target, transform, voxel_sizes=vec![0.30, 0.15, 0.07, 0.05], max_distances=Some(vec![0.80, 0.40, 0.20, 0.12]), robust="huber", robust_scale=0.05, trim_fraction=0.85, trim_ramp=3, min_planarity=0.25, normal_neighbours=20, max_points=120_000, seed=0, prepared=None))]
+#[allow(clippy::too_many_arguments)]
+fn coreg_plane_information<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, target: Option<PyReadonlyArray2<f64>>, transform: PyReadonlyArray2<f64>, voxel_sizes: Vec<f64>, max_distances: Option<Vec<f64>>, robust: &str, robust_scale: f64, trim_fraction: f64, trim_ramp: usize, min_planarity: f64, normal_neighbours: usize, max_points: usize, seed: u64, prepared: Option<PyRef<'_, PyCoregIcpTarget>>) -> PyResult<Bound<'py, PyDict>> {
+    let s = xyz_from_py(source)?;
+    let m = matrix4_from_py(transform)?;
+    let cfg = coreg_icp_rs::IcpConfig { voxel_sizes, max_distances, robust: robust.to_string(), robust_scale, trim_fraction, trim_ramp, min_planarity, normal_neighbours, max_points, seed, ..Default::default() };
+    let info = match (prepared, target) {
+        (Some(pt), _) => {
+            let pt = pt.inner.clone();
+            if !pt.matches(&cfg) {
+                return Err(PyValueError::new_err("the prepared ICP target was built with other pyramid settings"));
+            }
+            py.detach(|| coreg_icp_rs::plane_information(&s, &pt, &m, &cfg))
+        }
+        (None, Some(target)) => {
+            let t = xyz_from_py(target)?;
+            py.detach(|| coreg_icp_rs::plane_information(&s, &coreg_icp_rs::IcpTarget::new(&t, &cfg), &m, &cfg))
+        }
+        (None, None) => return Err(PyValueError::new_err("give a target or a prepared target")),
+    };
+    let d = PyDict::new(py);
+    set_plane_information(py, &d, info.as_ref())?;
     Ok(d)
 }
 
@@ -1901,6 +1943,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(coreg_planar_filter, m)?,
         wrap_pyfunction!(coreg_icp, m)?,
         wrap_pyfunction!(coreg_evaluate, m)?,
+        wrap_pyfunction!(coreg_plane_information, m)?,
         wrap_pyfunction!(buttress_mesh, m)?,
         wrap_pyfunction!(fit_circle, m)?,
         wrap_pyfunction!(fit_circle_ransac, m)?,

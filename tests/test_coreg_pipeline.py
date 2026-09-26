@@ -31,7 +31,7 @@ from sylva.coreg import (
     transform_difference,
     transform_points,
 )
-from sylva.coreg.pipeline import _make_logger
+from sylva.coreg.pipeline import _height_offset, _make_logger
 
 
 @pytest.fixture(scope="module")
@@ -722,3 +722,61 @@ def test_pose_graph_spreads_loop_closure_error():
     assert g.optimise().rejected_edges == []
     for k in (1, 2):
         assert _err(g.poses[k], truth[k])[0] < 0.05
+
+
+def test_height_offset_reads_the_shared_terrain(stand, config):
+    scans, truth = stand
+    relative = invert(truth[0]) @ truth[1]
+    assert abs(_height_offset(scans[1], relative, [(scans[0], np.eye(4))], config)) < 0.03
+    lifted = relative.copy()
+    lifted[2, 3] += 0.8
+    dz = _height_offset(scans[1], lifted, [(scans[0], np.eye(4))], config)
+    assert abs(dz + 0.8) < 0.03, dz
+
+
+def test_height_offset_needs_shared_ground(stand, config):
+    scans, truth = stand
+    far = invert(truth[0]) @ truth[1]
+    far[:3, 3] += [500.0, 0.0, 0.0]
+    assert np.isnan(_height_offset(scans[1], far, [(scans[0], np.eye(4))], config))
+
+
+def test_a_stem_match_takes_its_height_from_the_terrain(stand, config):
+    """The coarse height is set from the ground, not from the stems' own
+    terrain heights; the pair reports how well the terrain agrees after ICP."""
+    scans, truth = stand
+    r = register_pair(scans[1], scans[0], config, i=1, j=0)
+    assert r.success, r.reason
+    relative = invert(truth[0]) @ truth[1]
+    assert abs(r.coarse_transform[2, 3] - relative[2, 3]) < 0.05
+    assert abs(r.ground_offset) < 0.03
+    assert "dz=" in r.summary()
+
+
+def test_every_edge_is_weighted_by_its_surfaces(stand, config):
+    scans, _ = stand
+    res = coregister_prepared(scans, config)
+    assert res.optimisation is not None
+    for pair in res.successful_pairs():
+        info = pair.icp.information
+        assert info is not None and info.n > 100 and info.sigma < 0.05
+
+
+def test_terrain_ignores_directions_a_tilted_scanner_never_sampled():
+    """A scanner tilted on its side misses near-horizontal directions along
+    its tilt axis; there the lowest return of a distant cell is canopy. Given
+    the scanner's position, those cells are filled from the seen terrain."""
+    rng = np.random.default_rng(3)
+    xy = rng.uniform(-30, 30, size=(400_000, 2))
+    ground = np.column_stack([xy, np.zeros(len(xy))])
+    crowns = np.column_stack([rng.uniform(-30, 30, size=(200_000, 2)), rng.uniform(5, 8, 200_000)])
+    rel = np.vstack([ground, crowns]) - [0.0, 0.0, 1.6]
+    azimuth = np.degrees(np.arctan2(rel[:, 1], rel[:, 0]))
+    elevation = np.degrees(np.arctan2(rel[:, 2], np.hypot(rel[:, 0], rel[:, 1])))
+    along_axis = (np.abs(azimuth) < 30) | (np.abs(azimuth) > 150)
+    points = rel[~(along_axis & (elevation > -40) & (elevation < 10))]
+    far = np.array([[25.0, 0.0], [-25.0, 0.0]])
+    blind = prepare_scan(points, CoregConfig(), name="tilted")
+    seen = prepare_scan(points, CoregConfig(), name="tilted", origin=[0.0, 0.0, 0.0])
+    assert (blind.ground.height_at(far) > 0.0).all()
+    assert np.abs(seen.ground.height_at(far) + 1.6).max() < 0.2

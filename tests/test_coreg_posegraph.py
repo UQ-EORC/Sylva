@@ -2,7 +2,15 @@
 import numpy as np
 import pytest
 
-from sylva.coreg import PoseGraph, default_information, invert, se3_exp, transform_difference
+from sylva.coreg import (
+    PoseGraph,
+    default_information,
+    invert,
+    plane_edge_information,
+    se3_exp,
+    se3_log,
+    transform_difference,
+)
 
 
 @pytest.fixture
@@ -142,3 +150,92 @@ def test_fixed_nodes_hold_and_anchor_the_rest(rng):
     assert np.allclose(graph.poses[1], poses[1]) and np.allclose(graph.poses[3], poses[3])
     for i in (2, 4):
         assert transform_difference(graph.poses[i], poses[i])[1] < 0.06
+
+
+def test_rejects_a_wrong_edge_while_a_scan_is_unregistered(rng):
+    """tlsalign never rejected an edge while any node was unreachable, which
+    switched rejection off in exactly the surveys that register in part."""
+    poses = _chain(6, rng)
+    graph = PoseGraph(7, reference=0)  # node 6: a scan nothing registered to
+    _fill(graph, poses, rng)
+    graph.add_edge(
+        1,
+        4,
+        se3_exp(np.array([0.3, 0.2, 1.0, 5.0, -3.0, 1.0])),
+        rmse=0.01,
+        fitness=0.5,
+        n_correspondences=1000,
+    )
+    bad_index = len(graph.edges) - 1
+    result = graph.optimise()
+    assert bad_index in result.rejected_edges
+    for i in range(6):
+        assert transform_difference(graph.poses[i], poses[i])[1] < 0.08
+
+
+def test_poses_never_rest_on_a_rejected_edge(rng):
+    """The last rejection pass is solved again without what it rejected."""
+    poses = _chain(6, rng)
+    graph = PoseGraph(6, reference=0)
+    _fill(graph, poses, rng)
+    graph.add_edge(
+        1,
+        4,
+        se3_exp(np.array([0.3, 0.2, 1.0, 5.0, -3.0, 1.0])),
+        rmse=0.01,
+        fitness=0.5,
+        n_correspondences=1000,
+    )
+    result = graph.optimise(max_rejection_passes=1)
+    assert result.rejected_edges
+    clean = PoseGraph(6, reference=0)
+    for k, e in enumerate(graph.edges):
+        if k not in result.rejected_edges:
+            clean.add_edge(e.i, e.j, e.transform, information=e.information)
+    clean.optimise(reject_outliers=False)
+    for i in range(6):
+        assert transform_difference(graph.poses[i], clean.poses[i])[1] < 1e-3  # 15 mm if kept
+
+
+def _plane_hessian(points, normals):
+    a = np.column_stack([np.cross(points, normals), normals])
+    return a.T @ a
+
+
+def test_plane_edge_information_is_expressed_in_the_residual_frame(rng):
+    """For the truth se3_exp(d) @ Z, the edge residual carries d's information."""
+    p = rng.uniform(-10, 10, (400, 3))
+    n = rng.normal(size=(400, 3))
+    n /= np.linalg.norm(n, axis=1, keepdims=True)
+    H = _plane_hessian(p, n)
+    Z = se3_exp(np.array([0.1, -0.2, 0.7, 12.0, -4.0, 1.5]))
+    info = plane_edge_information(H, 0.01, 400, Z, patch_points=1.0)
+    info_target = H / 400 * 400 / 0.01**2
+    for _ in range(5):
+        d = rng.normal(0, 1e-4, 6)
+        r = se3_log(invert(Z) @ se3_exp(d) @ Z)
+        assert np.isclose(r @ info @ r, d @ info_target @ d, rtol=1e-3)
+
+
+def test_flat_ground_leaves_the_horizontal_free(rng):
+    """Correspondences on level ground fix height, roll and pitch only."""
+    p = np.column_stack([rng.uniform(-15, 15, (2000, 2)), np.zeros(2000)])
+    n = np.tile([0.0, 0.0, 1.0], (2000, 1))
+    info = plane_edge_information(_plane_hessian(p, n), 0.01, 2000, np.eye(4))
+    scale = np.trace(info)
+    for axis in (2, 3, 4):  # yaw, x, y
+        assert info[axis, axis] < 1e-6 * scale
+    for axis in (0, 1, 5):  # roll, pitch, z
+        assert info[axis, axis] > 1e-3 * scale
+
+
+def test_information_grows_with_overlap_not_without_bound(rng):
+    p = rng.uniform(-10, 10, (1000, 3))
+    n = rng.normal(size=(1000, 3))
+    n /= np.linalg.norm(n, axis=1, keepdims=True)
+    H = _plane_hessian(p, n)
+    small = plane_edge_information(H / 10, 0.01, 100, np.eye(4))
+    large = plane_edge_information(H, 0.01, 1000, np.eye(4))
+    assert np.allclose(large, 10 * small, rtol=1e-6)
+    sharp = plane_edge_information(H, 0.0001, 1000, np.eye(4), min_sigma=0.005)
+    assert np.allclose(sharp, plane_edge_information(H, 0.005, 1000, np.eye(4)))

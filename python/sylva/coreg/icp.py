@@ -29,7 +29,15 @@ import numpy as np
 
 from .. import _core
 
-__all__ = ["ICPConfig", "ICPResult", "ICPTarget", "evaluate_registration", "icp"]
+__all__ = [
+    "ICPConfig",
+    "ICPResult",
+    "ICPTarget",
+    "PlaneInformation",
+    "evaluate_registration",
+    "icp",
+    "plane_information",
+]
 
 
 @dataclass
@@ -89,6 +97,9 @@ class ICPResult:
         ``fitness_threshold``.
     inlier_rmse
         RMSE over those points (m).
+    information
+        How well the point-to-plane correspondences pin the final transform;
+        None for point-to-point ICP or too little overlap.
     """
 
     transform: np.ndarray
@@ -98,12 +109,42 @@ class ICPResult:
     iterations: int
     converged: bool
     history: list[float] = field(default_factory=list)
+    information: PlaneInformation | None = None
 
     def __repr__(self) -> str:
         return (
             f"ICPResult(fitness={self.fitness:.3f}, rmse={self.inlier_rmse * 1000:.1f} mm, "
             f"n={self.n_correspondences}, iters={self.iterations}, converged={self.converged})"
         )
+
+
+@dataclass
+class PlaneInformation:
+    """How well point-to-plane correspondences pin a transform.
+
+    Attributes
+    ----------
+    hessian
+        ``(6, 6)`` robust-weighted Gauss-Newton matrix ``sum w a a^T`` of the
+        residuals ``n . (T p - q)``, for an update ``exp(xi) @ T`` with ``xi =
+        [omega, v]`` in the target frame. Its weak directions are the ones the
+        surfaces leave free: flat ground fixes height, roll and pitch but
+        lets the scans slide horizontally.
+    sigma
+        Weighted RMS point-to-plane residual (m).
+    n
+        Correspondences.
+    """
+
+    hessian: np.ndarray
+    sigma: float
+    n: int
+
+
+def _plane_information(d: dict) -> PlaneInformation | None:
+    if d.get("hessian") is None:
+        return None
+    return PlaneInformation(np.asarray(d["hessian"]), float(d["plane_sigma"]), int(d["plane_n"]))
 
 
 def _xyz(points) -> np.ndarray:
@@ -203,7 +244,55 @@ def icp(
         int(d["iterations"]),
         bool(d["converged"]),
         list(d["history"]),
+        _plane_information(d),
     )
+
+
+def plane_information(
+    source: np.ndarray,
+    target: np.ndarray | ICPTarget,
+    transform: np.ndarray,
+    config: ICPConfig | None = None,
+) -> PlaneInformation | None:
+    """Point-to-plane information of a transform, as at the end of :func:`icp`.
+
+    The correspondences, planarity gate, trim and robust weights of the
+    finest pyramid level, without a step: for transforms ICP did not produce
+    (a coarse match kept over ICP's, a placement).
+
+    Parameters
+    ----------
+    source, target
+        As for :func:`icp`.
+    transform
+        Source-to-target transform.
+    config
+        ICP settings.
+
+    Returns
+    -------
+    PlaneInformation or None
+        None if fewer than 10 correspondences survive.
+    """
+    cfg = config or ICPConfig()
+    prepared = target._core if isinstance(target, ICPTarget) else None
+    d = _core.coreg_plane_information(
+        _xyz(source),
+        None if prepared is not None else _xyz(target),
+        np.ascontiguousarray(np.asarray(transform, dtype=np.float64)),
+        list(map(float, cfg.voxel_sizes)),
+        list(map(float, cfg.distances())),
+        cfg.robust,
+        float(cfg.robust_scale),
+        float(cfg.trim_fraction),
+        int(cfg.trim_ramp),
+        float(cfg.min_planarity),
+        int(cfg.normal_neighbours),
+        int(cfg.max_points),
+        int(cfg.seed),
+        prepared=prepared,
+    )
+    return _plane_information(d)
 
 
 def evaluate_registration(

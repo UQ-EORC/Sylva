@@ -16,3 +16,4 @@ target/
 site/
 .ipynb_checkpoints/
 .cache/
+paper/

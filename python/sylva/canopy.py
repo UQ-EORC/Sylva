@@ -18,7 +18,8 @@ from .shots import Shots
 __all__ = [
     "VoxelGrid", "voxelize", "vertical_profile", "pad_profile_voxel", "gap_fraction_zenith",
     "gap_fraction_pattern", "lai_from_gap_fraction", "canopy_cover", "DensityGrid",
-    "density_grid", "fit_ground_plane", "fired_pulses_per_ring", "GapProfile",
+    "density_grid", "fit_ground_plane", "fired_pulses_per_ring", "fired_pulses_from_points",
+    "GapProfile",
 ]
 
 
@@ -610,6 +611,57 @@ def fired_pulses_per_ring(shots_scanner: Shots, pattern: dict, zenith_edges,
     overlap = np.clip(np.minimum(hi[:, None], edges[None, 1:]) - np.maximum(lo[:, None], edges[None, :-1]), 0, None)
     lines = overlap.sum(axis=0) / (2 * half)
     return lines * ppl
+
+
+def fired_pulses_from_points(shots_scanner: Shots, zenith_edges, ground_zenith=(100.0, 125.0),
+                             limit_quantile: float = 1e-5) -> np.ndarray:
+    """Pulses a scan fired into each zenith ring, from its returns alone.
+
+    For a scan known only by its points (a LAS/LAZ export and its SOP), with
+    no ``.rxp`` or scan pattern. A RIEGL scanner fires at a constant angular
+    step down each mirror sweep and sweeps every azimuth the same number of
+    times, so pulses fired per degree of zenith are the same at every
+    zenith. On the downward lines in ``ground_zenith`` nearly every pulse
+    hits the ground (0.3-0.8 % did not on a VZ-2000i scan in savanna), so
+    the returns there, per degree, give that rate; a ring gets the rate
+    times the part of its width inside the scan's zenith limits, which are
+    read from the returns too.
+
+    Parameters
+    ----------
+    shots_scanner
+        Pulses of one scan in the scanner frame, e.g.
+        ``Shots.from_pointcloud(cloud.transform(inv(sop)))``. Echoes of a
+        pulse must share ``gps_time``, or the pulse counts more than once.
+    zenith_edges
+        Ring edges (degrees).
+    ground_zenith
+        Zenith range (degrees) where every pulse is taken to return. It must
+        lie inside the scan's field of view and look at open ground.
+    limit_quantile
+        The scan's zenith limits are these quantiles of the returns' zenith.
+
+    Returns
+    -------
+    numpy.ndarray
+        Pulses fired per ring (float, length ``len(zenith_edges) - 1``), for
+        :meth:`GapProfile.add_scan`.
+
+    Raises
+    ------
+    ValueError
+        If ``ground_zenith`` lies outside the scan's zenith limits.
+    """
+    edges = np.asarray(zenith_edges, dtype=float)
+    zen, _ = shots_scanner.zenith_azimuth()
+    lo, hi = np.quantile(zen, [limit_quantile, 1.0 - limit_quantile])
+    g0, g1 = ground_zenith
+    if g0 < lo or g1 > hi:
+        raise ValueError(f"ground_zenith {ground_zenith} is outside the scan's zenith limits "
+                         f"({lo:.1f}, {hi:.1f}) degrees")
+    per_degree = np.count_nonzero((zen >= g0) & (zen < g1)) / (g1 - g0)
+    width = np.clip(np.minimum(edges[1:], hi) - np.maximum(edges[:-1], lo), 0.0, None)
+    return per_degree * width
 
 
 @dataclass

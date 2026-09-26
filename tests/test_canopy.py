@@ -151,3 +151,28 @@ def test_fired_pulses_from_ground_lines(rng):
     zen, _ = s.zenith_azimuth()
     obs, _ = np.histogram(zen, bins=edges)
     np.testing.assert_allclose(1 - obs / fired, 0.6, atol=0.03)
+
+
+def test_fired_pulses_from_points_recovers_the_misses():
+    """A regular scan grid whose upper pulses mostly miss: the pulses fired
+    per ring come from the returns alone, via the downward lines."""
+    from sylva import Shots
+    from sylva.canopy import fired_pulses_from_points
+
+    rng = np.random.default_rng(0)
+    zen = np.radians(np.arange(30.05, 130.0, 0.1))
+    az = np.radians(np.arange(0.0, 360.0, 0.5))
+    zz, aa = np.meshgrid(zen, az)
+    zz, aa = zz.ravel(), aa.ravel()
+    direction = np.column_stack([np.sin(zz) * np.sin(aa), np.sin(zz) * np.cos(aa), np.cos(zz)])
+    # Upward pulses miss with probability rising to 0.7 at the top; downward ones all return.
+    p_miss = np.clip((90.0 - np.degrees(zz)) / 60.0 * 0.7, 0.0, None)
+    returned = rng.uniform(size=len(zz)) >= p_miss
+    n = int(returned.sum())
+    shots = Shots(np.zeros((n, 3)), direction[returned], np.arange(n), np.ones(n, np.int64), np.full(n, 10.0))
+    edges = np.arange(5.0, 80.0, 5.0)
+    truth = np.histogram(np.degrees(zz), bins=edges)[0]
+    fired = fired_pulses_from_points(shots, edges)
+    inside = truth > 0
+    assert np.allclose(fired[inside], truth[inside], rtol=0.01)
+    assert (fired[~inside] == 0).all()

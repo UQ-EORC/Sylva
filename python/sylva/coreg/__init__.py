@@ -15,11 +15,13 @@ themselves; a port of the author's tlsalign.
 2. **Per pair** (:func:`register_pair`): reflective targets where both scans
    saw three or more, otherwise a global stem-map match (stem distances do
    not depend on the unknown transform, so a sorted pair table makes the
-   search near-exhaustive), refined by a robust point-to-plane ICP. A pair is
+   search near-exhaustive) whose height comes from the two terrain models,
+   refined by a robust point-to-plane ICP. A pair is
    accepted only if it fits over all points and above the ground, so the
    ground plane alone cannot confirm a wrong pair.
 3. **Whole survey** (:func:`coregister`): accepted pairs are edges of a pose
-   graph solved with a Huber kernel and outlier rejection; scans left over
+   graph, each weighted by the directions its surfaces constrain, solved
+   with a Huber kernel and outlier rejection; scans left over
    are retried against the combined registered survey; optionally all poses
    are refined jointly (:func:`refine_joint`). The report lists, per pair,
    how far apart the same tree lands from the two scans, a quality measure
@@ -44,7 +46,15 @@ Examples
 
 from .geometry import KdTree, estimate_normals, planar_filter, voxel_downsample
 from .ground import GroundModel, fit_ground
-from .icp import ICPConfig, ICPResult, ICPTarget, evaluate_registration, icp
+from .icp import (
+    ICPConfig,
+    ICPResult,
+    ICPTarget,
+    PlaneInformation,
+    evaluate_registration,
+    icp,
+    plane_information,
+)
 from .matching import MatchConfig, MatchResult, match_stem_maps
 from .pipeline import (
     CoregConfig,
@@ -60,7 +70,13 @@ from .pipeline import (
     reading_options,
     register_pair,
 )
-from .posegraph import OptimisationResult, PoseGraph, PoseGraphEdge, default_information
+from .posegraph import (
+    OptimisationResult,
+    PoseGraph,
+    PoseGraphEdge,
+    default_information,
+    plane_edge_information,
+)
 from .refine import JointRefinement, refine_joint
 from .reflectors import (
     Reflector,
@@ -95,6 +111,7 @@ __all__ = [
     "MatchResult",
     "OptimisationResult",
     "PairResult",
+    "PlaneInformation",
     "Plot",
     "PoseGraph",
     "PoseGraphEdge",
@@ -124,6 +141,8 @@ __all__ = [
     "merge_clouds",
     "place_from_prior",
     "planar_filter",
+    "plane_edge_information",
+    "plane_information",
     "prepare_scan",
     "reading_options",
     "read_reflector_list",

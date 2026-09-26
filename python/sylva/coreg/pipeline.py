@@ -10,20 +10,29 @@ The pipeline is staged, and each stage can run on its own:
    planarity-filtered subsample for ICP. The expensive part, done once per
    scan however many pairs are tried.
 2. **Per pair** (:func:`register_pair`): reflective targets where both scans
-   saw them, otherwise a global stem-map match, gives a coarse transform that
-   ICP refines; the pair is accepted only if it fits over all points and
-   above the ground.
+   saw them, otherwise a global stem-map match with its height taken from the
+   two terrain models, gives a coarse transform that ICP refines; the pair is
+   accepted only if it fits over all points and above the ground, and its
+   terrain agrees.
 3. **Whole survey** (:func:`coregister_prepared`): accepted pairs become the
-   edges of a pose graph solved with outlier rejection; scans left over are
-   retried against the combined registered survey, and optionally every pose
-   is refined jointly.
+   edges of a pose graph, each weighted by the directions its surfaces
+   constrain, solved with outlier rejection; scans left over are retried
+   against the combined registered survey, and optionally every pose is
+   refined jointly.
 
 Every stage records its own quality, because the useful question is not "did
-it run" but "which scans can I trust". This is a port of the author's
-tlsalign. Two things are added: scans can be held fixed at trusted poses, so
-that new scans are registered into an existing project; and approximate poses
-(a RiSCAN SOP, GNSS and compass) can serve as priors, refusing results that
-move a scanner implausibly far and placing scans that see too few stems.
+it run" but "which scans can I trust". This began as a port of the author's
+tlsalign, and departs from it where tlsalign was weak: stem matches take
+their height from the shared ground rather than from stem bases (vertical
+error dominates stem-based registration, as Tremblay & Béland 2018 and
+GlobalMatch, Wang et al. 2023, both found); edges carry the anisotropic
+information of their point-to-plane correspondences instead of an isotropic
+weight; outlier edges are rejected even while some scans are unregistered;
+and recovered scans are tied in by pairwise measurements. Scans can be held
+fixed at trusted poses, so that new scans are registered into an existing
+project; and approximate poses (a RiSCAN SOP, GNSS and compass) can serve as
+priors, refusing results that move a scanner implausibly far and placing
+scans that see too few stems.
 """
 
 from __future__ import annotations
@@ -43,9 +52,16 @@ import numpy as np
 
 from .geometry import KdTree, planar_filter, voxel_downsample
 from .ground import GroundModel, fit_ground
-from .icp import ICPConfig, ICPResult, ICPTarget, evaluate_registration, icp
+from .icp import (
+    ICPConfig,
+    ICPResult,
+    ICPTarget,
+    evaluate_registration,
+    icp,
+    plane_information,
+)
 from .matching import MatchConfig, MatchResult, match_stem_maps
-from .posegraph import OptimisationResult, PoseGraph
+from .posegraph import OptimisationResult, PoseGraph, plane_edge_information
 from .reflectors import Reflector, match_reflectors
 from .stems import StemDetectionConfig, StemMap, detect_stems
 from .transforms import identity, invert, se3_log, transform_difference, transform_points
@@ -68,9 +84,16 @@ __all__ = [
 
 @dataclass
 class CoregConfig:
-    """Settings of the whole pipeline; the defaults are tlsalign's."""
+    """Settings of the whole pipeline; the defaults began as tlsalign's."""
 
     ground_cell_size: float = 0.5
+    ground_min_coverage: float | None = 0.8
+    """Least fraction of the elevations from -30 to +5 degrees an azimuth of
+    the scan must sample for the terrain in that direction to be fitted from
+    it; see :func:`_refit_visible_ground`. Tilted scans sample almost none in
+    the azimuths along their tilt axis, upright scans all of them. Needs the
+    scanner's position, so it applies to scans read from file or given
+    ``origin``. None fits the terrain from every return."""
     stems: StemDetectionConfig = field(default_factory=StemDetectionConfig)
     matching: MatchConfig = field(default_factory=MatchConfig)
     icp: ICPConfig = field(default_factory=ICPConfig)
@@ -111,9 +134,25 @@ class CoregConfig:
     max_match_rmse: float = 0.30
     """Largest scatter (m) of a coarse match's own correspondences."""
     max_coarse_stem_rmse: float = float("inf")
-    """Optional cap (m) on the median disagreement of matched stems. Off: it
-    mixes horizontal agreement with the vertical difference of two ground
-    models, which on steep terrain alone reaches a metre."""
+    """Optional cap (m) on the median horizontal disagreement of matched
+    stems; off by default."""
+
+    height_from_ground: bool = True
+    """Take a stem match's vertical offset from the two terrain models where
+    both saw ground, not from the matched stems. A stem's height is its own
+    scan's terrain height under it plus 1.3 m, and under understory or on a
+    slope that terrain is least certain exactly at the stems, while the
+    shared ground between two scanners is wide and well sampled."""
+    ground_radius: float = 30.0
+    """Terrain cells further than this (m) from a scanner are left out of
+    height comparisons: far from the scanner, ground returns are sparse and
+    grazing, and the terrain model there is mostly the understory."""
+    min_ground_cells: int = 50
+    """Shared observed cells a height comparison needs."""
+    max_ground_disagreement: float = 0.25
+    """A pair whose terrain models still differ by more than this (m, median
+    over the shared ground) after ICP is refused: ICP slid vertically, or
+    the match is wrong. None disables the test."""
 
     max_pair_distance: float = 40.0
     """Pairs whose approximate positions are further apart (m) are not tried.
@@ -124,13 +163,19 @@ class CoregConfig:
     max_pairs_per_scan: int | None = None
     """After screening keep only each scan's best N pairs; None keeps all."""
 
-    min_icp_fitness: float = 0.10
+    min_icp_fitness: float = 0.04
+    """Fitness decreases with the distance between scans, since less of each
+    scan is shared. On a VZ-400 survey with positions 30-35 m apart, scored
+    against its reflector-based registration, every pair ICP placed with a
+    fitness of 0.045-0.10 was within 10 cm of the reference, and a gate of
+    0.10 left 10 of its 14 scans unregistered."""
     max_icp_rmse: float = 0.15
-    min_icp_fitness_above_ground: float = 0.06
+    min_icp_fitness_above_ground: float = 0.03
     """Fitness over source points above :attr:`fitness_min_height`. Ground is
     planar and fits under any horizontal shift, so on open sites it can carry
     a wrong pair past :attr:`min_icp_fitness` alone; stems, branches and logs
-    are what fix the horizontal position."""
+    are what fix the horizontal position. On the same survey, correct pairs
+    scored at least 0.043 and wrong ones at most 0.012."""
     fitness_min_height: float = 1.0
     stem_agreement_tolerance: float = 0.25
     """If ICP leaves the matched stems this much (m) further apart than the
@@ -163,6 +208,12 @@ class CoregConfig:
     optimise_globally: bool = True
     reference_scan: int = 0
     reject_outlier_edges: bool = True
+    information_patch_points: float = 100.0
+    """ICP correspondences counted as one independent observation when
+    weighting pose-graph edges (:func:`~sylva.coreg.plane_edge_information`):
+    neighbouring residuals share the error of the surface they sample."""
+    information_min_sigma: float = 0.005
+    """Floor (m) on the point-to-plane residual that weights an edge."""
 
     max_prior_shift: float = 5.0
     """With priors: results putting a scanner further (m) from its prior
@@ -266,7 +317,11 @@ class PairResult:
         A distinctly different coarse hypothesis nearly as well supported,
         resolved by ICP.
     used_icp
-        False when the coarse transform was kept over ICP's.
+        False when the coarse transform was kept over ICP's; ``icp`` then
+        scores the coarse transform, not the refinement that was discarded.
+    ground_offset
+        Median height (m) of the target's terrain over the source's where
+        both saw ground, under :attr:`transform`; NaN if they share too little.
     """
 
     i: int
@@ -288,6 +343,7 @@ class PairResult:
     fitness_above: float = float("nan")
     rival: MatchResult | None = None
     used_icp: bool = True
+    ground_offset: float = float("nan")
     trusted: bool = False
     """Accepted on the strength of its reflector match although ICP failed
     (:attr:`CoregConfig.trusted_reflector_matches`)."""
@@ -325,6 +381,7 @@ class PairResult:
             )
             + f"fitness={self.fitness:.3f} "
             + (f"above={self.fitness_above:.3f} " if np.isfinite(self.fitness_above) else "")
+            + (f"dz={self.ground_offset * 100:+.1f}cm " if np.isfinite(self.ground_offset) else "")
             + f"rmse={self.rmse * 1000:6.1f} mm{stem} ({self.reason})"
         )
 
@@ -381,10 +438,12 @@ class SurveyResult:
         ]
 
     def consistency(self, robust: bool = True) -> dict[tuple[int, int], float]:
-        """Stem disagreement per accepted pair under the final poses (m).
+        """Horizontal stem disagreement per accepted pair under the final poses (m).
 
         The field-usable quality check: no ground truth needed, it measures
-        whether the same tree lands in the same place from two scans.
+        whether the same tree lands in the same place from two scans. Only
+        the horizontal distance counts: a stem's height comes from its own
+        scan's terrain model, which the pair's ground check covers.
 
         Parameters
         ----------
@@ -403,7 +462,8 @@ class SurveyResult:
                 continue
             relative = invert(self.poses[pair.j]) @ self.poses[pair.i]
             d = np.linalg.norm(
-                transform_points(relative, pair.matched_source) - pair.matched_target, axis=1
+                (transform_points(relative, pair.matched_source) - pair.matched_target)[:, :2],
+                axis=1,
             )
             out[(pair.i, pair.j)] = float(np.median(d) if robust else np.sqrt(np.mean(d**2)))
         return out
@@ -434,8 +494,8 @@ class SurveyResult:
         if consistency:
             lines += [
                 "",
-                "Stem agreement under the final poses (median tree-to-tree distance, "
-                "no ground truth needed):",
+                "Stem agreement under the final poses (median horizontal tree-to-tree "
+                "distance, no ground truth needed):",
             ]
             # Flag pairs against the survey itself: the absolute level depends
             # on the stand and the spacing, but an outlier is always worth a look.
@@ -684,6 +744,8 @@ def prepare_scan(
         )
 
     ground = fit_ground(points, cfg.ground_cell_size)
+    if cfg.ground_min_coverage is not None and (source is not None or origin is not None):
+        ground = _refit_visible_ground(points, scanner, ground, cfg)
     heights = ground.normalise(points, dtype=np.float32)
     stem_map = detect_stems(points, ground, cfg.stems, name=name, heights=heights)
     below_canopy = points[heights <= cfg.icp_max_height]
@@ -707,6 +769,42 @@ def prepare_scan(
         source=source,
         seconds=time.perf_counter() - start,
     )
+
+
+def _refit_visible_ground(
+    points: np.ndarray, scanner: np.ndarray, ground: GroundModel, cfg: CoregConfig
+) -> GroundModel:
+    """Refit the terrain without the directions in which the scanner could not see it.
+
+    A scanner tilted on its side misses a band of near-horizontal directions
+    along its tilt axis. In those azimuths the lowest return over distant
+    ground is foliage, and the fitted terrain sits metres high. An azimuth
+    (1 degree) is blind when the scan sampled less than
+    :attr:`CoregConfig.ground_min_coverage` of the elevations from -30 to +5
+    degrees in it; blind azimuths, widened by 3 degrees either side, keep only
+    their returns more than 45 degrees below the horizon (the ground around
+    the tripod, which a tilted scanner sees), and the terrain beyond is
+    filled from the azimuths that saw it. On a VZ-400 survey of upright and tilted
+    scans, this cut the terrain disagreement between scans (95th percentile
+    over pairs, under the reflector-based registration) from 2.7 m to 0.6 m.
+    Applied only when the scanner's position is known: a scan read from
+    file, or one given ``origin``.
+    """
+    rel = points - scanner
+    horizontal = np.hypot(rel[:, 0], rel[:, 1])
+    azimuth = np.floor(np.degrees(np.arctan2(rel[:, 1], rel[:, 0])) + 180.0).astype(np.int64) % 360
+    elevation = np.degrees(np.arctan2(rel[:, 2], horizontal))
+    band = (elevation >= -30.0) & (elevation < 5.0)
+    sampled = np.zeros((360, 35), bool)
+    sampled[azimuth[band], np.floor(elevation[band] + 30.0).astype(np.int64)] = True
+    blind = sampled.mean(axis=1) < cfg.ground_min_coverage
+    if not blind.any() or blind.all():
+        return ground
+    widen = 3
+    wrapped = np.r_[blind[-widen:], blind, blind[:widen]].astype(np.int64)
+    blind = np.convolve(wrapped, np.ones(2 * widen + 1, np.int64), "valid") > 0
+    keep = ~blind[azimuth] | (elevation < -45.0)
+    return fit_ground(points[keep], cfg.ground_cell_size)
 
 
 def _unusable_scan(
@@ -860,7 +958,7 @@ def _coarse_transform(result, source, target, cfg, match, method) -> np.ndarray 
     _attach_matched_stems(result, source, target, match)
     if not _coarse_is_acceptable(result, match, cfg):
         return None
-    return match.transform
+    return _on_ground(match.transform, source, [(target, identity())], cfg)
 
 
 def _refine_and_judge(
@@ -871,7 +969,12 @@ def _refine_and_judge(
     coarse: np.ndarray,
     target_icp: ICPTarget | None = None,
 ) -> None:
-    """Refine a coarse transform with ICP and decide whether to accept it."""
+    """Refine a coarse transform with ICP and decide whether to accept it.
+
+    Every test, and later the pose-graph edge, judges the transform the pair
+    reports: when the stem cross-check keeps the coarse transform, it is
+    scored afresh rather than by the ICP it replaced.
+    """
     if target_icp is None and result.rival is not None:
         target_icp = ICPTarget(target.icp_points, cfg.icp)  # two ICPs against it
     icp_target = target.icp_points if target_icp is None else target_icp
@@ -892,7 +995,8 @@ def _refine_and_judge(
     if result.rival is not None:
         # An ambiguous stem pattern: refine the rival too and keep whichever
         # fits the above-ground points better, if the margin is clear.
-        other = icp(source.icp_points, icp_target, result.rival.transform, cfg.icp)
+        rival_coarse = _on_ground(result.rival.transform, source, [(target, identity())], cfg)
+        other = icp(source.icp_points, icp_target, rival_coarse, cfg.icp)
         other_above = _above_ground_fitness(
             source.icp_points, source.icp_heights, target.icp_points, other.transform, cfg
         )
@@ -916,7 +1020,7 @@ def _refine_and_judge(
             winner = result.rival
             result.match = winner
             _attach_matched_stems(result, source, target, winner)
-            coarse = winner.transform
+            coarse = rival_coarse
             result.coarse_transform = coarse
             refined, result.icp, result.transform = other, other, other.transform
             result.fitness_above, mine, theirs = other_above, theirs, mine
@@ -932,18 +1036,24 @@ def _refine_and_judge(
                 )
                 return
             result.reason = f"rival resolved by ICP ({mine:.3f} vs {theirs:.3f} above ground); "
-    _, shift = transform_difference(coarse, result.transform)
-    if shift > cfg.max_coarse_to_fine_shift:
+    if not result.used_icp:
+        result.icp = _score(source, target.icp_points, icp_target, result.transform, cfg, refined)
+    scored = result.icp
+    _, shift = transform_difference(coarse, refined.transform)
+    result.ground_offset = _height_offset(source, result.transform, [(target, identity())], cfg)
+    if result.used_icp and shift > cfg.max_coarse_to_fine_shift:
         result.reason = f"ICP diverged from the coarse solution by {shift:.2f} m"
-    elif refined.fitness < cfg.min_icp_fitness:
-        result.reason = f"low ICP fitness ({refined.fitness:.3f} < {cfg.min_icp_fitness})"
+    elif scored.fitness < cfg.min_icp_fitness:
+        result.reason = f"low ICP fitness ({scored.fitness:.3f} < {cfg.min_icp_fitness})"
     elif result.fitness_above < cfg.min_icp_fitness_above_ground:
         result.reason = (
             f"low above-ground fitness ({result.fitness_above:.3f} < "
             f"{cfg.min_icp_fitness_above_ground}); ground alone matched"
         )
-    elif refined.inlier_rmse > cfg.max_icp_rmse:
-        result.reason = f"high ICP rmse ({refined.inlier_rmse:.3f} m > {cfg.max_icp_rmse})"
+    elif scored.inlier_rmse > cfg.max_icp_rmse:
+        result.reason = f"high ICP rmse ({scored.inlier_rmse:.3f} m > {cfg.max_icp_rmse})"
+    elif _ground_disagrees(result.ground_offset, cfg):
+        result.reason = f"terrain heights disagree by {result.ground_offset:+.2f} m"
     else:
         result.success = True
         if result.reflector_match is None:
@@ -952,11 +1062,126 @@ def _refine_and_judge(
                 if result.reason.startswith(("rival resolved", "rivals converged"))
                 else ""
             )
-            result.reason = kept + f"shift from coarse {shift * 100:.1f} cm"
+            result.reason = kept + (
+                f"shift from coarse {shift * 100:.1f} cm"
+                if result.used_icp
+                else f"kept coarse (ICP moved the stems {shift * 100:.1f} cm)"
+            )
         elif not result.used_icp:
             result.reason += " (kept coarse)"
     if not result.success:
         _trust_reflectors(result, coarse, shift, cfg)
+
+
+def _score(
+    source: ScanFeatures,
+    target_points: np.ndarray,
+    icp_target,
+    transform: np.ndarray,
+    cfg: CoregConfig,
+    refined: ICPResult,
+) -> ICPResult:
+    """ICP-style quality of a transform ICP did not produce."""
+    fitness, rmse, n = evaluate_registration(
+        source.icp_points, target_points, transform, threshold=cfg.icp.fitness_threshold
+    )
+    return ICPResult(
+        np.asarray(transform, dtype=float),
+        fitness,
+        rmse,
+        n,
+        refined.iterations,
+        False,
+        list(refined.history),
+        plane_information(source.icp_points, icp_target, transform, cfg.icp),
+    )
+
+
+def _ground_disagrees(offset: float, cfg: CoregConfig) -> bool:
+    return (
+        cfg.max_ground_disagreement is not None
+        and np.isfinite(offset)
+        and abs(offset) > cfg.max_ground_disagreement
+    )
+
+
+def _terrain_samples(scan: ScanFeatures, radius: float) -> np.ndarray:
+    """``(n, 3)`` observed terrain cells within ``radius`` of the scanner, in the scan's frame."""
+    g = scan.ground
+    if g is None:
+        return np.zeros((0, 3))
+    iy, ix = np.nonzero(g.observed)
+    xy = g.origin + np.column_stack([ix, iy]) * g.cell_size
+    xy = xy[np.hypot(*(xy - scan.origin[:2]).T) <= radius]
+    return np.column_stack([xy, g.height_at(xy)])
+
+
+def _height_offset(
+    source: ScanFeatures,
+    world_from_source: np.ndarray,
+    targets: Sequence[tuple[ScanFeatures, np.ndarray]],
+    cfg: CoregConfig,
+) -> float:
+    """Median height of the targets' terrain over the source's where both saw ground.
+
+    Parameters
+    ----------
+    source
+        The scan being placed.
+    world_from_source
+        Its pose (or the pair transform, with the target as the world).
+    targets
+        ``(scan, world_from_scan)`` of the scans compared against.
+
+    Returns
+    -------
+    float
+        Metres to add to the source's height; NaN if fewer than
+        ``min_ground_cells`` shared cells.
+    """
+    samples = _terrain_samples(source, cfg.ground_radius)
+    if len(samples) == 0:
+        return float("nan")
+    world = transform_points(world_from_source, samples)
+    offsets = []
+    for scan, pose in targets:
+        g = scan.ground
+        if g is None:
+            continue
+        local = transform_points(invert(pose), world)
+        cell = (local[:, :2] - g.origin) / g.cell_size
+        rows, cols = g.observed.shape
+        ok = (
+            (cell[:, 0] >= -0.5)
+            & (cell[:, 0] <= cols - 0.5)
+            & (cell[:, 1] >= -0.5)
+            & (cell[:, 1] <= rows - 0.5)
+            & (np.hypot(*(local[:, :2] - scan.origin[:2]).T) <= cfg.ground_radius)
+        )
+        ok[ok] = g.support(local[ok, :2])
+        offsets.append(g.height_at(local[ok, :2]) - local[ok, 2])
+    offsets = np.concatenate(offsets) if offsets else np.zeros(0)
+    if len(offsets) < max(cfg.min_ground_cells, 1):
+        return float("nan")
+    return float(np.median(offsets))
+
+
+def _on_ground(
+    transform: np.ndarray,
+    source: ScanFeatures,
+    targets: Sequence[tuple[ScanFeatures, np.ndarray]],
+    cfg: CoregConfig,
+) -> np.ndarray:
+    """``transform`` with its height set from the terrain
+    (:attr:`CoregConfig.height_from_ground`)."""
+    if not cfg.height_from_ground:
+        return transform
+    dz = _height_offset(source, transform, targets, cfg)
+    if not np.isfinite(dz):
+        return transform
+    out = np.array(transform, dtype=float)
+    out[2, 3] += dz
+    return out
 
 
 def _trust_reflectors(
@@ -992,6 +1217,22 @@ def _edge_quality(pair: PairResult) -> tuple[float, float, int]:
         found = pair.reflector_match
         return 1.0, max(found.rmse, 1e-3), found.n_inliers
     return pair.fitness, pair.rmse, pair.icp.n_correspondences if pair.icp else 0
+
+
+def _edge_information(pair: PairResult, cfg: CoregConfig) -> np.ndarray | None:
+    """Information of a pair's edge from its point-to-plane correspondences,
+    or None (:func:`~sylva.coreg.default_information`) without them."""
+    info = pair.icp.information if pair.icp is not None else None
+    if info is None or (pair.trusted and not pair.used_icp):
+        return None
+    return plane_edge_information(
+        info.hessian,
+        info.sigma,
+        info.n,
+        pair.transform,
+        patch_points=cfg.information_patch_points,
+        min_sigma=cfg.information_min_sigma,
+    )
 
 
 def _above_ground_fitness(source, heights, target, transform, cfg: CoregConfig) -> float:
@@ -1051,10 +1292,12 @@ def _coarse_is_acceptable(result: PairResult, match: MatchResult, cfg: CoregConf
 
 
 def _stem_median_residual(transform: np.ndarray, pair: PairResult) -> float:
+    """Median horizontal distance between matched stems: their heights come
+    from each scan's own terrain model, which says nothing about the match."""
     if len(pair.matched_source) == 0:
         return float("nan")
     residual = transform_points(transform, pair.matched_source) - pair.matched_target
-    return float(np.median(np.linalg.norm(residual, axis=1)))
+    return float(np.median(np.linalg.norm(residual[:, :2], axis=1)))
 
 
 # --------------------------------------------------------------------------- #
@@ -1303,6 +1546,7 @@ def coregister_prepared(
                 pair.i,
                 pair.j,
                 pair.transform,
+                information=_edge_information(pair, cfg),
                 fitness=fitness,
                 rmse=rmse,
                 n_correspondences=n_corr,
@@ -1498,9 +1742,9 @@ def _recover_unregistered(
 
     Each scan's stems are matched against every registered stem at once, then
     refined against the merged points of the nearest registered scans; on
-    success it is tied into the graph by an edge to each of them, so the
-    global solve still decides its pose. With priors, a scan whose stems do
-    not place it is placed from its prior instead.
+    success it is tied into the graph (:func:`_tie_in`), so the global solve
+    still decides its pose. With priors, a scan whose stems do not place it
+    is placed from its prior instead.
     """
     recovered = 0
     for _ in range(max(cfg.recovery_rounds, 1)):
@@ -1540,32 +1784,18 @@ def _recover_unregistered(
                 continue
             world_from_scan, neighbours, refined = placed
             graph.poses[k] = world_from_scan
-            for m in neighbours:
-                relative = invert(graph.poses[m]) @ world_from_scan
-                results.append(
-                    PairResult(
-                        i=k,
-                        j=m,
-                        name_i=scans[k].name,
-                        name_j=scans[m].name,
-                        transform=relative,
-                        icp=refined,
-                        success=True,
-                        reason=f"{how} against {len(neighbours)} combined scans, "
-                        f"fitness {refined.fitness:.3f}",
-                    )
-                )
-                edge_to_pair.append(len(results) - 1)
-                # The measured quality: a recovered scan is the marginal case.
-                graph.add_edge(
-                    k,
-                    m,
-                    relative,
-                    fitness=refined.fitness,
-                    rmse=refined.inlier_rmse,
-                    n_correspondences=max(refined.n_correspondences // len(neighbours), 1),
-                    label="recovered",
-                )
+            _tie_in(
+                scans,
+                k,
+                world_from_scan,
+                neighbours,
+                refined,
+                how,
+                graph,
+                results,
+                edge_to_pair,
+                cfg,
+            )
             registered[k] = True
             gained += 1
             log(f"  {scans[k].name:<24s} {how} against {len(neighbours)} registered scan(s)")
@@ -1573,6 +1803,79 @@ def _recover_unregistered(
         if gained == 0:
             break
     return recovered
+
+
+def _tie_in(
+    scans, k, world_from_scan, neighbours, refined, how, graph, results, edge_to_pair, cfg
+) -> None:
+    """Edges for a scan placed against the combined survey.
+
+    The placement is only a starting point: the scan is registered pairwise
+    to each neighbour from it, and each pair that passes the usual tests is
+    an edge, an independent measurement like any other. If none does, the
+    placement itself is one edge to the nearest neighbour, weighted by the
+    joint ICP's own correspondences.
+    """
+    added = 0
+    for m in neighbours:
+        pair = register_pair(
+            scans[k], scans[m], cfg, initial=invert(graph.poses[m]) @ world_from_scan, i=k, j=m
+        )
+        if not pair.success:
+            continue
+        pair.reason = f"{how}, then pairwise: {pair.reason}"
+        results.append(pair)
+        edge_to_pair.append(len(results) - 1)
+        fitness, rmse, n_corr = _edge_quality(pair)
+        graph.add_edge(
+            k,
+            m,
+            pair.transform,
+            information=_edge_information(pair, cfg),
+            fitness=fitness,
+            rmse=rmse,
+            n_correspondences=n_corr,
+            label=f"{how}: {scans[k].name}->{scans[m].name}",
+        )
+        added += 1
+    if added:
+        return
+    m = neighbours[0]
+    relative = invert(graph.poses[m]) @ world_from_scan
+    results.append(
+        PairResult(
+            i=k,
+            j=m,
+            name_i=scans[k].name,
+            name_j=scans[m].name,
+            transform=relative,
+            icp=refined,
+            success=True,
+            reason=f"{how} against {len(neighbours)} combined scans, "
+            f"fitness {refined.fitness:.3f}; no single pair passes",
+        )
+    )
+    edge_to_pair.append(len(results) - 1)
+    info = refined.information
+    graph.add_edge(
+        k,
+        m,
+        relative,
+        information=None
+        if info is None
+        else plane_edge_information(
+            info.hessian,
+            info.sigma,
+            info.n,
+            world_from_scan,  # the joint ICP's target frame is the world
+            patch_points=cfg.information_patch_points,
+            min_sigma=cfg.information_min_sigma,
+        ),
+        fitness=refined.fitness,
+        rmse=refined.inlier_rmse,
+        n_correspondences=refined.n_correspondences,
+        label=f"{how} (combined)",
+    )
 
 
 def _combined_stem_map(scans, registered, graph: PoseGraph) -> StemMap:
@@ -1618,13 +1921,16 @@ def _place_against_survey(
             for m in neighbours
         ]
     )
-    refined = icp(scan.icp_points, target, match.transform, cfg.icp)
+    around = [(scans[m], graph.poses[m]) for m in neighbours]
+    refined = icp(scan.icp_points, target, _on_ground(match.transform, scan, around, cfg), cfg.icp)
     if refined.fitness < cfg.min_icp_fitness or refined.inlier_rmse > cfg.max_icp_rmse:
         return None
     if (
         _above_ground_fitness(scan.icp_points, scan.icp_heights, target, refined.transform, cfg)
         < cfg.min_icp_fitness_above_ground
     ):
+        return None
+    if _ground_disagrees(_height_offset(scan, refined.transform, around, cfg), cfg):
         return None
     return refined.transform, neighbours, refined
 
@@ -1673,25 +1979,6 @@ def _prior_ok(
         if rot > cfg.max_prior_rotation:
             return False, f"{rot:.1f} deg from the prior orientation"
     return True, ""
-
-
-def _lowest_per_cell(xyz: np.ndarray, cell: float = 0.5) -> tuple[np.ndarray, np.ndarray]:
-    key = np.floor(xyz[:, :2] / cell).astype(np.int64)
-    k = key[:, 0] * 10_000_000 + key[:, 1]
-    order = np.lexsort((xyz[:, 2], k))
-    first = np.r_[True, k[order][1:] != k[order][:-1]]
-    return k[order][first], xyz[order][first, 2]
-
-
-def _ground_offset(points: np.ndarray, target: np.ndarray) -> float:
-    """Median height of ``target``'s ground over ``points``' ground, per cell.
-
-    NaN if they share too little ground.
-    """
-    ka, za = _lowest_per_cell(points)
-    kb, zb = _lowest_per_cell(target)
-    common, ia, ib = np.intersect1d(ka, kb, return_indices=True)
-    return float(np.median(zb[ib] - za[ia])) if len(common) >= 50 else float("nan")
 
 
 def place_from_prior(
@@ -1749,7 +2036,8 @@ def place_from_prior(
         [transform_points(poses[m], survey[m].icp_points.astype(np.float64)) for m in used]
     )
     coarse = np.asarray(prior, float).copy()
-    dz = _ground_offset(transform_points(coarse, scan.icp_points), target)
+    around = [(survey[m], poses[m]) for m in used]
+    dz = _height_offset(scan, coarse, around, cfg)
     if not np.isfinite(dz):
         result.reason = "no ground shared with the registered scans"
         return result, []
@@ -1773,6 +2061,8 @@ def place_from_prior(
         )
     elif refined.inlier_rmse > cfg.max_icp_rmse:
         result.reason = f"high ICP rmse ({refined.inlier_rmse:.3f} m)"
+    elif _ground_disagrees(offset := _height_offset(scan, refined.transform, around, cfg), cfg):
+        result.reason = f"terrain heights disagree by {offset:+.2f} m"
     elif not good:
         result.reason = why
     else:

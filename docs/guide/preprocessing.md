@@ -115,17 +115,28 @@ merged = coreg.merge_clouds([p.rxp for p in scans], result, voxel=0.02)
 It works in three stages:
 
 1. **Each scan** gets a terrain model and a stem map. Only the locally
-   planar points (stems, ground, logs) are kept for ICP.
+   planar points (stems, ground, logs) are kept for ICP. A scanner tilted
+   on its side cannot see the ground in the directions along its tilt axis,
+   where the lowest returns are foliage; the terrain there is filled from
+   the directions it could see (`ground_min_coverage`).
 2. **Each pair** is matched on shared targets where both scans saw three or
-   more. Otherwise the two stem maps are matched. A robust point-to-plane ICP
-   (Chen & Medioni 1992, with Huber weights and a trimmed tail as in
-   Chetverikov et al. 2002) then refines the match. A pair is accepted only if it fits both overall
-   and above the ground, so a flat ground can't confirm a wrong match on its
-   own.
+   more. Otherwise the two stem maps are matched in plan, and the height
+   comes from the ground both scans saw rather than from the stems: a stem's
+   height rests on its own scan's terrain model, which is least certain
+   under understory, and vertical error is the weak point of stem-based
+   registration (Tremblay & Béland 2018; Wang et al. 2023). A robust
+   point-to-plane ICP (Chen & Medioni 1992, with Huber weights and a trimmed
+   tail as in Chetverikov et al. 2002) then refines the match. A pair is
+   accepted only if it fits both overall and above the ground, so a flat
+   ground can't confirm a wrong match on its own, and if the two terrain
+   models then agree within `max_ground_disagreement` (25 cm).
 3. **The whole survey** is solved as a pose graph (Lu & Milios 1997) by
    Levenberg–Marquardt with a Huber (1964) kernel, with outlier edges
-   rejected. Scans that are left over are retried against the combined
-   survey.
+   rejected. Each edge is weighted by the directions its ICP surfaces
+   constrain: a pair that overlaps mostly on flat ground holds the height
+   firmly and the horizontal position loosely. Scans that are left over
+   are placed against the combined survey, then registered pairwise to
+   their new neighbours.
 
 Options:
 
@@ -142,11 +153,16 @@ Options:
   drops: `"current"` removes echoes closer than 0.5 m, and `"legacy"` also
   removes isolated weak echoes, as older RiSCAN versions did.
 - **Checking the result.** `result.report()` lists every pair. For each one it
-  gives how far apart the same trees land from the two scans, a check that
-  needs no ground truth.
+  gives how far apart the same trees land from the two scans (horizontally)
+  and how far apart their terrain models are (`dz`), checks that need no
+  ground truth.
 
-A survey where the positions share few trees may register only in part from
-stems. On a 14-scan VZ-400 survey, stems alone placed 4 scans; with the
-RiSCAN targets, all 14 landed within 7 cm of the target-based SOPs. The same
+Positions far apart share little surface, so ICP's fitness falls with the
+distance between them; the gates (`min_icp_fitness` 0.04,
+`min_icp_fitness_above_ground` 0.03) were set on a 14-scan VZ-400 survey of
+upright and tilted scans 30-35 m apart, scored against its reflector-based
+registration. From stems alone all 14 scans registered, with a median
+error of 2.9 cm and at most 4.4 cm 15 m from the scanner. A survey
+whose positions share few trees may still register only in part. The same
 pipeline is the `sylva coreg` command (see [Command line](cli.md)). The
 methods it builds on are cited on the [references](../references.md) page.

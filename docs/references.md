@@ -79,6 +79,13 @@ Reports No. 663). Pudoc. <https://edepot.wur.nl/187115>
 — the planophile, erectophile, plagiophile and extremophile leaf angle
 distributions of `sylva.leaves` and `sylva.voxels`.
 
+Dai, X., Liang, X., Qi, H., Chen, J., Wang, X., Wang, X., Zhang, Q., & Zhang,
+J. (2024). Automated registration of terrestrial point clouds through ground
+overlapping searching in forests. *IEEE Transactions on Geoscience and Remote
+Sensing*, *62*, 1–13. <https://doi.org/10.1109/TGRS.2024.3471792>
+— registering levelled forest scans on their shared ground: the height of a
+`sylva.coreg` stem match is taken from the terrain the two scans share.
+
 Devereux, T., Lowe, T., Rivory, J., Bohn Reckziegel, R., Calders, K., Aryal,
 R. R., Eaton, G., Cooper, Z., Levick, S., Phinn, S., & Woodgate, W. (2026).
 RayExtract: A fast, scalable method for tree volume reconstruction from
@@ -164,6 +171,13 @@ estimation in perennial horticulture crops using 3D spinning lidar SLAM.
 — the ray-traced density of `canopy.density_grid` (raycloudtools'
 `DensityGrid`) and the formulation behind [`sylva.voxels`](api/voxels.md).
 
+Liu, H., Zhang, X., Xu, Y., & Chen, X. (2020). Efficient coarse registration
+of pairwise TLS point clouds using ortho projected feature images. *ISPRS
+International Journal of Geo-Information*, *9*(4), 255.
+<https://doi.org/10.3390/ijgi9040255>
+— the vertical offset of levelled scans from the height difference of their
+overlap once aligned horizontally, as `sylva.coreg` sets a stem match's height.
+
 Lu, F., & Milios, E. (1997). Globally consistent range scan alignment for
 environment mapping. *Autonomous Robots*, *4*(4), 333–349.
 <https://doi.org/10.1023/A:1008854305733>
@@ -244,6 +258,13 @@ Geoscience and Remote Sensing*, *60*, 1–11.
 — the default `leaves.classify_leaf_wood` labeller (GBSeparation),
 translated from the authors' code (see Software).
 
+Tremblay, J.-F., & Béland, M. (2018). Towards operational marker-free
+registration of terrestrial lidar data in forests. *ISPRS Journal of
+Photogrammetry and Remote Sensing*, *146*, 430–435.
+<https://doi.org/10.1016/j.isprsjprs.2018.10.011>
+— vertical error dominates stem-based registration, traced to the terrain
+under the stems; why `sylva.coreg` takes height from the shared ground.
+
 Umeyama, S. (1991). Least-squares estimation of transformation parameters
 between two point patterns. *IEEE Transactions on Pattern Analysis and Machine
 Intelligence*, *13*(4), 376–380. <https://doi.org/10.1109/34.88573>
@@ -274,6 +295,14 @@ airborne laser scanning. A cross-validation study using LAI2200 optical sensor.
 *Remote Sensing of Environment*, *198*, 254–266.
 <https://doi.org/10.1016/j.rse.2017.05.034>
 — AMAPVox, whose voxel traversal and outputs `sylva.voxels` mirrors.
+
+Wang, X., Yang, Z., Cheng, X., Stoter, J., Xu, W., Wu, Z., & Nan, L. (2023).
+GlobalMatch: Registration of forest terrestrial point clouds by global
+matching of relative stem positions. *ISPRS Journal of Photogrammetry and
+Remote Sensing*, *197*, 71–86. <https://doi.org/10.1016/j.isprsjprs.2023.01.013>
+— the 4-degree-of-freedom stem registration of levelled scans, and the
+sensitivity of stem heights to the terrain model, behind `sylva.coreg`'s
+terrain-based height.
 
 Weinmann, M., Jutzi, B., Hinz, S., & Mallet, C. (2015). Semantic point cloud
 interpretation based on optimal neighborhoods, relevant features and efficient

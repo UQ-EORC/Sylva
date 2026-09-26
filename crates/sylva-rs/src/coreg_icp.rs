@@ -125,6 +125,23 @@ pub struct IcpResult {
     pub iterations: usize,
     pub converged: bool,
     pub history: Vec<f64>,
+    /// Point-to-plane information of the final transform ([`plane_information`]);
+    /// `None` for point-to-point or too little overlap.
+    pub information: Option<PlaneInformation>,
+}
+
+/// How well a set of point-to-plane correspondences pins a transform.
+///
+/// `hessian` is the robust-weighted Gauss-Newton matrix `sum w a a^T` of the
+/// residuals `n . (T p - q)`, with `a = [p x n, n]` for a left-multiplied
+/// update `exp(xi) T`, `xi = [omega, v]`: its null directions are the ones
+/// the surfaces leave free (a slide along flat ground). `sigma` is the
+/// weighted RMS residual and `n` the number of correspondences.
+#[derive(Debug, Clone)]
+pub struct PlaneInformation {
+    pub hessian: Matrix6<f64>,
+    pub sigma: f64,
+    pub n: usize,
 }
 
 // --------------------------------------------------------------- SE(3) maps
@@ -523,6 +540,7 @@ pub fn icp_prepared(source: &[Point], target: &IcpTarget, initial: Option<Matrix
             iterations: 0,
             converged: false,
             history: Vec::new(),
+            information: None,
         });
     }
 
@@ -609,7 +627,53 @@ pub fn icp_prepared(source: &[Point], target: &IcpTarget, initial: Option<Matrix
         iterations: total_iterations,
         converged,
         history,
+        information: plane_information(source, target, &t, cfg),
     })
+}
+
+/// Point-to-plane information of `transform` against the finest level of
+/// `target`: the correspondences, planarity gate, trim and robust weights of
+/// a last ICP iteration, without the step.
+///
+/// `None` if the target has no normals (point-to-point) or fewer than 10
+/// correspondences survive.
+pub fn plane_information(source: &[Point], target: &IcpTarget, transform: &Mat4, cfg: &IcpConfig) -> Option<PlaneInformation> {
+    let level = target.levels.last()?;
+    let (normals, planarity) = (level.normals.as_ref()?, level.planarity.as_ref()?);
+    let voxel = *cfg.voxel_sizes.last()?;
+    let max_distance = *cfg.distances().ok()?.last()?;
+    let src = random_cap(voxel_downsample(source, voxel), cfg.max_points, &mut Rng::new(cfg.seed));
+    let moved = transform_points(transform, &src);
+    let (dist, idx) = level.tree.query(&moved, max_distance);
+    let valid: Vec<usize> = (0..moved.len()).filter(|&i| dist[i].is_finite()).collect();
+    if valid.len() < 10 {
+        return None;
+    }
+    let d: Vec<f64> = valid.iter().map(|&i| dist[i]).collect();
+    let pl: Vec<f64> = valid.iter().map(|&i| planarity[idx[i]]).collect();
+    let keep = reject(&d, Some(&pl), cfg, cfg.trim_ramp);
+    let kept: Vec<usize> = valid.iter().zip(&keep).filter(|(_, &k)| k).map(|(&i, _)| i).collect();
+    if kept.len() < 10 {
+        return None;
+    }
+    let residual: Vec<f64> = kept
+        .iter()
+        .map(|&i| {
+            let (p, q, n) = (&moved[i], &level.points[idx[i]], &normals[idx[i]]);
+            (p[0] - q[0]) * n[0] + (p[1] - q[1]) * n[1] + (p[2] - q[2]) * n[2]
+        })
+        .collect();
+    let w = weights(&residual, cfg);
+    let mut hessian = Matrix6::zeros();
+    let (mut wr2, mut wsum) = (0.0, 0.0);
+    for (k, &i) in kept.iter().enumerate() {
+        let (p, n) = (&moved[i], &normals[idx[i]]);
+        let a = Vector6::new(p[1] * n[2] - p[2] * n[1], p[2] * n[0] - p[0] * n[2], p[0] * n[1] - p[1] * n[0], n[0], n[1], n[2]);
+        hessian += a * a.transpose() * w[k];
+        wr2 += w[k] * residual[k] * residual[k];
+        wsum += w[k];
+    }
+    Some(PlaneInformation { hessian, sigma: (wr2 / wsum.max(1e-12)).sqrt(), n: kept.len() })
 }
 
 /// Score a registration without changing it (`evaluate_registration`):

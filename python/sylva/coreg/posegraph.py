@@ -10,7 +10,10 @@ finds the poses that best explain every pairwise measurement at once,
 spreading the closure error over the loop (Lu & Milios 1997).
 
 Nodes are ``world_from_scan`` poses; edges are measured relative transforms
-with an information matrix saying how far each is trusted. The solver is
+with an information matrix saying how far, and in which directions, each is
+trusted: an ICP edge's comes from its point-to-plane correspondences
+(:func:`plane_edge_information`), so a pair matched mostly on flat ground
+holds height, roll and pitch firmly and the horizontal position loosely. The solver is
 Levenberg-Marquardt (Levenberg 1944; Marquardt 1963) on SE(3) with a Huber
 (1964) kernel and an explicit outlier pass,
 because in a forest a pairwise match can be confidently and completely wrong
@@ -23,9 +26,15 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .transforms import identity, invert, se3_exp, se3_log
+from .transforms import identity, invert, se3_exp, se3_log, skew
 
-__all__ = ["OptimisationResult", "PoseGraph", "PoseGraphEdge", "default_information"]
+__all__ = [
+    "OptimisationResult",
+    "PoseGraph",
+    "PoseGraphEdge",
+    "default_information",
+    "plane_edge_information",
+]
 
 
 def default_information(
@@ -57,6 +66,73 @@ def default_information(
     info[:3, :3] *= scale / sigma_r**2
     info[3:, 3:] *= scale / sigma_t**2
     return info
+
+
+def adjoint(T: np.ndarray) -> np.ndarray:
+    """``(6, 6)`` adjoint of a transform on ``[omega, v]`` twists:
+    ``T @ se3_exp(xi) @ invert(T) == se3_exp(adjoint(T) @ xi)``."""
+    R, t = T[:3, :3], T[:3, 3]
+    A = np.zeros((6, 6))
+    A[:3, :3] = R
+    A[3:, 3:] = R
+    A[3:, :3] = skew(t) @ R
+    return A
+
+
+def plane_edge_information(
+    hessian: np.ndarray,
+    sigma: float,
+    n: int,
+    transform: np.ndarray,
+    *,
+    patch_points: float = 100.0,
+    min_sigma: float = 0.005,
+) -> np.ndarray:
+    """Edge information from the point-to-plane correspondences of an ICP.
+
+    The Gauss-Newton matrix of the correspondences
+    (:class:`~sylva.coreg.icp.PlaneInformation`) says in which directions the
+    surfaces pin the transform; it is scaled to the residual and carried from
+    the target frame, where ICP perturbs the transform, into the frame of the
+    edge residual. Neighbouring residuals share the error of the surface they
+    sample, so ``n`` correspondences count as ``n / patch_points``
+    independent ones: the information of an edge grows with its overlap, but
+    not to the point where millimetres of disagreement between two edges
+    look like outliers.
+
+    Parameters
+    ----------
+    hessian
+        ``(6, 6)`` ``sum w a a^T`` for updates ``se3_exp(xi) @ transform``.
+    sigma
+        Weighted RMS point-to-plane residual (m); floored at ``min_sigma``.
+    n
+        Correspondences behind ``hessian``.
+    transform
+        The measured ``target_from_source`` transform.
+    patch_points
+        Correspondences per independent observation.
+    min_sigma
+        Floor on ``sigma`` (m): a residual of a millimetre says the surfaces
+        agree, not that the pose is known to a millimetre.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(6, 6)`` information of the edge residual ``se3_log(invert(transform)
+        @ target_from_source)``, rotation block first.
+    """
+    H = np.asarray(hessian, dtype=float).reshape(6, 6) / max(int(n), 1)
+    count = max(n / max(patch_points, 1.0), 1.0)
+    info_target = H * count / max(sigma, min_sigma) ** 2
+    # The truth is se3_exp(d) @ Z with d in the target frame; the residual
+    # log(Z^-1 exp(d) Z) is adjoint(Z^-1) d, so the information is
+    # adjoint(Z)^T info adjoint(Z).
+    A = adjoint(np.asarray(transform, dtype=float))
+    info = A.T @ info_target @ A
+    info = 0.5 * (info + info.T)
+    # A direction no surface constrains must not make the normal equations singular.
+    return info + np.eye(6) * 1e-9 * max(np.trace(info), 1e-12)
 
 
 @dataclass(eq=False)  # edges hold arrays and are tracked by identity
@@ -268,7 +344,7 @@ class PoseGraph:
         reject_outliers
             Remove edges whose error stays far above the median, then solve
             again. An edge is never removed if that would cut a node off
-            from the anchors.
+            from the anchors it reached.
         outlier_sigma
             How many robust standard deviations above the median is an outlier.
         max_rejection_passes
@@ -287,17 +363,20 @@ class PoseGraph:
         rejected: list[int] = []
         iterations = 0
         converged = False
-        for _ in range(max_rejection_passes if reject_outliers else 1):
+        passes = max(max_rejection_passes, 0) if reject_outliers else 0
+        for rejection_pass in range(passes + 1):
             active = [e for k, e in enumerate(self.edges) if k not in rejected]
             if not active:
                 break
             used, converged = self._run_lm(active, max_iterations, tolerance, huber_delta)
             iterations += used
-            if not reject_outliers:
+            if rejection_pass == passes:
                 break
             new = self._find_outliers(active, outlier_sigma)
             if not new:
                 break
+            # Solved again without them: the poses returned never rest on a
+            # rejected edge.
             rejected.extend(self.edges.index(e) for e in new)
         errors = np.array(
             [
@@ -417,9 +496,10 @@ class PoseGraph:
         )
         kept = list(edges)
         removed = []
+        anchored = _reachable(kept, self.n_nodes, self._anchors())
         for candidate in candidates:
             trial = [e for e in kept if e is not candidate]
-            if _is_connected(trial, self.n_nodes, self._anchors()):
+            if _reachable(trial, self.n_nodes, self._anchors()) >= anchored:
                 kept = trial
                 removed.append(candidate)
         return removed
@@ -442,11 +522,12 @@ def _huber_weight(e_vec: np.ndarray, information: np.ndarray, delta: float) -> f
     return 1.0 if chi2 <= delta**2 else float(delta / np.sqrt(max(chi2, 1e-12)))
 
 
-def _is_connected(edges: list[PoseGraphEdge], n_nodes: int, anchors: set[int]) -> bool:
-    """Would every node still reach an anchor through ``edges``?
+def _reachable(edges: list[PoseGraphEdge], n_nodes: int, anchors: set[int]) -> set[int]:
+    """Nodes that reach an anchor through ``edges``.
 
-    Like tlsalign, this asks for *every* node: while any scan is unregistered
-    no edge is ever rejected.
+    Outlier rejection keeps this set whole, so it works while some scans are
+    still unregistered (tlsalign asked for every node to be reachable, which
+    disabled rejection in exactly the surveys that register only in part).
     """
     adjacency = _adjacency(edges, n_nodes)
     seen = set(anchors)
@@ -456,4 +537,4 @@ def _is_connected(edges: list[PoseGraphEdge], n_nodes: int, anchors: set[int]) -
             if nb not in seen:
                 seen.add(nb)
                 stack.append(nb)
-    return len(seen) == n_nodes
+    return seen
