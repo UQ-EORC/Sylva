@@ -351,7 +351,7 @@ def dbh_profile(cloud: PointCloud, center_xy, height_attr: str = "height",
 def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "height",
                   k: int = 6, max_edge: float = 1.0, voxel_size: float = 0.03,
                   seed_height: float = 1.5, seed_radius: float = 0.25, seed_ring: bool = True,
-                  power: float = 4.0,
+                  power: float = 6.0,
                   angle_penalty: bool = True, gravity: float = 0.0,
                   cut_above_ground: float = 0.25, height_prior: bool = True,
                   height_prior_radius: float = 1.5, height_prior_power: float = 1.0,
@@ -401,7 +401,11 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
         Graph nodes within ``seed_radius`` of a stem and below
         ``seed_height`` start that tree's search.
     power
-        Exponent on edge length; higher prefers many short steps.
+        Exponent on edge length; higher prefers many short steps, so paths
+        stay inside a crown rather than jumping the gaps between neighbouring
+        crowns. 6 was chosen on the validation areas of the Cherlet et al.
+        (2026) benchmark, where it raised F1 over the earlier 4 on every plot
+        with interlocking crowns (see *Benchmarks > Tree detection*).
     angle_penalty
         Apply the angle factor above.
     gravity

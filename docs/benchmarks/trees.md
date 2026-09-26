@@ -26,33 +26,49 @@ IoU matrix, true positive at IoU ≥ 0.5. Scoring against every labelled
 instance instead, and calling every edge-tree hit a false positive, makes the
 numbers look far worse than they are.
 
-Scored properly, on the test splits, with `min_height` set to the 5 m the
-references themselves use (`prune_trees` keeps 3 m by default; the benchmark's
-own baseline was tuned per plot, 2.2–4.8 m):
+Scored with a port of the benchmark's own evaluation code
+([qforestlab/TreeInstSegEval](https://github.com/qforestlab/TreeInstSegEval):
+IoU on point sets rounded to 1 cm, Hungarian matching on the evaluated trees,
+a true positive at IoU > 0.5), on the test splits, with `min_height` set to the
+5 m the references themselves use (6 m at Robson Creek; `prune_trees` keeps
+3 m by default). The figures an earlier version of this page gave (0.976,
+0.732, 0.667, 0.528) could not be reproduced with that code and are
+superseded. With the current defaults (`power=6`):
 
-| test split | eval trees | recall | precision | F1 | mean IoU |
-|---|---|---|---|---|---|
-| Litchfield (savanna) | 128 | 0.969 | 0.984 | **0.976** | 0.977 |
-| Wytham (temperate broadleaf) | 181 | 0.779 | 0.691 | **0.732** | 0.863 |
-| Ofental (conifer) | 89 | 0.663 | 0.670 | **0.667** | 0.718 |
-| Robson Creek (rainforest) | 150 | 0.560¹ | 0.500¹ | **0.528**¹ | 0.690 |
+| test split | eval trees | recall | precision | F1 | Rayextract F1 | best F1 of the other four methods |
+|---|---|---|---|---|---|---|
+| Litchfield (savanna) | 128 | 0.945 | 0.984 | **0.964** | 0.919 | 0.930 (TreeLearn) |
+| Wytham (temperate broadleaf) | 181 | 0.702 | 0.751 | **0.726** | 0.570 | 0.540 (TreeLearn) |
+| Ofental (conifer) | 89 | 0.753 | 0.827 | **0.788** | 0.744 | 0.497 (TreeLearn) |
+| Robson Creek (rainforest) | 150 | 0.513 | 0.475 | **0.494** | 0.480 | 0.247 (ForAINet) |
 
-¹ at 6 m; at 5 m Robson reads 0.613 / 0.453 / 0.521.
+The other methods' values are those of Cherlet et al. (2026), Table 2
+(Rayextract, Treeiso, SSSC, and TreeLearn and ForAINet fine-tuned on all four
+plots). Sylva's are computed here with the same protocol, so the comparison is
+indicative rather than independent.
+
+`power` (the exponent on graph edge length) was raised from 4 to 6 after a
+sweep on the benchmark's validation areas, never on the test splits: F1 there
+went 0.514 → 0.563 at Robson Creek, 0.636 → 0.660 at Ofental and
+0.581 → 0.588 at Wytham, and Litchfield did not change. On the test splits,
+scored once with the setting fixed, it gave 0.479 → 0.494, 0.682 → 0.788,
+0.707 → 0.726 and 0.964 → 0.964. Settings that did not help on the validation
+areas: `gravity`, `wood_costs` (better at Ofental only), a weaker or no
+`height_prior`, and two forms of a crown-size prior from stem allometry
+(crown radius proportional to DBH, applied to every path or only to points
+two trees compete for), which truncated real crowns or fragmented trees.
+
+**What remains.** Stem detection is nearly complete (one of the 150 Robson
+Creek trees is never detected); the losses are in dividing crowns between
+neighbours. Most missed trees are shorter than their neighbours and are
+absorbed by them: 49 of 76 at Robson Creek, 44 of 57 at Wytham and 21 of 31
+at Ofental before the change of `power`.
 
 The reporting threshold matters more than anything else we tuned, because the
-references only label trees: at Litchfield, moving it from 3 m to 5 m takes F1
-from 0.810 to 0.976 without losing a single tree, since everything it drops is
-shrub. Keep the threshold you segment with separate from the one you report,
+references only label trees: at Litchfield, moving it from 3 m to 5 m took F1
+from 0.810 to 0.976 under the earlier scoring, without losing a single tree,
+since everything it drops is shrub. Keep the threshold you segment with separate from the one you report,
 and set the second to match whatever your inventory calls a tree.
-
-For context, the best figures published on this benchmark (Cherlet et al.
-2026, Table 2, and SegmentAnyTreeV2, [Wielgosz et al. 2026](../references.md)) are F1 0.930–0.972 at Litchfield,
-0.570 at Wytham, 0.744 at Ofental and 0.584 at Robson Creek. Those are taken
-from a summary of the papers rather than re-measured here, so treat them as
-indicative: on that reading Wytham is ahead of anything published, Litchfield
-is level with it, Robson sits between the algorithmic and the learned
-baselines, and **Ofental is the real gap** — about 8 points of F1 behind
-`rayextract`, whose recall there (0.753) no learned method has matched either.
 
 **Seeds used to be too wide.** A tree starts from the points within
 `seed_radius` of its stem at `seed_height`; at 0.5 m those discs overlap
@@ -65,7 +81,7 @@ precision 0.88 → 0.90, and costs Litchfield nothing (135 → 136).
 
 A **sparser graph and a steeper cost** help on top of that: `k` 10 → 6 and
 `power` 3 → 4 (the exponent on edge length, so a path pays more for a long
-hop between two crowns). Found trees: Litchfield 136, Wytham 152 → 154,
+hop between two crowns; since raised to 6, above). Found trees: Litchfield 136, Wytham 152 → 154,
 Robson 105 → 110, Ofental 63 → 68, with fewer spurious trees everywhere.
 
 A **finer graph** pays for itself where the stand is dense: the cloud is
