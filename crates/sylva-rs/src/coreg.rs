@@ -133,7 +133,7 @@ impl StemMatch {
 
 /// `np.add.reduce` on a contiguous float64 array: numpy's pairwise summation,
 /// reproduced so sums agree with tlsalign to the bit.
-fn numpy_sum(a: &[f64]) -> f64 {
+pub fn numpy_sum(a: &[f64]) -> f64 {
     let n = a.len();
     if n < 8 {
         let mut r = 0.0;

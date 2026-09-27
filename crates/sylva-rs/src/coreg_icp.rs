@@ -146,7 +146,8 @@ pub struct PlaneInformation {
 
 // --------------------------------------------------------------- SE(3) maps
 
-fn skew(w: &Vector3<f64>) -> Matrix3<f64> {
+/// The skew-symmetric matrix of a 3-vector.
+pub fn skew(w: &Vector3<f64>) -> Matrix3<f64> {
     Matrix3::new(0.0, -w[2], w[1], w[2], 0.0, -w[0], -w[1], w[0], 0.0)
 }
 
@@ -189,7 +190,8 @@ pub fn so3_log(r: &Matrix3<f64>) -> Vector3<f64> {
     w * (theta / (2.0 * theta.sin()))
 }
 
-fn left_jacobian(w: &Vector3<f64>) -> Matrix3<f64> {
+/// Left Jacobian of SO(3), which maps a twist's translation part.
+pub fn left_jacobian(w: &Vector3<f64>) -> Matrix3<f64> {
     let theta = w.norm();
     let k = skew(w);
     if theta < 1e-8 {

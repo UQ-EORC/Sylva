@@ -76,8 +76,7 @@ class GroundModel:
     @property
     def slope_deg(self) -> float:
         """Mean terrain slope (degrees), a sanity check on the fit."""
-        gy, gx = np.gradient(self.elevation, self.cell_size)
-        return float(np.degrees(np.arctan(np.hypot(gx, gy))).mean())
+        return float(_core.coreg_ground_slope_deg(self.elevation, float(self.cell_size)))
 
 
 def fit_ground(

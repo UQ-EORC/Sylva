@@ -17,7 +17,8 @@ holds height, roll and pitch firmly and the horizontal position loosely. The sol
 Levenberg-Marquardt (Levenberg 1944; Marquardt 1963) on SE(3) with a Huber
 (1964) kernel and an explicit outlier pass,
 because in a forest a pairwise match can be confidently and completely wrong
-when two parts of a stand have similar stem patterns.
+when two parts of a stand have similar stem patterns. The graph here is a
+container; the solve runs in the Rust core.
 """
 
 from __future__ import annotations
@@ -26,7 +27,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .transforms import identity, invert, se3_exp, se3_log, skew
+from .. import _core
+from .transforms import _mat4, identity, invert
 
 __all__ = [
     "OptimisationResult",
@@ -58,25 +60,15 @@ def default_information(
     numpy.ndarray
         ``(6, 6)`` information, rotation block first.
     """
-    n = max(int(n_correspondences), 1)
-    sigma_t = max(rmse, 1e-4) / np.sqrt(n)
-    sigma_r = sigma_t / max(extent, 1e-3)
-    scale = max(min(fitness, 1.0), 1e-3)
-    info = np.eye(6)
-    info[:3, :3] *= scale / sigma_r**2
-    info[3:, 3:] *= scale / sigma_t**2
-    return info
+    return _core.coreg_default_information(
+        float(rmse), float(fitness), int(n_correspondences), float(extent)
+    )
 
 
 def adjoint(T: np.ndarray) -> np.ndarray:
     """``(6, 6)`` adjoint of a transform on ``[omega, v]`` twists:
     ``T @ se3_exp(xi) @ invert(T) == se3_exp(adjoint(T) @ xi)``."""
-    R, t = T[:3, :3], T[:3, 3]
-    A = np.zeros((6, 6))
-    A[:3, :3] = R
-    A[3:, 3:] = R
-    A[3:, :3] = skew(t) @ R
-    return A
+    return _core.coreg_adjoint(_mat4(T))
 
 
 def plane_edge_information(
@@ -122,17 +114,14 @@ def plane_edge_information(
         ``(6, 6)`` information of the edge residual ``se3_log(invert(transform)
         @ target_from_source)``, rotation block first.
     """
-    H = np.asarray(hessian, dtype=float).reshape(6, 6) / max(int(n), 1)
-    count = max(n / max(patch_points, 1.0), 1.0)
-    info_target = H * count / max(sigma, min_sigma) ** 2
-    # The truth is se3_exp(d) @ Z with d in the target frame; the residual
-    # log(Z^-1 exp(d) Z) is adjoint(Z^-1) d, so the information is
-    # adjoint(Z)^T info adjoint(Z).
-    A = adjoint(np.asarray(transform, dtype=float))
-    info = A.T @ info_target @ A
-    info = 0.5 * (info + info.T)
-    # A direction no surface constrains must not make the normal equations singular.
-    return info + np.eye(6) * 1e-9 * max(np.trace(info), 1e-12)
+    return _core.coreg_plane_edge_information(
+        np.ascontiguousarray(np.asarray(hessian, dtype=float).reshape(6, 6)),
+        float(sigma),
+        int(n),
+        _mat4(transform),
+        float(patch_points),
+        float(min_sigma),
+    )
 
 
 @dataclass(eq=False)  # edges hold arrays and are tracked by identity
@@ -250,23 +239,8 @@ class PoseGraph:
 
     def components(self) -> list[list[int]]:
         """Connected components, as sorted lists of nodes."""
-        adjacency = _adjacency(self.edges, self.n_nodes)
-        seen: set[int] = set()
-        out = []
-        for start in range(self.n_nodes):
-            if start in seen:
-                continue
-            stack, group = [start], []
-            seen.add(start)
-            while stack:
-                node = stack.pop()
-                group.append(node)
-                for nb in adjacency[node]:
-                    if nb not in seen:
-                        seen.add(nb)
-                        stack.append(nb)
-            out.append(sorted(group))
-        return out
+        i, j = [int(e.i) for e in self.edges], [int(e.j) for e in self.edges]
+        return [list(c) for c in _core.coreg_posegraph_components(self.n_nodes, i, j)]
 
     def initialise(self, reference: int | None = None) -> list[np.ndarray]:
         """Initialise the poses by walking a maximum-weight spanning tree.
@@ -281,36 +255,24 @@ class PoseGraph:
         """
         if reference is not None:
             self.reference = reference
-        adjacency: dict[int, list[tuple[float, PoseGraphEdge]]] = {
-            i: [] for i in range(self.n_nodes)
-        }
-        for e in self.edges:
-            adjacency[e.i].append((e.weight, e))
-            adjacency[e.j].append((e.weight, e))
-        self.poses = [identity() for _ in range(self.n_nodes)]
-        for k, pose in self.fixed.items():
-            self.poses[k] = pose.copy()
-        visited = set(self._anchors())
-        frontier = sorted((t for a in sorted(visited) for t in adjacency[a]), key=lambda t: -t[0])
-        while frontier:
-            frontier.sort(key=lambda t: -t[0])
-            _, edge = frontier.pop(0)
-            if edge.i in visited and edge.j in visited:
-                continue
-            if edge.i in visited:
-                known, unknown = edge.i, edge.j
-                self.poses[unknown] = self.poses[known] @ invert(edge.transform)
-            else:
-                known, unknown = edge.j, edge.i
-                self.poses[unknown] = self.poses[known] @ edge.transform
-            visited.add(unknown)
-            frontier.extend(adjacency[unknown])
+        i, j, T, _, w = _edge_arrays(self.edges)
+        nodes, fixed = self._fixed_arrays()
+        poses = _core.coreg_posegraph_initialise(
+            self.n_nodes, i, j, T, w, int(self.reference), nodes, fixed
+        )
+        self.poses = [np.array(p) for p in poses]
         return self.poses
+
+    def _fixed_arrays(self) -> tuple[list[int], np.ndarray]:
+        nodes = list(self.fixed)
+        poses = np.array([self.fixed[k] for k in nodes], dtype=float).reshape(-1, 4, 4)
+        return nodes, poses
 
     def residual(self, edge: PoseGraphEdge, poses: list[np.ndarray] | None = None) -> np.ndarray:
         """6-vector error of one edge under ``poses`` (default: the current ones)."""
         poses = poses or self.poses
-        return se3_log(invert(edge.transform) @ invert(poses[edge.j]) @ poses[edge.i])
+        i, j, T, _, _ = _edge_arrays([edge])
+        return _core.coreg_posegraph_residuals(i, j, T, _poses_array(poses))[0]
 
     def total_error(
         self, poses: list[np.ndarray] | None = None, edges: list[PoseGraphEdge] | None = None
@@ -318,7 +280,8 @@ class PoseGraph:
         """Sum of squared Mahalanobis edge errors over ``edges`` (default: all)."""
         poses = poses or self.poses
         edges = self.edges if edges is None else edges
-        return float(sum((r := self.residual(e, poses)) @ e.information @ r for e in edges))
+        i, j, T, info, _ = _edge_arrays(edges)
+        return float(_core.coreg_posegraph_total_error(i, j, T, info, _poses_array(poses)))
 
     def optimise(
         self,
@@ -356,185 +319,51 @@ class PoseGraph:
         """
         if not self.edges:
             return OptimisationResult(self.poses, 0, True, 0.0, 0.0)
-        free_nodes = [k for k in range(self.n_nodes) if k not in self._anchors()]
-        if all(np.allclose(self.poses[k], identity()) for k in free_nodes):
-            self.initialise()
-        initial_error = self.total_error()
-        rejected: list[int] = []
-        iterations = 0
-        converged = False
-        passes = max(max_rejection_passes, 0) if reject_outliers else 0
-        for rejection_pass in range(passes + 1):
-            active = [e for k, e in enumerate(self.edges) if k not in rejected]
-            if not active:
-                break
-            used, converged = self._run_lm(active, max_iterations, tolerance, huber_delta)
-            iterations += used
-            if rejection_pass == passes:
-                break
-            new = self._find_outliers(active, outlier_sigma)
-            if not new:
-                break
-            # Solved again without them: the poses returned never rest on a
-            # rejected edge.
-            rejected.extend(self.edges.index(e) for e in new)
-        errors = np.array(
-            [
-                float(np.sqrt(max((r := self.residual(e)) @ e.information @ r, 0.0)))
-                for e in self.edges
-            ]
+        i, j, T, info, w = _edge_arrays(self.edges)
+        nodes, fixed = self._fixed_arrays()
+        d = _core.coreg_posegraph_optimise(
+            self.n_nodes,
+            i,
+            j,
+            T,
+            info,
+            w,
+            int(self.reference),
+            nodes,
+            fixed,
+            _poses_array(self.poses),
+            int(max_iterations),
+            float(tolerance),
+            float(huber_delta),
+            bool(reject_outliers),
+            float(outlier_sigma),
+            int(max_rejection_passes),
         )
-        dropped = set(rejected)
-        kept = [e for k, e in enumerate(self.edges) if k not in dropped]
+        self.poses = [np.array(p) for p in d["poses"]]
         return OptimisationResult(
             self.poses,
-            iterations,
-            converged,
-            initial_error,
-            self.total_error(edges=kept),
-            sorted(dropped),
-            errors,
+            int(d["iterations"]),
+            bool(d["converged"]),
+            float(d["initial_error"]),
+            float(d["final_error"]),
+            [int(k) for k in d["rejected_edges"]],
+            np.asarray(d["edge_errors"]),
         )
-
-    def _run_lm(
-        self, edges: list[PoseGraphEdge], max_iterations: int, tolerance: float, huber_delta: float
-    ) -> tuple[int, bool]:
-        anchors = self._anchors()
-        slot = {
-            node: k for k, node in enumerate(n for n in range(self.n_nodes) if n not in anchors)
-        }
-        dim = 6 * len(slot)
-        if dim == 0:
-            return 0, True
-        lam = 1e-4
-        error = self._error(edges, self.poses, huber_delta)
-        improvement = 0.0
-        for iteration in range(max_iterations):
-            H = np.zeros((dim, dim))
-            b = np.zeros(dim)
-            for edge in edges:
-                e_vec = self.residual(edge)
-                omega = edge.information * _huber_weight(e_vec, edge.information, huber_delta)
-                Ji, Jj = self._jacobians(edge)
-                blocks = [(slot[n], J) for n, J in ((edge.i, Ji), (edge.j, Jj)) if n in slot]
-                for si, Ja in blocks:
-                    b[6 * si : 6 * si + 6] -= Ja.T @ omega @ e_vec
-                    for sj, Jb in blocks:
-                        H[6 * si : 6 * si + 6, 6 * sj : 6 * sj + 6] += Ja.T @ omega @ Jb
-            diagonal = np.maximum(H.diagonal(), 1e-12)
-            for _ in range(12):  # damping search
-                try:
-                    delta = np.linalg.solve(H + np.diag(lam * diagonal), b)
-                except np.linalg.LinAlgError:
-                    delta = None
-                if delta is None or not np.all(np.isfinite(delta)):
-                    lam *= 10.0
-                    continue
-                candidate = [p.copy() for p in self.poses]
-                for node, k in slot.items():
-                    candidate[node] = candidate[node] @ se3_exp(delta[6 * k : 6 * k + 6])
-                new_error = self._error(edges, candidate, huber_delta)
-                if new_error <= error:
-                    self.poses = candidate
-                    improvement = error - new_error
-                    error = new_error
-                    lam = max(lam * 0.5, 1e-12)
-                    break
-                lam *= 10.0
-            else:
-                return iteration + 1, False
-            if improvement < tolerance * max(error, 1.0):
-                return iteration + 1, True
-        return max_iterations, False
-
-    def _error(
-        self, edges: list[PoseGraphEdge], poses: list[np.ndarray], huber_delta: float
-    ) -> float:
-        total = 0.0
-        for edge in edges:
-            e_vec = self.residual(edge, poses)
-            chi2 = float(e_vec @ edge.information @ e_vec)
-            total += (
-                2.0 * huber_delta * np.sqrt(chi2) - huber_delta**2
-                if chi2 > huber_delta**2
-                else chi2
-            )
-        return total
-
-    def _jacobians(self, edge: PoseGraphEdge, eps: float = 1e-5) -> tuple[np.ndarray, np.ndarray]:
-        """Numerical Jacobians of an edge residual; graphs here have tens of nodes."""
-        base = self.residual(edge)
-        Ji = np.zeros((6, 6))
-        Jj = np.zeros((6, 6))
-        for k in range(6):
-            step = np.zeros(6)
-            step[k] = eps
-            perturbation = se3_exp(step)
-            poses = list(self.poses)
-            poses[edge.i] = self.poses[edge.i] @ perturbation
-            Ji[:, k] = (self.residual(edge, poses) - base) / eps
-            poses = list(self.poses)
-            poses[edge.j] = self.poses[edge.j] @ perturbation
-            Jj[:, k] = (self.residual(edge, poses) - base) / eps
-        return Ji, Jj
-
-    def _find_outliers(self, edges: list[PoseGraphEdge], sigma: float) -> list[PoseGraphEdge]:
-        """Edges whose Mahalanobis error is far above the median, never disconnecting the graph."""
-        if len(edges) < 4:
-            return []
-        errors = np.array(
-            [float(np.sqrt(max((r := self.residual(e)) @ e.information @ r, 0.0))) for e in edges]
-        )
-        median = float(np.median(errors))
-        mad = float(np.median(np.abs(errors - median))) * 1.4826
-        if mad <= 1e-9:
-            return []
-        threshold = median + sigma * mad
-        candidates = sorted(
-            (e for e, err in zip(edges, errors, strict=True) if err > threshold),
-            key=lambda e: -float(np.sqrt(max((r := self.residual(e)) @ e.information @ r, 0.0))),
-        )
-        kept = list(edges)
-        removed = []
-        anchored = _reachable(kept, self.n_nodes, self._anchors())
-        for candidate in candidates:
-            trial = [e for e in kept if e is not candidate]
-            if _reachable(trial, self.n_nodes, self._anchors()) >= anchored:
-                kept = trial
-                removed.append(candidate)
-        return removed
 
     def relative(self, i: int, j: int) -> np.ndarray:
         """Optimised transform mapping scan ``i`` into scan ``j``'s frame."""
         return invert(self.poses[j]) @ self.poses[i]
 
 
-def _adjacency(edges: list[PoseGraphEdge], n: int) -> dict[int, list[int]]:
-    adjacency: dict[int, list[int]] = {i: [] for i in range(n)}
-    for e in edges:
-        adjacency[e.i].append(e.j)
-        adjacency[e.j].append(e.i)
-    return adjacency
+def _edge_arrays(edges: list[PoseGraphEdge]):
+    """``(i, j, transforms, information, weights)`` of edges, for the core."""
+    i = [int(e.i) for e in edges]
+    j = [int(e.j) for e in edges]
+    T = np.array([e.transform for e in edges], dtype=float).reshape(-1, 4, 4)
+    info = np.array([e.information for e in edges], dtype=float).reshape(-1, 6, 6)
+    w = [float(e.weight) for e in edges]
+    return i, j, T, info, w
 
 
-def _huber_weight(e_vec: np.ndarray, information: np.ndarray, delta: float) -> float:
-    chi2 = float(e_vec @ information @ e_vec)
-    return 1.0 if chi2 <= delta**2 else float(delta / np.sqrt(max(chi2, 1e-12)))
-
-
-def _reachable(edges: list[PoseGraphEdge], n_nodes: int, anchors: set[int]) -> set[int]:
-    """Nodes that reach an anchor through ``edges``.
-
-    Outlier rejection keeps this set whole, so it works while some scans are
-    still unregistered (tlsalign asked for every node to be reachable, which
-    disabled rejection in exactly the surveys that register only in part).
-    """
-    adjacency = _adjacency(edges, n_nodes)
-    seen = set(anchors)
-    stack = list(anchors)
-    while stack:
-        for nb in adjacency[stack.pop()]:
-            if nb not in seen:
-                seen.add(nb)
-                stack.append(nb)
-    return seen
+def _poses_array(poses: list[np.ndarray]) -> np.ndarray:
+    return np.array([np.asarray(p, dtype=float) for p in poses], dtype=float).reshape(-1, 4, 4)

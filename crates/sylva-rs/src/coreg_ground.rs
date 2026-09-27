@@ -154,6 +154,31 @@ pub fn support_many(observed: &[bool], nx: usize, ny: usize, origin: [f64; 2], c
     out
 }
 
+/// Mean terrain slope (degrees) of a `(ny, nx)` row-major grid, a sanity
+/// check on a fit: `np.gradient` with spacing `cs` along both axes, then
+/// `degrees(arctan(hypot(gx, gy)))` averaged over the cells.
+pub fn slope_deg(e: &[f64], ny: usize, nx: usize, cs: f64) -> Result<f64> {
+    if e.len() != nx * ny {
+        return Err(Error::invalid("elevation grid size mismatch"));
+    }
+    if nx < 2 || ny < 2 {
+        return Err(Error::invalid("a slope needs a grid of at least 2 x 2 cells"));
+    }
+    let mut gx = vec![0.0; nx * ny];
+    let mut gy = vec![0.0; nx * ny];
+    for r in 0..ny {
+        gx[r * nx..(r + 1) * nx].copy_from_slice(&crate::numeric::gradient(&e[r * nx..(r + 1) * nx], cs));
+    }
+    for c in 0..nx {
+        let col: Vec<f64> = (0..ny).map(|r| e[r * nx + c]).collect();
+        for (r, g) in crate::numeric::gradient(&col, cs).into_iter().enumerate() {
+            gy[r * nx + c] = g;
+        }
+    }
+    let deg: Vec<f64> = gx.iter().zip(&gy).map(|(x, y)| x.hypot(*y).atan().to_degrees()).collect();
+    Ok(crate::coreg::numpy_sum(&deg) / deg.len() as f64)
+}
+
 /// Fit a raster DTM to a point cloud (tlsalign `fit_ground`).
 pub fn fit_ground(points: &[[f64; 3]], p: &GroundParams) -> Result<GroundModel> {
     if points.is_empty() {
@@ -631,6 +656,14 @@ fn enforce_max_slope(grid: Vec<f64>, ny: usize, nx: usize, cs: f64, max_slope: f
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn slope_of_a_plane() {
+        let (ny, nx, cs) = (4, 5, 0.5);
+        let e: Vec<f64> = (0..ny * nx).map(|k| 0.5 * cs * (k % nx) as f64).collect();
+        assert!((slope_deg(&e, ny, nx, cs).unwrap() - 0.5f64.atan().to_degrees()).abs() < 1e-12);
+        assert!(slope_deg(&e[..5], 1, 5, cs).is_err());
+    }
 
     fn lcg(seed: &mut u64) -> f64 {
         *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
