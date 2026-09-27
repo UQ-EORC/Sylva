@@ -88,7 +88,23 @@ fn attr_from_dim(dim: &ExtraDim, values: Vec<f64>) -> Attr {
 /// Read a LAS/LAZ file. Standard dimensions become attributes named as in
 /// laspy (`intensity`, `return_number`, `classification`, `gps_time`, ...).
 pub fn read_las(path: impl AsRef<Path>) -> Result<PointCloud> {
-    let path = path.as_ref();
+    read_las_impl(path.as_ref(), |_| true, true)
+}
+
+/// Points read per batch by [`read_las_where`].
+const READ_BATCH: u64 = 1 << 20;
+
+/// Read the points of a LAS/LAZ file for which `keep(&[x, y, z])` is true,
+/// with the attributes of [`read_las`]. The file is streamed in batches, so
+/// only the kept points are held in memory (LAZ is still decompressed in
+/// full: without a spatial index every point has to be decoded to be tested).
+pub fn read_las_where(path: impl AsRef<Path>, keep: impl FnMut(&Point) -> bool) -> Result<PointCloud> {
+    read_las_impl(path.as_ref(), keep, false)
+}
+
+/// `reserve_all` sizes the columns for every point up front (right when all
+/// are kept); otherwise they grow as points are kept.
+fn read_las_impl(path: &Path, mut keep: impl FnMut(&Point) -> bool, reserve_all: bool) -> Result<PointCloud> {
     let mut reader = Reader::from_path(path)?;
     let header = reader.header().clone();
     let format = header.point_format().clone();
@@ -97,7 +113,8 @@ pub fn read_las(path: impl AsRef<Path>) -> Result<PointCloud> {
         .filter(|v| v.user_id == EXTRA_BYTES_USER_ID && v.record_id == EXTRA_BYTES_RECORD_ID)
         .flat_map(parse_extra_bytes_vlr)
         .collect();
-    let n = header.number_of_points() as usize;
+    let total = header.number_of_points();
+    let n = if reserve_all { total as usize } else { 0 };
 
     let mut xyz: Vec<Point> = Vec::with_capacity(n);
     let mut intensity = Vec::with_capacity(n);
@@ -111,31 +128,41 @@ pub fn read_las(path: impl AsRef<Path>) -> Result<PointCloud> {
     let mut color = if format.has_color { Some((Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n))) } else { None };
     let mut extra: Vec<Vec<f64>> = extra_dims.iter().map(|_| Vec::with_capacity(n)).collect();
 
-    let pd = reader.read_all()?;
-    for p in pd.points() {
-        let p = p?;
-        xyz.push([p.x, p.y, p.z]);
-        intensity.push(p.intensity);
-        return_number.push(p.return_number);
-        number_of_returns.push(p.number_of_returns);
-        classification.push(u8::from(p.classification));
-        scan_angle.push(p.scan_angle);
-        user_data.push(p.user_data);
-        point_source_id.push(p.point_source_id);
-        if let (Some(v), Some(t)) = (&mut gps_time, p.gps_time) {
-            v.push(t);
+    let mut left = total;
+    while left > 0 {
+        let pd = reader.read_points(left.min(READ_BATCH))?;
+        if pd.is_empty() {
+            break;
         }
-        if let (Some((r, g, b)), Some(c)) = (&mut color, p.color) {
-            r.push(c.red);
-            g.push(c.green);
-            b.push(c.blue);
-        }
-        let mut off = 0;
-        for (k, dim) in extra_dims.iter().enumerate() {
-            if off + dim.size <= p.extra_bytes.len() {
-                extra[k].push(decode_dim(dim, &p.extra_bytes[off..off + dim.size]));
+        left -= pd.len() as u64;
+        for p in pd.points() {
+            let p = p?;
+            if !keep(&[p.x, p.y, p.z]) {
+                continue;
             }
-            off += dim.size;
+            xyz.push([p.x, p.y, p.z]);
+            intensity.push(p.intensity);
+            return_number.push(p.return_number);
+            number_of_returns.push(p.number_of_returns);
+            classification.push(u8::from(p.classification));
+            scan_angle.push(p.scan_angle);
+            user_data.push(p.user_data);
+            point_source_id.push(p.point_source_id);
+            if let (Some(v), Some(t)) = (&mut gps_time, p.gps_time) {
+                v.push(t);
+            }
+            if let (Some((r, g, b)), Some(c)) = (&mut color, p.color) {
+                r.push(c.red);
+                g.push(c.green);
+                b.push(c.blue);
+            }
+            let mut off = 0;
+            for (k, dim) in extra_dims.iter().enumerate() {
+                if off + dim.size <= p.extra_bytes.len() {
+                    extra[k].push(decode_dim(dim, &p.extra_bytes[off..off + dim.size]));
+                }
+                off += dim.size;
+            }
         }
     }
 
@@ -212,6 +239,13 @@ fn encode_dim(attr: &Attr, i: usize, out: &mut Vec<u8>) {
 /// Write a LAS/LAZ file (compression chosen from the extension). Non-standard
 /// attributes are stored as extra-bytes dimensions.
 pub fn write_las(cloud: &PointCloud, path: impl AsRef<Path>, opts: &LasWriteOptions) -> Result<()> {
+    write_las_with_vlrs(cloud, path, opts, &[])
+}
+
+/// [`write_las`], also storing `vlrs` in the header: the coordinate system
+/// records of the file a cloud was read from, say, so that they carry over.
+/// A WKT CRS record sets the header's WKT flag.
+pub fn write_las_with_vlrs(cloud: &PointCloud, path: impl AsRef<Path>, opts: &LasWriteOptions, vlrs: &[Vlr]) -> Result<()> {
     let path = path.as_ref();
     let mut builder = Builder::from((1, 4));
     let mut format = Format::new(opts.point_format)?;
@@ -267,6 +301,10 @@ pub fn write_las(cloud: &PointCloud, path: impl AsRef<Path>, opts: &LasWriteOpti
         z: LasTransform { scale: opts.scale, offset: lo[2].floor() },
     };
     builder.generating_software = format!("sylva {}", env!("CARGO_PKG_VERSION"));
+    for v in vlrs {
+        builder.has_wkt_crs |= v.is_wkt_crs();
+        builder.vlrs.push(v.clone());
+    }
     let header = builder.into_header()?;
     let has_gps = header.point_format().has_gps_time;
     let has_color = header.point_format().has_color;
