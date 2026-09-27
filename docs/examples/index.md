@@ -39,6 +39,9 @@ statistical outlier filter removes 4 % of the cloud, two thirds of it below
 | 8 | [Pulses and shots files](08_shots.ipynb) | tile | `Shots`, misses, conversions, the Parquet shots format |
 | 9 | [Ray-traced voxels](09_voxels.ipynb) | both | attenuation, PAD / LAD / WAD, leaf angles, wood volume, `.vox`, streaming |
 | 10 | [A RIEGL project, end to end](10_riscan_pipeline.ipynb) | full plot | every stage on one hectare straight from the `.rxp` files: read, ground, trees, scan quality, QSMs and leaves, gap profile, voxels, sampling |
+| 11 | [Coordinates](11_coordinates.ipynb) | tile | CRS in LAS headers, reprojection and its warnings, translate / rotate / recentre, `apply_transforms` on scans |
+| 12 | [Interpolation](12_interpolation.ipynb) | tile | labels from a thinned copy, TIN / natural-neighbour / IDW DTMs, rasters sampled onto points |
+| 13 | [Masking](13_masking.ipynb) | tile | polygons from GeoJSON, raster masks, attribute expressions, change between two clouds |
 
 The numbers the notebooks print describe this one tile and are not validation.
 Accuracy against reference plots, felled trees and independent instruments is
