@@ -527,13 +527,17 @@ real = qsm.build_qsm(qsm.wood_points(points, voxel_size=0.02), base_xy=(tallest.
 print(f"detection: DBH {tallest.dbh:.3f} m, height {tallest.height:.1f} m")
 print(f"QSM:       DBH {real.dbh:.3f} m, stem {real.stem_volume:.2f} m3, total {real.total_volume:.2f} m3, "
       f"{real.summary()['n_cylinders']} cylinders")
-print(f"measured volume fraction: {real.metrics()['measured_volume_fraction']:.2f} "
-      "-- on a single-tree scan this is above 0.8")""",
-    md("""Two lessons. The DBHs agree (0.31 m against 0.32 m), because breast
-height is where the stem is best sampled. The volume should not be quoted:
-less than half of it was fitted to points. Keeping the grass out of the base
-matters too -- without the height cut the base cylinder swallows the tussocks
-and the QSM DBH comes out at 0.50 m. Volumes are validated against felled
+m = real.metrics()
+print(f"fitted to points: {m['measured_volume_fraction']:.0%} of the volume, "
+      f"{m['measured_length_fraction']:.0%} of the length")""",
+    md("""Two lessons. The DBHs agree (0.316 m against 0.319 m), because breast
+height is where the stem is best sampled. The two fractions differ widely:
+most of the volume lies in the trunk and the main limbs, which were fitted to
+points, but only about a fifth of the length was, so the finer branches come
+from the taper and pipe-model priors. The total volume is supported by the
+data here; the branch volume and length are not. The height cut keeps the
+grass layer out of the base fit; on this tree it changes little, but tussocks
+against a trunk can widen the base cylinder. Volumes are validated against felled
 trees in [Benchmarks](../benchmarks/qsm.md), on single-tree clouds two orders
 of magnitude denser than this tile."""),
     md("## Export\n\nA cylinder table, a raycloudtools-style tree file, and meshes for Blender / CloudCompare."),
