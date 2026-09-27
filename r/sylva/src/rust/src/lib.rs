@@ -13,9 +13,11 @@ use extendr_api::prelude::*;
 use sylva_rs::{filters, io};
 
 mod canopy;
+mod leaves;
 mod quality;
 mod shots;
 mod trees;
+mod voxels;
 mod convert;
 
 use convert::{cloud_from_r, cloud_to_r, err, Result};
@@ -58,9 +60,11 @@ fn core_voxel_downsample(cloud: List, voxel_size: f64, centroid: bool) -> Result
 extendr_module! {
     mod sylva;
     use canopy;
+    use leaves;
     use quality;
     use shots;
     use trees;
+    use voxels;
     fn core_read;
     fn core_write;
     fn core_cloud;
