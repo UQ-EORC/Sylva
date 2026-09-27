@@ -176,6 +176,36 @@ pub fn pairwise_sum(values: &[f64]) -> f64 {
     pairwise_sum(&values[..n2]) + pairwise_sum(&values[n2..])
 }
 
+/// [`pairwise_sum`] of a float32 array, which NumPy sums in float32.
+pub fn pairwise_sum_f32(values: &[f32]) -> f32 {
+    let n = values.len();
+    if n == 0 {
+        return 0.0;
+    }
+    if n < 8 {
+        return values.iter().fold(-0.0, |s, &v| s + v);
+    }
+    if n <= 128 {
+        let mut r = [0.0f32; 8];
+        r.copy_from_slice(&values[..8]);
+        let mut i = 8;
+        while i < n - n % 8 {
+            for (j, acc) in r.iter_mut().enumerate() {
+                *acc += values[i + j];
+            }
+            i += 8;
+        }
+        let mut res = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]));
+        for &v in &values[i..] {
+            res += v;
+        }
+        return res;
+    }
+    let mut n2 = n / 2;
+    n2 -= n2 % 8;
+    pairwise_sum_f32(&values[..n2]) + pairwise_sum_f32(&values[n2..])
+}
+
 /// `np.nanmedian`: the median of the values that are not NaN, NaN if none are.
 pub fn nanmedian(values: impl IntoIterator<Item = f64>) -> f64 {
     let v: Vec<f64> = values.into_iter().filter(|x| !x.is_nan()).collect();

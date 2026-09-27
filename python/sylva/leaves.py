@@ -34,7 +34,7 @@ import numpy as np
 
 from . import _core
 from .pointcloud import PointCloud
-from .qsm import QSM, write_obj
+from .qsm import QSM
 
 __all__ = ["classify_leaf_wood", "LeafAngleDistribution", "leaf_angle_distribution",
            "LeafAreaGrid", "leaf_area_density", "LeafMesh", "LeafShape", "add_leaves", "write_tree_obj",
@@ -102,13 +102,8 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
     sylva.qsm.wood_points : the filter that prepares QSM input.
     """
     if method == "gbs":
-        xyz = _xyz(cloud)
-        if wood_params.get("intervals") is None and len(xyz):
-            # Shell sizes follow the tree: the authors' two settings, switched on height.
-            tall = float(np.ptp(xyz[:, 2])) >= 15.0
-            wood_params["intervals"] = [0.5, 1.0, 1.5, 2.0, 3.0] if tall else [0.1, 0.2, 0.3, 0.5, 1.0]
-            wood_params.setdefault("max_angle", 0.15 * np.pi if tall else 0.25 * np.pi)
-        return _core.classify_leaf_wood_gbs(xyz, float(voxel_size), **wood_params)
+        # Shell sizes follow the tree (the authors' two settings, switched on height).
+        return _core.classify_leaf_wood_gbs(_xyz(cloud), float(voxel_size), **wood_params)
     if method != "passage":
         raise ValueError("method must be 'passage' or 'gbs'")
     if "threshold" in wood_params:
@@ -191,12 +186,7 @@ class LeafAngleDistribution:
         KeyError
             For an unknown name.
         """
-        t = (np.arange(n_bins) + 0.5) * (np.pi / 2) / n_bins
-        f = {"spherical": np.sin(t), "uniform": np.full(n_bins, 1.0),
-             "planophile": 1 + np.cos(2 * t), "erectophile": 1 - np.cos(2 * t),
-             "plagiophile": 1 - np.cos(4 * t), "extremophile": 1 + np.cos(4 * t)}[name]
-        f = f / f.sum()
-        return leaf_angle_distribution(t, weights=f, n_bins=n_bins, inclinations=True)
+        return cls(**_core.leaf_de_wit(name, int(n_bins)))
 
 
 def leaf_angle_distribution(leaf_points, k: int = 12, n_bins: int = 18, weights=None,
@@ -271,15 +261,19 @@ class LeafAreaGrid:
     voxel_size: float
     density: np.ndarray  #: m2 m-3, shape (nz, ny, nx)
 
+    def _args(self):
+        return (np.ascontiguousarray(self.origin, dtype=float), float(self.voxel_size),
+                np.ascontiguousarray(self.density, dtype=float))
+
     @property
     def area(self) -> np.ndarray:
         """Leaf area per voxel (m²), shaped like ``density``."""
-        return self.density * self.voxel_size**3
+        return _core.leaf_grid_area(*self._args())
 
     @property
     def total_area(self) -> float:
         """Total one-sided leaf area (m²)."""
-        return float(np.nansum(self.area))
+        return _core.leaf_grid_total_area(*self._args())
 
     def scaled_to(self, total_area: float) -> "LeafAreaGrid":
         """Rescale to a known total leaf area, keeping the spatial pattern.
@@ -296,8 +290,7 @@ class LeafAreaGrid:
         -------
         LeafAreaGrid
         """
-        t = self.total_area
-        return LeafAreaGrid(self.origin, self.voxel_size, self.density * (total_area / t if t > 0 else 0.0))
+        return LeafAreaGrid(self.origin, self.voxel_size, _core.leaf_grid_scaled(*self._args(), float(total_area)))
 
     def profile(self) -> tuple[np.ndarray, np.ndarray]:
         """Vertical leaf area profile.
@@ -308,8 +301,7 @@ class LeafAreaGrid:
             z of each layer's centre (grid frame, not height above ground)
             and its leaf area (m²).
         """
-        z = self.origin[2] + (np.arange(self.density.shape[0]) + 0.5) * self.voxel_size
-        return z, np.nansum(self.area, axis=(1, 2))
+        return _core.leaf_grid_profile(*self._args())
 
     def cells(self) -> tuple[np.ndarray, np.ndarray]:
         """Voxels that hold leaf area.
@@ -321,10 +313,7 @@ class LeafAreaGrid:
         area : numpy.ndarray
             Leaf area of each (m²).
         """
-        a = np.nan_to_num(self.area)
-        k, j, i = np.nonzero(a > 0)
-        centres = self.origin + (np.column_stack([i, j, k]) + 0.5) * self.voxel_size
-        return centres, a[k, j, i]
+        return _core.leaf_grid_cells(*self._args())
 
     @classmethod
     def from_voxels(cls, grid, field: str = "pad_fpl") -> "LeafAreaGrid":
@@ -343,7 +332,7 @@ class LeafAreaGrid:
         LeafAreaGrid
             NaN (unobserved) voxels become 0.
         """
-        return cls(np.asarray(grid.origin, float), float(grid.voxel_size), np.nan_to_num(np.asarray(grid[field], float)))
+        return cls(*_core.leaf_grid_from_voxels(grid._core, field))
 
 
 def leaf_area_density(leaf_points, voxel_size: float = 0.25, res: float | None = None, k: int = 12) -> LeafAreaGrid:
@@ -375,16 +364,7 @@ def leaf_area_density(leaf_points, voxel_size: float = 0.25, res: float | None =
         Aligned to multiples of ``voxel_size``. A lower bound on the true
         leaf area wherever foliage was occluded.
     """
-    pts, area, _ = _core.point_leaf_area(_xyz(leaf_points), float(res or 0.0), int(k))
-    if len(pts) == 0:
-        return LeafAreaGrid(np.zeros(3), float(voxel_size), np.zeros((1, 1, 1)))
-    # Align the grid to multiples of the voxel size so cells match add_leaves' hashing.
-    origin = np.floor(pts.min(0) / voxel_size) * voxel_size
-    idx = np.floor((pts - origin) / voxel_size).astype(int)
-    shape = idx.max(0) + 1
-    dens = np.zeros((shape[2], shape[1], shape[0]))
-    np.add.at(dens, (idx[:, 2], idx[:, 1], idx[:, 0]), area)
-    return LeafAreaGrid(origin, float(voxel_size), dens / voxel_size**3)
+    return LeafAreaGrid(*_core.leaf_area_density(_xyz(leaf_points), float(voxel_size), float(res or 0.0), int(k)))
 
 
 def single_leaf_area(length: float, width: float, shape: "LeafShape | None" = None) -> float:
@@ -402,18 +382,14 @@ def single_leaf_area(length: float, width: float, shape: "LeafShape | None" = No
     float
         Area (m²), 0.562 × length × width for the built-in outline.
     """
-    return (shape or LeafShape()).resized(length, width).area
-
-
-#: Unit leaf outline (along, across), as in the core.
-_OUTLINE = [(0.0, 0.0), (0.2, 0.36), (0.45, 0.5), (1.0, 0.0), (0.45, -0.5), (0.2, -0.36)]
+    if shape is None:
+        return _core.single_leaf_area(float(length), float(width))
+    return _core.single_leaf_area(float(length), float(width), shape.vertices, shape.faces)
 
 
 def _unit_blade() -> tuple[np.ndarray, np.ndarray]:
     """The built-in blade as (vertices (V, 3), faces (F, 3)) in unit leaf space."""
-    v = np.column_stack([np.array(_OUTLINE, float), np.zeros(len(_OUTLINE))])
-    f = np.array([[0, t, t + 1] for t in range(1, len(_OUTLINE) - 1)], np.uint32)
-    return v, f
+    return _core.leaf_shape_check(None, None, 0.08, 0.04)
 
 
 @dataclass(frozen=True)
@@ -440,24 +416,18 @@ class LeafShape:
     width: float = 0.04  #: greatest blade width (m)
 
     def __post_init__(self) -> None:
-        v, f = _unit_blade()
-        v = v if self.vertices is None else np.ascontiguousarray(self.vertices, float)
-        f = f if self.faces is None else np.ascontiguousarray(self.faces, np.uint32)
-        if v.ndim != 2 or v.shape[1] != 3 or f.ndim != 2 or f.shape[1] != 3:
+        v = None if self.vertices is None else np.ascontiguousarray(self.vertices, float)
+        f = None if self.faces is None else np.ascontiguousarray(self.faces, np.uint32)
+        if (v is not None and (v.ndim != 2 or v.shape[1] != 3)) or (f is not None and (f.ndim != 2 or f.shape[1] != 3)):
             raise ValueError("vertices must be (V, 3) and faces (F, 3)")
-        if len(f) == 0 or f.max() >= len(v):
-            raise ValueError("faces must be non-empty and index vertices")
-        if not (self.length > 0 and self.width > 0):
-            raise ValueError("length and width must be positive")
+        v, f = _core.leaf_shape_check(v, f, float(self.length), float(self.width))
         object.__setattr__(self, "vertices", v)
         object.__setattr__(self, "faces", f)
 
     @property
     def area(self) -> float:
         """One-sided area of one leaf (m²): the sum of its triangles."""
-        v = self.vertices * [self.length, self.width, self.width]
-        a, b, c = v[self.faces[:, 0]], v[self.faces[:, 1]], v[self.faces[:, 2]]
-        return float(0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1).sum())
+        return _core.leaf_shape_area(self.vertices, self.faces, float(self.length), float(self.width))
 
     def resized(self, length: float | None = None, width: float | None = None) -> "LeafShape":
         """The same blade at a new size.
@@ -486,10 +456,8 @@ class LeafShape:
         -------
         LeafShape
         """
-        if not area > 0:
-            raise ValueError("area must be positive")
-        k = float(np.sqrt(area / self.area))
-        return self.resized(self.length * k, self.width * k)
+        return self.resized(*_core.leaf_shape_scaled(self.vertices, self.faces, float(self.length), float(self.width),
+                                                     float(area)))
 
     @classmethod
     def from_mesh(cls, vertices, faces, length: float | None = None, width: float | None = None,
@@ -527,14 +495,11 @@ class LeafShape:
             v = np.column_stack([v, np.zeros(len(v))])
         if v.ndim != 2 or v.shape[1] != 3 or len(v) == 0:
             raise ValueError("vertices must be (V, 3) or (V, 2)")
-        size = v.max(0) - v.min(0)
-        if not normalise:
-            return cls(v, faces, length or 0.08, width or 0.04)
-        if not (size[0] > 0 and size[1] > 0):
-            raise ValueError("the mesh has no extent along or across the blade")
-        v = (v - [v[:, 0].min(), 0.5 * (v[:, 1].min() + v[:, 1].max()), 0.5 * (v[:, 2].min() + v[:, 2].max())])
-        v = v / [size[0], size[1], size[1]]
-        return cls(v, faces, size[0] if length is None else length, size[1] if width is None else width)
+        f = np.ascontiguousarray(faces, np.uint32)
+        if f.ndim != 2 or f.shape[1] != 3:
+            raise ValueError("vertices must be (V, 3) and faces (F, 3)")
+        return cls(*_core.leaf_shape_from_mesh(v, f, None if length is None else float(length),
+                                               None if width is None else float(width), bool(normalise)))
 
     @classmethod
     def from_obj(cls, path: str | Path, length: float | None = None, width: float | None = None,
@@ -562,20 +527,8 @@ class LeafShape:
         ValueError
             If the file holds no faces.
         """
-        v, f = [], []
-        for line in Path(path).read_text().splitlines():
-            w = line.split()
-            if not w:
-                continue
-            if w[0] == "v":
-                v.append([float(x) for x in w[1:4]])
-            elif w[0] == "f":
-                idx = [int(p.split("/")[0]) for p in w[1:]]
-                idx = [i - 1 if i > 0 else len(v) + i for i in idx]
-                f += [[idx[0], idx[t], idx[t + 1]] for t in range(1, len(idx) - 1)]
-        if not f:
-            raise ValueError(f"{path} holds no faces")
-        return cls.from_mesh(np.array(v, float), np.array(f, np.uint32), length, width, normalise)
+        return cls(*_core.leaf_shape_from_obj(str(path), None if length is None else float(length),
+                                              None if width is None else float(width), bool(normalise)))
 
 
 _DEFAULT = LeafShape()
@@ -646,7 +599,8 @@ class LeafMesh:
         path
             Output file.
         """
-        write_obj(path, [(self.vertices, self.faces)], names=["leaves"])
+        _core.write_obj(str(path), [(np.ascontiguousarray(self.vertices, float),
+                                     np.ascontiguousarray(self.faces, np.uint32))], ["leaves"])
 
 
 def add_leaves(model: QSM | None, leaf_area: LeafAreaGrid | float, angles: LeafAngleDistribution | str = "spherical",
@@ -699,23 +653,15 @@ def add_leaves(model: QSM | None, leaf_area: LeafAreaGrid | float, angles: LeafA
     if isinstance(angles, str):
         angles = LeafAngleDistribution.from_type(angles)
     seeds = np.zeros((0, 3)) if leaf_points is None else _xyz(leaf_points)
-    if not isinstance(leaf_area, LeafAreaGrid):
-        if len(seeds) == 0:
-            raise ValueError("a total leaf area needs leaf_points to distribute it over")
-        leaf_area = leaf_area_density(seeds).scaled_to(float(leaf_area))
-    centres, area = leaf_area.cells()
+    if isinstance(leaf_area, LeafAreaGrid):
+        grid, total = leaf_area._args(), 0.0
+    else:
+        grid, total = (np.zeros(3), 0.0, None), float(leaf_area)
     cyl = np.zeros((0, 12)) if model is None else np.ascontiguousarray(model.cylinders, dtype=float)
-    # The core hashes points into cells from the coordinate origin: work in the grid's frame.
-    o = np.asarray(leaf_area.origin, float)
-    cyl = cyl.copy()
-    cyl[:, 0:3] -= o
     shape = (shape or _DEFAULT).resized(leaf_length, leaf_width)
-    d = _core.insert_leaves(np.ascontiguousarray(centres - o), np.ascontiguousarray(area), float(leaf_area.voxel_size),
-                            np.ascontiguousarray(seeds - o), angles.bin_centres, angles.density, cyl, shape.length,
-                            shape.width, float(max_branch_distance), float(jitter), int(seed),
-                            shape.vertices, shape.faces)
-    d["vertices"] = d["vertices"] + o
-    d["centres"] = d["centres"] + o
+    d = _core.add_leaves(*grid, total, seeds, np.ascontiguousarray(angles.bin_centres, dtype=float),
+                         np.ascontiguousarray(angles.density, dtype=float), cyl, shape.vertices, shape.faces,
+                         float(shape.length), float(shape.width), float(max_branch_distance), float(jitter), int(seed))
     return LeafMesh(**d)
 
 
@@ -736,5 +682,6 @@ def write_tree_obj(path: str | Path, model: QSM, leaf_mesh: LeafMesh, sides: int
     contiguous
         One continuous tube per branch (see :meth:`sylva.qsm.QSM.mesh`).
     """
-    v, f, _ = model.mesh(sides, contiguous)
-    write_obj(path, [(v, f), (leaf_mesh.vertices, leaf_mesh.faces)], names=["wood", "leaves"])
+    _core.write_tree_obj(str(path), np.ascontiguousarray(model.cylinders, dtype=float),
+                         np.ascontiguousarray(leaf_mesh.vertices, float), np.ascontiguousarray(leaf_mesh.faces, np.uint32),
+                         int(sides), bool(contiguous))
