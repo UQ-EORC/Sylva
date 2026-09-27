@@ -35,6 +35,7 @@ pub mod json;
 pub mod limits;
 pub mod leaves;
 pub mod nprandom;
+pub mod nprandom_dist;
 pub mod leaf_model;
 pub mod mesh_io;
 pub mod numeric;
