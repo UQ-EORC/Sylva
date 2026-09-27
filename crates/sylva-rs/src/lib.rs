@@ -35,6 +35,7 @@ pub mod qsm;
 pub mod quality;
 pub mod raster;
 pub mod registration;
+pub mod riscan;
 pub mod shots;
 pub mod spatial;
 pub mod stems;

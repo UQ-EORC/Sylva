@@ -20,16 +20,13 @@ when asked for.
 
 from __future__ import annotations
 
-import csv
-import json
-import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
-from .io import read_matrix_file, read_rxp, read_rxp_shots
+from . import _core
+from .io import read_rxp, read_rxp_shots
 from .pointcloud import PointCloud
 from .shots import Shots
 
@@ -272,176 +269,18 @@ class RiscanProject:
 
 
 def _matrix(text: str | None) -> np.ndarray | None:
-    if not text:
-        return None
-    vals = [float(t) for t in text.split()]
-    return np.array(vals).reshape(4, 4) if len(vals) == 16 else None
+    return _core.riscan_parse_matrix(text or None)
 
 
 def _rotation_zyx(roll: float, pitch: float, yaw: float) -> np.ndarray:
-    r, p, y = np.radians([roll, pitch, yaw])
-    rx = np.array([[1, 0, 0], [0, np.cos(r), -np.sin(r)], [0, np.sin(r), np.cos(r)]])
-    ry = np.array([[np.cos(p), 0, np.sin(p)], [0, 1, 0], [-np.sin(p), 0, np.cos(p)]])
-    rz = np.array([[np.cos(y), -np.sin(y), 0], [np.sin(y), np.cos(y), 0], [0, 0, 1]])
-    m = np.eye(4)
-    m[:3, :3] = rz @ ry @ rx
-    return m
+    return _core.riscan_rotation_zyx(float(roll), float(pitch), float(yaw))
 
 
-def _scan_files(pos_dir: Path, recursive: bool = True) -> list[Path]:
-    return sorted(
-        p for p in (pos_dir.rglob("*.rxp") if recursive else pos_dir.glob("*.rxp"))
-        if ".mon." not in p.name and "residual" not in p.name and not p.name.endswith(".part")
-    )
-
-
-def _from_rsp(root: Path, rsp: Path) -> RiscanProject:
-    tree = ET.parse(rsp).getroot()
-    pop = None
-    pop_el = tree.find("./pop")
-    if pop_el is not None:
-        pop = _matrix(pop_el.findtext("matrix"))
-    positions = []
-    for sp in tree.iter("scanposition"):
-        name = sp.get("name") or sp.findtext("name") or ""
-        sop = _matrix(sp.findtext("./sop/matrix"))
-        pos_dir = root / "SCANS" / name
-        files = _scan_files(pos_dir) if pos_dir.is_dir() else []
-        instrument = None
-        pattern = None
-        for scan in sp.iter("scan"):
-            instrument = instrument or scan.findtext("instrument")
-            if pattern is None:
-                keys = ("theta_start", "theta_delta", "theta_count", "phi_start", "phi_delta",
-                        "phi_count")
-                vals = {k: scan.findtext(k) for k in keys}
-                if all(vals.values()):
-                    pattern = {k: (int(v) if k.endswith("count") else float(v))
-                               for k, v in vals.items()}
-            fname = scan.findtext("file")
-            if fname:
-                candidate = pos_dir / "SINGLESCANS" / fname
-                if candidate.exists() and candidate not in files:
-                    files.append(candidate)
-        if sop is None:
-            dat = root / "DAT" / f"{name}.DAT"
-            if dat.exists():
-                sop = read_matrix_file(dat)
-        positions.append(
-            ScanPosition(name, files[0] if files else None, sop, files, instrument, pattern)
-        )
-    return RiscanProject(root, positions, pop, tree.findtext("name") or root.stem)
-
-
-def _from_legacy(root: Path) -> RiscanProject:
-    pop = None
-    pop_file = root / "project.pop"
-    if pop_file.exists():
-        pop = _read_pop(pop_file)
-    sops = _read_all_sop(root / "all_sop.csv")
-    positions = []
-    for pos_dir in sorted(root.glob("SCANS/ScanPos*")):
-        name = pos_dir.name
-        files = _scan_files(pos_dir)
-        sop = sops.get(name)
-        dat = root / "DAT" / f"{name}.DAT"
-        if sop is None and dat.exists():
-            sop = read_matrix_file(dat)
-        positions.append(ScanPosition(name, files[0] if files else None, sop, files))
-    for pos_dir in sorted(root.glob("*.SCNPOS")):
-        # The scanner's own project: the survey scan is in scans/, beside
-        # monitoring and tie-point scans that are not survey data.
-        name = pos_dir.stem
-        scans = pos_dir / "scans"
-        files = _scan_files(scans, recursive=False) if scans.is_dir() else []
-        sop = sops.get(name)
-        dat = root / "DAT" / f"{name}.DAT"
-        if sop is None and dat.exists():
-            sop = read_matrix_file(dat)
-        rxp = files[0] if files else None
-        positions.append(ScanPosition(
-            name, rxp, sop, files, tiepoints=next(iter(sorted(pos_dir.glob("*.tpl"))), None),
-            gnss=_read_pose_gnss(pos_dir / "final.pose"), attitude=_read_attitude(pos_dir, rxp)))
-    return RiscanProject(root, positions, pop, root.stem)
-
-
-_NUMBER = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
-
-
-def _read_pop(path: Path) -> np.ndarray | None:
-    """A ``project.pop`` matrix: the first 16 numbers in the file."""
-    try:
-        values = [float(v) for v in _NUMBER.findall(path.read_text())]
-    except (OSError, UnicodeDecodeError):
-        return None
-    return np.array(values[:16]).reshape(4, 4) if len(values) >= 16 else None
-
-
-def _read_all_sop(path: Path) -> dict[str, np.ndarray]:
-    """``all_sop.csv`` (roll, pitch, yaw in degrees and x, y, z) as 4x4 matrices.
-
-    Bad rows are skipped.
-    """
-    if not path.exists():
-        return {}
-    out = {}
-    with open(path, newline="") as f:
-        for row in csv.DictReader(f):
-            name = (row.get("scanPosName") or "").strip()
-            try:
-                t = np.array([float(row["x"]), float(row["y"]), float(row["z"])])
-                angles = (float(row[k]) for k in ("rollDeg", "pitchDeg", "yawDeg"))
-                m = _rotation_zyx(*angles)
-            except (KeyError, TypeError, ValueError):
-                continue
-            if name and np.all(np.isfinite(t)):
-                m[:3, 3] = t
-                out[name] = m
-    return out
-
-
-def _read_attitude(directory: Path, rxp: Path | None) -> np.ndarray | None:
-    """The scanner's ``level_from_scanner`` rotation for one position.
-
-    Tries the ``.pose`` written beside the scan (named after its timestamp),
-    ``pose_estimation.sop``, then ``final.pose``. Roll, pitch and yaw compose
-    as ``Rz(yaw) @ Ry(pitch) @ Rx(roll)``, as in ``all_sop.csv``;
-    ``pose_estimation.sop`` stores the matrix itself.
-    """
-    candidates = [directory / (rxp.name.split(".")[0] + ".pose")] if rxp is not None else []
-    for path in candidates + [directory / "pose_estimation.sop", directory / "final.pose"]:
-        if not path.exists():
-            continue
-        try:
-            data = json.loads(path.read_text())
-        except (OSError, ValueError):
-            continue
-        matrix = data.get("matrix3x3") if isinstance(data, dict) else None
-        if matrix is not None:
-            R = np.asarray(matrix, dtype=float)
-            if R.shape == (3, 3) and np.all(np.isfinite(R)):
-                return R
-        try:
-            roll, pitch, yaw = (float(data[k]) for k in ("roll", "pitch", "yaw"))
-        except (KeyError, TypeError, ValueError):
-            continue
-        if np.all(np.isfinite([roll, pitch, yaw])):
-            return _rotation_zyx(roll, pitch, yaw)[:3, :3]
-    return None
-
-
-def _read_pose_gnss(path: Path) -> tuple[float, float, float] | None:
-    """The GNSS fix of a scanner ``.pose`` file, if it has one."""
-    if not path.exists():
-        return None
-    try:
-        gnss = json.loads(path.read_text()).get("gnss") or {}
-        latitude, longitude = gnss["latitude"], gnss["longitude"]
-        if latitude is None or longitude is None:
-            return None
-        return float(latitude), float(longitude), float(gnss.get("altitude", 0.0) or 0.0)
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return None
+def _position(d: dict) -> ScanPosition:
+    scans = [Path(f) for f in d["scans"]]
+    return ScanPosition(
+        d["name"], scans[0] if scans else None, d["sop"], scans, d["instrument"], d["pattern"],
+        None if d["tiepoints"] is None else Path(d["tiepoints"]), d["gnss"], d["attitude"])
 
 
 def gnss_to_local(coordinates: list[tuple[float, float, float] | None]) -> np.ndarray:
@@ -460,17 +299,8 @@ def gnss_to_local(coordinates: list[tuple[float, float, float] | None]) -> np.nd
     numpy.ndarray
         ``(n, 3)`` east, north, altitude; NaN where there was no fix.
     """
-    out = np.full((len(coordinates), 3), np.nan)
-    known = [c for c in coordinates if c is not None]
-    if not known:
-        return out
-    lat0 = float(np.mean([c[0] for c in known]))
-    lon0 = float(np.mean([c[1] for c in known]))
-    scale = np.cos(np.radians(lat0))
-    for k, c in enumerate(coordinates):
-        if c is not None:
-            out[k] = ((c[1] - lon0) * 111_320.0 * scale, (c[0] - lat0) * 111_320.0, c[2])
-    return out
+    return _core.riscan_gnss_to_local(
+        [None if c is None else (float(c[0]), float(c[1]), float(c[2])) for c in coordinates])
 
 
 def read_riscan_project(path: str | Path) -> RiscanProject:
@@ -506,10 +336,8 @@ def read_riscan_project(path: str | Path) -> RiscanProject:
     root = Path(path)
     if not root.is_dir():
         raise FileNotFoundError(f"not a project directory: {root}")
-    rsp = root / "project.rsp"
-    if rsp.exists():
-        return _from_rsp(root, rsp)
-    return _from_legacy(root)
+    d = _core.riscan_read_project(root)
+    return RiscanProject(root, [_position(p) for p in d["positions"]], d["pop"], d["name"])
 
 
 # --------------------------------------------------------------------------- #
@@ -517,7 +345,6 @@ def read_riscan_project(path: str | Path) -> RiscanProject:
 # --------------------------------------------------------------------------- #
 
 RISCAN_FILTER_MODES = ("none", "current", "legacy")
-_EXPORT_ATTRIBUTES = ("range", "deviation", "reflectance", "amplitude")
 
 
 def read_export_settings(path: str | Path) -> dict[str, tuple[float, float]]:
@@ -549,23 +376,7 @@ def read_export_settings(path: str | Path) -> dict[str, tuple[float, float]]:
         On a malformed line, an unknown attribute (so a typo cannot pass
         silently) or a minimum above its maximum.
     """
-    settings: dict[str, tuple[float, float]] = {}
-    for raw in Path(path).read_text().splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if not line:
-            continue
-        parts = [p.strip() for p in line.replace(";", ",").split(",")]
-        if len(parts) != 3:
-            raise ValueError(f"{path}: expected 'attribute, min, max', got {raw!r}")
-        name = parts[0].lower().removeprefix("riegl.")
-        if name not in _EXPORT_ATTRIBUTES:
-            raise ValueError(f"{path}: unknown attribute {parts[0]!r}; "
-                             f"known: {sorted(_EXPORT_ATTRIBUTES)}")
-        lo, hi = float(parts[1]), float(parts[2])
-        if lo > hi:
-            raise ValueError(f"{path}: minimum above maximum for {name}")
-        settings[name] = (lo, hi)
-    return settings
+    return {name: (lo, hi) for name, lo, hi in _core.riscan_read_export_settings(Path(path))}
 
 
 def export_settings_mask(settings: dict[str, tuple[float, float]], xyz: np.ndarray,
@@ -595,18 +406,15 @@ def export_settings_mask(settings: dict[str, tuple[float, float]], xyz: np.ndarr
         would keep more than asked).
     """
     xyz = np.asarray(xyz, dtype=np.float64).reshape(-1, 3)
-    keep = np.ones(len(xyz), dtype=bool)
-    for name, (lo, hi) in settings.items():
+    values = {}
+    for name in settings:
         if name == "range":
-            values = np.sqrt(np.einsum("ij,ij->i", xyz, xyz))
-        elif name in attributes:
-            values = np.asarray(attributes[name], dtype=np.float64)
-            if name == "deviation":
-                values = np.where(values == 65535, -1.0, values)
-        else:
+            continue
+        if name not in attributes:
             raise KeyError(f"export settings need attribute {name!r}, which this source lacks")
-        keep &= (values >= lo) & (values <= hi)
-    return keep
+        values[name] = np.asarray(attributes[name], dtype=np.float64).ravel()
+    bounds = [(name, float(lo), float(hi)) for name, (lo, hi) in settings.items()]
+    return _core.riscan_export_settings_mask(bounds, xyz, values)
 
 
 def angular_steps(xyz: np.ndarray, sample: int = 2_000_000) -> tuple[float, float]:
@@ -631,24 +439,8 @@ def angular_steps(xyz: np.ndarray, sample: int = 2_000_000) -> tuple[float, floa
     n = min(len(xyz), sample)
     if n < 1000:
         return 0.03, 0.03
-    p = np.asarray(xyz[:n], dtype=np.float32)
-    r = np.linalg.norm(p, axis=1)
-    ok = r > 0.05
-    p, r = p[ok], r[ok]
-    theta = np.degrees(np.arccos(np.clip(p[:, 2] / r, -1.0, 1.0)))
-    phi = np.degrees(np.arctan2(p[:, 1], p[:, 0])) % 360.0
-    step = np.abs(np.diff(theta))
-    step = step[(step > 1e-3) & (step < 0.5)]
-    theta_step = float(np.median(step)) if len(step) > 100 else 0.03
-    lo, hi = np.percentile(theta, [10, 90])
-    row_steps = []
-    for centre in np.linspace(lo, hi, 12):
-        dphi = np.diff(np.sort(phi[np.abs(theta - centre) < 0.5 * theta_step]))
-        dphi = dphi[(dphi > 0.5 * theta_step) & (dphi < 1.0)]
-        if len(dphi) >= 50:
-            row_steps.append(np.median(dphi))
-    phi_step = float(np.median(row_steps)) if len(row_steps) >= 3 else 0.03
-    return theta_step, phi_step
+    p = np.asarray(xyz[:n], dtype=np.float32).reshape(-1, 3)
+    return _core.riscan_angular_steps(p, int(n))
 
 
 def riscan_like_mask(xyz: np.ndarray, amplitude: np.ndarray, mode: str = "current", *,
@@ -691,31 +483,17 @@ def riscan_like_mask(xyz: np.ndarray, amplitude: np.ndarray, mode: str = "curren
     numpy.ndarray
         ``(n,)`` bool.
     """
-    from . import _core
-
     if mode not in RISCAN_FILTER_MODES:
         raise ValueError(f"mode must be one of {RISCAN_FILTER_MODES}, not {mode!r}")
     n = len(xyz)
-    keep = np.ones(n, dtype=bool)
     if mode == "none" or n == 0:
-        return keep
-    p = np.asarray(xyz, dtype=np.float32)
-    r = np.linalg.norm(p, axis=1)
-    keep &= r >= min_range
-    if mode == "current":
-        return keep
-    theta_step, phi_step = steps or angular_steps(xyz)
-    safe = np.maximum(r, np.float32(1e-6))
-    # The unit ball of this space is the window: +-window_steps increments in
-    # either angle and +-window_range metres of range.
-    q = np.empty((n, 3), dtype=np.float64)
-    q[:, 0] = (np.degrees(np.arctan2(p[:, 1], p[:, 0])) % 360.0) / (phi_step * window_steps)
-    zenith = np.degrees(np.arccos(np.clip(p[:, 2] / safe, -1.0, 1.0)))
-    q[:, 1] = zenith / (theta_step * window_steps)
-    q[:, 2] = r / window_range
-    del safe
-    neighbours = np.asarray(_core.count_within(q, 1.0)) - 1
-    del q
-    weak = np.asarray(amplitude, dtype=np.float32) < weak_db
-    keep &= ~(weak & (neighbours < min_neighbours))
-    return keep
+        return np.ones(n, dtype=bool)
+    p = np.asarray(xyz, dtype=np.float32).reshape(-1, 3)
+    if steps:
+        theta_step, phi_step = steps
+        steps = (float(theta_step), float(phi_step))
+    else:
+        steps = None
+    amplitude = np.asarray(amplitude, dtype=np.float32).ravel()
+    return _core.riscan_like_mask(p, amplitude, mode, float(min_range), float(window_steps),
+                                  float(window_range), int(min_neighbours), float(weak_db), steps)
