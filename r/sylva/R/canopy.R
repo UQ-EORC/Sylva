@@ -8,27 +8,6 @@
 row_major <- function(a) if (is.null(dim(a))) as.double(a) else as.double(aperm(a, rev(seq_along(dim(a)))))
 from_row_major <- function(v, dims) aperm(array(v, rev(dims)), rev(seq_along(dims)))
 
-#' A raster grid
-#'
-#' As the Python package's `Raster`: `data[row, col]` with row 1 at `ymin`,
-#' cells `resolution` wide from `(xmin, ymin)`.
-#'
-#' @param data Numeric matrix; `NA` for cells without data.
-#' @param xmin,ymin Lower-left corner.
-#' @param resolution Cell size.
-#' @export
-raster <- function(data, xmin, ymin, resolution) {
-  data <- as.matrix(data)
-  storage.mode(data) <- "double"
-  structure(list(data = data, xmin = as.double(xmin), ymin = as.double(ymin),
-                 resolution = as.double(resolution)), class = "sylva_raster")
-}
-
-raster_args <- function(r) {
-  r <- unclass(r)
-  list(r$data, r$xmin, r$ymin, r$resolution)
-}
-
 # ------------------------------------------------------------------ gap profiles
 
 #' Gap probability profiles
