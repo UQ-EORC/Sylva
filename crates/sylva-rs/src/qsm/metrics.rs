@@ -137,7 +137,7 @@ fn weighted_median(values: &[(f64, f64)]) -> f64 {
 }
 
 /// Cylinders of each branch in order from base to tip.
-fn chains(cyl: &[Cylinder]) -> Vec<(u32, Vec<usize>)> {
+pub(crate) fn chains(cyl: &[Cylinder]) -> Vec<(u32, Vec<usize>)> {
     let mut by_branch: HashMap<u32, Vec<usize>> = HashMap::new();
     for (i, c) in cyl.iter().enumerate() {
         by_branch.entry(c.branch_id).or_default().push(i);
