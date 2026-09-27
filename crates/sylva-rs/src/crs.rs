@@ -233,7 +233,7 @@ fn components(node: &WktNode) -> (Option<&WktNode>, Option<&WktNode>) {
     }
 }
 
-fn param<'a>(params: &'a [(String, f64)], names: &[&str]) -> Option<f64> {
+fn param(params: &[(String, f64)], names: &[&str]) -> Option<f64> {
     names.iter().find_map(|n| params.iter().find(|(k, _)| k == n).map(|(_, v)| *v))
 }
 
@@ -246,7 +246,7 @@ fn wkt1_datum_proj4(geog: &WktNode) -> Result<String> {
     let datum = geog.child(&["DATUM"]).ok_or_else(|| Error::invalid("WKT GEOGCS has no DATUM"))?;
     let sph = datum.child(&["SPHEROID", "ELLIPSOID"]).ok_or_else(|| Error::invalid("WKT DATUM has no SPHEROID"))?;
     let v = sph.numbers();
-    if v.len() < 2 || !(v[0] > 0.0) {
+    if v.len() < 2 || v[0].is_nan() || v[0] <= 0.0 {
         return Err(Error::invalid("WKT SPHEROID needs a semi-major axis and inverse flattening"));
     }
     let mut s = if v[1] == 0.0 { format!("+a={} +b={}", fmt_num(v[0]), fmt_num(v[0])) } else { format!("+a={} +rf={}", fmt_num(v[0]), fmt_num(v[1])) };
@@ -284,7 +284,7 @@ pub fn wkt1_to_proj4(node: &WktNode) -> Result<String> {
     let datum = wkt1_datum_proj4(geog)?;
     let method = node.child(&["PROJECTION"]).and_then(|p| p.name()).ok_or_else(|| Error::invalid("WKT PROJCS has no PROJECTION"))?;
     let unit = node.child(&["UNIT"]).and_then(|u| u.numbers().first().copied()).unwrap_or(1.0);
-    if !(unit > 0.0) {
+    if unit.is_nan() || unit <= 0.0 {
         return Err(Error::invalid("WKT PROJCS has an invalid linear UNIT"));
     }
     let params: Vec<(String, f64)> = node
@@ -630,6 +630,21 @@ fn has_datum_params(proj4: &str) -> bool {
     datum_tokens(proj4).iter().any(|t| t.starts_with("+towgs84=") || (t.starts_with("+datum=") && t != "+datum=none"))
 }
 
+/// A PROJ string with its datum shift removed: `+towgs84` dropped and the
+/// zero-parameter datums replaced by their ellipsoids.
+fn without_datum_shift(proj4: &str) -> String {
+    proj4
+        .split_whitespace()
+        .filter(|t| !t.starts_with("+towgs84="))
+        .map(|t| match t.to_ascii_lowercase().as_str() {
+            "+datum=wgs84" => "+ellps=WGS84",
+            "+datum=nad83" => "+ellps=GRS80",
+            _ => t,
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn zero_helmert(proj4: &str) -> bool {
     datum_tokens(proj4).iter().any(|t| t == "+towgs84=0" || t.eq_ignore_ascii_case("+datum=WGS84") || t.eq_ignore_ascii_case("+datum=NAD83"))
 }
@@ -717,7 +732,15 @@ pub fn reproject(xyz: &mut [Point], src: &Crs, dst: &Crs) -> Result<Plan> {
     if plan.kind == Kind::Identity {
         return Ok(plan);
     }
-    let (ps, pd) = (src.proj()?, dst.proj()?);
+    let (ps, pd) = if plan.kind == Kind::Conversion {
+        // Same datum: leave out any datum shift, so latitude and longitude
+        // carry across unchanged (proj4rs would otherwise pass WGS 84 and
+        // GRS80 datums tied by zero parameters through geocentric space).
+        let (s, d) = (without_datum_shift(&src.proj4), without_datum_shift(&dst.proj4));
+        (Proj::from_proj_string(&s).map_err(|e| proj_error(&s, e))?, Proj::from_proj_string(&d).map_err(|e| proj_error(&d, e))?)
+    } else {
+        (src.proj()?, dst.proj()?)
+    };
     let (src_deg, dst_deg) = (ps.is_latlong(), pd.is_latlong());
     xyz.par_chunks_mut(CHUNK).for_each(|chunk| {
         for p in chunk.iter_mut() {
@@ -885,9 +908,12 @@ mod tests {
         let (_, plan) = one(512_345.678, 5_412_345.678, 0.0, "EPSG:7855", "EPSG:32755");
         assert_eq!(plan.kind, Kind::NullDatum);
         assert!(!plan.exact);
-        // GDA94 is towgs84=0: to WGS 84 is a (zero) Helmert, i.e. the same datum.
-        let (_, plan) = one(512_345.678, 5_412_345.678, 0.0, "EPSG:28355", "EPSG:32755");
+        // GDA94 is towgs84=0: to WGS 84 is a (zero) Helmert, i.e. the same
+        // datum, and latitude and longitude carry across unchanged.
+        let (a, plan) = one(512_345.678, 5_412_345.678, 7.0, "EPSG:28355", "EPSG:4326");
         assert_eq!(plan.kind, Kind::Conversion);
+        let (b, _) = one(512_345.678, 5_412_345.678, 7.0, "EPSG:28355", "EPSG:4283");
+        assert_eq!(a, b);
         // OSGB36 carries a 7-parameter Helmert.
         let (_, plan) = one(400_000.0, 300_000.0, 50.0, "EPSG:27700", "EPSG:4326");
         assert_eq!(plan.kind, Kind::Helmert);
