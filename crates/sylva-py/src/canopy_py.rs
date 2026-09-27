@@ -50,9 +50,10 @@ fn canopy_fired_pulses_per_ring<'py>(py: Python<'py>, direction: PyReadonlyArray
 }
 
 #[pyfunction]
-fn canopy_fired_pulses_from_points<'py>(py: Python<'py>, direction: PyReadonlyArray2<f64>, zenith_edges: Vec<f64>, ground_zenith: (f64, f64), limit_quantile: f64) -> PyResult<Bound<'py, PyArray1<f64>>> {
+#[pyo3(signature = (direction, zenith_edges, ground_zenith, limit_quantile, field_of_view=None))]
+fn canopy_fired_pulses_from_points<'py>(py: Python<'py>, direction: PyReadonlyArray2<f64>, zenith_edges: Vec<f64>, ground_zenith: (f64, f64), limit_quantile: f64, field_of_view: Option<f64>) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let zen = zenith_of(direction)?;
-    Ok(vec1(py, cp::fired_pulses_from_points(&zen, &zenith_edges, ground_zenith, limit_quantile).map_err(err)?))
+    Ok(vec1(py, cp::fired_pulses_from_points(&zen, &zenith_edges, ground_zenith, limit_quantile, field_of_view).map_err(err)?))
 }
 
 #[pyfunction]

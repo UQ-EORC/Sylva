@@ -7,7 +7,7 @@ core_pgap_histogram <- function(shots, echo_heights, zenith_edges, n_azimuth, he
 core_pulses_per_line <- function(direction, pattern, quantile, shot_stride) .Call(wrap__core_pulses_per_line, direction, pattern, quantile, shot_stride)
 core_expected_per_zenith <- function(pattern, zenith_edges, pulses_per_line) .Call(wrap__core_expected_per_zenith, pattern, zenith_edges, pulses_per_line)
 core_fired_pulses_per_ring <- function(direction, pattern, zenith_edges, shot_stride, ground_zenith) .Call(wrap__core_fired_pulses_per_ring, direction, pattern, zenith_edges, shot_stride, ground_zenith)
-core_fired_pulses_from_points <- function(direction, zenith_edges, ground_zenith, limit_quantile) .Call(wrap__core_fired_pulses_from_points, direction, zenith_edges, ground_zenith, limit_quantile)
+core_fired_pulses_from_points <- function(direction, zenith_edges, ground_zenith, limit_quantile, field_of_view) .Call(wrap__core_fired_pulses_from_points, direction, zenith_edges, ground_zenith, limit_quantile, field_of_view)
 core_gap_fraction_pattern <- function(shots, echo_heights, pattern, min_height, zenith_edges, pulses_per_line) .Call(wrap__core_gap_fraction_pattern, shots, echo_heights, pattern, min_height, zenith_edges, pulses_per_line)
 core_gap_fraction_zenith <- function(shots, echo_heights, min_height, zenith_edges) .Call(wrap__core_gap_fraction_zenith, shots, echo_heights, min_height, zenith_edges)
 core_fit_ground_plane <- function(points, cell, centre, radius, iterations) .Call(wrap__core_fit_ground_plane, points, cell, centre, radius, iterations)

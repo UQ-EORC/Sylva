@@ -150,7 +150,10 @@ scan_pattern <- function(pattern) lapply(pattern[c("theta_start", "theta_delta",
 #' @param zenith_edges Ring edges (degrees).
 #' @param shot_stride The `shot_stride` the shots were read with.
 #' @param ground_zenith Zenith range (degrees) where every pulse returns.
-#' @param limit_quantile Quantile of the returns' zenith taken as the scan limits.
+#' @param limit_quantile Upper quantile of the returns' zenith taken as the scan's lower limit.
+#' @param field_of_view The scanner's vertical field of view (degrees; 100 for
+#'   RIEGL's VZ scanners), which sets the upper limit; `NULL` reads it from the
+#'   returns, right only where the canopy returns the most upward pulses.
 #' @export
 fired_pulses_per_ring <- function(shots_scanner, pattern, zenith_edges, shot_stride = 1, ground_zenith = c(100, 125)) {
   core_fired_pulses_per_ring(unclass(shots_scanner)$direction, scan_pattern(pattern), as.double(zenith_edges),
@@ -159,9 +162,10 @@ fired_pulses_per_ring <- function(shots_scanner, pattern, zenith_edges, shot_str
 
 #' @rdname fired_pulses_per_ring
 #' @export
-fired_pulses_from_points <- function(shots_scanner, zenith_edges, ground_zenith = c(100, 125), limit_quantile = 1e-5) {
+fired_pulses_from_points <- function(shots_scanner, zenith_edges, ground_zenith = c(100, 125), limit_quantile = 1e-5,
+                                     field_of_view = 100) {
   core_fired_pulses_from_points(unclass(shots_scanner)$direction, as.double(zenith_edges), as.double(ground_zenith),
-                                as.double(limit_quantile))
+                                as.double(limit_quantile), if (is.null(field_of_view)) NULL else as.double(field_of_view))
 }
 
 #' @rdname fired_pulses_per_ring

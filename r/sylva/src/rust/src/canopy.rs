@@ -85,8 +85,8 @@ fn core_fired_pulses_per_ring(direction: Robj, pattern: List, zenith_edges: &[f6
 
 /// @noRd
 #[extendr]
-fn core_fired_pulses_from_points(direction: Robj, zenith_edges: &[f64], ground_zenith: &[f64], limit_quantile: f64) -> Result<Vec<f64>> {
-    cp::fired_pulses_from_points(&zenith(&direction)?, zenith_edges, pair(ground_zenith, "ground_zenith")?, limit_quantile).map_err(err)
+fn core_fired_pulses_from_points(direction: Robj, zenith_edges: &[f64], ground_zenith: &[f64], limit_quantile: f64, field_of_view: Robj) -> Result<Vec<f64>> {
+    cp::fired_pulses_from_points(&zenith(&direction)?, zenith_edges, pair(ground_zenith, "ground_zenith")?, limit_quantile, opt_f64(&field_of_view)?).map_err(err)
 }
 
 /// @noRd

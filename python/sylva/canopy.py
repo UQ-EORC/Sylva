@@ -570,7 +570,7 @@ def fired_pulses_per_ring(shots_scanner: Shots, pattern: dict, zenith_edges,
 
 
 def fired_pulses_from_points(shots_scanner: Shots, zenith_edges, ground_zenith=(100.0, 125.0),
-                             limit_quantile: float = 1e-5) -> np.ndarray:
+                             limit_quantile: float = 1e-5, field_of_view: float | None = 100.0) -> np.ndarray:
     """Pulses a scan fired into each zenith ring, from its returns alone.
 
     For a scan known only by its points (a LAS/LAZ export and its SOP), with
@@ -580,8 +580,10 @@ def fired_pulses_from_points(shots_scanner: Shots, zenith_edges, ground_zenith=(
     zenith. On the downward lines in ``ground_zenith`` nearly every pulse
     hits the ground (0.3-0.8 % did not on a VZ-2000i scan in savanna), so
     the returns there, per degree, give that rate; a ring gets the rate
-    times the part of its width inside the scan's zenith limits, which are
-    read from the returns too.
+    times the part of its width inside the scan's zenith limits. The lower
+    limit is read from the returns, since every downward pulse hits the
+    ground; the upper one is ``field_of_view`` degrees above it, because in
+    open vegetation the most upward pulses return nothing.
 
     Parameters
     ----------
@@ -595,7 +597,11 @@ def fired_pulses_from_points(shots_scanner: Shots, zenith_edges, ground_zenith=(
         Zenith range (degrees) where every pulse is taken to return. It must
         lie inside the scan's field of view and look at open ground.
     limit_quantile
-        The scan's zenith limits are these quantiles of the returns' zenith.
+        The lower zenith limit is this upper quantile of the returns' zenith.
+    field_of_view
+        The scanner's vertical field of view (degrees): 100 for RIEGL's VZ
+        scanners. None reads the upper limit from the returns too, which is
+        right only where the canopy returns the most upward pulses.
 
     Returns
     -------
@@ -609,7 +615,8 @@ def fired_pulses_from_points(shots_scanner: Shots, zenith_edges, ground_zenith=(
         If ``ground_zenith`` lies outside the scan's zenith limits.
     """
     return _core.canopy_fired_pulses_from_points(shots_scanner.direction, _edges(zenith_edges),
-                                                 _pair(ground_zenith), float(limit_quantile))
+                                                 _pair(ground_zenith), float(limit_quantile),
+                                             None if field_of_view is None else float(field_of_view))
 
 
 @dataclass

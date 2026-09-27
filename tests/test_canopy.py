@@ -175,4 +175,11 @@ def test_fired_pulses_from_points_recovers_the_misses():
     fired = fired_pulses_from_points(shots, edges)
     inside = truth > 0
     assert np.allclose(fired[inside], truth[inside], rtol=0.01)
-    assert (fired[~inside] == 0).all()
+    assert (fired[~inside] < 0.01 * truth.max()).all()
+    # Open sky: nothing above 60 degrees zenith returns, yet those rings were
+    # fired into; the field of view, not the returns, bounds the scan above.
+    open_sky = returned & (np.degrees(zz) > 60.0)
+    m = int(open_sky.sum())
+    shots = Shots(np.zeros((m, 3)), direction[open_sky], np.arange(m), np.ones(m, np.int64), np.full(m, 10.0))
+    fired = fired_pulses_from_points(shots, edges)
+    assert np.allclose(fired[inside], truth[inside], rtol=0.01)

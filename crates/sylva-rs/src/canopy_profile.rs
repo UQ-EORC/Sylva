@@ -99,12 +99,16 @@ pub fn fired_pulses_per_ring(zenith: &[f64], pattern: &ScanPattern, zenith_edges
 /// Pulses a scan fired into each zenith ring from its returns alone (no
 /// scan pattern): returns per degree of zenith on the downward lines in
 /// `ground_zenith`, times the part of each ring inside the scan's zenith
-/// limits (the `limit_quantile` quantiles of the returns' zenith).
-pub fn fired_pulses_from_points(zenith: &[f64], zenith_edges: &[f64], ground_zenith: (f64, f64), limit_quantile: f64) -> Result<Vec<f64>> {
+/// limits. The lower limit is the `limit_quantile` upper quantile of the
+/// returns' zenith (every downward pulse hits the ground); the upper one is
+/// `field_of_view` degrees above it, since in open vegetation the most
+/// upward pulses return nothing. `None` reads both limits from the returns.
+pub fn fired_pulses_from_points(zenith: &[f64], zenith_edges: &[f64], ground_zenith: (f64, f64), limit_quantile: f64, field_of_view: Option<f64>) -> Result<Vec<f64>> {
     let mut z = zenith.to_vec();
     z.sort_by(|a, b| a.total_cmp(b));
     let lo = crate::numeric::quantile_sorted(&z, limit_quantile);
     let hi = crate::numeric::quantile_sorted(&z, 1.0 - limit_quantile);
+    let lo = field_of_view.map_or(lo, |fov| hi - fov);
     let (g0, g1) = ground_zenith;
     if g0 < lo || g1 > hi {
         return Err(Error::invalid(format!(
@@ -547,7 +551,7 @@ mod tests {
     fn fired_from_points_reads_the_downward_rate() {
         // 10 pulses per degree between 30 and 130 degrees, all returned.
         let zen: Vec<f64> = (0..1000).map(|i| 30.05 + i as f64 * 0.1).collect();
-        let f = fired_pulses_from_points(&zen, &[25.0, 30.0, 40.0, 60.0], (100.0, 125.0), 1e-5).unwrap();
+        let f = fired_pulses_from_points(&zen, &[25.0, 30.0, 40.0, 60.0], (100.0, 125.0), 1e-5, None).unwrap();
         assert!(f[0].abs() < 1.0 && (f[1] - 100.0).abs() < 1.0 && (f[2] - 200.0).abs() < 1e-9);
     }
 
