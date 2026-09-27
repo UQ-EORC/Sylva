@@ -140,16 +140,19 @@ transform.sylva_cloud <- function(`_data`, matrix, ...) {
   as_cloud(list(xyz = core_transform_xyz(xyz_of(`_data`), m), attrs = attrs_of(`_data`)))
 }
 
-#' Stack several clouds into one
+#' Stack several clouds, or several pulse sets, into one
 #'
-#' @param ... Clouds, or one list of clouds, in order.
+#' @param ... Clouds, or one list of clouds, in order; or `sylva_shots` in a
+#'   common frame (e.g. several scan positions).
 #' @return All points; only attributes present in every input are kept, in
 #'   name order. Use `merge_scans()` to also record which scan each point
-#'   came from.
+#'   came from. For shots, all pulses in order with their echoes; only echo
+#'   attributes present in every part are kept.
 #' @export
 concatenate <- function(...) {
   clouds <- list(...)
-  if (length(clouds) == 1 && !inherits(clouds[[1]], "sylva_cloud")) clouds <- clouds[[1]]
+  if (length(clouds) == 1 && !inherits(clouds[[1]], c("sylva_cloud", "sylva_shots"))) clouds <- clouds[[1]]
+  if (length(clouds) && inherits(clouds[[1]], "sylva_shots")) return(concatenate_shots(clouds))
   if (!length(clouds)) stop("no clouds to concatenate", call. = FALSE)
   common <- sort(Reduce(intersect, lapply(clouds, function(c) names(attrs_of(c)))))
   attrs <- lapply(stats::setNames(common, common), function(k) unlist(lapply(clouds, function(c) attrs_of(c)[[k]]), use.names = FALSE))

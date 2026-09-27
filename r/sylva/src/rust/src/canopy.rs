@@ -22,7 +22,7 @@ fn opt_f64(v: &Robj) -> Result<Option<f64>> {
     }
 }
 
-fn pattern_from_r(p: &List) -> Result<cp::ScanPattern> {
+pub(crate) fn pattern_from_r(p: &List) -> Result<cp::ScanPattern> {
     let m: HashMap<&str, Robj> = p.clone().try_into()?;
     let get = |k: &str| -> Result<f64> {
         let v = m.get(k).ok_or_else(|| Error::Other(format!("pattern has no `{k}`")))?;

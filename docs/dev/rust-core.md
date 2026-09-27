@@ -59,5 +59,7 @@ From least to most entangled (see the inventory in the branch history):
 7. coreg, bottom up: transforms, reflectors, the pose graph, joint
    refinement, the pipeline's numeric helpers, then the pipeline itself
    and its result objects (rayon replaces the Python thread pool).
-8. Last: `synthetic` and `coreg.simulate` (test fixtures; their random
-   streams will change, so they are recorded by statistics, not values).
+8. Last: `synthetic` and `coreg.simulate` (test fixtures).
+   `sylva_rs::nprandom` reproduces NumPy's `default_rng` streams (uniform,
+   ziggurat normal and integer draws, `choice`), so their outputs are
+   recorded and kept to the bit like any other module's.

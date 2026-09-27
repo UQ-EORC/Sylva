@@ -5,10 +5,11 @@
 //! Bindings for laser pulses (shots) and RIEGL scans.
 
 use extendr_api::prelude::*;
-use sylva_rs::io::riegl;
+use sylva_rs::io::{riegl, shots as shots_io};
 use sylva_rs::{Shots, Transform};
 
-use crate::convert::{cloud_from_r, cloud_to_r, doubles, err, fail, shots_from_r, shots_to_r, xyz_to_r, Result};
+use crate::canopy::pattern_from_r;
+use crate::convert::{cloud_from_r, cloud_to_r, doubles, err, fail, optional_f64, shots_from_r, shots_to_r, xyz_to_r, Result};
 
 fn transform_from_r(m: &Robj) -> Result<Transform> {
     let v = doubles(m, "matrix")?;
@@ -96,9 +97,7 @@ fn core_shots_transform(shots: List, matrix: Robj) -> Result<List> {
 /// @noRd
 #[extendr]
 fn core_shots_zenith_azimuth(shots: List) -> Result<List> {
-    let s = shots_from_r(&shots)?;
-    let zen = sylva_rs::canopy_profile::zenith_deg(&s.direction);
-    let az: Vec<f64> = s.direction.iter().map(|d| d[0].atan2(d[1]).to_degrees().rem_euclid(360.0)).collect();
+    let (zen, az) = shots_from_r(&shots)?.zenith_azimuth();
     Ok(list!(zenith = zen, azimuth = az))
 }
 
@@ -112,6 +111,64 @@ fn core_shots_shot_of_echo(shots: List) -> Result<Vec<f64>> {
 #[extendr]
 fn core_shots_echo_rank(shots: List) -> Result<Vec<i32>> {
     Ok(shots_from_r(&shots)?.echo_rank().into_iter().map(|v| v as i32).collect())
+}
+
+/// @noRd
+#[extendr]
+fn core_shots_concatenate(parts: List) -> Result<List> {
+    let parts: Vec<Shots> = parts.values().map(|p| shots_from_r(&p.try_into()?)).collect::<Result<_>>()?;
+    Ok(shots_to_r(&Shots::concatenate(&parts.iter().collect::<Vec<_>>()).map_err(err)?))
+}
+
+/// The shots followed by the misses of the scan pattern, or NULL if none.
+/// @noRd
+#[extendr]
+fn core_shots_fill_missing(shots: List, pattern: List, pulses_per_line: Robj, seed: f64, shot_stride: i32) -> Result<Robj> {
+    if !(seed >= 0.0 && seed.fract() == 0.0 && seed < 1.8446744073709552e19) {
+        return fail("seed must be a non-negative whole number");
+    }
+    let per_line = optional_f64(&pulses_per_line, "pulses_per_line")?.map(|v| v as i64);
+    let s = shots_from_r(&shots)?;
+    Ok(match s.fill_missing(&pattern_from_r(&pattern)?, per_line, seed as u64, shot_stride.max(1) as usize) {
+        Some(f) => shots_to_r(&f).into(),
+        None => ().into(),
+    })
+}
+
+/// @noRd
+#[extendr]
+fn core_write_shots(shots: List, path: &str, double: bool, row_group_size: f64, zstd_level: i32, origin_tolerance: f64) -> Result<()> {
+    let opts = shots_io::ShotsWriteOptions { double, row_group_size: row_group_size as usize, zstd_level, origin_tolerance };
+    shots_io::write_shots(&shots_from_r(&shots)?, path, &opts).map_err(err)
+}
+
+/// Row groups `groups` (0-based), or all when NULL.
+/// @noRd
+#[extendr]
+fn core_read_shots(path: &str, groups: Robj) -> Result<List> {
+    let file = shots_io::ShotsFile::open(path).map_err(err)?;
+    let s = if groups.is_null() {
+        file.read_all()
+    } else {
+        let g: Vec<usize> = doubles(&groups, "groups")?.iter().map(|&v| v as usize).collect();
+        file.read_groups(&g)
+    };
+    Ok(shots_to_r(&s.map_err(err)?))
+}
+
+/// @noRd
+#[extendr]
+fn core_shots_info(path: &str) -> Result<List> {
+    let file = shots_io::ShotsFile::open(path).map_err(err)?;
+    let (lo, hi) = file.bounds;
+    Ok(list!(
+        n_shots = file.n_shots as f64,
+        n_echoes = file.n_echoes as f64,
+        n_groups = file.n_groups() as f64,
+        bounds = list!(lo.to_vec(), hi.to_vec()),
+        scans = xyz_to_r(file.scans()),
+        echo_attrs = file.attr_names().map(|s| s.to_string()).collect::<Vec<_>>()
+    ))
 }
 
 extendr_module! {
@@ -128,4 +185,9 @@ extendr_module! {
     fn core_shots_zenith_azimuth;
     fn core_shots_shot_of_echo;
     fn core_shots_echo_rank;
+    fn core_shots_concatenate;
+    fn core_shots_fill_missing;
+    fn core_write_shots;
+    fn core_read_shots;
+    fn core_shots_info;
 }

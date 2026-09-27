@@ -14,7 +14,7 @@ use sylva_rs::canopy_profile as cp;
 
 use crate::{err, raster_from_py, shots_from_py, xyz_from_py};
 
-fn pattern_from_py(d: &Bound<'_, PyDict>) -> PyResult<cp::ScanPattern> {
+pub(crate) fn pattern_from_py(d: &Bound<'_, PyDict>) -> PyResult<cp::ScanPattern> {
     let get = |k: &str| d.get_item(k)?.ok_or_else(|| PyValueError::new_err(format!("pattern has no {k:?}")));
     Ok(cp::ScanPattern {
         theta_start: get("theta_start")?.extract()?,
