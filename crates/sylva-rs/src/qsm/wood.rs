@@ -403,7 +403,11 @@ pub fn gbs_mask(points: &[Point], p: &GbsParams) -> Vec<bool> {
                 pieces.entry(r).or_default().push(i);
             }
         }
-        let pieces: Vec<Vec<usize>> = pieces.into_values().filter(|m| m.len() >= min_piece).collect();
+        let mut pieces: Vec<Vec<usize>> = pieces.into_values().filter(|m| m.len() >= min_piece).collect();
+        // The taper check below visits the pieces in turn and reads what it
+        // has already decided: take them in a fixed order, not the hash
+        // map's, which changes from one process to the next.
+        pieces.sort_unstable_by_key(|m| m[0]);
         let mut class: Vec<Option<f64>> = pieces.par_iter().map(|m| classify_piece(points, m, &step, interval, p)).collect();
         let mut piece_of = vec![usize::MAX; n];
         for (k, m) in pieces.iter().enumerate() {
