@@ -48,7 +48,7 @@ stem_frame <- function(l) {
 coreg_stem <- function(x, y, z, dbh, axis = c(0, 0, 1), reference_height = 1.3, n_slices = 0L, n_points = 0L, rmse = 0,
                  coverage = 0, lean_deg = 0) {
   k <- length(x)
-  axis <- matrix(as.double(axis), ncol = 3, nrow = k, byrow = is.null(dim(axis)))
+  axis <- if (k) matrix(as.double(axis), ncol = 3, nrow = k, byrow = is.null(dim(axis))) else matrix(0, 0, 3)
   stem_frame(list(x = as.double(x), y = rep_len(as.double(y), k), z = rep_len(as.double(z), k),
                   dbh = rep_len(as.double(dbh), k), axis_x = axis[, 1], axis_y = axis[, 2], axis_z = axis[, 3],
                   reference_height = rep_len(as.double(reference_height), k), n_slices = rep_len(n_slices, k),

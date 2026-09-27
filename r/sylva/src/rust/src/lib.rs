@@ -14,6 +14,7 @@ use extendr_api::prelude::*;
 mod canopy;
 mod quality;
 mod coreg;
+mod coreg_pipeline;
 mod shots;
 mod trees;
 mod riscan;
@@ -30,6 +31,7 @@ extendr_module! {
     use canopy;
     use quality;
     use coreg;
+    use coreg_pipeline;
     use shots;
     use trees;
     use filters;
