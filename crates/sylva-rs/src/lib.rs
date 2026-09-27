@@ -49,6 +49,7 @@ pub mod raster;
 pub mod registration;
 pub mod riscan;
 pub mod shots;
+pub mod shots_ops;
 pub mod spatial;
 pub mod stems;
 pub mod transform;

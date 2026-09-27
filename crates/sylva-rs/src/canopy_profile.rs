@@ -38,12 +38,13 @@ pub struct ScanPattern {
 }
 
 impl ScanPattern {
-    fn lines(&self) -> Vec<f64> {
+    /// Zenith angle of each line (degrees).
+    pub fn lines(&self) -> Vec<f64> {
         (0..self.theta_count).map(|i| self.theta_start + self.theta_delta * i as f64).collect()
     }
 
     /// Bin edges half a step either side of each zenith line.
-    fn line_edges(&self) -> Vec<f64> {
+    pub fn line_edges(&self) -> Vec<f64> {
         let theta = self.lines();
         let half = self.theta_delta / 2.0;
         let mut e: Vec<f64> = theta.iter().map(|t| t - half).collect();

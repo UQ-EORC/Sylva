@@ -71,12 +71,14 @@ class Shots:
     def __repr__(self) -> str:
         return f"Shots(n_shots={self.n_shots:,}, n_echoes={self.n_echoes:,})"
 
-    def _to_core(self) -> dict:
-        return {
+    def _to_core(self, attrs: bool = True) -> dict:
+        d = {
             "origin": self.origin, "direction": self.direction, "echo_start": self.echo_start,
             "echo_count": self.echo_count, "echo_range": self.echo_range,
-            "echo_attrs": self.echo_attrs,
         }
+        if attrs:
+            d["echo_attrs"] = self.echo_attrs
+        return d
 
     @classmethod
     def _from_core(cls, d: dict) -> Shots:
@@ -91,7 +93,7 @@ class Shots:
         numpy.ndarray
             Length ``n_echoes``.
         """
-        return np.repeat(np.arange(self.n_shots), self.echo_count)
+        return _core.shots_shot_of_echo(self._to_core(attrs=False))
 
     def echo_rank(self) -> np.ndarray:
         """Position of each echo within its shot.
@@ -101,7 +103,7 @@ class Shots:
         numpy.ndarray
             Length ``n_echoes``; 0 is the first (nearest) return.
         """
-        return np.arange(self.n_echoes) - np.repeat(self.echo_start, self.echo_count)
+        return _core.shots_echo_rank(self._to_core(attrs=False))
 
     def echo_xyz(self) -> np.ndarray:
         """Echo positions in the shots' frame.
@@ -111,8 +113,7 @@ class Shots:
         numpy.ndarray
             ``(n_echoes, 3)``, ``origin + direction * range``.
         """
-        s = self.shot_of_echo()
-        return self.origin[s] + self.direction[s] * self.echo_range[:, None]
+        return _core.shots_echo_xyz(self._to_core(attrs=False))
 
     def to_pointcloud(self) -> PointCloud:
         """The echoes as a point cloud; misses are dropped.
@@ -156,15 +157,8 @@ class Shots:
         Shots
             The selected pulses with all their echoes (never part of a pulse).
         """
-        mask = np.asarray(mask, dtype=bool)
-        keep_shots = np.flatnonzero(mask)
-        echo_mask = mask[self.shot_of_echo()]
-        count = self.echo_count[keep_shots]
-        start = np.concatenate([[0], np.cumsum(count)[:-1]]) if len(count) else np.zeros(0, int)
-        return Shots(
-            self.origin[keep_shots], self.direction[keep_shots], start, count,
-            self.echo_range[echo_mask], {k: v[echo_mask] for k, v in self.echo_attrs.items()},
-        )
+        mask = np.ascontiguousarray(mask, dtype=bool)
+        return Shots._from_core(_core.shots_subset(self._to_core(), mask))
 
     def zenith_azimuth(self) -> tuple[np.ndarray, np.ndarray]:
         """Beam angles of each pulse.
@@ -177,10 +171,7 @@ class Shots:
             Degrees clockwise from +y, ``atan2(x, y)`` wrapped to
             ``[0, 360)`` (RIEGL convention).
         """
-        d = self.direction
-        zen = np.degrees(np.arccos(np.clip(d[:, 2], -1, 1)))
-        az = np.degrees(np.arctan2(d[:, 0], d[:, 1])) % 360.0
-        return zen, az
+        return _core.shots_zenith_azimuth(self.direction)
 
     @classmethod
     def concatenate(cls, parts: list[Shots]) -> Shots:
@@ -204,20 +195,7 @@ class Shots:
         """
         if not parts:
             raise ValueError("no shots to concatenate")
-        counts = np.concatenate([p.echo_count for p in parts])
-        start = np.concatenate([[0], np.cumsum(counts)[:-1]]) if len(counts) else np.zeros(0, int)
-        common = set.intersection(*(set(p.echo_attrs) for p in parts))
-        return cls(
-            np.vstack([p.origin for p in parts]), np.vstack([p.direction for p in parts]),
-            start, counts, np.concatenate([p.echo_range for p in parts]),
-            {k: np.concatenate([p.echo_attrs[k] for p in parts]) for k in sorted(common)},
-        )
-
-    @staticmethod
-    def _zenith_lines(pattern: dict) -> tuple[np.ndarray, np.ndarray]:
-        theta = pattern["theta_start"] + pattern["theta_delta"] * np.arange(pattern["theta_count"])
-        half = pattern["theta_delta"] / 2
-        return theta, np.concatenate([theta - half, [theta[-1] + half]])
+        return cls._from_core(_core.shots_concatenate([p._to_core() for p in parts]))
 
     def pulses_per_line(self, pattern: dict, quantile: float = 0.98, shot_stride: int = 1) -> int:
         """Effective number of pulses fired along each zenith line.
@@ -314,25 +292,9 @@ class Shots:
             The input followed by the added misses (the input itself if none
             are missing).
         """
-        rng = np.random.default_rng(seed)
-        theta, edges = self._zenith_lines(pattern)
-        zen, _ = self.zenith_azimuth()
-        observed, _ = np.histogram(zen, bins=edges)
-        if pulses_per_line is None:
-            pulses_per_line = self.pulses_per_line(pattern, shot_stride=shot_stride)
-        missing = np.maximum(int(pulses_per_line) - observed, 0)
-        n = int(missing.sum())
-        if n == 0:
-            return self
-        zen_new = np.radians(np.repeat(theta, missing))
-        az_new = np.radians(rng.uniform(0, 360, n))
-        direction = np.column_stack([
-            np.sin(zen_new) * np.sin(az_new), np.sin(zen_new) * np.cos(az_new), np.cos(zen_new)
-        ])
-        origin = np.tile(self.origin.mean(axis=0), (n, 1))
-        empty = Shots(origin, direction, np.zeros(n, np.int64), np.zeros(n, np.int64),
-                      np.zeros(0), {k: v[:0] for k, v in self.echo_attrs.items()})
-        return Shots.concatenate([self, empty])
+        n = None if pulses_per_line is None else int(pulses_per_line)
+        filled = _core.shots_fill_missing(self._to_core(), pattern, n, int(seed), int(shot_stride))
+        return self if filled is None else Shots._from_core(filled)
 
     def save(self, path: str | Path, double: bool = False, row_group_size: int = 1 << 20,
              zstd_level: int = 3, origin_tolerance: float = 1e-3) -> None:

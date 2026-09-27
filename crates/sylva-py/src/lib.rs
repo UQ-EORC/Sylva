@@ -24,6 +24,7 @@ mod filters_py;
 mod limits_py;
 mod raster_py;
 mod registration_py;
+mod shots_py;
 mod riscan_py;
 mod coreg_py;
 mod voxels_py;
@@ -1494,6 +1495,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     limits_py::register(m)?;
     raster_py::register(m)?;
     registration_py::register(m)?;
+    shots_py::register(m)?;
     riscan_py::register(m)?;
     coreg_py::register(m)?;
     leaves_py::register(m)?;
