@@ -38,6 +38,7 @@ nav:
       - QSMs: guide/qsm.md
       - Leaves on a QSM: guide/leaves.md
       - Scan quality: guide/quality.md
+      - Change detection: guide/change.md
       - Command line: guide/cli.md
       - Operational use: guide/operational.md
   - Examples:
@@ -73,6 +74,7 @@ nav:
       - qsm: api/qsm.md
       - leaves: api/leaves.md
       - quality: api/quality.md
+      - change: api/change.md
       - progress: api/progress.md
       - limits: api/limits.md
       - synthetic: api/synthetic.md
