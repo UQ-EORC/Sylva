@@ -15,6 +15,7 @@
 //! [`canopy`], [`voxel`], [`trees`], [`registration`] and [`qsm`].
 
 pub mod canopy;
+pub mod canopy_profile;
 pub mod cluster;
 pub mod coreg;
 pub mod coreg_ground;
@@ -26,6 +27,7 @@ pub mod ground;
 pub mod io;
 pub mod limits;
 pub mod leaves;
+pub mod numeric;
 pub mod optim;
 pub mod pointcloud;
 pub mod progress;

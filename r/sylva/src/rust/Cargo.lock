@@ -795,6 +795,7 @@ name = "sylvar"
 version = "0.1.0"
 dependencies = [
  "extendr-api",
+ "nalgebra",
  "sylva-rs",
 ]
 

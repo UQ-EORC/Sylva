@@ -242,10 +242,8 @@ class Shots:
         int
             The larger of the nominal count and the observed ``quantile``.
         """
-        _, edges = self._zenith_lines(pattern)
-        zen, _ = self.zenith_azimuth()
-        observed, _ = np.histogram(zen, bins=edges)
-        return int(max(int(pattern["phi_count"]) / max(int(shot_stride), 1), np.quantile(observed, quantile)))
+        return int(_core.canopy_pulses_per_line(self.direction, pattern, float(quantile),
+                                                int(shot_stride)))
 
     def expected_per_zenith(self, pattern: dict, zenith_edges: np.ndarray,
                             pulses_per_line: int | None = None) -> np.ndarray:
@@ -270,10 +268,9 @@ class Shots:
             Pulses fired per ring (length ``len(zenith_edges) - 1``): zenith
             lines whose angle falls in the ring times pulses per line.
         """
-        theta, _ = self._zenith_lines(pattern)
-        lines, _ = np.histogram(theta, bins=np.asarray(zenith_edges, dtype=float))
-        n = int(pattern["phi_count"]) if pulses_per_line is None else int(pulses_per_line)
-        return lines * n
+        edges = [float(e) for e in np.asarray(zenith_edges, dtype=float)]
+        n = None if pulses_per_line is None else int(pulses_per_line)
+        return np.rint(_core.canopy_expected_per_zenith(pattern, edges, n)).astype(np.int64)
 
     def fill_missing(self, pattern: dict, pulses_per_line: int | None = None,
                      seed: int = 0, shot_stride: int = 1) -> Shots:

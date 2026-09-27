@@ -11,6 +11,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 extendr-api = "0.9"
+nalgebra = "0.35"
 sylva-rs = { path = "../../../../crates/sylva-rs" }
 
 # Built on its own by R, outside the Cargo workspace (it needs R's headers).

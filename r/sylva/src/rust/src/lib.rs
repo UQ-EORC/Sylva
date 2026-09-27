@@ -9,83 +9,14 @@
 //! Attribute types map to R as: floats and 64-bit or unsigned 32-bit
 //! integers to double, smaller integers to integer, booleans to logical.
 
-use std::collections::BTreeMap;
-
 use extendr_api::prelude::*;
-use sylva_rs::pointcloud::Attr;
-use sylva_rs::{filters, io, Point, PointCloud};
+use sylva_rs::{filters, io};
 
-type Result<T> = std::result::Result<T, Error>;
+mod canopy;
+mod shots;
+mod convert;
 
-fn err(e: sylva_rs::Error) -> Error {
-    Error::Other(e.to_string())
-}
-
-// ----------------------------------------------------------------- converters
-
-fn xyz_from_r(xyz: &Robj) -> Result<Vec<Point>> {
-    let m: RMatrix<f64> = xyz.try_into().map_err(|_| Error::Other("xyz must be a double matrix with 3 columns".into()))?;
-    if m.ncols() != 3 {
-        return Err(Error::Other(format!("xyz must have 3 columns, got {}", m.ncols())));
-    }
-    let n = m.nrows();
-    let d = m.data();
-    Ok((0..n).map(|i| [d[i], d[n + i], d[2 * n + i]]).collect())
-}
-
-fn xyz_to_r(xyz: &[Point]) -> Robj {
-    let n = xyz.len();
-    RMatrix::new_matrix(n, 3, |r, c| xyz[r][c]).into()
-}
-
-fn attr_to_r(a: &Attr) -> Robj {
-    match a {
-        Attr::F64(v) => v.clone().into(),
-        Attr::F32(v) => v.iter().map(|&x| x as f64).collect::<Vec<f64>>().into(),
-        Attr::I64(v) => v.iter().map(|&x| x as f64).collect::<Vec<f64>>().into(),
-        Attr::U32(v) => v.iter().map(|&x| x as f64).collect::<Vec<f64>>().into(),
-        Attr::I32(v) => v.clone().into(),
-        Attr::U16(v) => v.iter().map(|&x| x as i32).collect::<Vec<i32>>().into(),
-        Attr::U8(v) => v.iter().map(|&x| x as i32).collect::<Vec<i32>>().into(),
-        Attr::I8(v) => v.iter().map(|&x| x as i32).collect::<Vec<i32>>().into(),
-        Attr::Bool(v) => v.iter().map(|&x| Rbool::from(x)).collect::<Logicals>().into(),
-    }
-}
-
-fn attr_from_r(name: &str, v: &Robj) -> Result<Attr> {
-    if let Some(x) = v.as_real_slice() {
-        return Ok(Attr::F64(x.to_vec()));
-    }
-    if let Some(x) = v.as_integer_slice() {
-        return Ok(Attr::I32(x.to_vec()));
-    }
-    if let Some(x) = v.as_logical_slice() {
-        return Ok(Attr::Bool(x.iter().map(|b| b.is_true()).collect()));
-    }
-    Err(Error::Other(format!("attribute `{name}` must be a double, integer or logical vector")))
-}
-
-fn cloud_from_r(cloud: &List) -> Result<PointCloud> {
-    let map: std::collections::HashMap<&str, Robj> = cloud.clone().try_into()?;
-    let xyz = xyz_from_r(map.get("xyz").ok_or_else(|| Error::Other("cloud has no `xyz`".into()))?)?;
-    let mut attrs = BTreeMap::new();
-    if let Some(a) = map.get("attrs") {
-        if !a.is_null() {
-            let list: List = a.try_into()?;
-            for (name, v) in list.iter() {
-                attrs.insert(name.to_string(), attr_from_r(name, &v)?);
-            }
-        }
-    }
-    PointCloud::with_attrs(xyz, attrs).map_err(err)
-}
-
-fn cloud_to_r(cloud: &PointCloud) -> List {
-    let names: Vec<&str> = cloud.attrs.keys().map(|s| s.as_str()).collect();
-    let values: Vec<Robj> = cloud.attrs.values().map(attr_to_r).collect();
-    let attrs = List::from_names_and_values(names, values).expect("names match values");
-    list!(xyz = xyz_to_r(&cloud.xyz), attrs = attrs)
-}
+use convert::{cloud_from_r, cloud_to_r, err, Result};
 
 // ------------------------------------------------------------------------ I/O
 
@@ -124,6 +55,8 @@ fn core_voxel_downsample(cloud: List, voxel_size: f64, centroid: bool) -> Result
 
 extendr_module! {
     mod sylva;
+    use canopy;
+    use shots;
     fn core_read;
     fn core_write;
     fn core_cloud;
