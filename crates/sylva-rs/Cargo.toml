@@ -23,3 +23,6 @@ libloading.workspace = true
 parquet.workspace = true
 roxmltree.workspace = true
 spade.workspace = true
+robust.workspace = true
+shapefile.workspace = true
+geojson.workspace = true

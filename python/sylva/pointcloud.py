@@ -161,6 +161,32 @@ class PointCloud:
         """
         return PointCloud(self.xyz, {k: v for k, v in self.attrs.items() if k not in names})
 
+    def where(self, expr: str) -> PointCloud:
+        """Points satisfying an attribute expression.
+
+        Parameters
+        ----------
+        expr
+            A condition over the coordinates ``x``, ``y``, ``z`` and the
+            attributes, e.g. ``"height > 2 & classification != 2"``; see
+            :func:`sylva.masks.expression` for the syntax.
+
+        Returns
+        -------
+        PointCloud
+            The points for which ``expr`` is true, with all attributes, in
+            their original order.
+
+        Raises
+        ------
+        ValueError
+            On a syntax error or an unknown attribute; the message gives the
+            position.
+        """
+        from .masks import expression
+
+        return self[expression(self, expr)]
+
     def transform(self, matrix: np.ndarray) -> PointCloud:
         """Apply a rigid or affine transform.
 
