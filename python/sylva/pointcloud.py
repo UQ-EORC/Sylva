@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from . import _core
+
 
 @dataclass
 class PointCloud:
@@ -184,8 +186,7 @@ class PointCloud:
         matrix = np.asarray(matrix, dtype=np.float64)
         if matrix.shape != (4, 4):
             raise ValueError("matrix must be 4x4")
-        xyz = self.xyz @ matrix[:3, :3].T + matrix[:3, 3]
-        return PointCloud(xyz, dict(self.attrs))
+        return PointCloud(_core.transform_xyz(self.xyz, matrix), dict(self.attrs))
 
     @classmethod
     def concatenate(cls, clouds: Iterable[PointCloud]) -> PointCloud:

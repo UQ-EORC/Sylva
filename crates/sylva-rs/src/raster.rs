@@ -20,6 +20,41 @@ pub struct Raster {
     pub resolution: f64,
 }
 
+/// Rows of the cells containing each `y` and columns of those containing
+/// each `x` (the two may differ in length) on a grid with corner
+/// `(xmin, ymin)`, not clipped to any extent.
+///
+/// A coordinate whose index is not a finite `i64` (NaN, infinite or too far
+/// away) gets `i64::MIN`, as NumPy's float-to-integer cast gives on x86.
+pub fn cell_indices(xmin: f64, ymin: f64, resolution: f64, x: &[f64], y: &[f64]) -> (Vec<i64>, Vec<i64>) {
+    let cast = |v: f64| -> i64 {
+        let f = v.floor();
+        if (-9.223_372_036_854_776e18..9.223_372_036_854_776e18).contains(&f) {
+            f as i64
+        } else {
+            i64::MIN
+        }
+    };
+    let rows = y.iter().map(|&v| cast((v - ymin) / resolution)).collect();
+    let cols = x.iter().map(|&v| cast((v - xmin) / resolution)).collect();
+    (rows, cols)
+}
+
+/// Cell-centre coordinates of an `nrows x ncols` grid, each as a row-major
+/// `nrows * ncols` vector aligned with the raster's data.
+pub fn cell_centers(nrows: usize, ncols: usize, xmin: f64, ymin: f64, resolution: f64) -> (Vec<f64>, Vec<f64>) {
+    let mut xs = Vec::with_capacity(nrows * ncols);
+    let mut ys = Vec::with_capacity(nrows * ncols);
+    for r in 0..nrows {
+        let y = ymin + (r as f64 + 0.5) * resolution;
+        for c in 0..ncols {
+            xs.push(xmin + (c as f64 + 0.5) * resolution);
+            ys.push(y);
+        }
+    }
+    (xs, ys)
+}
+
 /// How to reduce many point values into one cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reducer {
@@ -315,5 +350,26 @@ impl Raster {
             }
         }
         Ok(r)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cell_indices_are_floored_and_unclipped() {
+        let (r, c) = cell_indices(10.0, -5.0, 0.5, &[10.0, 9.9, 11.26, f64::NAN], &[-5.0, -5.01, 0.0, 0.0]);
+        assert_eq!(c, vec![0, -1, 2, i64::MIN]);
+        assert_eq!(r, vec![0, -1, 10, 10]);
+    }
+
+    #[test]
+    fn cell_centers_follow_the_data_layout() {
+        let (x, y) = cell_centers(2, 3, 1.0, 2.0, 2.0);
+        assert_eq!(x, vec![2.0, 4.0, 6.0, 2.0, 4.0, 6.0]);
+        assert_eq!(y, vec![3.0, 3.0, 3.0, 5.0, 5.0, 5.0]);
+        let r = Raster::filled(2, 3, 1.0, 2.0, 2.0, 0.0);
+        assert_eq!(r.cell_center(1, 2), (x[5], y[5]));
     }
 }

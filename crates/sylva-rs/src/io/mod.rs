@@ -40,12 +40,35 @@ pub fn read(path: impl AsRef<Path>) -> Result<PointCloud> {
     }
 }
 
+/// Options for [`write_with`]; each applies to one family of formats.
+#[derive(Debug, Clone)]
+pub struct WriteOptions {
+    /// LAS point data record format (LAS/LAZ only).
+    pub point_format: u8,
+    /// LAS coordinate quantisation in metres (LAS/LAZ only).
+    pub scale: f64,
+    /// Binary little-endian PLY rather than ASCII (PLY only).
+    pub binary: bool,
+}
+
+impl Default for WriteOptions {
+    fn default() -> Self {
+        let las = las::LasWriteOptions::default();
+        WriteOptions { point_format: las.point_format, scale: las.scale, binary: true }
+    }
+}
+
 /// Write a point cloud, choosing the writer from the extension.
 pub fn write(cloud: &PointCloud, path: impl AsRef<Path>) -> Result<()> {
+    write_with(cloud, path, &WriteOptions::default())
+}
+
+/// Write a point cloud, choosing the writer from the extension, with options.
+pub fn write_with(cloud: &PointCloud, path: impl AsRef<Path>, opts: &WriteOptions) -> Result<()> {
     let path = path.as_ref();
     match ext(path).as_str() {
-        "las" | "laz" => las::write_las(cloud, path, &las::LasWriteOptions::default()),
-        "ply" => ply::write_ply(cloud, path, true),
+        "las" | "laz" => las::write_las(cloud, path, &las::LasWriteOptions { point_format: opts.point_format, scale: opts.scale }),
+        "ply" => ply::write_ply(cloud, path, opts.binary),
         "xyz" | "txt" | "asc" | "pts" => ascii::write_ascii(cloud, path, " ", true, 4),
         "csv" => ascii::write_ascii(cloud, path, ",", true, 4),
         other => Err(Error::UnsupportedFormat(other.to_string())),

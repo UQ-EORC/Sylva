@@ -123,11 +123,9 @@ def crop_box(cloud: PointCloud, min_xyz, max_xyz) -> PointCloud:
     -------
     PointCloud
     """
-    lo = np.array([-np.inf if v is None else v for v in min_xyz], dtype=float)
-    hi = np.array([np.inf if v is None else v for v in max_xyz], dtype=float)
-    lo = np.where(np.isnan(lo), -np.inf, lo)
-    hi = np.where(np.isnan(hi), np.inf, hi)
-    return cloud[np.all((cloud.xyz >= lo) & (cloud.xyz <= hi), axis=1)]
+    lo = [np.nan if v is None else float(v) for v in min_xyz]
+    hi = [np.nan if v is None else float(v) for v in max_xyz]
+    return cloud[_core.crop_box_mask(cloud.xyz, lo, hi)]
 
 
 def crop_cylinder(cloud: PointCloud, center_xy, radius: float,
@@ -149,8 +147,10 @@ def crop_cylinder(cloud: PointCloud, center_xy, radius: float,
     -------
     PointCloud
     """
-    d2 = np.sum((cloud.xyz[:, :2] - np.asarray(center_xy, dtype=float)) ** 2, axis=1)
-    return cloud[(d2 <= radius**2) & (cloud.z >= zmin) & (cloud.z <= zmax)]
+    cx, cy = np.asarray(center_xy, dtype=float)
+    mask = _core.crop_cylinder_mask(cloud.xyz, float(cx), float(cy), float(radius), float(zmin),
+                                    float(zmax))
+    return cloud[mask]
 
 
 def range_filter(cloud: PointCloud, origin=(0.0, 0.0, 0.0), min_range: float = 0.0,
@@ -170,8 +170,8 @@ def range_filter(cloud: PointCloud, origin=(0.0, 0.0, 0.0), min_range: float = 0
     -------
     PointCloud
     """
-    r = np.linalg.norm(cloud.xyz - np.asarray(origin, dtype=float), axis=1)
-    return cloud[(r >= min_range) & (r <= max_range)]
+    origin = [float(v) for v in np.asarray(origin, dtype=float)]
+    return cloud[_core.range_mask(cloud.xyz, origin, float(min_range), float(max_range))]
 
 
 def statistical_outlier_removal(cloud: PointCloud, k: int = 8, std_ratio: float = 2.0,

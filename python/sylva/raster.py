@@ -73,9 +73,9 @@ class Raster:
         X, Y : numpy.ndarray
             Two ``(rows, cols)`` arrays, aligned with ``data``.
         """
-        xs = self.xmin + (np.arange(self.data.shape[1]) + 0.5) * self.resolution
-        ys = self.ymin + (np.arange(self.data.shape[0]) + 0.5) * self.resolution
-        return np.meshgrid(xs, ys)
+        rows, cols = self.data.shape
+        return _core.raster_cell_centers(rows, cols, float(self.xmin), float(self.ymin),
+                                         float(self.resolution))
 
     def cell_index(self, x, y) -> tuple[np.ndarray, np.ndarray]:
         """Cell containing each coordinate.
@@ -91,9 +91,12 @@ class Raster:
             int64 indices. They are *not* clipped: points outside the grid get
             negative or too-large indices, so check against :attr:`shape`.
         """
-        col = np.floor((np.asarray(x) - self.xmin) / self.resolution).astype(np.int64)
-        row = np.floor((np.asarray(y) - self.ymin) / self.resolution).astype(np.int64)
-        return row, col
+        x = np.asarray(x, dtype=np.float64)
+        y = np.asarray(y, dtype=np.float64)
+        row, col = _core.raster_cell_index(float(self.xmin), float(self.ymin),
+                                           float(self.resolution), np.ascontiguousarray(x.ravel()),
+                                           np.ascontiguousarray(y.ravel()))
+        return row.reshape(y.shape), col.reshape(x.shape)
 
     def sample(self, x, y) -> np.ndarray:
         """Interpolate the grid at arbitrary coordinates.

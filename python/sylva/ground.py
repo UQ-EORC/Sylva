@@ -185,7 +185,7 @@ def normalize_height(cloud: PointCloud, dtm: Raster, attr: str = "height") -> Po
         The cloud with ``attr`` = z minus the interpolated DTM; coordinates
         are unchanged. Points outside the DTM take the edge value.
     """
-    return cloud.with_attrs(**{attr: cloud.z - dtm.sample(cloud.x, cloud.y)})
+    return cloud.with_attrs(**{attr: _heights_above(cloud, dtm)})
 
 
 def flatten(cloud: PointCloud, dtm: Raster) -> PointCloud:
@@ -205,8 +205,13 @@ def flatten(cloud: PointCloud, dtm: Raster) -> PointCloud:
         read z as height; keep :func:`normalize_height` when true
         elevations must be preserved.
     """
-    h = cloud.z - dtm.sample(cloud.x, cloud.y)
+    h = _heights_above(cloud, dtm)
     return PointCloud(np.column_stack([cloud.x, cloud.y, h]), dict(cloud.attrs))
+
+
+def _heights_above(cloud: PointCloud, dtm: Raster) -> np.ndarray:
+    return _core.raster_heights_above(cloud.xyz, dtm.data, float(dtm.xmin), float(dtm.ymin),
+                                      float(dtm.resolution))
 
 
 def make_chm(cloud: PointCloud, resolution: float = 0.5, height_attr: str = "height",

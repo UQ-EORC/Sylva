@@ -17,6 +17,10 @@ use pyo3::types::{PyDict, PyList};
 use sylva_rs::pointcloud::Attr;
 
 mod canopy_py;
+mod filters_py;
+mod limits_py;
+mod raster_py;
+mod registration_py;
 use sylva_rs::{canopy, cluster, coreg, coreg_geometry, coreg_ground, coreg_icp as coreg_icp_rs, filters, ground, io, qsm, registration, trees, voxel, Point, PointCloud, Raster, Shots, Transform};
 
 fn err(e: sylva_rs::Error) -> PyErr {
@@ -245,13 +249,7 @@ fn read<'py>(py: Python<'py>, path: PathBuf) -> PyResult<(Bound<'py, PyArray2<f6
 #[pyo3(signature = (path, xyz, attrs=None, point_format=6, scale=0.001, binary=true))]
 fn write(py: Python<'_>, path: PathBuf, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>, point_format: u8, scale: f64, binary: bool) -> PyResult<()> {
     let c = cloud_from_py(xyz, attrs)?;
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    py.detach(|| match ext.as_str() {
-        "las" | "laz" => io::las::write_las(&c, &path, &io::las::LasWriteOptions { point_format, scale }),
-        "ply" => io::ply::write_ply(&c, &path, binary),
-        _ => io::write(&c, &path),
-    })
-    .map_err(err)
+    py.detach(|| io::write_with(&c, &path, &io::WriteOptions { point_format, scale, binary })).map_err(err)
 }
 
 #[pyfunction]
@@ -404,28 +402,7 @@ fn count_within<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, radius: f64) -
 fn knn<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, queries: PyReadonlyArray2<f64>, k: usize) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray2<i64>>)> {
     let p = xyz_from_py(xyz)?;
     let q = xyz_from_py(queries)?;
-    let (d, i): (Vec<f64>, Vec<i64>) = py.detach(|| {
-        use rayon::prelude::*;
-        let tree = sylva_rs::spatial::KdTree::new(&p);
-        let rows: Vec<Vec<(usize, f64)>> = q.par_iter().map(|x| tree.knn(x, k)).collect();
-        let mut d = Vec::with_capacity(q.len() * k);
-        let mut i = Vec::with_capacity(q.len() * k);
-        for r in rows {
-            for j in 0..k {
-                match r.get(j) {
-                    Some(&(idx, dist)) => {
-                        d.push(dist);
-                        i.push(idx as i64);
-                    }
-                    None => {
-                        d.push(f64::INFINITY);
-                        i.push(-1);
-                    }
-                }
-            }
-        }
-        (d, i)
-    });
+    let (d, i) = py.detach(|| filters::knn(&p, &q, k));
     Ok((PyArray1::from_vec(py, d).reshape([q.len(), k])?, PyArray1::from_vec(py, i).reshape([q.len(), k])?))
 }
 
@@ -1872,6 +1849,10 @@ fn qsm_write_treefile(cylinders: PyReadonlyArray2<f64>, path: PathBuf) -> PyResu
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     canopy_py::register(m)?;
+    filters_py::register(m)?;
+    limits_py::register(m)?;
+    raster_py::register(m)?;
+    registration_py::register(m)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyProgressTask>()?;
     m.add_class::<PyRayVoxels>()?;

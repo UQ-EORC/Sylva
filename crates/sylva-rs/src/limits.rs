@@ -59,18 +59,22 @@ pub fn set_budget(bytes: u64) {
 
 /// Bytes as a human reads them.
 pub fn human(bytes: u64) -> String {
+    human_f64(bytes as f64)
+}
+
+/// Any size in bytes as a human reads it ("3.2 TB"): whole bytes below
+/// 1000, then kB, MB, GB and TB to one decimal, never beyond TB.
+pub fn human_f64(bytes: f64) -> String {
     const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
-    let mut v = bytes as f64;
-    let mut u = 0;
-    while v >= 1000.0 && u < UNITS.len() - 1 {
+    let mut v = bytes;
+    for (u, unit) in UNITS.iter().enumerate() {
+        if v < 1000.0 || u == UNITS.len() - 1 {
+            let n = if v.is_nan() { "nan".to_string() } else if u == 0 { format!("{v:.0}") } else { format!("{v:.1}") };
+            return format!("{n} {unit}");
+        }
         v /= 1000.0;
-        u += 1;
     }
-    if u == 0 {
-        format!("{v:.0} {}", UNITS[u])
-    } else {
-        format!("{v:.1} {}", UNITS[u])
-    }
+    unreachable!()
 }
 
 /// Refuse an allocation of `bytes` that `what` is about to make.
@@ -104,6 +108,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn sizes_read_as_python_writes_them() {
+        let got: Vec<String> = [0.0, 999.6, 1050.0, 12345678.0, 3.2e15, -5.0, f64::INFINITY].iter().map(|&v| human_f64(v)).collect();
+        assert_eq!(got, ["0 B", "1000 B", "1.1 kB", "12.3 MB", "3200.0 TB", "-5 B", "inf TB"]);
+        assert_eq!(human(2_500_000_000), "2.5 GB");
+    }
+
+    #[test]
     fn a_budget_can_be_set_and_put_back() {
         let was = budget();
         set_budget(1_000_000);
@@ -119,8 +130,8 @@ mod tests {
     fn a_count_that_cannot_fit_in_bytes_is_refused() {
         set_budget(1_000_000);
         let e = check_cells(u128::MAX / 2, 64, "a grid", "a larger voxel").unwrap_err().to_string();
-        assert!(e.contains("cannot be counted"), "{e}");
         set_budget(0);
+        assert!(e.contains("than can be counted"), "{e}");
     }
 
     #[test]
