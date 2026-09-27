@@ -19,6 +19,7 @@ PAGES = {
     "coreg": "coreg.md", "ground": "ground.md", "trees": "trees.md", "canopy": "canopy.md", "voxels": "voxels.md",
     "qsm": "qsm.md", "leaves": "leaves.md", "quality": "quality.md", "synthetic": "synthetic.md",
     "progress": "progress.md", "limits": "limits.md",
+    "masks": "masks.md",
 }
 
 
