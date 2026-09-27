@@ -27,7 +27,7 @@ use crate::convert::{doubles, err, fail, xyz_from_r, xyz_to_r, Result};
 
 // ----------------------------------------------------------------- converters
 
-fn square<const N: usize>(m: &Robj, what: &str) -> Result<nalgebra::SMatrix<f64, N, N>> {
+pub(crate) fn square<const N: usize>(m: &Robj, what: &str) -> Result<nalgebra::SMatrix<f64, N, N>> {
     let v: RMatrix<f64> = m.try_into().map_err(|_| Error::Other(format!("{what} must be a {N} x {N} numeric matrix")))?;
     if v.nrows() != N || v.ncols() != N {
         return fail(format!("{what} must be a {N} x {N} matrix, got {} x {}", v.nrows(), v.ncols()));
@@ -35,30 +35,30 @@ fn square<const N: usize>(m: &Robj, what: &str) -> Result<nalgebra::SMatrix<f64,
     Ok(nalgebra::SMatrix::from_column_slice(v.data()))
 }
 
-fn mat4(m: &Robj) -> Result<Matrix4<f64>> {
+pub(crate) fn mat4(m: &Robj) -> Result<Matrix4<f64>> {
     square::<4>(m, "a transform")
 }
 
-fn mat_to_r<const R: usize, const C: usize>(m: &nalgebra::SMatrix<f64, R, C>) -> Robj {
+pub(crate) fn mat_to_r<const R: usize, const C: usize>(m: &nalgebra::SMatrix<f64, R, C>) -> Robj {
     RMatrix::new_matrix(R, C, |r, c| m[(r, c)]).into()
 }
 
-fn mats<const N: usize>(list: &List, what: &str) -> Result<Vec<nalgebra::SMatrix<f64, N, N>>> {
+pub(crate) fn mats<const N: usize>(list: &List, what: &str) -> Result<Vec<nalgebra::SMatrix<f64, N, N>>> {
     list.values().map(|m| square::<N>(&m, what)).collect()
 }
 
-fn mats_to_r(m: &[Matrix4<f64>]) -> List {
+pub(crate) fn mats_to_r(m: &[Matrix4<f64>]) -> List {
     List::from_values(m.iter().map(mat_to_r))
 }
 
-fn indices(v: &Robj, what: &str) -> Result<Vec<usize>> {
+pub(crate) fn indices(v: &Robj, what: &str) -> Result<Vec<usize>> {
     doubles(v, what)?
         .into_iter()
         .map(|x| if x >= 0.0 && x.fract() == 0.0 { Ok(x as usize) } else { fail(format!("{what} must be non-negative whole numbers")) })
         .collect()
 }
 
-fn opt_doubles(v: &Robj, what: &str) -> Result<Option<Vec<f64>>> {
+pub(crate) fn opt_doubles(v: &Robj, what: &str) -> Result<Option<Vec<f64>>> {
     if v.is_null() {
         Ok(None)
     } else {
@@ -66,7 +66,7 @@ fn opt_doubles(v: &Robj, what: &str) -> Result<Option<Vec<f64>>> {
     }
 }
 
-fn opt_f64(v: &Robj, what: &str) -> Result<Option<f64>> {
+pub(crate) fn opt_f64(v: &Robj, what: &str) -> Result<Option<f64>> {
     Ok(opt_doubles(v, what)?.and_then(|x| x.first().copied()))
 }
 
@@ -91,23 +91,23 @@ fn xy_rows(m: &Robj) -> Result<Vec<[f64; 2]>> {
 }
 
 /// A row-major grid from an R matrix (rows are y).
-fn grid_from_r<T: Copy>(data: &[T], ny: usize, nx: usize) -> Vec<T> {
+pub(crate) fn grid_from_r<T: Copy>(data: &[T], ny: usize, nx: usize) -> Vec<T> {
     (0..ny).flat_map(|r| (0..nx).map(move |c| data[c * ny + r])).collect()
 }
 
-fn params(config: &List) -> Result<HashMap<&str, Robj>> {
+pub(crate) fn params(config: &List) -> Result<HashMap<&str, Robj>> {
     Ok(config.clone().try_into()?)
 }
 
-fn get<'a>(m: &'a HashMap<&str, Robj>, k: &str) -> Result<&'a Robj> {
+pub(crate) fn get<'a>(m: &'a HashMap<&str, Robj>, k: &str) -> Result<&'a Robj> {
     m.get(k).ok_or_else(|| Error::Other(format!("configuration has no `{k}`")))
 }
 
-fn num(m: &HashMap<&str, Robj>, k: &str) -> Result<f64> {
+pub(crate) fn num(m: &HashMap<&str, Robj>, k: &str) -> Result<f64> {
     doubles(get(m, k)?, k)?.first().copied().ok_or_else(|| Error::Other(format!("`{k}` is empty")))
 }
 
-fn count(m: &HashMap<&str, Robj>, k: &str) -> Result<usize> {
+pub(crate) fn count(m: &HashMap<&str, Robj>, k: &str) -> Result<usize> {
     let v = num(m, k)?;
     if v < 0.0 {
         return fail(format!("`{k}` must not be negative"));
@@ -115,11 +115,11 @@ fn count(m: &HashMap<&str, Robj>, k: &str) -> Result<usize> {
     Ok(v as usize)
 }
 
-fn flag(m: &HashMap<&str, Robj>, k: &str) -> Result<bool> {
+pub(crate) fn flag(m: &HashMap<&str, Robj>, k: &str) -> Result<bool> {
     get(m, k)?.as_bool().ok_or_else(|| Error::Other(format!("`{k}` must be TRUE or FALSE")))
 }
 
-fn text(m: &HashMap<&str, Robj>, k: &str) -> Result<String> {
+pub(crate) fn text(m: &HashMap<&str, Robj>, k: &str) -> Result<String> {
     get(m, k)?.as_str().map(str::to_string).ok_or_else(|| Error::Other(format!("`{k}` must be a string")))
 }
 
@@ -219,7 +219,7 @@ fn core_coreg_transform_difference(a: Robj, b: Robj) -> Result<Vec<f64>> {
 
 // ----------------------------------------------------------------- reflectors
 
-fn reflectors_to_r(v: Vec<rf::Reflector>) -> List {
+pub(crate) fn reflectors_to_r(v: Vec<rf::Reflector>) -> List {
     list!(
         x = v.iter().map(|r| r.x).collect::<Vec<_>>(),
         y = v.iter().map(|r| r.y).collect::<Vec<_>>(),
@@ -442,7 +442,7 @@ fn core_coreg_refine_joint(points: List, poses: List, edges_i: Robj, edges_j: Ro
 
 // ------------------------------------------------------------------ stem maps
 
-fn stems_from_r(stems: &List) -> Result<Vec<sm::StemRecord>> {
+pub(crate) fn stems_from_r(stems: &List) -> Result<Vec<sm::StemRecord>> {
     let m: HashMap<&str, Robj> = stems.clone().try_into()?;
     let col = |k: &str| -> Result<Vec<f64>> { doubles(m.get(k).ok_or_else(|| Error::Other(format!("stems have no `{k}`")))?, k) };
     let (x, y, z, dbh) = (col("x")?, col("y")?, col("z")?, col("dbh")?);
@@ -458,7 +458,7 @@ fn stems_from_r(stems: &List) -> Result<Vec<sm::StemRecord>> {
         .collect())
 }
 
-fn stems_to_r(s: &[sm::StemRecord]) -> List {
+pub(crate) fn stems_to_r(s: &[sm::StemRecord]) -> List {
     let c = |f: &dyn Fn(&sm::StemRecord) -> f64| s.iter().map(f).collect::<Vec<f64>>();
     list!(
         x = c(&|r| r.x),
@@ -506,7 +506,18 @@ fn core_coreg_detect_stems(points: Robj, heights: &[f64], config: List) -> Resul
     if heights.len() != pts.len() {
         return fail("heights must have one value per point");
     }
-    let m = params(&config)?;
+    let p = stem_params(&config)?;
+    let found = detect_stems_full(&pts, heights, &p);
+    let recs: Vec<sm::StemRecord> = found
+        .iter()
+        .map(|s| sm::StemRecord { x: s.tree.x, y: s.tree.y, z: p.reference_height, dbh: s.tree.dbh, axis: s.axis, reference_height: p.reference_height, n_slices: s.tree.n_slices as i64, n_points: s.tree.n_points as i64, rmse: s.tree.rmse, coverage: s.coverage, lean_deg: s.tree.lean_deg })
+        .collect();
+    Ok(stems_to_r(&recs))
+}
+
+/// The detector's settings in tlsalign mode from a `stem_detection_config()`.
+pub(crate) fn stem_params(config: &List) -> Result<StemParams> {
+    let m = params(config)?;
     let mut p = StemParams::tlsalign();
     p.slice_min = num(&m, "slice_min_height")?;
     p.slice_max = num(&m, "slice_max_height")?;
@@ -529,17 +540,12 @@ fn core_coreg_detect_stems(points: Robj, heights: &[f64], config: List) -> Resul
     p.min_slices = count(&m, "min_slices")?;
     p.max_lean_deg = num(&m, "max_lean_deg")?;
     p.seed = count(&m, "seed")? as u64;
-    let found = detect_stems_full(&pts, heights, &p);
-    let recs: Vec<sm::StemRecord> = found
-        .iter()
-        .map(|s| sm::StemRecord { x: s.tree.x, y: s.tree.y, z: p.reference_height, dbh: s.tree.dbh, axis: s.axis, reference_height: p.reference_height, n_slices: s.tree.n_slices as i64, n_points: s.tree.n_points as i64, rmse: s.tree.rmse, coverage: s.coverage, lean_deg: s.tree.lean_deg })
-        .collect();
-    Ok(stems_to_r(&recs))
+    Ok(p)
 }
 
 // ------------------------------------------------------------------- matching
 
-fn stem_match_to_r(r: &cm::StemMatch) -> List {
+pub(crate) fn stem_match_to_r(r: &cm::StemMatch) -> List {
     let c = &r.correspondences;
     list!(
         transform = mat_to_r(&r.transform.0),
@@ -563,8 +569,14 @@ fn core_coreg_match_stem_maps(source: Robj, source_diameters: &[f64], source_qua
     if src.diameters.len() != src.len() || src.qualities.len() != src.len() || dst.diameters.len() != dst.len() || dst.qualities.len() != dst.len() {
         return fail("diameters and qualities must have one value per stem");
     }
-    let m = params(&config)?;
-    let p = cm::MatchParams {
+    let p = match_params(&config)?;
+    Ok(stem_match_to_r(&cm::match_stem_maps(&src, &dst, &p)))
+}
+
+/// Matcher settings from a `match_config()`.
+pub(crate) fn match_params(config: &List) -> Result<cm::MatchParams> {
+    let m = params(config)?;
+    Ok(cm::MatchParams {
         min_pair_distance: num(&m, "min_pair_distance")?,
         max_pair_distance: num(&m, "max_pair_distance")?,
         pair_distance_tolerance: num(&m, "pair_distance_tolerance")?,
@@ -579,13 +591,12 @@ fn core_coreg_match_stem_maps(source: Robj, source_diameters: &[f64], source_qua
         distinct_translation: num(&m, "distinct_translation")?,
         distinct_yaw_deg: num(&m, "distinct_yaw_deg")?,
         refine_iterations: count(&m, "refine_iterations")?,
-    };
-    Ok(stem_match_to_r(&cm::match_stem_maps(&src, &dst, &p)))
+    })
 }
 
 // ------------------------------------------------------------------------ ICP
 
-fn icp_config(config: &List) -> Result<icp::IcpConfig> {
+pub(crate) fn icp_config(config: &List) -> Result<icp::IcpConfig> {
     let m = params(config)?;
     let md = get(&m, "max_distances")?;
     Ok(icp::IcpConfig {
@@ -610,14 +621,14 @@ fn icp_config(config: &List) -> Result<icp::IcpConfig> {
     })
 }
 
-fn plane_information_to_r(info: Option<&icp::PlaneInformation>) -> Robj {
+pub(crate) fn plane_information_to_r(info: Option<&icp::PlaneInformation>) -> Robj {
     match info {
         Some(i) => list!(hessian = mat_to_r(&i.hessian), sigma = i.sigma, n = i.n as f64).into(),
         None => Robj::from(()),
     }
 }
 
-fn prepared_target(prepared: &Robj) -> Result<Option<ExternalPtr<icp::IcpTarget>>> {
+pub(crate) fn prepared_target(prepared: &Robj) -> Result<Option<ExternalPtr<icp::IcpTarget>>> {
     if prepared.is_null() {
         return Ok(None);
     }

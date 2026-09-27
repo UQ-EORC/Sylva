@@ -15,6 +15,7 @@ mod canopy;
 mod leaves;
 mod quality;
 mod coreg;
+mod coreg_pipeline;
 mod shots;
 mod synthetic;
 mod trees;
@@ -35,6 +36,7 @@ extendr_module! {
     use leaves;
     use quality;
     use coreg;
+    use coreg_pipeline;
     use shots;
     use synthetic;
     use trees;

@@ -31,6 +31,8 @@ mod voxels_py;
 mod synthetic_py;
 mod qsm_py;
 use sylva_rs::{canopy, cluster, coreg, coreg_geometry, coreg_ground, coreg_icp as coreg_icp_rs, filters, ground, io, qsm, registration, trees, Point, PointCloud, Raster, Shots, Transform};
+mod coreg_pipeline_py;
+use sylva_rs::{canopy, cluster, coreg, coreg_geometry, coreg_ground, coreg_icp as coreg_icp_rs, filters, ground, io, qsm, registration, trees, voxel, Point, PointCloud, Raster, Shots, Transform};
 
 fn err(e: sylva_rs::Error) -> PyErr {
     match e {
@@ -1507,6 +1509,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     voxels_py::register(m)?;
     synthetic_py::register(m)?;
     qsm_py::register(m)?;
+    coreg_pipeline_py::register(m)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyProgressTask>()?;
     m.add_class::<PyCoregKdTree>()?;

@@ -38,33 +38,21 @@ scans that see too few stems.
 from __future__ import annotations
 
 import functools
-import json
-import os
-import threading
 import time
-from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 import numpy as np
 
-from .geometry import KdTree, planar_filter, voxel_downsample
-from .ground import GroundModel, fit_ground
-from .icp import (
-    ICPConfig,
-    ICPResult,
-    ICPTarget,
-    evaluate_registration,
-    icp,
-    plane_information,
-)
-from .matching import MatchConfig, MatchResult, match_stem_maps
-from .posegraph import OptimisationResult, PoseGraph, plane_edge_information
-from .reflectors import Reflector, match_reflectors
-from .stems import StemDetectionConfig, StemMap, detect_stems
-from .transforms import identity, invert, se3_log, transform_difference, transform_points
+from .. import _core
+from .ground import GroundModel
+from .icp import ICPConfig, ICPResult, ICPTarget, _plane_information
+from .matching import MatchConfig, MatchResult
+from .posegraph import OptimisationResult
+from .reflectors import Reflector, ReflectorMatch
+from .stems import Stem, StemDetectionConfig, StemMap, _detector_kwargs
+from .transforms import _mat4, identity, transform_points
 
 __all__ = [
     "CoregConfig",
@@ -247,11 +235,6 @@ class CoregConfig:
         return asdict(self)
 
 
-def _json_number(value: float) -> float | None:
-    value = float(value)
-    return value if np.isfinite(value) else None
-
-
 @dataclass
 class ScanFeatures:
     """Everything later stages need from one scan; build with :func:`prepare_scan`.
@@ -367,23 +350,7 @@ class PairResult:
 
     def summary(self) -> str:
         """One line for the report."""
-        status = "ok  " if self.success else "FAIL"
-        if self.reflector_match is not None:
-            stem = f" targets={self.reflector_match.n_inliers}"
-        else:
-            stem = f" stem={self.stem_rmse * 100:.1f}cm" if np.isfinite(self.stem_rmse) else ""
-        return (
-            f"[{status}] {self.name_i} -> {self.name_j}: stems={self.n_stem_matches:2d} "
-            + (
-                f"amb={self.match.ambiguity:.2f} "
-                if self.match is not None and self.match.ambiguity > 0
-                else ""
-            )
-            + f"fitness={self.fitness:.3f} "
-            + (f"above={self.fitness_above:.3f} " if np.isfinite(self.fitness_above) else "")
-            + (f"dz={self.ground_offset * 100:+.1f}cm " if np.isfinite(self.ground_offset) else "")
-            + f"rmse={self.rmse * 1000:6.1f} mm{stem} ({self.reason})"
-        )
+        return _core.coreg_pair_summary(_pair_core(self))
 
 
 @dataclass
@@ -456,66 +423,32 @@ class SurveyResult:
         dict
             ``{(i, j): distance}``.
         """
-        out = {}
-        for pair in self.pairs:
-            if not pair.success or len(pair.matched_source) == 0:
-                continue
-            relative = invert(self.poses[pair.j]) @ self.poses[pair.i]
-            d = np.linalg.norm(
-                (transform_points(relative, pair.matched_source) - pair.matched_target)[:, :2],
-                axis=1,
-            )
-            out[(pair.i, pair.j)] = float(np.median(d) if robust else np.sqrt(np.mean(d**2)))
-        return out
+        values = _core.coreg_survey_consistency(
+            [_pair_core(p) for p in self.pairs], _poses(self.poses), bool(robust)
+        )
+        return {(i, j): v for i, j, v in values}
 
     def report(self) -> str:
         """Plain-text summary for a log or a QC record."""
-        lines = [
-            f"Coregistration of {len(self.scans)} scans ({sum(self.registered)} registered) "
-            f"in {self.seconds:.1f} s",
-            f"reference scan: {self.names[self.reference]}",
-            "",
-            "Scans:",
-        ]
-        for k, scan in enumerate(self.scans):
-            flag = (
-                f"SET ASIDE ({scan.error})"
-                if scan.error
-                else "registered"
-                if self.registered[k]
-                else "NOT REGISTERED"
-            )
-            lines.append(
-                f"  {k:2d} {scan.name:<24s} {scan.n_points:>10,d} pts  "
-                f"{len(scan.stem_map):3d} stems  {flag}"
-            )
-        lines += ["", "Pairs:"] + ["  " + p.summary() for p in self.pairs]
-        consistency = self.consistency()
-        if consistency:
-            lines += [
-                "",
-                "Stem agreement under the final poses (median horizontal tree-to-tree "
-                "distance, no ground truth needed):",
-            ]
-            # Flag pairs against the survey itself: the absolute level depends
-            # on the stand and the spacing, but an outlier is always worth a look.
-            threshold = max(3.0 * float(np.median(list(consistency.values()))), 0.10)
-            for (i, j), value in sorted(consistency.items()):
-                flag = "" if value <= threshold else "   <-- check"
-                lines.append(f"  {self.names[i]} <-> {self.names[j]}: {value * 100:6.2f} cm{flag}")
-        if self.optimisation is not None:
-            opt = self.optimisation
-            lines += [
-                "",
-                f"Global optimisation: {opt.iterations} iterations, converged={opt.converged}, "
-                f"error {opt.initial_error:.4g} -> {opt.final_error:.4g}",
-            ]
-            if opt.rejected_edges:
-                lines.append(
-                    "  rejected inconsistent pairs: "
-                    + ", ".join(f"{p.name_i}->{p.name_j}" for p in self.rejected_pairs())
-                )
-        return "\n".join(lines)
+        opt = self.optimisation
+        return _core.coreg_survey_report(
+            self._scan_summaries(),
+            [_pair_core(p) for p in self.pairs],
+            _poses(self.poses),
+            int(self.reference),
+            None
+            if opt is None
+            else (
+                int(opt.iterations),
+                bool(opt.converged),
+                float(opt.initial_error),
+                float(opt.final_error),
+                [int(k) for k in opt.rejected_edges],
+            ),
+            [bool(r) for r in self.registered],
+            float(self.seconds),
+            [int(k) for k in self.edge_to_pair],
+        )
 
     def save(self, path: str | Path) -> Path:
         """Write the transforms and quality as JSON (``transforms.json``).
@@ -525,46 +458,29 @@ class SurveyResult:
         pathlib.Path
         """
         path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "reference": self.reference,
-            "seconds": self.seconds,
-            "scans": [
-                {
-                    "index": k,
-                    "name": scan.name,
-                    "source": str(scan.source) if scan.source else None,
-                    "n_points": scan.n_points,
-                    "n_stems": len(scan.stem_map),
-                    "registered": bool(self.registered[k]),
-                    "world_from_scan": self.transform_for(k).tolist(),
-                    "levelling": scan.levelling.tolist(),
-                }
-                for k, scan in enumerate(self.scans)
-            ],
-            "pairs": [
-                {
-                    "i": p.i,
-                    "j": p.j,
-                    "name_i": p.name_i,
-                    "name_j": p.name_j,
-                    "success": p.success,
-                    "reason": p.reason,
-                    "stem_matches": p.n_stem_matches,
-                    "fitness": _json_number(p.fitness),
-                    "rmse": _json_number(p.rmse),
-                    "n_correspondences": p.icp.n_correspondences if p.icp else 0,
-                    "coarse_stem_rmse": _json_number(p.coarse_stem_rmse),
-                    "fine_stem_rmse": _json_number(p.fine_stem_rmse),
-                    "used_icp": p.used_icp,
-                    "trusted": p.trusted,
-                    "transform": p.transform.tolist(),
-                }
-                for p in self.pairs
-            ],
-        }
-        path.write_text(json.dumps(payload, indent=2))
+        _core.coreg_survey_save(
+            path,
+            self._scan_summaries(),
+            [_pair_core(p) for p in self.pairs],
+            _poses(self.poses),
+            int(self.reference),
+            [bool(r) for r in self.registered],
+            float(self.seconds),
+        )
         return path
+
+    def _scan_summaries(self) -> list[tuple]:
+        return [
+            (
+                s.name,
+                int(s.n_points),
+                len(s.stem_map),
+                s.error,
+                str(s.source) if s.source else None,
+                _mat4(s.levelling),
+            )
+            for s in self.scans
+        ]
 
 
 def load_transforms(path: str | Path) -> dict[str, np.ndarray]:
@@ -580,10 +496,315 @@ def load_transforms(path: str | Path) -> dict[str, np.ndarray]:
     dict
         ``{name: (4, 4) matrix}``.
     """
-    payload = json.loads(Path(path).read_text())
+    return {name: np.asarray(rows) for name, rows in _core.coreg_load_transforms(Path(path))}
+
+
+# --------------------------------------------------------------------------- #
+# Crossing into the core
+# --------------------------------------------------------------------------- #
+
+
+def _config_core(cfg: CoregConfig) -> dict:
+    """The settings as the core takes them: stem detection in the detector's
+    tlsalign mode, the rest field for field."""
+    d = {f.name: getattr(cfg, f.name) for f in fields(cfg)}
+    d["stems"] = _detector_kwargs(cfg.stems)
+    d["matching"] = asdict(cfg.matching)
+    icp = asdict(cfg.icp)
+    icp["voxel_sizes"] = [float(v) for v in cfg.icp.voxel_sizes]
+    if cfg.icp.max_distances is not None:
+        icp["max_distances"] = [float(v) for v in cfg.icp.max_distances]
+    d["icp"] = icp
+    d["refinement_voxel_sizes"] = [float(v) for v in cfg.refinement_voxel_sizes]
+    d["refinement_max_distances"] = [float(v) for v in cfg.refinement_max_distances]
+    d["riegl_options"] = dict(cfg.riegl_options)
+    return d
+
+
+def _stem_rows(stem_map: StemMap) -> np.ndarray:
+    return np.array(
+        [
+            [
+                s.x,
+                s.y,
+                s.z,
+                s.dbh,
+                *np.asarray(s.axis, dtype=float).reshape(3),
+                s.reference_height,
+                s.n_slices,
+                s.n_points,
+                s.rmse,
+                s.coverage,
+                s.lean_deg,
+            ]
+            for s in stem_map
+        ],
+        dtype=np.float64,
+    ).reshape(-1, 13)
+
+
+def _stems_from_rows(rows: np.ndarray) -> list[Stem]:
+    return [
+        Stem(
+            float(r[0]),
+            float(r[1]),
+            float(r[2]),
+            float(r[3]),
+            np.array(r[4:7]),
+            float(r[7]),
+            int(r[8]),
+            int(r[9]),
+            float(r[10]),
+            float(r[11]),
+            float(r[12]),
+        )
+        for r in rows
+    ]
+
+
+def _reflector_tuples(reflectors) -> list[tuple]:
+    return [
+        (
+            float(r.x),
+            float(r.y),
+            float(r.z),
+            float(r.reflectance),
+            float(r.diameter),
+            int(r.n_points),
+            str(r.name),
+        )
+        for r in reflectors or []
+    ]
+
+
+def _scan_core(scan: ScanFeatures) -> tuple:
+    g = scan.ground
+    return (
+        scan.name,
+        int(scan.n_points),
+        None
+        if g is None
+        else (
+            np.ascontiguousarray(g.elevation, dtype=np.float64),
+            (float(g.origin[0]), float(g.origin[1])),
+            float(g.cell_size),
+            np.ascontiguousarray(g.observed, dtype=bool),
+        ),
+        _stem_rows(scan.stem_map),
+        scan.stem_map.name,
+        np.ascontiguousarray(np.asarray(scan.icp_points, dtype=np.float64).reshape(-1, 3)),
+        _reflector_tuples(scan.reflectors),
+        np.ascontiguousarray(np.asarray(scan.icp_heights, dtype=np.float32).reshape(-1)),
+        _mat4(scan.levelling),
+        [float(v) for v in np.asarray(scan.origin, dtype=float).reshape(3)],
+        None if scan.source is None else str(scan.source),
+        float(scan.seconds),
+        scan.error,
+    )
+
+
+def _scan_from_core(d: dict) -> ScanFeatures:
+    ground = None if d["ground"] is None else GroundModel(*d["ground"])
+    return ScanFeatures(
+        name=d["name"],
+        n_points=d["n_points"],
+        ground=ground,
+        stem_map=StemMap(_stems_from_rows(d["stems"]), name=d["stem_map_name"], ground=ground),
+        icp_points=d["icp_points"],
+        reflectors=[Reflector(*r) for r in d["reflectors"]],
+        icp_heights=d["icp_heights"],
+        levelling=d["levelling"],
+        origin=d["origin"],
+        source=None if d["source"] is None else Path(d["source"]),
+        seconds=d["seconds"],
+        error=d["error"],
+    )
+
+
+def _match_core(m: MatchResult | None) -> dict | None:
+    if m is None:
+        return None
     return {
-        s["name"]: np.asarray(s["world_from_scan"]) for s in payload["scans"] if s.get("registered")
+        "transform": _mat4(m.transform),
+        "n_inliers": int(m.n_inliers),
+        "inlier_rmse": float(m.inlier_rmse),
+        "score": float(m.score),
+        "correspondences": np.ascontiguousarray(
+            np.asarray(m.correspondences, dtype=np.int64).reshape(-1, 2)
+        ),
+        "n_source": int(m.n_source),
+        "n_target": int(m.n_target),
+        "success": bool(m.success),
+        "ambiguity": float(m.ambiguity),
+        "rival": _match_core(m.rival),
     }
+
+
+def _icp_core(r: ICPResult | None) -> dict | None:
+    if r is None:
+        return None
+    info = r.information
+    return {
+        "transform": _mat4(r.transform),
+        "fitness": float(r.fitness),
+        "inlier_rmse": float(r.inlier_rmse),
+        "n_correspondences": int(r.n_correspondences),
+        "iterations": int(r.iterations),
+        "converged": bool(r.converged),
+        "history": [float(v) for v in r.history],
+        "hessian": None
+        if info is None
+        else np.ascontiguousarray(np.asarray(info.hessian, dtype=float)),
+        "plane_sigma": None if info is None else float(info.sigma),
+        "plane_n": None if info is None else int(info.n),
+    }
+
+
+def _icp_from_core(d: dict | None) -> ICPResult | None:
+    if d is None:
+        return None
+    return ICPResult(
+        np.asarray(d["transform"]),
+        float(d["fitness"]),
+        float(d["inlier_rmse"]),
+        int(d["n_correspondences"]),
+        int(d["iterations"]),
+        bool(d["converged"]),
+        list(d["history"]),
+        _plane_information(d),
+    )
+
+
+def _pair_core(p: PairResult) -> dict:
+    r = p.reflector_match
+    return {
+        "i": int(p.i),
+        "j": int(p.j),
+        "name_i": p.name_i,
+        "name_j": p.name_j,
+        "transform": _mat4(p.transform),
+        "coarse_transform": _mat4(p.coarse_transform),
+        "match": _match_core(p.match),
+        "reflector_match": None
+        if r is None
+        else {
+            "transform": _mat4(r.transform),
+            "n_inliers": int(r.n_inliers),
+            "rmse": float(r.rmse),
+            "correspondences": np.ascontiguousarray(
+                np.asarray(r.correspondences, dtype=np.int64).reshape(-1, 2)
+            ),
+            "success": bool(r.success),
+        },
+        "icp": _icp_core(p.icp),
+        "success": bool(p.success),
+        "reason": p.reason,
+        "seconds": float(p.seconds),
+        "matched_source": np.ascontiguousarray(
+            np.asarray(p.matched_source, dtype=np.float64).reshape(-1, 3)
+        ),
+        "matched_target": np.ascontiguousarray(
+            np.asarray(p.matched_target, dtype=np.float64).reshape(-1, 3)
+        ),
+        "coarse_stem_rmse": float(p.coarse_stem_rmse),
+        "fine_stem_rmse": float(p.fine_stem_rmse),
+        "fitness_above": float(p.fitness_above),
+        "rival": _match_core(p.rival),
+        "used_icp": bool(p.used_icp),
+        "ground_offset": float(p.ground_offset),
+        "trusted": bool(p.trusted),
+    }
+
+
+def _pair_from_core(d: dict) -> PairResult:
+    r = d["reflector_match"]
+    return PairResult(
+        i=d["i"],
+        j=d["j"],
+        name_i=d["name_i"],
+        name_j=d["name_j"],
+        transform=d["transform"],
+        coarse_transform=d["coarse_transform"],
+        match=None if d["match"] is None else MatchResult._from_core(d["match"]),
+        reflector_match=None
+        if r is None
+        else ReflectorMatch(
+            r["transform"], r["n_inliers"], r["rmse"], r["correspondences"], r["success"]
+        ),
+        icp=_icp_from_core(d["icp"]),
+        success=d["success"],
+        reason=d["reason"],
+        seconds=d["seconds"],
+        matched_source=d["matched_source"],
+        matched_target=d["matched_target"],
+        coarse_stem_rmse=d["coarse_stem_rmse"],
+        fine_stem_rmse=d["fine_stem_rmse"],
+        fitness_above=d["fitness_above"],
+        rival=None if d["rival"] is None else MatchResult._from_core(d["rival"]),
+        used_icp=d["used_icp"],
+        ground_offset=d["ground_offset"],
+        trusted=d["trusted"],
+    )
+
+
+def _survey_from_core(scans: list[ScanFeatures], d: dict) -> SurveyResult:
+    poses = [np.asarray(p) for p in d["poses"]]
+    o = d["optimisation"]
+    optimisation = None
+    if o is not None:
+        optimisation = OptimisationResult(
+            list(poses),
+            int(o["iterations"]),
+            bool(o["converged"]),
+            float(o["initial_error"]),
+            float(o["final_error"]),
+            [int(k) for k in o["rejected_edges"]],
+            np.asarray(o["edge_errors"]),
+        )
+    return SurveyResult(
+        scans=scans,
+        pairs=[_pair_from_core(p) for p in d["pairs"]],
+        poses=poses,
+        reference=int(d["reference"]),
+        optimisation=optimisation,
+        registered=[bool(r) for r in d["registered"]],
+        seconds=float(d["seconds"]),
+        edge_to_pair=[int(k) for k in d["edge_to_pair"]],
+    )
+
+
+def _poses(poses) -> list[np.ndarray]:
+    return [_mat4(p) for p in poses]
+
+
+def _targets(targets) -> tuple[list[tuple], list[np.ndarray]]:
+    targets = list(targets)
+    return [_scan_core(s) for s, _ in targets], [_mat4(p) for _, p in targets]
+
+
+def _points(cloud) -> np.ndarray:
+    from ..pointcloud import PointCloud
+
+    if isinstance(cloud, PointCloud):
+        return np.ascontiguousarray(cloud.xyz, dtype=np.float64)
+    return np.ascontiguousarray(np.asarray(cloud, dtype=np.float64).reshape(-1, 3))
+
+
+def _input_core(cloud):
+    """A scan as the core reads it: a path (str) or ``(n, 3)`` points."""
+    if isinstance(cloud, (str, Path)):
+        return str(Path(cloud))
+    return _points(cloud)
+
+
+def _positions(positions) -> list[list[float]] | None:
+    """Approximate positions for the core; None where they would be ignored."""
+    if positions is None:
+        return None
+    positions = np.asarray(positions, dtype=float)
+    if positions.ndim != 2 or len(positions) == 0:
+        return None
+    return positions.tolist()
 
 
 # --------------------------------------------------------------------------- #
@@ -595,8 +816,11 @@ def _make_logger(verbose: bool) -> Callable[[str], None]:
     return functools.partial(print, flush=True) if verbose else (lambda _message: None)
 
 
-_READ_KEYS = {"library", "drop_pseudo_echoes", "echoes", "stride", "shot_stride"}
-_GATES = ("range", "deviation", "reflectance", "amplitude")
+def _log_for(progress, cfg: CoregConfig):
+    """The callable the core reports to, or None for silence."""
+    if progress is not None:
+        return progress
+    return _make_logger(True) if cfg.verbose else None
 
 
 def reading_options(settings: str | Path | None = None, **bounds) -> dict:
@@ -637,43 +861,7 @@ def _read_scan(path: Path, cfg: CoregConfig) -> tuple[np.ndarray, dict]:
     the whole stream first; then the closed intervals on range (from the
     scanner), deviation, reflectance and amplitude are applied.
     """
-    from .. import io
-    from ..riscan import riscan_like_mask
-
-    opts = dict(cfg.riegl_options)
-    if path.suffix.lower() == ".rxp":
-        read = {k: v for k, v in opts.items() if k in _READ_KEYS}
-        read["min_range"] = 0.0  # every range is read; the gate below is tlsalign's
-        cloud = io.read_rxp(path, **read)
-    else:
-        cloud = io.read(path)
-    xyz = cloud.xyz
-    keep = np.ones(len(xyz), dtype=bool)
-    if cfg.riscan_filter != "none":
-        if "amplitude" not in cloud.attrs:
-            raise KeyError(f"the RiSCAN filter needs amplitude, which {path.name} does not carry")
-        keep &= riscan_like_mask(xyz, cloud.attrs["amplitude"], cfg.riscan_filter)
-    for name in _GATES:
-        lo, hi = opts.get(f"min_{name}"), opts.get(f"max_{name}")
-        if lo is None and hi is None:
-            continue
-        if name == "range":
-            values = np.einsum("ij,ij->i", xyz, xyz)
-            lo, hi = (None if lo is None else lo * lo), (None if hi is None else hi * hi)
-        elif name in cloud.attrs:
-            values = np.asarray(cloud.attrs[name], dtype=np.float64)
-            if name == "deviation":
-                values = np.where(values == 65535, -1.0, values)  # RIEGL's "not measured"
-        else:
-            raise KeyError(f"reading bounds {name}, which {path.name} does not carry")
-        if lo is not None:
-            keep &= values >= lo
-        if hi is not None:
-            keep &= values <= hi
-    xyz = xyz[keep]
-    if cfg.max_points_per_scan and len(xyz) > cfg.max_points_per_scan:
-        xyz = xyz[: cfg.max_points_per_scan]
-    return xyz, {}
+    return _core.coreg_read_scan(Path(path), _config_core(cfg)), {}
 
 
 def prepare_scan(
@@ -709,66 +897,16 @@ def prepare_scan(
     -------
     ScanFeatures
     """
-    from ..pointcloud import PointCloud
-
     cfg = config or CoregConfig()
-    start = time.perf_counter()
-    level = identity() if levelling is None else np.asarray(levelling, dtype=np.float64)
-    source = None
-    if isinstance(cloud, (str, Path)):
-        source = Path(cloud)
-        points, _ = _read_scan(source, cfg)
-        name = name or source.stem
-    elif isinstance(cloud, PointCloud):
-        points = cloud.xyz
-    else:
-        points = np.asarray(cloud, dtype=np.float64).reshape(-1, 3)
-    reflectors = list(reflectors or [])
-    if levelling is not None:
-        points = transform_points(level, points)
-        reflectors = [
-            replace(
-                r, **dict(zip("xyz", transform_points(level, r.position[None])[0], strict=True))
-            )
-            for r in reflectors
-        ]
-    scanner = np.zeros(3) if origin is None else np.asarray(origin, dtype=float).reshape(3)
-
-    if len(points) < cfg.min_points_per_scan:
-        return _unusable_scan(
-            name,
-            len(points),
-            source,
-            start,
-            f"only {len(points):,} points" + (" after filtering" if cfg.riegl_options else ""),
-        )
-
-    ground = fit_ground(points, cfg.ground_cell_size)
-    if cfg.ground_min_coverage is not None and (source is not None or origin is not None):
-        ground = _refit_visible_ground(points, scanner, ground, cfg)
-    heights = ground.normalise(points, dtype=np.float32)
-    stem_map = detect_stems(points, ground, cfg.stems, name=name, heights=heights)
-    below_canopy = points[heights <= cfg.icp_max_height]
-    if cfg.icp_min_planarity > 0:
-        icp_points = planar_filter(
-            below_canopy, min_planarity=cfg.icp_min_planarity, voxel=cfg.icp_voxel
-        )
-    else:
-        icp_points = voxel_downsample(below_canopy, cfg.icp_voxel)
-    icp_points = np.ascontiguousarray(icp_points, dtype=np.float32)
-    return ScanFeatures(
-        name=name,
-        n_points=len(points),
-        ground=ground,
-        stem_map=stem_map,
-        icp_points=icp_points,
-        reflectors=reflectors,
-        icp_heights=ground.normalise(icp_points, dtype=np.float32),
-        levelling=level,
-        origin=scanner,
-        source=source,
-        seconds=time.perf_counter() - start,
+    d = _core.coreg_prepare_scan(
+        _input_core(cloud),
+        _config_core(cfg),
+        name,
+        _reflector_tuples(reflectors),
+        None if levelling is None else _mat4(levelling),
+        None if origin is None else [float(v) for v in np.asarray(origin, dtype=float).reshape(3)],
     )
+    return _scan_from_core(d)
 
 
 def _refit_visible_ground(
@@ -790,77 +928,12 @@ def _refit_visible_ground(
     Applied only when the scanner's position is known: a scan read from
     file, or one given ``origin``.
     """
-    rel = points - scanner
-    horizontal = np.hypot(rel[:, 0], rel[:, 1])
-    azimuth = np.floor(np.degrees(np.arctan2(rel[:, 1], rel[:, 0])) + 180.0).astype(np.int64) % 360
-    elevation = np.degrees(np.arctan2(rel[:, 2], horizontal))
-    band = (elevation >= -30.0) & (elevation < 5.0)
-    sampled = np.zeros((360, 35), bool)
-    sampled[azimuth[band], np.floor(elevation[band] + 30.0).astype(np.int64)] = True
-    blind = sampled.mean(axis=1) < cfg.ground_min_coverage
-    if not blind.any() or blind.all():
-        return ground
-    widen = 3
-    wrapped = np.r_[blind[-widen:], blind, blind[:widen]].astype(np.int64)
-    blind = np.convolve(wrapped, np.ones(2 * widen + 1, np.int64), "valid") > 0
-    keep = ~blind[azimuth] | (elevation < -45.0)
-    return fit_ground(points[keep], cfg.ground_cell_size)
-
-
-def _unusable_scan(
-    name: str, n_points: int, source: Path | None, start: float, reason: str
-) -> ScanFeatures:
-    """A placeholder for a scan that cannot be registered: returned, not raised,
-    so one damaged file does not cost a survey the scans already prepared."""
-    return ScanFeatures(
-        name=name,
-        n_points=n_points,
-        ground=None,
-        stem_map=StemMap([], name=name),
-        icp_points=np.zeros((0, 3), dtype=np.float32),
-        source=source,
-        seconds=time.perf_counter() - start,
-        error=reason,
+    refitted = _core.coreg_refit_visible_ground(
+        _points(points),
+        [float(v) for v in np.asarray(scanner, dtype=float).reshape(3)],
+        _config_core(cfg),
     )
-
-
-def _resolve_workers(requested: int, memory_per_worker_gb: float | None, n_tasks: int) -> int:
-    """Workers to use: ``requested`` if positive, else from the cores and free memory."""
-    if n_tasks <= 1:
-        return 1
-    if requested and requested > 0:
-        return min(requested, n_tasks)
-    workers = os.cpu_count() or 1
-    if memory_per_worker_gb:
-        try:
-            with open("/proc/meminfo") as f:
-                available = (
-                    next(int(line.split()[1]) for line in f if line.startswith("MemAvailable"))
-                    / 2**20
-                )
-            workers = min(workers, max(int(available // memory_per_worker_gb), 1))
-        except (OSError, StopIteration, ValueError):
-            pass
-    return max(1, min(workers, n_tasks))
-
-
-def _parallel_map(func, items: list, workers: int, on_result=None) -> list:
-    """``func`` over ``items`` in threads (the heavy parts release the GIL), in order."""
-    if workers <= 1:
-        out = []
-        for item in items:
-            out.append(func(item))
-            if on_result:
-                on_result(out[-1])
-        return out
-    with ThreadPoolExecutor(workers) as pool:
-        futures = [pool.submit(func, item) for item in items]
-        out = []
-        for f in futures:
-            out.append(f.result())
-            if on_result:
-                on_result(out[-1])
-        return out
+    return ground if refitted is None else GroundModel(*refitted)
 
 
 # --------------------------------------------------------------------------- #
@@ -903,217 +976,37 @@ def register_pair(
     PairResult
     """
     cfg = config or CoregConfig()
-    start = time.perf_counter()
-    result = PairResult(i=i, j=j, name_i=source.name, name_j=target.name)
-    if initial is None:
-        # Targets first: a target is located to millimetres and three fix all
-        # six degrees of freedom. Stems stay as a fallback, because three
-        # targets can form a congruent triangle by coincidence.
-        return _register_with_fallback(result, source, target, cfg, match, start, target_icp)
-    _refine_and_judge(result, source, target, cfg, np.asarray(initial, dtype=float), target_icp)
-    result.seconds = time.perf_counter() - start
-    return result
+    d = _core.coreg_register_pair(
+        _scan_core(source),
+        _scan_core(target),
+        _config_core(cfg),
+        initial=None if initial is None else _mat4(initial),
+        stem_match=_match_core(match),
+        i=int(i),
+        j=int(j),
+        target_icp=None if target_icp is None else target_icp._core,
+    )
+    return _pair_from_core(d)
 
 
-def _register_with_fallback(
-    result, source, target, cfg, match, start, target_icp=None
-) -> PairResult:
-    """Each coarse method in turn; the first ICP accepts wins. A target match
-    ICP rejects must not cost the pair its stem match."""
-    attempts = (
-        ["reflectors"] if cfg.use_reflectors and source.reflectors and target.reflectors else []
-    ) + ["stems"]
-    last = result
-    for method in attempts:
-        attempt = PairResult(i=result.i, j=result.j, name_i=result.name_i, name_j=result.name_j)
-        coarse = _coarse_transform(attempt, source, target, cfg, match, method)
-        if coarse is None:
-            last = attempt if attempt.reason else last
-            continue
-        _refine_and_judge(attempt, source, target, cfg, coarse, target_icp)
-        attempt.seconds = time.perf_counter() - start
-        if attempt.success:
-            return attempt
-        last = attempt
-    last.seconds = time.perf_counter() - start
-    return last
-
-
-def _coarse_transform(result, source, target, cfg, match, method) -> np.ndarray | None:
-    if method == "reflectors":
-        found = match_reflectors(
-            source.reflectors,
-            target.reflectors,
-            tolerance=cfg.reflector_tolerance,
-            min_inliers=cfg.min_reflector_matches,
-        )
-        if not found.success:
-            return None
-        result.reflector_match = found
-        result.reason = f"{found.n_inliers} reflectors, {found.rmse * 1000:.1f} mm"
-        return found.transform
-    if match is None:
-        match = match_stem_maps(source.stem_map, target.stem_map, cfg.matching)
-    result.match = match
-    _attach_matched_stems(result, source, target, match)
-    if not _coarse_is_acceptable(result, match, cfg):
-        return None
-    return _on_ground(match.transform, source, [(target, identity())], cfg)
-
-
-def _refine_and_judge(
-    result: PairResult,
-    source: ScanFeatures,
-    target: ScanFeatures,
-    cfg: CoregConfig,
-    coarse: np.ndarray,
-    target_icp: ICPTarget | None = None,
+def _trust_reflectors(
+    result: PairResult, coarse: np.ndarray, shift: float, cfg: CoregConfig
 ) -> None:
-    """Refine a coarse transform with ICP and decide whether to accept it.
-
-    Every test, and later the pose-graph edge, judges the transform the pair
-    reports: when the stem cross-check keeps the coarse transform, it is
-    scored afresh rather than by the ICP it replaced.
-    """
-    if target_icp is None and result.rival is not None:
-        target_icp = ICPTarget(target.icp_points, cfg.icp)  # two ICPs against it
-    icp_target = target.icp_points if target_icp is None else target_icp
-    result.coarse_transform = coarse
-    refined = icp(source.icp_points, icp_target, coarse, cfg.icp)
-    result.icp = refined
-    result.transform = refined.transform
-    # Cross-check ICP against the stems it was meant to refine.
-    if len(result.matched_source) >= 3:
-        result.coarse_stem_rmse = _stem_median_residual(coarse, result)
-        result.fine_stem_rmse = _stem_median_residual(refined.transform, result)
-        if result.fine_stem_rmse > result.coarse_stem_rmse + cfg.stem_agreement_tolerance:
-            result.transform = coarse
-            result.used_icp = False
-    result.fitness_above = _above_ground_fitness(
-        source.icp_points, source.icp_heights, target.icp_points, result.transform, cfg
+    """Accept a pair ICP refused if its reflector match is strong enough alone."""
+    d = _core.coreg_trust_reflectors(
+        _pair_core(result), _mat4(coarse), float(shift), _config_core(cfg)
     )
-    if result.rival is not None:
-        # An ambiguous stem pattern: refine the rival too and keep whichever
-        # fits the above-ground points better, if the margin is clear.
-        rival_coarse = _on_ground(result.rival.transform, source, [(target, identity())], cfg)
-        other = icp(source.icp_points, icp_target, rival_coarse, cfg.icp)
-        other_above = _above_ground_fitness(
-            source.icp_points, source.icp_heights, target.icp_points, other.transform, cfg
-        )
-        mine = result.fitness_above if np.isfinite(result.fitness_above) else 0.0
-        theirs = other_above if np.isfinite(other_above) else 0.0
-        # Two hypotheses ICP pulls to the same pose were never rivals.
-        _, apart = transform_difference(result.transform, other.transform)
-        yaw_apart = np.degrees(
-            abs(
-                np.arctan2(result.transform[1, 0], result.transform[0, 0])
-                - np.arctan2(other.transform[1, 0], other.transform[0, 0])
-            )
-        )
-        yaw_apart = min(yaw_apart, 360 - yaw_apart)
-        converged = (
-            apart < cfg.matching.distinct_translation and yaw_apart < cfg.matching.distinct_yaw_deg
-        )
-        if converged:
-            result.reason = "rivals converged in ICP; "
-        elif theirs > mine:
-            winner = result.rival
-            result.match = winner
-            _attach_matched_stems(result, source, target, winner)
-            coarse = rival_coarse
-            result.coarse_transform = coarse
-            refined, result.icp, result.transform = other, other, other.transform
-            result.fitness_above, mine, theirs = other_above, theirs, mine
-            result.used_icp = True
-            if len(result.matched_source) >= 3:
-                result.coarse_stem_rmse = _stem_median_residual(coarse, result)
-                result.fine_stem_rmse = _stem_median_residual(refined.transform, result)
-        if not converged:
-            if mine < cfg.ambiguity_margin * theirs:
-                result.reason = (
-                    f"ambiguous stem pattern; ICP cannot separate the rivals "
-                    f"(above-ground fitness {mine:.3f} vs {theirs:.3f})"
-                )
-                return
-            result.reason = f"rival resolved by ICP ({mine:.3f} vs {theirs:.3f} above ground); "
-    if not result.used_icp:
-        result.icp = _score(source, target.icp_points, icp_target, result.transform, cfg, refined)
-    scored = result.icp
-    _, shift = transform_difference(coarse, refined.transform)
-    result.ground_offset = _height_offset(source, result.transform, [(target, identity())], cfg)
-    if result.used_icp and shift > cfg.max_coarse_to_fine_shift:
-        result.reason = f"ICP diverged from the coarse solution by {shift:.2f} m"
-    elif scored.fitness < cfg.min_icp_fitness:
-        result.reason = f"low ICP fitness ({scored.fitness:.3f} < {cfg.min_icp_fitness})"
-    elif result.fitness_above < cfg.min_icp_fitness_above_ground:
-        result.reason = (
-            f"low above-ground fitness ({result.fitness_above:.3f} < "
-            f"{cfg.min_icp_fitness_above_ground}); ground alone matched"
-        )
-    elif scored.inlier_rmse > cfg.max_icp_rmse:
-        result.reason = f"high ICP rmse ({scored.inlier_rmse:.3f} m > {cfg.max_icp_rmse})"
-    elif _ground_disagrees(result.ground_offset, cfg):
-        result.reason = f"terrain heights disagree by {result.ground_offset:+.2f} m"
-    else:
-        result.success = True
-        if result.reflector_match is None:
-            kept = (
-                result.reason
-                if result.reason.startswith(("rival resolved", "rivals converged"))
-                else ""
-            )
-            result.reason = kept + (
-                f"shift from coarse {shift * 100:.1f} cm"
-                if result.used_icp
-                else f"kept coarse (ICP moved the stems {shift * 100:.1f} cm)"
-            )
-        elif not result.used_icp:
-            result.reason += " (kept coarse)"
-    if not result.success:
-        _trust_reflectors(result, coarse, shift, cfg)
-
-
-def _score(
-    source: ScanFeatures,
-    target_points: np.ndarray,
-    icp_target,
-    transform: np.ndarray,
-    cfg: CoregConfig,
-    refined: ICPResult,
-) -> ICPResult:
-    """ICP-style quality of a transform ICP did not produce."""
-    fitness, rmse, n = evaluate_registration(
-        source.icp_points, target_points, transform, threshold=cfg.icp.fitness_threshold
-    )
-    return ICPResult(
-        np.asarray(transform, dtype=float),
-        fitness,
-        rmse,
-        n,
-        refined.iterations,
-        False,
-        list(refined.history),
-        plane_information(source.icp_points, icp_target, transform, cfg.icp),
-    )
-
-
-def _ground_disagrees(offset: float, cfg: CoregConfig) -> bool:
-    return (
-        cfg.max_ground_disagreement is not None
-        and np.isfinite(offset)
-        and abs(offset) > cfg.max_ground_disagreement
-    )
+    if d["success"] != result.success or d["trusted"] != result.trusted:
+        result.transform = d["transform"]
+        result.used_icp = d["used_icp"]
+        result.success = d["success"]
+        result.trusted = d["trusted"]
+        result.reason = d["reason"]
 
 
 def _terrain_samples(scan: ScanFeatures, radius: float) -> np.ndarray:
     """``(n, 3)`` observed terrain cells within ``radius`` of the scanner, in the scan's frame."""
-    g = scan.ground
-    if g is None:
-        return np.zeros((0, 3))
-    iy, ix = np.nonzero(g.observed)
-    xy = g.origin + np.column_stack([ix, iy]) * g.cell_size
-    xy = xy[np.hypot(*(xy - scan.origin[:2]).T) <= radius]
-    return np.column_stack([xy, g.height_at(xy)])
+    return _core.coreg_terrain_samples(_scan_core(scan), float(radius))
 
 
 def _height_offset(
@@ -1139,31 +1032,12 @@ def _height_offset(
         Metres to add to the source's height; NaN if fewer than
         ``min_ground_cells`` shared cells.
     """
-    samples = _terrain_samples(source, cfg.ground_radius)
-    if len(samples) == 0:
-        return float("nan")
-    world = transform_points(world_from_source, samples)
-    offsets = []
-    for scan, pose in targets:
-        g = scan.ground
-        if g is None:
-            continue
-        local = transform_points(invert(pose), world)
-        cell = (local[:, :2] - g.origin) / g.cell_size
-        rows, cols = g.observed.shape
-        ok = (
-            (cell[:, 0] >= -0.5)
-            & (cell[:, 0] <= cols - 0.5)
-            & (cell[:, 1] >= -0.5)
-            & (cell[:, 1] <= rows - 0.5)
-            & (np.hypot(*(local[:, :2] - scan.origin[:2]).T) <= cfg.ground_radius)
+    scans, poses = _targets(targets)
+    return float(
+        _core.coreg_height_offset(
+            _scan_core(source), _mat4(world_from_source), scans, poses, _config_core(cfg)
         )
-        ok[ok] = g.support(local[ok, :2])
-        offsets.append(g.height_at(local[ok, :2]) - local[ok, 2])
-    offsets = np.concatenate(offsets) if offsets else np.zeros(0)
-    if len(offsets) < max(cfg.min_ground_cells, 1):
-        return float("nan")
-    return float(np.median(offsets))
+    )
 
 
 def _on_ground(
@@ -1176,128 +1050,22 @@ def _on_ground(
     (:attr:`CoregConfig.height_from_ground`)."""
     if not cfg.height_from_ground:
         return transform
-    dz = _height_offset(source, transform, targets, cfg)
-    if not np.isfinite(dz):
-        return transform
-    out = np.array(transform, dtype=float)
-    out[2, 3] += dz
-    return out
-
-
-def _trust_reflectors(
-    result: PairResult, coarse: np.ndarray, shift: float, cfg: CoregConfig
-) -> None:
-    """Accept a pair ICP refused if its reflector match is strong enough alone."""
-    found = result.reflector_match
-    if (
-        found is None
-        or cfg.trusted_reflector_matches <= 0
-        or found.n_inliers < cfg.trusted_reflector_matches
-        or found.rmse > cfg.trusted_reflector_rmse
-        or result.reason.startswith("ambiguous")
-    ):
-        return
-    why = result.reason
-    if shift > cfg.reflector_tolerance:
-        result.transform, result.used_icp = coarse, False
-    result.success, result.trusted = True, True
-    result.reason = (
-        f"{found.n_inliers} reflectors, {found.rmse * 1000:.1f} mm, trusted "
-        f"({'targets' if not result.used_icp else 'ICP'} pose; ICP alone: {why})"
+    scans, poses = _targets(targets)
+    return _core.coreg_on_ground(
+        _mat4(transform), _scan_core(source), scans, poses, _config_core(cfg)
     )
-
-
-def _edge_quality(pair: PairResult) -> tuple[float, float, int]:
-    """``(fitness, rmse, correspondences)`` weighting a pair's pose-graph edge.
-
-    A trusted reflector pair that kept the targets' pose is weighted by the
-    targets' own residual and count, not by an ICP that did not fit.
-    """
-    if pair.trusted and not pair.used_icp and pair.reflector_match is not None:
-        found = pair.reflector_match
-        return 1.0, max(found.rmse, 1e-3), found.n_inliers
-    return pair.fitness, pair.rmse, pair.icp.n_correspondences if pair.icp else 0
-
-
-def _edge_information(pair: PairResult, cfg: CoregConfig) -> np.ndarray | None:
-    """Information of a pair's edge from its point-to-plane correspondences,
-    or None (:func:`~sylva.coreg.default_information`) without them."""
-    info = pair.icp.information if pair.icp is not None else None
-    if info is None or (pair.trusted and not pair.used_icp):
-        return None
-    return plane_edge_information(
-        info.hessian,
-        info.sigma,
-        info.n,
-        pair.transform,
-        patch_points=cfg.information_patch_points,
-        min_sigma=cfg.information_min_sigma,
-    )
-
-
-def _above_ground_fitness(source, heights, target, transform, cfg: CoregConfig) -> float:
-    """ICP fitness over source points more than ``fitness_min_height`` up; NaN
-    ("no evidence", not a failure) if heights are missing or too few points qualify."""
-    if cfg.fitness_min_height <= 0 or len(heights) != len(source):
-        return float("nan")
-    mask = heights > cfg.fitness_min_height
-    if mask.sum() < 100:
-        return float("nan")
-    fitness, _, _ = evaluate_registration(
-        source[mask], target, transform, threshold=cfg.icp.fitness_threshold
-    )
-    return float(fitness)
-
-
-def _attach_matched_stems(
-    result: PairResult, source: ScanFeatures, target: ScanFeatures, match: MatchResult
-) -> None:
-    """Store the positions of the matched stems (positions, not indices, so
-    nothing later depends on the matcher's ordering)."""
-    if not match.success or len(match.correspondences) == 0:
-        return
-    result.matched_source = source.stem_map.positions[match.correspondences[:, 0]]
-    result.matched_target = target.stem_map.positions[match.correspondences[:, 1]]
-
-
-def _coarse_is_acceptable(result: PairResult, match: MatchResult, cfg: CoregConfig) -> bool:
-    """Screen a coarse match before paying for ICP; sets ``reason`` on failure."""
-    if not match.success or match.n_inliers < cfg.min_match_inliers:
-        result.reason = (
-            f"stem matching failed ({match.n_inliers} inliers, need {cfg.min_match_inliers})"
-        )
-        return False
-    if match.inlier_rmse > cfg.max_match_rmse:
-        result.reason = (
-            f"coarse match too loose ({match.inlier_rmse * 100:.1f} cm scatter, "
-            f"limit {cfg.max_match_rmse * 100:.0f} cm)"
-        )
-        return False
-    if match.ambiguity > cfg.max_match_ambiguity:
-        if match.rival is None or not match.rival.success:
-            result.reason = (
-                f"ambiguous stem pattern (a rival alignment has {match.ambiguity:.0%} "
-                f"of the inliers, limit {cfg.max_match_ambiguity:.0%})"
-            )
-            return False
-        result.rival = match.rival
-    result.coarse_stem_rmse = _stem_median_residual(match.transform, result)
-    if result.coarse_stem_rmse > cfg.max_coarse_stem_rmse:
-        result.reason = (
-            f"coarse stems disagree by {result.coarse_stem_rmse:.2f} m "
-            f"(limit {cfg.max_coarse_stem_rmse:.2f} m)"
-        )
-        return False
-    return True
 
 
 def _stem_median_residual(transform: np.ndarray, pair: PairResult) -> float:
     """Median horizontal distance between matched stems: their heights come
     from each scan's own terrain model, which says nothing about the match."""
-    if len(pair.matched_source) == 0:
-        return float("nan")
-    residual = transform_points(transform, pair.matched_source) - pair.matched_target
-    return float(np.median(np.linalg.norm(residual[:, :2], axis=1)))
+    return float(
+        _core.coreg_stem_median_residual(
+            _mat4(transform),
+            np.ascontiguousarray(np.asarray(pair.matched_source, dtype=np.float64).reshape(-1, 3)),
+            np.ascontiguousarray(np.asarray(pair.matched_target, dtype=np.float64).reshape(-1, 3)),
+        )
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -1354,49 +1122,40 @@ def coregister(
         scan (or to the fixed scans).
     """
     cfg = config or CoregConfig()
-    start = time.perf_counter()
-    log = progress or _make_logger(cfg.verbose)
-    scan_names = [(names[k] if names else "") or f"scan_{k:02d}" for k in range(len(clouds))]
-    targets = list(reflectors) if reflectors else [[]] * len(clouds)
-    levels = list(levelling) if levelling else [None] * len(clouds)
-    paths_only = all(isinstance(c, (str, Path)) for c in clouds)
-    workers = (
-        _resolve_workers(cfg.workers, cfg.memory_per_worker_gb, len(clouds)) if paths_only else 1
-    )
-    log(
-        f"Preparing {len(clouds)} scans" + (f" on {workers} workers ..." if workers > 1 else " ...")
-    )
-
-    def report(f: ScanFeatures) -> None:
-        if f.error:
-            log(f"  {f.name:<24s} SET ASIDE: {f.error}")
-        else:
-            log(
-                f"  {f.name:<24s} {f.n_points:>10,d} pts -> {len(f.stem_map):3d} stems, "
-                f"{len(f.icp_points):>8,d} ICP points ({f.seconds:.1f} s)"
-            )
-
-    def one(k: int) -> ScanFeatures:
-        t0 = time.perf_counter()
+    n = len(clouds)
+    targets = list(reflectors) if reflectors else [[]] * n
+    levels = list(levelling) if levelling else [None] * n
+    inputs, target_tuples, level_mats = [], [], []
+    for k in range(n):
+        # A scan that cannot even be converted costs that scan, not the run.
         try:
-            return prepare_scan(
-                clouds[k], cfg, name=scan_names[k], reflectors=targets[k], levelling=levels[k]
-            )
-        except Exception as exc:  # one unreadable file costs that file, not the run
-            src = Path(clouds[k]) if isinstance(clouds[k], (str, Path)) else None
-            return _unusable_scan(scan_names[k], 0, src, t0, f"{type(exc).__name__}: {exc}")
-
-    scans = _parallel_map(one, list(range(len(clouds))), workers, on_result=report)
-    return coregister_prepared(
-        scans,
-        cfg,
-        pairs=pairs,
-        approximate_positions=approximate_positions,
-        fixed=fixed,
-        priors=priors,
-        progress=log,
-        started=start,
+            inputs.append(_input_core(clouds[k]))
+            target_tuples.append(_reflector_tuples(targets[k]))
+            level_mats.append(None if levels[k] is None else _mat4(levels[k]))
+        except Exception as exc:
+            src = str(Path(clouds[k])) if isinstance(clouds[k], (str, Path)) else None
+            inputs.append(("failed", f"{type(exc).__name__}: {exc}", src))
+            target_tuples.append([])
+            level_mats.append(None)
+    scan_dicts, d = _core.coreg_coregister(
+        inputs,
+        _config_core(cfg),
+        [str(v) for v in names] if names else [],
+        target_tuples,
+        level_mats,
+        **_survey_options(pairs, approximate_positions, fixed, priors),
+        log=_log_for(progress, cfg),
     )
+    return _survey_from_core([_scan_from_core(s) for s in scan_dicts], d)
+
+
+def _survey_options(pairs, approximate_positions, fixed, priors) -> dict:
+    return {
+        "pairs": None if pairs is None else [(int(i), int(j)) for i, j in pairs],
+        "positions": _positions(approximate_positions),
+        "fixed": [(int(k), _mat4(v)) for k, v in (fixed or {}).items()],
+        "priors": None if priors is None else [None if p is None else _mat4(p) for p in priors],
+    }
 
 
 def coregister_prepared(
@@ -1445,519 +1204,47 @@ def coregister_prepared(
     """
     cfg = config or CoregConfig()
     scans = list(scans)
-    n = len(scans)
-    start = time.perf_counter() if started is None else started
-    log = progress or _make_logger(cfg.verbose)
-    fixed = {int(k): np.asarray(v, float) for k, v in (fixed or {}).items()}
-    priors = (
-        None if priors is None else [None if p is None else np.asarray(p, float) for p in priors]
+    already = 0.0 if started is None else time.perf_counter() - started
+    d = _core.coreg_coregister_prepared(
+        [_scan_core(s) for s in scans],
+        _config_core(cfg),
+        **_survey_options(pairs, approximate_positions, fixed, priors),
+        log=_log_for(progress, cfg),
+        already=already,
     )
-    if approximate_positions is None and priors is not None:
-        approximate_positions = np.array(
-            [
-                scans[k].location(p) if p is not None else np.full(3, np.nan)
-                for k, p in enumerate(priors)
-            ]
-        )
-
-    usable = [k for k, s in enumerate(scans) if s.usable]
-    if len(usable) < n:
-        log(
-            f"  {n - len(usable)} scan(s) set aside: "
-            + ", ".join(s.name for s in scans if not s.usable)
-        )
-    if pairs is not None:
-        candidate_pairs = list(pairs)
-    else:
-        candidate_pairs = [
-            (i, j)
-            for a, i in enumerate(usable)
-            for j in usable[a + 1 :]
-            if not (i in fixed and j in fixed)
-        ]
-        candidate_pairs = _within_reach(
-            candidate_pairs, approximate_positions, cfg.max_pair_distance, log
-        )
-    workers = _resolve_workers(cfg.workers, None, len(candidate_pairs))
-
-    results: list[PairResult] = []
-    if cfg.screen_pairs:
-        log(f"Screening {len(candidate_pairs)} pairs by stem matching ...")
-        matches, rejected = _screen(candidate_pairs, scans, cfg, workers)
-        results.extend(rejected)
-        if len(rejected) <= 20:
-            for pair in rejected:
-                log("  " + pair.summary())
-        log(
-            f"  kept {len(matches)} of {len(candidate_pairs)} pairs for ICP "
-            f"({len(rejected)} rejected by stem screening)"
-        )
-    else:
-        matches = [((i, j), None) for i, j in candidate_pairs]
-    log(
-        f"Refining {len(matches)} pairs with ICP"
-        + (f" on {workers} workers ..." if workers > 1 else " ...")
-    )
-    # Pairs sharing a target run together, so each target's ICP pyramid is
-    # built once and a small cache is enough however large the survey.
-    matches = sorted(matches, key=lambda t: (t[0][1], t[0][0]))
-    targets = _TargetCache(scans, cfg.icp, capacity=workers + 2)
-    refined = _parallel_map(
-        lambda t: register_pair(
-            scans[t[0][0]],
-            scans[t[0][1]],
-            cfg,
-            match=t[1],
-            i=t[0][0],
-            j=t[0][1],
-            target_icp=targets.get(t[0][1]),
-        ),
-        matches,
-        workers,
-        on_result=lambda p: log("  " + p.summary()),
-    )
-    if priors is not None:
-        for p in refined:
-            if p.success and priors[p.i] is not None and priors[p.j] is not None:
-                good, why = _prior_ok(
-                    priors[p.j] @ p.transform, priors[p.i], scans[p.i].origin, cfg
-                )
-                if not good:
-                    p.success, p.reason = False, "refused by the prior: " + why
-                    log(f"  {p.name_i} -> {p.name_j} refused by the prior: {why}")
-    results.extend(refined)
-    results.sort(key=lambda p: (p.i, p.j))
-
-    reference = min(max(cfg.reference_scan, 0), n - 1)
-    if fixed:
-        reference = reference if reference in fixed else min(fixed)
-    elif not scans[reference].usable:
-        replacement = next(iter(usable), reference)
-        if replacement != reference:
-            log(f"  reference {scans[reference].name} is unusable; using {scans[replacement].name}")
-        reference = replacement
-    graph = PoseGraph(n, reference=reference, fixed=fixed)
-    edge_to_pair: list[int] = []
-    for k, pair in enumerate(results):
-        if pair.success:
-            edge_to_pair.append(k)
-            fitness, rmse, n_corr = _edge_quality(pair)
-            graph.add_edge(
-                pair.i,
-                pair.j,
-                pair.transform,
-                information=_edge_information(pair, cfg),
-                fitness=fitness,
-                rmse=rmse,
-                n_correspondences=n_corr,
-                label=f"{pair.name_i}->{pair.name_j}",
-            )
-    if not fixed:
-        # A reference no accepted pair touches would leave every other scan
-        # "unregistered" even when they registered to each other.
-        rerooted = _reference_in_largest_component(graph, reference, n)
-        if rerooted != reference:
-            log(
-                f"  reference {scans[reference].name} has no accepted pair; anchoring on "
-                f"{scans[rerooted].name}, the largest registered block"
-            )
-            reference = rerooted
-            graph.reference = reference
-
-    graph.initialise(reference)
-    optimisation = None
-    if cfg.optimise_globally and graph.edges:
-        log("Optimising the pose graph ...")
-        optimisation = graph.optimise(reject_outliers=cfg.reject_outlier_edges)
-        log(f"  {optimisation}")
-    registered = _registered_mask(graph, n)
-    if cfg.recover_unregistered and not all(registered):
-        recovered = _recover_unregistered(
-            scans, graph, results, edge_to_pair, registered, cfg, log, priors
-        )
-        if recovered:
-            log(f"Recovered {recovered} scan(s); re-optimising ...")
-            optimisation = graph.optimise(reject_outliers=cfg.reject_outlier_edges)
-            log(f"  {optimisation}")
-            registered = _registered_mask(graph, n)
-    if cfg.refine_multiview and sum(registered) > 1:
-        _refine_multiview(scans, graph, registered, reference, cfg, log)
-
-    survey = SurveyResult(
-        scans=scans,
-        pairs=results,
-        poses=list(graph.poses),
-        reference=reference,
-        optimisation=optimisation,
-        registered=registered,
-        seconds=time.perf_counter() - start,
-        edge_to_pair=edge_to_pair,
-    )
-    if not all(registered):
-        missing = [scans[k].name for k, ok in enumerate(registered) if not ok]
-        log(f"WARNING: {len(missing)} scan(s) could not be registered: {', '.join(missing)}")
-    return survey
-
-
-def _refine_multiview(
-    scans, graph: PoseGraph, registered, reference, cfg: CoregConfig, log
-) -> None:
-    from .refine import refine_joint
-
-    edges = [(e.i, e.j) for e in graph.edges if registered[e.i] and registered[e.j]]
-    if not edges:
-        return
-    stems = [
-        s.stem_map.positions if registered[k] else np.zeros((0, 3)) for k, s in enumerate(scans)
-    ]
-    points = [
-        s.icp_points if registered[k] else np.zeros((0, 3), np.float32) for k, s in enumerate(scans)
-    ]
-    log(
-        f"Joint multi-view refinement: {sum(registered)} scans, {len(edges)} pairs, "
-        f"{sum(len(s) for s in stems)} stems ..."
-    )
-    outcome = refine_joint(
-        points,
-        list(graph.poses),
-        edges,
-        stems,
-        reference,
-        voxel_sizes=tuple(cfg.refinement_voxel_sizes),
-        max_distances=tuple(cfg.refinement_max_distances),
-        rounds=max(cfg.refinement_rounds, 1),
-        stem_weight=cfg.refinement_stem_weight,
-        stem_radius=cfg.refinement_stem_radius,
-        min_voxel_points=cfg.refinement_min_voxel_points,
-        points_per_scan=cfg.refinement_points_per_scan,
-        log=log,
-    )
-    moved = outcome.shifts[[k for k in range(len(scans)) if registered[k]]]
-    worst = int(np.argmax(outcome.shifts))
-    log(
-        f"  residual {outcome.residual_before * 100:.2f} -> {outcome.residual_after * 100:.2f} cm; "
-        f"shifts median {np.median(moved) * 100:.1f} cm, "
-        f"max {outcome.shifts[worst] * 100:.1f} cm ({scans[worst].name}), "
-        f"rotation max {outcome.rotations.max():.3f} deg"
-    )
-    if outcome.shifts.max() > cfg.refinement_max_shift:
-        log(
-            f"  WARNING: {scans[worst].name} moved {outcome.shifts[worst] * 100:.0f} cm, more than "
-            f"refinement_max_shift; the pairwise poses are kept"
-        )
-        return
-    for k in range(len(scans)):
-        if registered[k] and k not in graph.fixed:
-            graph.poses[k] = outcome.poses[k]
-
-
-class _TargetCache:
-    """The ICP pyramids of the most recently used targets."""
-
-    def __init__(self, scans, config: ICPConfig, capacity: int) -> None:
-        self._scans, self._config, self._capacity = scans, config, max(capacity, 1)
-        self._built: OrderedDict[int, ICPTarget] = OrderedDict()
-        self._lock = threading.Lock()
-
-    def get(self, k: int) -> ICPTarget:
-        with self._lock:  # built under the lock: a pyramid is built once, in parallel inside
-            if k in self._built:
-                self._built.move_to_end(k)
-            else:
-                self._built[k] = ICPTarget(self._scans[k].icp_points, self._config)
-                while len(self._built) > self._capacity:
-                    self._built.popitem(last=False)
-            return self._built[k]
+    return _survey_from_core(scans, d)
 
 
 def _within_reach(candidate_pairs, positions, limit, log):
     """Drop pairs whose approximate positions are out of range; unknown positions keep the pair."""
     if positions is None or not np.isfinite(limit):
         return candidate_pairs
-    positions = np.asarray(positions, dtype=float)
-    if positions.ndim != 2 or len(positions) == 0:
+    rows = _positions(positions)
+    if rows is None:
         return candidate_pairs
-    kept = []
-    for i, j in candidate_pairs:
-        a, b = positions[i, :2], positions[j, :2]
-        if (
-            not (np.all(np.isfinite(a)) and np.all(np.isfinite(b)))
-            or float(np.hypot(*(a - b))) <= limit
-        ):
-            kept.append((i, j))
-    if len(kept) < len(candidate_pairs):
-        log(
-            f"  {len(candidate_pairs) - len(kept):,} of {len(candidate_pairs):,} pairs skipped: "
-            f"more than {limit:.0f} m apart"
-        )
-    return kept
-
-
-def _screen(candidate_pairs, scans, cfg: CoregConfig, workers: int):
-    """Coarse-match every candidate pair and split them into kept matches and rejected results."""
-    matched = _parallel_map(
-        lambda ij: (
-            ij[0],
-            ij[1],
-            match_stem_maps(scans[ij[0]].stem_map, scans[ij[1]].stem_map, cfg.matching),
-        ),
-        candidate_pairs,
-        workers,
+    kept, messages = _core.coreg_within_reach(
+        [(int(i), int(j)) for i, j in candidate_pairs], rows, float(limit)
     )
-    kept, rejected = [], []
-    for i, j, match in matched:
-        probe = PairResult(i=i, j=j, name_i=scans[i].name, name_j=scans[j].name, match=match)
-        _attach_matched_stems(probe, scans[i], scans[j], match)
-        # Stems screen out a pair, but not its targets: those are tried in ICP.
-        targets = cfg.use_reflectors and min(
-            len(scans[i].reflectors), len(scans[j].reflectors)
-        ) >= max(cfg.min_reflector_matches, 3)
-        if _coarse_is_acceptable(probe, match, cfg) or targets:
-            kept.append(((i, j), match))
-        else:
-            rejected.append(probe)
-    if cfg.max_pairs_per_scan:
-        kept = _limit_per_scan(kept, cfg.max_pairs_per_scan, len(scans))
-    return kept, rejected
+    for message in messages:
+        log(message)
+    return kept
 
 
 def _limit_per_scan(kept, limit: int, n_scans: int):
     """Each scan's strongest matches; a pair stays if either end has room."""
-    order = sorted(range(len(kept)), key=lambda k: -kept[k][1].n_inliers)
-    budget = [limit] * n_scans
-    chosen = []
-    for k in order:
-        (i, j), _ = kept[k]
-        if budget[i] > 0 or budget[j] > 0:
-            chosen.append(k)
-            budget[i] -= 1
-            budget[j] -= 1
-    return [kept[k] for k in sorted(chosen)]
-
-
-def _recover_unregistered(
-    scans, graph: PoseGraph, results, edge_to_pair, registered, cfg: CoregConfig, log, priors
-) -> int:
-    """Retry failed scans against the combined registered survey.
-
-    Each scan's stems are matched against every registered stem at once, then
-    refined against the merged points of the nearest registered scans; on
-    success it is tied into the graph (:func:`_tie_in`), so the global solve
-    still decides its pose. With priors, a scan whose stems do not place it
-    is placed from its prior instead.
-    """
-    recovered = 0
-    for _ in range(max(cfg.recovery_rounds, 1)):
-        pending = [k for k, ok in enumerate(registered) if not ok and scans[k].usable]
-        if not pending:
-            break
-        combined = _combined_stem_map(scans, registered, graph)
-        if len(combined) < cfg.min_match_inliers and priors is None:
-            break
-        log(
-            f"Retrying {len(pending)} unregistered scan(s) against the "
-            f"{len(combined)}-stem combined survey ..."
-        )
-        gained = 0
-        for k in pending:
-            placed = _place_against_survey(scans, k, combined, registered, graph, cfg)
-            how = "recovered"
-            if placed is not None and priors is not None and priors[k] is not None:
-                good, why = _prior_ok(placed[0], priors[k], scans[k].origin, cfg)
-                if not good:
-                    log(f"  {scans[k].name:<24s} placement refused by the prior: {why}")
-                    placed = None
-            if placed is None and priors is not None and priors[k] is not None:
-                reg = [m for m, ok in enumerate(registered) if ok]
-                r, used = place_from_prior(
-                    scans[k], [scans[m] for m in reg], [graph.poses[m] for m in reg], priors[k], cfg
-                )
-                if r.success:
-                    placed, how = (
-                        (r.transform, [reg[u] for u in used], r.icp),
-                        "placed from its prior",
-                    )
-                else:
-                    log(f"  {scans[k].name:<24s} not placed from its prior ({r.reason})")
-            if placed is None:
-                log(f"  {scans[k].name:<24s} still unplaced")
-                continue
-            world_from_scan, neighbours, refined = placed
-            graph.poses[k] = world_from_scan
-            _tie_in(
-                scans,
-                k,
-                world_from_scan,
-                neighbours,
-                refined,
-                how,
-                graph,
-                results,
-                edge_to_pair,
-                cfg,
-            )
-            registered[k] = True
-            gained += 1
-            log(f"  {scans[k].name:<24s} {how} against {len(neighbours)} registered scan(s)")
-        recovered += gained
-        if gained == 0:
-            break
-    return recovered
-
-
-def _tie_in(
-    scans, k, world_from_scan, neighbours, refined, how, graph, results, edge_to_pair, cfg
-) -> None:
-    """Edges for a scan placed against the combined survey.
-
-    The placement is only a starting point: the scan is registered pairwise
-    to each neighbour from it, and each pair that passes the usual tests is
-    an edge, an independent measurement like any other. If none does, the
-    placement itself is one edge to the nearest neighbour, weighted by the
-    joint ICP's own correspondences.
-    """
-    added = 0
-    for m in neighbours:
-        pair = register_pair(
-            scans[k], scans[m], cfg, initial=invert(graph.poses[m]) @ world_from_scan, i=k, j=m
-        )
-        if not pair.success:
-            continue
-        pair.reason = f"{how}, then pairwise: {pair.reason}"
-        results.append(pair)
-        edge_to_pair.append(len(results) - 1)
-        fitness, rmse, n_corr = _edge_quality(pair)
-        graph.add_edge(
-            k,
-            m,
-            pair.transform,
-            information=_edge_information(pair, cfg),
-            fitness=fitness,
-            rmse=rmse,
-            n_correspondences=n_corr,
-            label=f"{how}: {scans[k].name}->{scans[m].name}",
-        )
-        added += 1
-    if added:
-        return
-    m = neighbours[0]
-    relative = invert(graph.poses[m]) @ world_from_scan
-    results.append(
-        PairResult(
-            i=k,
-            j=m,
-            name_i=scans[k].name,
-            name_j=scans[m].name,
-            transform=relative,
-            icp=refined,
-            success=True,
-            reason=f"{how} against {len(neighbours)} combined scans, "
-            f"fitness {refined.fitness:.3f}; no single pair passes",
-        )
+    chosen = _core.coreg_limit_per_scan(
+        [(int(i), int(j), int(m.n_inliers)) for (i, j), m in kept], int(limit), int(n_scans)
     )
-    edge_to_pair.append(len(results) - 1)
-    info = refined.information
-    graph.add_edge(
-        k,
-        m,
-        relative,
-        information=None
-        if info is None
-        else plane_edge_information(
-            info.hessian,
-            info.sigma,
-            info.n,
-            world_from_scan,  # the joint ICP's target frame is the world
-            patch_points=cfg.information_patch_points,
-            min_sigma=cfg.information_min_sigma,
-        ),
-        fitness=refined.fitness,
-        rmse=refined.inlier_rmse,
-        n_correspondences=refined.n_correspondences,
-        label=f"{how} (combined)",
-    )
+    return [kept[k] for k in chosen]
 
 
-def _combined_stem_map(scans, registered, graph: PoseGraph) -> StemMap:
+def _combined_stem_map(scans, registered, graph) -> StemMap:
     """Every registered scan's stems in the world frame, one per tree (best
     quality first): duplicates would wreck the one-to-one matcher."""
-    stems = []
-    for k, ok in enumerate(registered):
-        if ok and len(scans[k].stem_map):
-            stems.extend(scans[k].stem_map.transformed(graph.poses[k]).stems)
-    if not stems:
-        return StemMap([], name="combined")
-    stems.sort(key=lambda s: -s.quality)
-    keep, kept_xy = [], []
-    for stem in stems:
-        if kept_xy and KdTree(np.array(kept_xy)).query(np.array([[stem.x, stem.y]]))[0][0] < 0.3:
-            continue
-        keep.append(stem)
-        kept_xy.append([stem.x, stem.y])
-    return StemMap(keep, name="combined")
-
-
-def _place_against_survey(
-    scans, k, combined: StemMap, registered, graph: PoseGraph, cfg: CoregConfig
-):
-    """A world pose for one scan from the combined survey, or None."""
-    scan = scans[k]
-    if len(scan.stem_map) < 3 or len(combined) < cfg.min_match_inliers:
-        return None
-    match = match_stem_maps(scan.stem_map, combined, cfg.matching)
-    if not match.success or match.n_inliers < cfg.min_match_inliers:
-        return None
-    if match.ambiguity > cfg.max_match_ambiguity:
-        return None  # a lattice: nothing to gain by guessing
-    here = match.transform[:3, 3]
-    others = [m for m, ok in enumerate(registered) if ok and len(scans[m].icp_points)]
-    if not others:
-        return None
-    others.sort(key=lambda m: float(np.linalg.norm(graph.poses[m][:3, 3] - here)))
-    neighbours = others[: max(cfg.recovery_neighbours, 1)]
-    target = np.vstack(
-        [
-            transform_points(graph.poses[m], scans[m].icp_points.astype(np.float64))
-            for m in neighbours
-        ]
+    rows = _core.coreg_combined_stem_map(
+        [_scan_core(s) for s in scans], [bool(r) for r in registered], _poses(graph.poses)
     )
-    around = [(scans[m], graph.poses[m]) for m in neighbours]
-    refined = icp(scan.icp_points, target, _on_ground(match.transform, scan, around, cfg), cfg.icp)
-    if refined.fitness < cfg.min_icp_fitness or refined.inlier_rmse > cfg.max_icp_rmse:
-        return None
-    if (
-        _above_ground_fitness(scan.icp_points, scan.icp_heights, target, refined.transform, cfg)
-        < cfg.min_icp_fitness_above_ground
-    ):
-        return None
-    if _ground_disagrees(_height_offset(scan, refined.transform, around, cfg), cfg):
-        return None
-    return refined.transform, neighbours, refined
-
-
-def _reference_in_largest_component(graph: PoseGraph, reference: int, n: int) -> int:
-    """Keep ``reference`` unless it is isolated, then move it into the largest block."""
-    components = sorted((set(c) for c in graph.components()), key=lambda c: (-len(c), min(c)))
-    if not components or len(components[0]) < 2:
-        return reference
-    mine = next(c for c in components if reference in c)
-    return reference if len(mine) > 1 else min(components[0])
-
-
-def _registered_mask(graph: PoseGraph, n: int) -> list[bool]:
-    """Scans connected to an anchor by accepted edges (rejected ones included, as tlsalign)."""
-    adjacency: dict[int, list[int]] = {k: [] for k in range(n)}
-    for e in graph.edges:
-        adjacency[e.i].append(e.j)
-        adjacency[e.j].append(e.i)
-    anchors = {graph.reference, *graph.fixed}
-    seen, stack = set(anchors), list(anchors)
-    while stack:
-        for nb in adjacency[stack.pop()]:
-            if nb not in seen:
-                seen.add(nb)
-                stack.append(nb)
-    return [k in seen for k in range(n)]
+    return StemMap(_stems_from_rows(rows), name="combined")
 
 
 # --------------------------------------------------------------------------- #
@@ -1969,16 +1256,13 @@ def _prior_ok(
     pose: np.ndarray, prior: np.ndarray, origin: np.ndarray, cfg: CoregConfig
 ) -> tuple[bool, str]:
     """Does ``pose`` put the scanner where its prior says it stood?"""
-    shift = float(
-        np.linalg.norm(transform_points(pose, origin[None]) - transform_points(prior, origin[None]))
+    good, why = _core.coreg_prior_ok(
+        _mat4(pose),
+        _mat4(prior),
+        [float(v) for v in np.asarray(origin, dtype=float).reshape(3)],
+        _config_core(cfg),
     )
-    if shift > cfg.max_prior_shift:
-        return False, f"scanner {shift:.1f} m from its prior position"
-    if cfg.max_prior_rotation is not None:
-        rot = float(np.degrees(np.linalg.norm(se3_log(invert(prior) @ pose)[:3])))
-        if rot > cfg.max_prior_rotation:
-            return False, f"{rot:.1f} deg from the prior orientation"
-    return True, ""
+    return bool(good), why
 
 
 def place_from_prior(
@@ -2022,54 +1306,15 @@ def place_from_prior(
         Indices into ``survey`` of the scans ICP ran against.
     """
     cfg = config or CoregConfig()
-    start = time.perf_counter()
-    result = PairResult(-1, -1, name_i=scan.name, name_j="survey")
-    here = scan.location(prior)
-    order = sorted(
-        range(len(survey)), key=lambda m: float(np.linalg.norm(survey[m].location(poses[m]) - here))
+    d, used = _core.coreg_place_from_prior(
+        _scan_core(scan),
+        [_scan_core(s) for s in survey],
+        _poses(poses),
+        _mat4(prior),
+        _config_core(cfg),
+        None if neighbours is None else int(neighbours),
     )
-    used = [m for m in order if len(survey[m].icp_points)][: neighbours or cfg.recovery_neighbours]
-    if not used:
-        result.reason = "no registered scans to place against"
-        return result, []
-    target = np.vstack(
-        [transform_points(poses[m], survey[m].icp_points.astype(np.float64)) for m in used]
-    )
-    coarse = np.asarray(prior, float).copy()
-    around = [(survey[m], poses[m]) for m in used]
-    dz = _height_offset(scan, coarse, around, cfg)
-    if not np.isfinite(dz):
-        result.reason = "no ground shared with the registered scans"
-        return result, []
-    coarse[2, 3] += dz
-    wide = replace(
-        cfg.icp,
-        voxel_sizes=(0.30, 0.30, 0.15, 0.07, 0.05),
-        max_distances=(1.50, 0.80, 0.40, 0.20, 0.12),
-    )
-    refined = icp(scan.icp_points, target, coarse, wide)
-    result.icp, result.transform, result.coarse_transform = refined, refined.transform, coarse
-    result.fitness_above = _above_ground_fitness(
-        scan.icp_points, scan.icp_heights, target, refined.transform, cfg
-    )
-    good, why = _prior_ok(refined.transform, prior, scan.origin, cfg)
-    if refined.fitness < cfg.min_icp_fitness:
-        result.reason = f"low ICP fitness ({refined.fitness:.3f} < {cfg.min_icp_fitness})"
-    elif result.fitness_above < cfg.min_icp_fitness_above_ground:
-        result.reason = (
-            f"low above-ground fitness ({result.fitness_above:.3f}); ground alone matched"
-        )
-    elif refined.inlier_rmse > cfg.max_icp_rmse:
-        result.reason = f"high ICP rmse ({refined.inlier_rmse:.3f} m)"
-    elif _ground_disagrees(offset := _height_offset(scan, refined.transform, around, cfg), cfg):
-        result.reason = f"terrain heights disagree by {offset:+.2f} m"
-    elif not good:
-        result.reason = why
-    else:
-        result.success = True
-        result.reason = f"from the prior, height corrected by {dz:+.2f} m"
-    result.seconds = time.perf_counter() - start
-    return result, used
+    return _pair_from_core(d), list(used)
 
 
 # --------------------------------------------------------------------------- #
@@ -2109,27 +1354,16 @@ def merge_clouds(
     sylva.PointCloud
         With a ``scan_id`` attribute.
     """
-    from .. import filters
     from ..pointcloud import PointCloud
 
     cfg = CoregConfig(riegl_options=dict(riegl_options or {}), riscan_filter=riscan_filter)
-    parts, ids = [], []
-    for k, cloud in enumerate(clouds):
-        if only_registered and not result.registered[k]:
-            continue
-        if isinstance(cloud, (str, Path)):
-            xyz, _ = _read_scan(Path(cloud), cfg)
-        elif isinstance(cloud, PointCloud):
-            xyz = cloud.xyz
-        else:
-            xyz = np.asarray(cloud, dtype=float).reshape(-1, 3)
-        moved = transform_points(result.transform_for(k), xyz)
-        if voxel:
-            moved = voxel_downsample(moved, voxel, centroid=False)
-        parts.append(moved)
-        ids.append(np.full(len(moved), k, np.int32))
-    merged = PointCloud(
-        np.vstack(parts) if parts else np.zeros((0, 3)),
-        {"scan_id": np.concatenate(ids) if ids else np.zeros(0, np.int32)},
+    xyz, ids = _core.coreg_merge_clouds(
+        [_input_core(c) for c in clouds],
+        _poses(result.poses),
+        [_mat4(s.levelling) for s in result.scans],
+        [bool(r) for r in result.registered],
+        bool(only_registered),
+        None if not voxel else float(voxel),
+        _config_core(cfg),
     )
-    return filters.voxel_downsample(merged, voxel) if voxel else merged
+    return PointCloud(xyz, {"scan_id": ids})
