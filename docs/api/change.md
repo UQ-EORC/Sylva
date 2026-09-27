@@ -4,6 +4,12 @@
     options:
       members: false
 
+::: sylva.change.epochs
+
+::: sylva.change.trees
+
+::: sylva.change.summary
+
 ::: sylva.change.points
 
 ::: sylva.change.voxels

@@ -20,7 +20,7 @@ from .pointcloud import PointCloud
 from .shots import Shots
 
 __all__ = ["terrain_height", "tree", "forest", "scan", "leaf_area", "als_flight", "ALSFlight",
-           "DEFAULT_TREES", "LEAF_RADIUS"]
+           "forest_epochs", "ForestEpochs", "DEFAULT_TREES", "LEAF_RADIUS"]
 
 #: Radius (m) of the leaf discs of :func:`tree`; each disc is 12 points.
 LEAF_RADIUS = 0.08
@@ -389,3 +389,200 @@ def als_flight(forest: PointCloud, altitude: float = 80.0, speed: float = 10.0,
         float(target_radius), float(terrain_slope), b, bool(clip), float(margin),
         float(turn_time), float(start_time), float(trajectory_rate), int(seed))
     return ALSFlight(PointCloud(xyz, attrs), dict(traj), int(n))
+
+
+def _rpy(roll: float, pitch: float, yaw: float, t=(0.0, 0.0, 0.0)) -> np.ndarray:
+    """``Rz(yaw) Ry(pitch) Rx(roll)`` (degrees) followed by a translation."""
+    r, p, y = np.radians([roll, pitch, yaw])
+    rx = np.array([[1, 0, 0], [0, np.cos(r), -np.sin(r)], [0, np.sin(r), np.cos(r)]])
+    ry = np.array([[np.cos(p), 0, np.sin(p)], [0, 1, 0], [-np.sin(p), 0, np.cos(p)]])
+    rz = np.array([[np.cos(y), -np.sin(y), 0], [np.sin(y), np.cos(y), 0], [0, 0, 1]])
+    m = np.eye(4)
+    m[:3, :3] = rz @ ry @ rx
+    m[:3, 3] = t
+    return m
+
+
+@dataclass
+class ForestEpochs:
+    """Two scanned epochs of one synthetic plot and their truth; see
+    :func:`forest_epochs`.
+
+    Attributes
+    ----------
+    clouds
+        The echoes of all scans of each epoch, with ``classification`` (2
+        ground, 4 leaf, 5 wood), ``tree_id`` (0 for ground; the same tree
+        keeps its id in both epochs), ``branch_id`` (limb index within the
+        tree, -1 on stems and ground), ``scan_id`` and the scan attributes of
+        :meth:`sylva.Shots.to_pointcloud`. Epoch 2 is in its displaced frame.
+    shots
+        The pulses of each epoch, misses included, in the same frames.
+    trees
+        Per epoch, a table (dict of equal-length arrays) of the trees
+        standing: ``tree_id``, ``x``, ``y``, ``z0`` (terrain at the stem),
+        ``dbh`` (1.3 m above ``z0``), ``height``, ``stem_volume``,
+        ``wood_volume`` (stem and limbs), ``leaf_area`` and ``n_limbs``. Both
+        tables are in the frame of epoch 1.
+    changes
+        The known changes, one dict each, with ``kind`` and ``tree_id``:
+        ``growth`` (``d_dbh``, ``d_height``, ``d_stem_volume``, ``shift``),
+        ``death`` and ``recruit`` (``x``, ``y``, ``dbh``, ``height``,
+        ``wood_volume``; a recruit next to a felled tree has ``replaces``),
+        ``branch_removed`` (``branch_id``, ``volume``, ``leaf_area``, base and
+        tip coordinates) and ``foliage_thinned`` (per tree ``leaf_area`` and
+        ``discs``; for ``tree_id`` -1 the box, ``fraction`` and total
+        ``leaf_area``).
+    transform
+        ``(4, 4)`` transform taking epoch 2 onto epoch 1: the registration
+        an alignment should recover.
+    origins
+        Scanner positions of each epoch, in its delivered frame.
+    range_noise
+        Range noise (m) of each epoch.
+    """
+
+    clouds: list
+    shots: list
+    trees: list
+    changes: list
+    transform: np.ndarray
+    origins: list
+    range_noise: tuple
+
+    def of_kind(self, kind: str) -> list[dict]:
+        """The changes of one kind.
+
+        Parameters
+        ----------
+        kind
+            ``growth``, ``death``, ``recruit``, ``branch_removed`` or
+            ``foliage_thinned``.
+
+        Returns
+        -------
+        list of dict
+        """
+        return [c for c in self.changes if c["kind"] == kind]
+
+
+def forest_epochs(n_trees: int = 16, size: float = 30.0, deaths: int = 2, recruits: int = 2,
+                  replaced: int = 1, small_increments: int = 2,
+                  dbh_increment: tuple[float, float] = (0.012, 0.004),
+                  height_increment: tuple[float, float] = (0.6, 0.2), branch_removals: int = 1,
+                  foliage_box=None, foliage_fraction: float = 0.5, tree_shift: float = 0.0,
+                  offset=None, range_noise: tuple[float, float] = (0.003, 0.005),
+                  scan_positions=None, scan_jitter: float = 0.5, resolution_deg: float = 0.25,
+                  max_echoes: int = 1, ground_density: float = 60.0, min_spacing: float = 2.5,
+                  seed: int = 0) -> ForestEpochs:
+    """Two epochs of one synthetic plot with known changes, each scanned.
+
+    Every tree is a fixed structure (a tapered stem, limbs at fixed heights,
+    leaf discs at fixed offsets from the limb tips) sampled afresh in each
+    epoch. Between the epochs survivors grow by a known DBH and height
+    increment (a uniform layer of wood along the stem, a longer leader and
+    proportionally longer limbs); ``deaths`` trees are gone, ``recruits`` new
+    small trees stand (``replaced`` of them 0.3 to 0.6 m from a dead stem, as
+    after felling), ``branch_removals`` survivors lose their largest limb,
+    ``small_increments`` survivors grow by only 0.5 mm in DBH and 1 cm in
+    height, and ``foliage_fraction`` of the leaf discs in ``foliage_box``
+    disappear. Each epoch is scanned from ``scan_positions`` with
+    :func:`scan` (so occlusion is real) and Gaussian range noise; the epoch-2
+    scanners stand ``scan_jitter`` m (one sigma) from the epoch-1 ones, and
+    epoch 2 is delivered in a frame displaced by ``offset``, as an
+    independently registered revisit would be.
+
+    Parameters
+    ----------
+    n_trees
+        Trees in epoch 1, with DBH drawn from 0.15 to 0.5 m and height from
+        an allometry (about 12 to 20 m).
+    size
+        Side of the square plot (m); stems stand at least 2 m inside it.
+    deaths, recruits, replaced
+        Trees lost, trees gained, and of those the felled-and-replaced pairs.
+    small_increments
+        Survivors with increments far below what a scan can detect.
+    dbh_increment, height_increment
+        Mean and standard deviation (m) of the survivors' increments.
+    branch_removals
+        Survivors that lose their largest limb and its leaves.
+    foliage_box
+        ``(xmin, ymin, zmin, xmax, ymax, zmax)`` of the thinned foliage;
+        by default the crown of one survivor.
+    foliage_fraction
+        Share of the leaf discs in the box that disappear.
+    tree_shift
+        Horizontal displacement (m, random direction) of every survivor's
+        stem between the epochs, to test matching; 0 keeps stems in place.
+    offset
+        ``(4, 4)`` rigid transform from the true frame to the frame epoch 2
+        is delivered in; by default a rotation of 1.5 degrees about z with
+        tilts of 0.1 and -0.15 degrees, and a shift of (0.8, -0.5, 0.15) m.
+    range_noise
+        Range noise (m, one sigma) of epoch 1 and epoch 2.
+    scan_positions
+        Scanner positions as ``(n, 2)`` fractions of the plot side (1.5 m
+        above ground); by default the centre and four positions at 0.2 and
+        0.8. Positions within 1 m of a stem are moved away from it.
+    scan_jitter
+        Standard deviation (m) of the epoch-2 scanners' offsets.
+    resolution_deg
+        Angular step of the scans (degrees).
+    max_echoes
+        Echoes recorded per pulse. :func:`scan` places every echo of a pulse
+        along the direction of its last one, so with more than one echo the
+        first echoes at a stem's silhouette are displaced sideways and stem
+        circles come out a few millimetres wide; one echo keeps every point
+        on its surface.
+    ground_density
+        Terrain points per m² before scanning.
+    min_spacing
+        Least distance between stems (m).
+    seed
+        Random seed; the same seed gives the same epochs.
+
+    Returns
+    -------
+    ForestEpochs
+
+    Raises
+    ------
+    ValueError
+        If the counts are inconsistent (more deaths than trees, more replaced
+        than deaths or recruits) or the trees cannot be placed.
+
+    Examples
+    --------
+    >>> ep = synthetic.forest_epochs(seed=1)
+    >>> ref, new = ep.clouds
+    >>> [c["tree_id"] for c in ep.of_kind("death")]
+    """
+    offset = _rpy(0.1, -0.15, 1.5, (0.8, -0.5, 0.15)) if offset is None else np.asarray(offset, dtype=float)
+    if offset.shape != (4, 4):
+        raise ValueError(f"offset must be a (4, 4) matrix, got shape {offset.shape}")
+    if scan_positions is None:
+        scan_positions = [(0.5, 0.5), (0.2, 0.2), (0.8, 0.2), (0.2, 0.8), (0.8, 0.8)]
+    pos = [tuple(float(v) for v in p) for p in np.asarray(scan_positions, dtype=float).reshape(-1, 2)]
+    box = None if foliage_box is None else [float(v) for v in np.asarray(foliage_box, dtype=float).reshape(6)]
+    for name, v in (("n_trees", n_trees), ("deaths", deaths), ("recruits", recruits), ("replaced", replaced),
+                    ("small_increments", small_increments), ("branch_removals", branch_removals)):
+        if int(v) < 0:
+            raise ValueError(f"{name} must be >= 0, got {v}")
+    noise = tuple(float(v) for v in range_noise)
+    d = _core.change_forest_epochs(int(n_trees), float(size), float(min_spacing), int(deaths), int(recruits),
+                                   int(replaced), int(small_increments),
+                                   tuple(float(v) for v in dbh_increment),
+                                   tuple(float(v) for v in height_increment), int(branch_removals), box,
+                                   float(foliage_fraction), float(tree_shift), np.ascontiguousarray(offset),
+                                   noise, pos, float(scan_jitter), float(resolution_deg), int(max_echoes),
+                                   float(ground_density), int(seed))
+    return ForestEpochs(
+        clouds=[PointCloud(xyz, attrs) for xyz, attrs in d["clouds"]],
+        shots=[Shots._from_core(s) for s in d["shots"]],
+        trees=list(d["trees"]),
+        changes=list(d["changes"]),
+        transform=d["transform"],
+        origins=list(d["origins"]),
+        range_noise=noise,
+    )

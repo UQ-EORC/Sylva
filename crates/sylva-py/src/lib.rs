@@ -38,6 +38,7 @@ mod coords_py;
 mod als_py;
 mod change_points_py;
 mod change_qsm_py;
+mod change_trees_py;
 
 fn err(e: sylva_rs::Error) -> PyErr {
     match e {
@@ -1521,6 +1522,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     als_py::register(m)?;
     change_points_py::register(m)?;
     change_qsm_py::register(m)?;
+    change_trees_py::register(m)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyProgressTask>()?;
     m.add_class::<PyCoregKdTree>()?;
