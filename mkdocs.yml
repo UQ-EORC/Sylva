@@ -33,6 +33,7 @@ nav:
       - Trees and crowns: guide/trees.md
       - Pulse data: guide/pulses.md
       - Ray-traced voxels: guide/voxels.md
+      - Interpolation: guide/interpolation.md
       - QSMs: guide/qsm.md
       - Leaves on a QSM: guide/leaves.md
       - Scan quality: guide/quality.md
@@ -61,6 +62,7 @@ nav:
       - Shots, RiSCAN: api/shots.md
       - filters: api/filters.md
       - ground: api/ground.md
+      - interpolate: api/interpolate.md
       - trees: api/trees.md
       - canopy: api/canopy.md
       - voxels: api/voxels.md
