@@ -14,6 +14,8 @@
 //! Algorithms are grouped by topic: [`filters`], [`cluster`], [`ground`],
 //! [`canopy`], [`voxel`], [`trees`], [`registration`] and [`qsm`].
 
+pub mod als;
+pub mod als_ops;
 pub mod buttress_detect;
 pub mod canopy;
 pub mod canopy_profile;
