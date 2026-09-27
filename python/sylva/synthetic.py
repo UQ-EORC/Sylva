@@ -43,8 +43,8 @@ def terrain_height(x, y, slope: float = 0.05) -> np.ndarray:
         ``slope * x + 0.2 * sin(y / 3)``.
     """
     x, y = np.broadcast_arrays(np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64))
-    z = _core.synthetic_terrain_height(np.ascontiguousarray(x).ravel(), np.ascontiguousarray(y).ravel(),
-                                       float(slope)).reshape(x.shape)
+    xs, ys = np.ascontiguousarray(x).ravel(), np.ascontiguousarray(y).ravel()
+    z = _core.synthetic_terrain_height(xs, ys, float(slope)).reshape(x.shape)
     return z[()] if z.ndim == 0 else z
 
 
@@ -74,8 +74,8 @@ def tree(x: float = 0.0, y: float = 0.0, dbh: float = 0.3, height: float = 12.0,
     -------
     PointCloud
     """
-    xyz, attrs = _core.synthetic_tree(float(x), float(y), float(dbh), float(height), float(z0), int(n_branches),
-                                      int(leaf_points), int(seed))
+    xyz, attrs = _core.synthetic_tree(float(x), float(y), float(dbh), float(height), float(z0),
+                                      int(n_branches), int(leaf_points), int(seed))
     return PointCloud(xyz, attrs)
 
 
@@ -125,8 +125,9 @@ def forest(trees=None, size: float = 20.0, ground_points: int = 40000, margin: f
     PointCloud
     """
     trees = DEFAULT_TREES if trees is None else trees
-    xyz, attrs = _core.synthetic_forest([tuple(float(v) for v in t) for t in trees], float(size), int(ground_points),
-                                        float(margin), int(seed))
+    rows = [tuple(float(v) for v in t) for t in trees]
+    xyz, attrs = _core.synthetic_forest(rows, float(size), int(ground_points), float(margin),
+                                        int(seed))
     return PointCloud(xyz, attrs)
 
 
@@ -163,5 +164,6 @@ def scan(cloud: PointCloud, origin=(10.0, 10.0, 1.5), resolution_deg: float = 0.
         One pulse per angular cell, misses included.
     """
     o = tuple(float(v) for v in origin)
-    return Shots._from_core(_core.synthetic_scan(cloud.xyz, cloud.attrs, o, float(resolution_deg),
-                                                 float(max_zenith_deg), int(max_echoes), float(echo_separation)))
+    d = _core.synthetic_scan(cloud.xyz, cloud.attrs, o, float(resolution_deg),
+                             float(max_zenith_deg), int(max_echoes), float(echo_separation))
+    return Shots._from_core(d)

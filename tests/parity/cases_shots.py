@@ -8,8 +8,14 @@ import numpy as np
 
 from sylva import PointCloud, Shots
 
-PATTERN = {"theta_start": 30.0, "theta_delta": 0.5, "theta_count": 40, "phi_start": 0.0,
-           "phi_delta": 3.0, "phi_count": 120}
+PATTERN = {
+    "theta_start": 30.0,
+    "theta_delta": 0.5,
+    "theta_count": 40,
+    "phi_start": 0.0,
+    "phi_delta": 3.0,
+    "phi_count": 120,
+}
 
 
 def _shots(seed, n=400, origin=(0.0, 0.0, 1.5), max_echoes=4, spread=0.0):
@@ -22,7 +28,10 @@ def _shots(seed, n=400, origin=(0.0, 0.0, 1.5), max_echoes=4, spread=0.0):
     ranges = np.concatenate([np.sort(rng.uniform(0.5, 60.0, c)) for c in counts])
     o = np.asarray(origin, float) + rng.normal(0, spread, (n, 3))
     m = int(counts.sum())
-    attrs = {"amplitude": rng.uniform(0, 40, m).astype(np.float32), "deviation": rng.integers(0, 60, m).astype(np.uint16)}
+    attrs = {
+        "amplitude": rng.uniform(0, 40, m).astype(np.float32),
+        "deviation": rng.integers(0, 60, m).astype(np.uint16),
+    }
     return Shots(o, d, start, counts, ranges, attrs)
 
 
@@ -39,15 +48,26 @@ def _pattern_scan(seed, keep=0.7, origin=(1.0, -2.0, 1.5)):
     tt, pp = tt[ok], pp[ok]
     d = np.column_stack([np.sin(tt) * np.sin(pp), np.sin(tt) * np.cos(pp), np.cos(tt)])
     n = len(d)
-    return Shots(np.tile(origin, (n, 1)), d, np.arange(n), np.ones(n, np.int64), rng.uniform(1, 30, n),
-                 {"reflectance": rng.normal(-5, 3, n)})
+    return Shots(
+        np.tile(origin, (n, 1)),
+        d,
+        np.arange(n),
+        np.ones(n, np.int64),
+        rng.uniform(1, 30, n),
+        {"reflectance": rng.normal(-5, 3, n)},
+    )
 
 
 def _flat(prefix, s):
-    return {f"{prefix}origin": s.origin, f"{prefix}direction": s.direction, f"{prefix}echo_start": s.echo_start,
-            f"{prefix}echo_count": s.echo_count, f"{prefix}echo_range": s.echo_range,
-            **{f"{prefix}attr_{k}": v for k, v in s.echo_attrs.items()},
-            f"{prefix}attr_names": np.array(sorted(s.echo_attrs), dtype=str)}
+    return {
+        f"{prefix}origin": s.origin,
+        f"{prefix}direction": s.direction,
+        f"{prefix}echo_start": s.echo_start,
+        f"{prefix}echo_count": s.echo_count,
+        f"{prefix}echo_range": s.echo_range,
+        **{f"{prefix}attr_{k}": v for k, v in s.echo_attrs.items()},
+        f"{prefix}attr_names": np.array(sorted(s.echo_attrs), dtype=str),
+    }
 
 
 def index_arithmetic():
@@ -65,8 +85,13 @@ def index_arithmetic():
     out["empty/echo_rank"] = empty.echo_rank()
     out["empty/echo_xyz"] = empty.echo_xyz()
     # Axis-aligned beams: atan2 of signed zeros and exact quadrants.
-    axes = Shots(np.zeros((6, 3)), np.array([[0, 1, 0], [1, 0, 0], [0, -1, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1.0]]),
-                 np.zeros(6, int), np.zeros(6, int), np.zeros(0))
+    axes = Shots(
+        np.zeros((6, 3)),
+        np.array([[0, 1, 0], [1, 0, 0], [0, -1, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1.0]]),
+        np.zeros(6, int),
+        np.zeros(6, int),
+        np.zeros(0),
+    )
     out["axes/zenith"], out["axes/azimuth"] = axes.zenith_azimuth()
     return out
 
@@ -75,8 +100,11 @@ def subset():
     s = _shots(4)
     rng = np.random.default_rng(40)
     out = {}
-    for name, mask in {"random": rng.uniform(size=s.n_shots) < 0.4, "none": np.zeros(s.n_shots, bool),
-                       "all": np.ones(s.n_shots, bool)}.items():
+    for name, mask in {
+        "random": rng.uniform(size=s.n_shots) < 0.4,
+        "none": np.zeros(s.n_shots, bool),
+        "all": np.ones(s.n_shots, bool),
+    }.items():
         out.update(_flat(f"{name}/", s.subset(mask)))
     out.update(_flat("ints/", s.subset((np.arange(s.n_shots) % 3 == 0).astype(int))))
     return out
@@ -99,14 +127,18 @@ def concatenate():
 def fill_missing():
     out = {}
     s = _pattern_scan(10)
-    for name, kw in {"estimated": {}, "given": {"pulses_per_line": 118, "seed": 3},
-                     "stride": {"shot_stride": 2, "seed": 11}, "large": {"pulses_per_line": 130, "seed": 12345678901}}.items():
+    for name, kw in {
+        "estimated": {},
+        "given": {"pulses_per_line": 118, "seed": 3},
+        "stride": {"shot_stride": 2, "seed": 11},
+        "large": {"pulses_per_line": 130, "seed": 12345678901},
+    }.items():
         f = s.fill_missing(PATTERN, **kw)
         out[f"{name}/n_shots"] = np.array(f.n_shots)
-        out[f"{name}/origin_added"] = f.origin[s.n_shots:][:3]
-        out[f"{name}/direction_added"] = f.direction[s.n_shots:]
+        out[f"{name}/origin_added"] = f.origin[s.n_shots :][:3]
+        out[f"{name}/direction_added"] = f.direction[s.n_shots :]
         out[f"{name}/echo_start"] = f.echo_start
-        out[f"{name}/equal_head"] = np.array(np.array_equal(f.direction[:s.n_shots], s.direction))
+        out[f"{name}/equal_head"] = np.array(np.array_equal(f.direction[: s.n_shots], s.direction))
     # Nothing missing: the shots come back unchanged.
     full = s.fill_missing(PATTERN, pulses_per_line=1)
     out["none/same"] = np.array(full is s)
@@ -143,10 +175,19 @@ def core_functions():
     t = np.repeat(np.arange(120.0), [1, 2] * 40 + [2] * 40)[:200]
     cloud = PointCloud(xyz, {"gps_time": t, "intensity": rng.uniform(0, 1, 200)})
     out.update(_flat("from_pc/", Shots.from_pointcloud(cloud, origin=(0.5, 0.5, 1.0))))
-    ray = PointCloud(xyz, {"nx": rng.normal(size=200), "ny": rng.normal(size=200), "nz": rng.uniform(1, 2, 200),
-                           "alpha": (rng.uniform(size=200) < 0.9).astype(np.float64)})
+    ray = PointCloud(
+        xyz,
+        {
+            "nx": rng.normal(size=200),
+            "ny": rng.normal(size=200),
+            "nz": rng.uniform(1, 2, 200),
+            "alpha": (rng.uniform(size=200) < 0.9).astype(np.float64),
+        },
+    )
     out.update(_flat("from_ray/", Shots.from_ray_cloud(ray)))
     return out
 
 
-CASES = {f.__name__: f for f in (index_arithmetic, subset, concatenate, fill_missing, core_functions)}
+CASES = {
+    f.__name__: f for f in (index_arithmetic, subset, concatenate, fill_missing, core_functions)
+}
