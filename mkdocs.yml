@@ -37,6 +37,7 @@ nav:
       - Ray-traced voxels: guide/voxels.md
       - Interpolation: guide/interpolation.md
       - QSMs: guide/qsm.md
+      - Change detection: guide/change.md
       - Leaves on a QSM: guide/leaves.md
       - Scan quality: guide/quality.md
       - Command line: guide/cli.md
@@ -73,6 +74,7 @@ nav:
       - coords: api/coords.md
       - coreg: api/coreg.md
       - qsm: api/qsm.md
+      - change: api/change.md
       - leaves: api/leaves.md
       - quality: api/quality.md
       - progress: api/progress.md
