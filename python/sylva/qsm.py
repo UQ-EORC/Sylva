@@ -12,14 +12,14 @@ and links parents.
 
 from __future__ import annotations
 
-import csv
+import inspect
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
-from . import _core, limits
+from . import _core
 from .pointcloud import PointCloud
 
 __all__ = ["QSM", "PlotQSMs", "build_plot", "fit_cylinder", "fit_cylinder_ransac", "skeletonize", "build_qsm", "wood_points",
@@ -97,37 +97,37 @@ class QSM:
     @property
     def end(self) -> np.ndarray:
         """Cylinder end points, ``start + axis * length``."""
-        return self.start + self.axis * self.column("length")[:, None]
+        return _core.qsm_ends(self.cylinders)
 
     @property
     def volumes(self) -> np.ndarray:
         """Volume of each cylinder (m³)."""
-        return np.pi * self.column("radius") ** 2 * self.column("length")
+        return _core.qsm_volumes(self.cylinders)
 
     @property
     def total_volume(self) -> float:
         """Woody volume of the tree (m³); multiply by basic density for biomass."""
-        return float(self.volumes.sum())
+        return _core.qsm_totals(self.cylinders)["total_volume"]
 
     @property
     def stem_volume(self) -> float:
         """Volume of the order-0 cylinders (m³)."""
-        return float(self.volumes[self.column("branch_order") == 0].sum())
+        return _core.qsm_totals(self.cylinders)["stem_volume"]
 
     @property
     def branch_volume(self) -> float:
         """Volume of all branches, order >= 1 (m³)."""
-        return self.total_volume - self.stem_volume
+        return _core.qsm_totals(self.cylinders)["branch_volume"]
 
     @property
     def total_length(self) -> float:
         """Summed cylinder length (m)."""
-        return float(self.column("length").sum())
+        return _core.qsm_totals(self.cylinders)["total_length"]
 
     @property
     def max_branch_order(self) -> int:
         """Highest branch order (0 for a bare stem or empty model)."""
-        return int(self.column("branch_order").max()) if len(self) else 0
+        return int(_core.qsm_totals(self.cylinders)["max_branch_order"])
 
     @property
     def dbh(self) -> float:
@@ -255,7 +255,7 @@ class QSM:
         -------
         QSM
         """
-        return cls(np.loadtxt(path, delimiter=",", skiprows=1, ndmin=2))
+        return cls(_core.qsm_read_csv(str(path)))
 
     def mesh(self, sides: int = 12, contiguous: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Triangle mesh of the cylinders.
@@ -296,8 +296,7 @@ class QSM:
         contiguous
             One continuous tube per branch (see :meth:`mesh`).
         """
-        v, f, _ = self.mesh(sides, contiguous)
-        write_obj(path, [(v, f)])
+        _core.qsm_write_obj(str(path), self.cylinders, int(sides), bool(contiguous))
 
     def volume_above(self, z: float) -> float:
         """Cylinder volume above a horizontal plane, cutting cylinders that cross it.
@@ -316,11 +315,7 @@ class QSM:
             Volume (m³); a cylinder crossing the plane counts by the share of
             its axis above it.
         """
-        z0, z1 = self.start[:, 2], self.end[:, 2]
-        lo, hi = np.minimum(z0, z1), np.maximum(z0, z1)
-        span = np.maximum(hi - lo, 1e-12)
-        share = np.where(hi <= z, 0.0, np.where(lo >= z, 1.0, (hi - z) / span))
-        return float((self.volumes * share).sum())
+        return _core.qsm_volume_above(self.cylinders, float(z))
 
     def above(self, z: float) -> QSM:
         """The model above a horizontal plane, cutting cylinders that cross it.
@@ -345,24 +340,7 @@ class QSM:
         A cylinder is cut where its axis crosses the plane, so a leaning one
         keeps a slanted stub rather than being squared off.
         """
-        rows = self.cylinders.copy()
-        s, a, L = self.start, self.axis, self.column("length")
-        e = self.end
-        keep = np.maximum(s[:, 2], e[:, 2]) > z
-        dz = a[:, 2] * L
-        with np.errstate(divide="ignore", invalid="ignore"):
-            t = np.where(np.abs(dz) > 1e-12, (z - s[:, 2]) / np.where(np.abs(dz) > 1e-12, dz, 1.0), 0.0)
-        cut = keep & (s[:, 2] < z) & (np.abs(dz) > 1e-12)  # starts below, so trim the base
-        t = np.clip(t, 0.0, 1.0)
-        rows[cut, 0:3] = s[cut] + a[cut] * (t[cut] * L[cut])[:, None]
-        rows[cut, 6] = L[cut] * (1.0 - t[cut])
-        # Renumber: a dropped parent leaves its children as branch bases.
-        idx = np.full(len(self), -1)
-        idx[keep] = np.arange(int(keep.sum()))
-        rows = rows[keep]
-        par = rows[:, 8].astype(int)
-        rows[:, 8] = np.where(par >= 0, idx[np.clip(par, 0, len(idx) - 1)], -1)
-        return QSM(rows)
+        return QSM(_core.qsm_above(self.cylinders, float(z)))
 
     def to_ply(self, path: str | Path, sides: int = 12, color=None, contiguous: bool = False) -> None:
         """Write the cylinder mesh as a binary PLY with face colours.
@@ -379,17 +357,20 @@ class QSM:
         contiguous
             One continuous tube per branch (see :meth:`mesh`).
         """
-        v, f, owner = self.mesh(sides, contiguous)
-        if color is None:
-            order = self.column("branch_order").astype(int)
-            face_rgb = _ORDER_COLORS[np.minimum(order[owner], len(_ORDER_COLORS) - 1)]
-        else:
-            face_rgb = np.tile(np.asarray(color, dtype=np.uint8), (len(f), 1))
-        write_ply_mesh(path, v, f, face_rgb)
+        _core.qsm_write_ply(str(path), self.cylinders, int(sides), _rgb(color), bool(contiguous))
 
 
-_ORDER_COLORS = np.array([[139, 90, 43], [205, 133, 63], [222, 184, 135], [60, 179, 113],
-                          [46, 139, 87], [34, 139, 34]], dtype=np.uint8)
+def _rgb(color):
+    """One RGB triple as three ints (0-255), or None."""
+    return None if color is None else [int(c) for c in np.broadcast_to(np.asarray(color, dtype=np.uint8), (3,))]
+
+
+def _faces(faces) -> np.ndarray:
+    """``(m, 3)`` vertex indices as uint32; an error for negative ones."""
+    f = np.asarray(faces, dtype=np.int64).reshape(-1, 3)
+    if (f < 0).any():
+        raise ValueError("face indices must not be negative")
+    return np.ascontiguousarray(f, dtype=np.uint32)
 
 
 @dataclass
@@ -479,16 +460,11 @@ class Buttress:
         >>> b = buttress_mesh(cloud, base_xy=(x, y))          # doctest: +SKIP
         >>> b.fuse(model).to_ply("tree.ply")                  # doctest: +SKIP
         """
-        wv, wf, _ = model.above(self.top_z - float(overlap)).mesh(sides, contiguous)
-        v = np.vstack([self.vertices, wv]) if len(wv) else np.asarray(self.vertices, float)
-        f = np.vstack([self.faces, wf + len(self.vertices)]) if len(wf) else np.asarray(self.faces)
-        part = np.concatenate([np.zeros(len(self.faces), np.uint8), np.ones(len(wf), np.uint8)])
-        # How the two meet: the stem should sit inside the base at the join.
-        base = _section(np.asarray(self.vertices, float), np.asarray(self.faces), self.top_z - 0.05)
-        stem = _section(wv, wf, self.top_z + 0.05) if len(wf) else np.zeros((0, 2, 2))
-        offset, overhang = _join_fit(base, stem)
-        return TreeMesh(v, f.astype(np.uint32), part, self.volume,
-                        model.volume_above(self.top_z), self.top_z, offset, overhang)
+        d = _core.qsm_fuse(np.ascontiguousarray(self.vertices, dtype=float), _faces(self.faces),
+                           float(self.volume), float(self.top_z), model.cylinders, int(sides), bool(contiguous),
+                           float(overlap))
+        return TreeMesh(d["vertices"], d["faces"], d["part"], d["buttress_volume"], d["wood_volume"],
+                        d["top_z"], d["offset"], d["overhang"])
 
     def to_obj(self, path: str | Path) -> None:
         """Write the mesh as a Wavefront OBJ object named ``buttress``.
@@ -513,57 +489,22 @@ class Buttress:
 
 def _section(vertices: np.ndarray, faces: np.ndarray, z: float) -> np.ndarray:
     """Segments where a mesh crosses the plane ``z``, as ``(n, 2, 2)`` in xy."""
-    t = vertices[faces]
-    d = t[:, :, 2] - z
-    hit = ~((d > 0).all(1) | (d < 0).all(1))
-    t, d = t[hit], d[hit]
-    if not len(t):
-        return np.zeros((0, 2, 2))
-    ends = []
-    for a, b in ((0, 1), (1, 2), (2, 0)):
-        da, db = d[:, a], d[:, b]
-        cross = (da > 0) != (db > 0)
-        w = np.where(cross, da / np.where(da == db, 1e-12, da - db), np.nan)[:, None]
-        ends.append((t[:, a] + w * (t[:, b] - t[:, a]))[:, :2])
-    e = np.stack(ends, 1)
-    ok = ~np.isnan(e).any(2)
-    keep = ok.sum(1) >= 2
-    e, ok = e[keep], ok[keep]
-    first = np.argmax(ok, 1)
-    second = ok.shape[1] - 1 - np.argmax(ok[:, ::-1], 1)
-    i = np.arange(len(e))
-    return np.stack([e[i, first], e[i, second]], 1)
+    return _core.qsm_section(np.ascontiguousarray(vertices, dtype=float), _faces(faces), float(z))
+
+
+def _segments(section) -> np.ndarray:
+    return np.ascontiguousarray(section, dtype=float).reshape(-1, 2, 2)
 
 
 def _inside(section: np.ndarray, points: np.ndarray) -> np.ndarray:
     """Even-odd test of ``points`` against a soup of segments (:func:`_section`)."""
-    hits = np.zeros(len(points), int)
-    for (x0, y0), (x1, y1) in section:
-        if y0 == y1:
-            continue
-        lo, hi = min(y0, y1), max(y0, y1)
-        m = (points[:, 1] >= lo) & (points[:, 1] < hi)
-        if not m.any():
-            continue
-        f = (points[m, 1] - y0) / (y1 - y0)
-        hits[m] += (x0 + f * (x1 - x0)) > points[m, 0]
-    return hits % 2 == 1
+    return _core.qsm_inside(_segments(section), np.ascontiguousarray(points, dtype=float))
 
 
 def _join_fit(base: np.ndarray, wood: np.ndarray, cell: float = 0.02) -> tuple[float, float]:
     """How well the wood sits inside the base: centre offset (m) and the share
     of the wood's cross-section outside it."""
-    if not len(base) or not len(wood):
-        return float("nan"), float("nan")
-    offset = float(np.linalg.norm(wood.reshape(-1, 2).mean(0) - base.reshape(-1, 2).mean(0)))
-    lo = wood.reshape(-1, 2).min(0) - cell
-    hi = wood.reshape(-1, 2).max(0) + cell
-    gx, gy = np.meshgrid(np.arange(lo[0], hi[0], cell), np.arange(lo[1], hi[1], cell))
-    p = np.column_stack([gx.ravel(), gy.ravel()])
-    inw = _inside(wood, p)
-    if not inw.any():
-        return offset, float("nan")
-    return offset, float((inw & ~_inside(base, p)).sum() / inw.sum())
+    return _core.qsm_join_fit(_segments(base), _segments(wood), float(cell))
 
 
 @dataclass
@@ -613,14 +554,8 @@ class TreeMesh:
         path
             Output file.
         """
-        parts, names = [], []
-        for k, name in ((0, "buttress"), (1, "wood")):
-            f = self.faces[self.part == k]
-            if len(f):
-                used, inv = np.unique(f, return_inverse=True)
-                parts.append((self.vertices[used], inv.reshape(f.shape)))
-                names.append(name)
-        write_obj(path, parts, names=names)
+        _core.tree_mesh_write_obj(str(path), np.ascontiguousarray(self.vertices, dtype=float), _faces(self.faces),
+                                  np.ascontiguousarray(self.part, dtype=np.uint8))
 
     def to_ply(self, path: str | Path, color=None) -> None:
         """Write the mesh as a binary PLY, the buttress darker than the wood.
@@ -633,14 +568,8 @@ class TreeMesh:
             One RGB triple (0-255) for every face; by default the buttress is
             bark brown and the wood keeps the stem colour.
         """
-        if color is None:
-            face_rgb = np.where(self.part[:, None] == 0, _BUTTRESS_COLOR, _ORDER_COLORS[0]).astype(np.uint8)
-        else:
-            face_rgb = np.tile(np.asarray(color, dtype=np.uint8), (len(self.faces), 1))
-        write_ply_mesh(path, self.vertices, self.faces, face_rgb)
-
-
-_BUTTRESS_COLOR = np.array([101, 67, 33], dtype=np.uint8)
+        _core.tree_mesh_write_ply(str(path), np.ascontiguousarray(self.vertices, dtype=float), _faces(self.faces),
+                                  np.ascontiguousarray(self.part, dtype=np.uint8), _rgb(color))
 
 
 def buttress_mesh(cloud: PointCloud, base_xy, ground_z: float | None = None,
@@ -723,20 +652,14 @@ def buttress_mesh(cloud: PointCloud, base_xy, ground_z: float | None = None,
     >>> b.to_obj("buttress.obj")
     """
     h = np.ascontiguousarray(cloud.heights(height_attr), dtype=float)
-    cx, cy = float(base_xy[0]), float(base_xy[1])
-    if ground_z is None:
-        near = np.hypot(cloud.x - cx, cloud.y - cy) <= 1.0
-        base = (cloud.z - h)[near] if near.any() else cloud.z - h
-        ground_z = float(np.median(base))
-    # The raster is fixed by the settings, not by the cloud, so a fine
-    # resolution over a wide reach is a large grid whatever was scanned.
-    nx = ny = int(2 * max_radius / max(resolution, 1e-6)) + 1
-    nz = int(max_height / max(slice_height, 1e-6)) + 1
-    limits.check(nx * ny * nz, 2, f"a {nx} x {ny} x {nz} buttress raster at {resolution} m",
-                 "a coarser resolution, a smaller max_radius, or a lower max_height")
-    d = _core.buttress_mesh(cloud.xyz, h, cx, cy, float(ground_z), resolution, slice_height,
-                            close_radius, max_radius, max_height, top, solidity, 4, 0.5, 30,
-                            float(max_flare), int(smooth))
+    d = _core.qsm_buttress_mesh(cloud.xyz, h, float(base_xy[0]), float(base_xy[1]),
+                                None if ground_z is None else float(ground_z), resolution, slice_height,
+                                close_radius, max_radius, max_height, top, solidity, 4, 0.5, 30,
+                                float(max_flare), int(smooth))
+    return _buttress(d)
+
+
+def _buttress(d: dict) -> Buttress:
     return Buttress(d["vertices"], d["faces"], d["volume"], d["top"], d["top_z"], d["heights"],
                     d["areas"], d["solidities"], d["open"])
 
@@ -755,14 +678,10 @@ def write_obj(path: str | Path, meshes: list[tuple[np.ndarray, np.ndarray]],
     names
         Object names; ``tree_1``, ``tree_2``, ... if None.
     """
-    with open(path, "w") as fh:
-        fh.write("# sylva QSM mesh\n")
-        offset = 1
-        for i, (v, f) in enumerate(meshes):
-            fh.write(f"o {names[i] if names else f'tree_{i + 1}'}\n")
-            np.savetxt(fh, v, fmt="v %.4f %.4f %.4f")
-            np.savetxt(fh, np.asarray(f, dtype=np.int64) + offset, fmt="f %d %d %d")
-            offset += len(v)
+    meshes = list(meshes)
+    names = [str(names[i]) if names else f"tree_{i + 1}" for i in range(len(meshes))]
+    _core.write_obj(str(path), [(np.ascontiguousarray(v, dtype=float).reshape(-1, 3), _faces(f)) for v, f in meshes],
+                    names)
 
 
 def write_ply_mesh(path: str | Path, vertices: np.ndarray, faces: np.ndarray,
@@ -780,28 +699,11 @@ def write_ply_mesh(path: str | Path, vertices: np.ndarray, faces: np.ndarray,
     face_rgb
         Optional ``(m, 3)`` uint8 colour per face.
     """
-    vertices = np.ascontiguousarray(vertices, dtype=np.float32)
-    faces = np.ascontiguousarray(faces, dtype=np.int32)
-    header = ["ply", "format binary_little_endian 1.0", "comment sylva QSM mesh",
-              f"element vertex {len(vertices)}", "property float x", "property float y",
-              "property float z", f"element face {len(faces)}",
-              "property list uchar int vertex_indices"]
+    faces = np.ascontiguousarray(np.asarray(faces).astype(np.int32, copy=False).reshape(-1, 3))
+    rgb = None
     if face_rgb is not None:
-        header += ["property uchar red", "property uchar green", "property uchar blue"]
-    header.append("end_header")
-    with open(path, "wb") as fh:
-        fh.write(("\n".join(header) + "\n").encode("ascii"))
-        fh.write(vertices.tobytes())
-        if face_rgb is None:
-            rec = np.dtype([("n", "u1"), ("i", "<i4", (3,))])
-            arr = np.empty(len(faces), dtype=rec)
-        else:
-            rec = np.dtype([("n", "u1"), ("i", "<i4", (3,)), ("rgb", "u1", (3,))])
-            arr = np.empty(len(faces), dtype=rec)
-            arr["rgb"] = np.asarray(face_rgb, dtype=np.uint8)
-        arr["n"] = 3
-        arr["i"] = faces
-        fh.write(arr.tobytes())
+        rgb = np.ascontiguousarray(np.broadcast_to(np.asarray(face_rgb, dtype=np.uint8), (len(faces), 3)))
+    _core.write_ply_mesh(str(path), np.ascontiguousarray(vertices, dtype=float).reshape(-1, 3), faces, rgb)
 
 
 def fit_cylinder(xyz: np.ndarray, axis_init=None) -> dict:
@@ -1039,14 +941,26 @@ class PlotQSMs:
         -------
         float
         """
-        m = self.models[tree_id]
-        b = self.buttresses.get(tree_id)
-        return b.total_volume(m) if b is not None else m.total_volume
+        return _core.plot_total_volume([self._entry(tree_id, self.models[tree_id])])
 
     @property
     def total_volume(self) -> float:
         """Wood volume of the whole plot (m³)."""
-        return float(sum(self.volume(t) for t in self.models))
+        return _core.plot_total_volume(self._entries())
+
+    def _entry(self, t: int, m: QSM) -> tuple:
+        """One tree as the core reads a plot."""
+        b = self.buttresses.get(t)
+        if b is not None:
+            b = (np.ascontiguousarray(b.vertices, dtype=float), _faces(b.faces), float(b.volume), float(b.top),
+                 float(b.top_z))
+        points = self._points.get(t)
+        height = self._heights.get(t)
+        return (int(t), np.ascontiguousarray(m.cylinders, dtype=float), None if points is None else int(points),
+                None if height is None else float(height), b)
+
+    def _entries(self) -> list:
+        return [self._entry(t, m) for t, m in self.models.items()]
 
     def table(self) -> list[dict]:
         """One row per tree, ready for a CSV.
@@ -1060,24 +974,10 @@ class PlotQSMs:
             from the taper and pipe-model priors), and ``buttress_m3`` /
             ``buttress_top_m`` (blank without a buttress).
         """
-        rows = []
-        for t, m in sorted(self.models.items()):
-            b = self.buttresses.get(t)
-            s = m.summary()
-            fit = m.metrics()
-            rows.append({
-                "tree_id": t,
-                "points": self._points.get(t, ""),
-                "volume_m3": round(self.volume(t), 5),
-                "dbh_m": round(s["dbh_m"], 4),
-                "height_m": round(self._heights.get(t, float("nan")), 2),
-                "n_cylinders": s["n_cylinders"],
-                "measured_volume": round(fit["measured_volume_fraction"], 3),
-                "measured_length": round(fit["measured_length_fraction"], 3),
-                "buttress_m3": round(b.volume, 5) if b is not None else "",
-                "buttress_top_m": round(b.top, 2) if b is not None else "",
-            })
-        return rows
+        keys = ("tree_id", "points", "volume_m3", "dbh_m", "height_m", "n_cylinders", "measured_volume",
+                "measured_length", "buttress_m3", "buttress_top_m")
+        return [{k: "" if v is None else v for k, v in zip(keys, row, strict=True)}
+                for row in _core.plot_table(self._entries())]
 
     def to_csv(self, path: str | Path) -> None:
         """Write :meth:`table` as a CSV.
@@ -1087,11 +987,7 @@ class PlotQSMs:
         path
             Output file.
         """
-        rows = self.table()
-        with open(path, "w", newline="") as fh:
-            w = csv.DictWriter(fh, list(rows[0]) if rows else ["tree_id"])
-            w.writeheader()
-            w.writerows(rows)
+        _core.plot_write_csv(str(path), self._entries())
 
     def write_meshes(self, directory: str | Path, fmt: str = "ply", sides: int = 12,
                      contiguous: bool = True, prefix: str = "tree") -> list[Path]:
@@ -1125,27 +1021,9 @@ class PlotQSMs:
         ValueError
             For an unknown format.
         """
-        if fmt not in ("ply", "obj"):
-            raise ValueError("fmt must be 'ply' or 'obj'")
-        from . import progress
-
         d = Path(directory)
-        d.mkdir(parents=True, exist_ok=True)
-        out = []
-        with progress.task("writing meshes", len(self.models)) as prog:
-            for t, m in sorted(self.models.items()):
-                path = d / f"{prefix}{t}.{fmt}"
-                b = self.buttresses.get(t)
-                mesh = b.fuse(m, sides=sides, contiguous=contiguous) if b is not None else None
-                if mesh is not None:
-                    mesh.to_ply(path) if fmt == "ply" else mesh.to_obj(path)
-                elif fmt == "ply":
-                    m.to_ply(path, sides=sides, contiguous=contiguous)
-                else:
-                    m.to_obj(path, sides=sides, contiguous=contiguous)
-                out.append(path)
-                prog.update()
-        return out
+        written = _core.plot_write_meshes(str(d), self._entries(), str(fmt), int(sides), bool(contiguous), str(prefix))
+        return [d / Path(p).name for p in written]
 
     def write_cylinders(self, directory: str | Path, prefix: str = "tree") -> None:
         """Write one cylinder CSV per tree into ``directory``.
@@ -1157,10 +1035,7 @@ class PlotQSMs:
         prefix
             File name stem; files are ``<prefix><tree_id>.csv``.
         """
-        d = Path(directory)
-        d.mkdir(parents=True, exist_ok=True)
-        for t, m in self.models.items():
-            m.to_csv(d / f"{prefix}{t}.csv")
+        _core.plot_write_cylinders(str(directory), self._entries(), str(prefix))
 
     #: filled in by build_plot
     _points: dict = None
@@ -1237,52 +1112,30 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
     ``build_plot`` warns when the median model was hardly fitted at all, and
     ``measured_length`` in :meth:`PlotQSMs.table` says so per tree.
     """
-    from . import filters, progress, trees as _trees
-
     labels = np.asarray(labels)
     if len(labels) != len(cloud):
         raise ValueError("labels must have one value per point")
-    ids = [int(t) for t in np.unique(labels) if t >= 0]
-    centres = {int(s.tree_id): (s.x, s.y) for s in stems} if stems is not None else {}
+    if labels.dtype.kind == "f":
+        whole = np.isnan(labels) | (labels == np.trunc(labels))
+        if not whole.all():
+            raise ValueError("labels must be whole numbers")
+        labels = np.where(np.isnan(labels), -1, labels)
+    qsm_params = _qsm_settings(params)
+    stems = list(stems) if stems is not None else []
     heights = cloud.attrs.get(height_attr)
-    models, bases, skipped, points, tops = {}, {}, {}, {}, {}
-    with progress.task("fitting QSMs", len(ids)) as prog:
-        for tid in ids:
-            prog.update()
-            m = labels == tid
-            n = int(m.sum())
-            if n < min_points:
-                skipped[tid] = f"{n} points"
-                continue
-            tree = cloud[m]
-            points[tid] = n
-            if heights is not None:
-                tops[tid] = float(heights[m].max())
-            thin = filters.voxel_downsample(tree, voxel_size) if voxel_size > 0 else tree
-            base = centres.get(tid)
-            if base is None:
-                h = thin.attrs.get(height_attr)
-                low = thin.xyz[(h > 0.5) & (h < 1.5)] if h is not None else thin.xyz
-                base = tuple(np.median(low[:, :2] if len(low) > 20 else thin.xyz[:, :2], axis=0))
-            try:
-                models[tid] = build_qsm(wood_points(thin) if wood else thin, base_xy=base, **params)
-            except (ValueError, RuntimeError) as e:
-                skipped[tid] = str(e)
-                continue
-            if buttress and heights is not None:
-                found = _trees.detect_buttress(tree, base_xy=base, height_attr=height_attr)
-                if found["buttressed"]:
-                    b = buttress_mesh(tree, found["centre"], height_attr=height_attr, top=found["top"])
-                    if len(b.faces):
-                        bases[tid] = b
-    out = PlotQSMs(models, bases, skipped)
-    object.__setattr__(out, "_points", points)
-    object.__setattr__(out, "_heights", tops)
-    if models:
+    d = _core.qsm_build_plot(cloud.xyz, np.ascontiguousarray(labels, dtype=np.int64),
+                             None if heights is None else np.ascontiguousarray(heights, dtype=float),
+                             [int(s.tree_id) for s in stems], [(float(s.x), float(s.y)) for s in stems],
+                             float(voxel_size), bool(wood), bool(buttress), float(min_points), qsm_params)
+    out = PlotQSMs({t: QSM(c) for t, c in d["models"]}, {t: _buttress(b) for t, b in d["buttresses"]},
+                   dict(d["skipped"]))
+    object.__setattr__(out, "_points", dict(d["points"]))
+    object.__setattr__(out, "_heights", dict(d["heights"]))
+    share = d["median_measured_length"]
+    if share is not None:
         # A model whose cylinders were never fitted to points is the taper and
         # pipe-model priors talking, and those inflate. The usual cause is a
         # cloud too sparse for the shell width.
-        share = float(np.median([m.metrics()["measured_length_fraction"] for m in models.values()]))
         if share < 0.1:
             warnings.warn(
                 f"only {share:.0%} of the median model's length was fitted to points: "
@@ -1290,6 +1143,18 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
                 "Radii then come from the priors and run large; check measured_length in the table.",
                 stacklevel=2,
             )
+    return out
+
+
+def _qsm_settings(params: dict) -> dict:
+    """Every :func:`build_qsm` setting, its default unless ``params`` sets it."""
+    sig = inspect.signature(build_qsm)
+    for k in ("cloud", "base_xy"):
+        if k in params:
+            raise TypeError(f"build_qsm() got multiple values for argument '{k}'")
+    sig.bind(None, **params)  # a TypeError for a setting build_qsm does not take
+    out = {k: p.default for k, p in sig.parameters.items() if k not in ("cloud", "base_xy")}
+    out.update(params)
     return out
 
 

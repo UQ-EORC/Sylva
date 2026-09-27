@@ -42,6 +42,8 @@ pub mod optim;
 pub mod pointcloud;
 pub mod progress;
 pub mod qsm;
+pub mod qsm_ops;
+pub mod qsm_plot;
 pub mod quality;
 pub mod quality_summary;
 pub mod raster;
