@@ -1068,8 +1068,11 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
         anything below 0 is not part of a tree.
     stems
         The detected trees, used for the stem centre each model is built
-        around. Without them the centre is the middle of the tree's own
-        points between 0.5 and 1.5 m.
+        around, and their DBH, which anchors each model's base radius
+        (``base_radius = dbh / 2``) unless ``base_radius`` is given. Without
+        that anchor, a small tree with a leafy crown can take its trunk
+        radius from a foliage clump. Without stems the centre is the middle
+        of the tree's own points between 0.5 and 1.5 m.
     voxel_size
         Thin each tree to this spacing first (m); 0 keeps every point.
     wood
@@ -1126,6 +1129,7 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
     d = _core.qsm_build_plot(cloud.xyz, np.ascontiguousarray(labels, dtype=np.int64),
                              None if heights is None else np.ascontiguousarray(heights, dtype=float),
                              [int(s.tree_id) for s in stems], [(float(s.x), float(s.y)) for s in stems],
+                             [float(getattr(s, "dbh", np.nan)) for s in stems],
                              float(voxel_size), bool(wood), bool(buttress), float(min_points), qsm_params)
     out = PlotQSMs({t: QSM(c) for t, c in d["models"]}, {t: _buttress(b) for t, b in d["buttresses"]},
                    dict(d["skipped"]))

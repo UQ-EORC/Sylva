@@ -17,9 +17,12 @@ PAGES = {
     "pointcloud": "pointcloud.md", "raster": "pointcloud.md", "io": "io.md", "shots": "shots.md",
     "riscan": "shots.md", "filters": "filters.md", "registration": "registration.md",
     "coreg": "coreg.md", "ground": "ground.md", "trees": "trees.md", "canopy": "canopy.md", "voxels": "voxels.md",
+    "interpolate": "interpolate.md",
     "qsm": "qsm.md", "leaves": "leaves.md", "quality": "quality.md", "synthetic": "synthetic.md",
     "progress": "progress.md", "limits": "limits.md",
+    "masks": "masks.md",
 }
+PAGES["coords"] = "coords.md"
 
 
 def _summary(obj) -> str:

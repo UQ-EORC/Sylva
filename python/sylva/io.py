@@ -18,6 +18,7 @@ Pulse data has its own format, see :meth:`sylva.Shots.save`.
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -51,7 +52,9 @@ def read(path: str | Path) -> PointCloud:
           ``classification``, ``scan_angle``, ``user_data``,
           ``point_source_id``, plus ``gps_time`` and ``red``/``green``/``blue``
           when the point format has them, and every extra-bytes dimension
-          under its own name and type.
+          under its own name and type. ``crs`` is the header's OGC WKT, or
+          ``"EPSG:n"`` (``"EPSG:h+v"`` with a vertical CRS) from its GeoTIFF
+          keys; None if the header declares neither.
         - PLY: every ``vertex`` property except x, y, z, with its type.
           raycloudtools ray clouds give ``nx``, ``ny``, ``nz`` (point to
           sensor) and ``alpha``; see :meth:`sylva.Shots.from_ray_cloud`.
@@ -66,10 +69,11 @@ def read(path: str | Path) -> PointCloud:
         For an unsupported extension or invalid option.
     """
     xyz, attrs = _core.read(str(path))
-    return PointCloud(xyz, attrs)
+    crs = _core.read_las_crs(str(path)) if Path(path).suffix.lower() in (".las", ".laz") else None
+    return PointCloud(xyz, attrs, crs)
 
 
-def write(cloud: PointCloud, path: str | Path, point_format: int = 6, scale: float = 0.001,
+def write(cloud: PointCloud, path: str | Path, point_format: int = 6, scale: float | None = None,
           binary: bool = True) -> None:
     """Write a point cloud, choosing the writer from the file extension.
 
@@ -85,8 +89,10 @@ def write(cloud: PointCloud, path: str | Path, point_format: int = 6, scale: flo
         LAS point data record format (LAS/LAZ only). 6 (LAS 1.4, with GPS
         time) is the default; use 7 or 8 to keep RGB.
     scale
-        LAS coordinate quantisation in metres (LAS/LAZ only). 0.001 keeps
-        millimetres; the offset is the floor of the minimum coordinate.
+        LAS coordinate quantisation in the units of the coordinates
+        (LAS/LAZ only); the offset is the floor of the minimum coordinate.
+        By default 0.001 (millimetres), or 1e-7 degrees (about 1 cm) when
+        the cloud's ``crs`` is geographic (longitude and latitude).
     binary
         Binary little-endian PLY if True, ASCII otherwise (PLY only).
 
@@ -94,8 +100,11 @@ def write(cloud: PointCloud, path: str | Path, point_format: int = 6, scale: flo
     -----
     LAS/LAZ: attributes that are not standard dimensions of ``point_format``
     are written as typed extra bytes, so ``height``, ``tree_id`` and the like
-    survive a round trip. Text files get a header line naming the columns
-    and coordinates to 0.1 mm; integer attributes are written as integers.
+    survive a round trip. The cloud's ``crs`` is stored as an OGC WKT VLR
+    (an EPSG code as the registry's WKT); a CRS given as a PROJ string has
+    no WKT form and is left out with a warning. Text files get a header
+    line naming the columns and coordinates to 0.1 mm; integer attributes
+    are written as integers. PLY and text files have no place for a CRS.
 
     Raises
     ------
@@ -104,7 +113,21 @@ def write(cloud: PointCloud, path: str | Path, point_format: int = 6, scale: flo
     ValueError
         For an unsupported extension or invalid option.
     """
-    _core.write(str(path), cloud.xyz, cloud.attrs, point_format, scale, binary)
+    crs_wkt = None
+    geographic = False
+    if getattr(cloud, "crs", None) is not None and Path(path).suffix.lower() in (".las", ".laz"):
+        try:
+            info = _core.crs_info(cloud.crs)
+            crs_wkt, geographic = info["wkt"], bool(info["geographic"])
+        except ValueError:                       # WKT Sylva cannot interpret: store it as given
+            text = cloud.crs.strip()
+            crs_wkt = text if text[:1].isalpha() and "[" in text else None
+        if crs_wkt is None:
+            warnings.warn(f"the CRS {cloud.crs!r} has no WKT form and is not stored in {path}; "
+                          "give it as an EPSG code or WKT to keep it", UserWarning, stacklevel=2)
+    if scale is None:
+        scale = 1e-7 if geographic else 0.001
+    _core.write(str(path), cloud.xyz, cloud.attrs, point_format, scale, binary, crs_wkt)
 
 
 def read_ascii(path: str | Path, columns: list[str] | None = None) -> PointCloud:

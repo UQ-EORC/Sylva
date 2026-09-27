@@ -30,9 +30,12 @@ nav:
       - Plot workflow: guide/quickstart.md
       - Point clouds and files: guide/io.md
       - Filtering and registration: guide/preprocessing.md
+      - Masking: guide/masking.md
+      - Coordinates: guide/coordinates.md
       - Trees and crowns: guide/trees.md
       - Pulse data: guide/pulses.md
       - Ray-traced voxels: guide/voxels.md
+      - Interpolation: guide/interpolation.md
       - QSMs: guide/qsm.md
       - Leaves on a QSM: guide/leaves.md
       - Scan quality: guide/quality.md
@@ -60,11 +63,14 @@ nav:
       - io: api/io.md
       - Shots, RiSCAN: api/shots.md
       - filters: api/filters.md
+      - masks: api/masks.md
       - ground: api/ground.md
+      - interpolate: api/interpolate.md
       - trees: api/trees.md
       - canopy: api/canopy.md
       - voxels: api/voxels.md
       - registration: api/registration.md
+      - coords: api/coords.md
       - coreg: api/coreg.md
       - qsm: api/qsm.md
       - leaves: api/leaves.md

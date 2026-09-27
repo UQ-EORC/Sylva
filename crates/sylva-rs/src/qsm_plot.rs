@@ -129,12 +129,17 @@ pub struct PlotModels {
 /// A QSM for every tree of a segmented plot.
 ///
 /// `labels` holds the tree id per point (below 0 is not a tree); `heights`,
-/// if given, the height above ground per point; `stems` the stem centre
-/// `(tree_id, [x, y])` each model is built around (a later entry for the
-/// same tree wins). Without a centre it is the median xy of the thinned
-/// tree's points between 0.5 and 1.5 m above ground (all its points if 20
-/// or fewer are there).
-pub fn build_plot(points: &[Point], labels: &[i64], heights: Option<&[f64]>, stems: &[(i64, [f64; 2])], p: &PlotParams) -> Result<PlotModels> {
+/// if given, the height above ground per point; `stems` the stem centre and
+/// DBH `(tree_id, [x, y], dbh)` each model is built around (a later entry
+/// for the same tree wins). Without a centre it is the median xy of the
+/// thinned tree's points between 0.5 and 1.5 m above ground (all its points
+/// if 20 or fewer are there). A finite, positive stem DBH anchors the model's
+/// base radius (`base_radius = dbh / 2`) unless `p.qsm.base_radius` is set:
+/// without an anchor, a tree with too few good stem circles takes its taper
+/// prior from its widest fitted circle, which on a small tree with a leafy
+/// crown is often foliage, and the thin stem was then replaced by a trunk of
+/// up to a metre.
+pub fn build_plot(points: &[Point], labels: &[i64], heights: Option<&[f64]>, stems: &[(i64, [f64; 2], f64)], p: &PlotParams) -> Result<PlotModels> {
     if labels.len() != points.len() {
         return Err(Error::invalid("labels must have one value per point"));
     }
@@ -147,7 +152,8 @@ pub fn build_plot(points: &[Point], labels: &[i64], heights: Option<&[f64]>, ste
             members.entry(t).or_default().push(i);
         }
     }
-    let centres: HashMap<i64, [f64; 2]> = stems.iter().copied().collect();
+    let centres: HashMap<i64, [f64; 2]> = stems.iter().map(|&(t, c, _)| (t, c)).collect();
+    let dbh: HashMap<i64, f64> = stems.iter().map(|&(t, _, d)| (t, d)).collect();
     let mut out = PlotModels::default();
     let task = crate::progress::start("fitting QSMs", members.len() as u64);
     for (&tid, idx) in &members {
@@ -180,7 +186,15 @@ pub fn build_plot(points: &[Point], labels: &[i64], heights: Option<&[f64]>, ste
             }
         };
         let input = if p.wood { wood_points(&thin) } else { thin };
-        match build_qsm(&input, Some(base), &p.qsm) {
+        let mut qp = p.qsm.clone();
+        if qp.base_radius <= 0.0 {
+            if let Some(&d) = dbh.get(&tid) {
+                if d.is_finite() && d > 0.0 {
+                    qp.base_radius = d / 2.0;
+                }
+            }
+        }
+        match build_qsm(&input, Some(base), &qp) {
             Ok(q) => out.models.push((tid, q.to_rows())),
             Err(e) => {
                 out.skipped.push((tid, e.to_string()));
@@ -419,7 +433,7 @@ mod tests {
         labels.push(-1);
         let h: Vec<f64> = pts.iter().map(|p| p[2]).collect();
         let p = PlotParams { wood: false, min_points: 1000.0, ..Default::default() };
-        let plot = build_plot(&pts, &labels, Some(&h), &[(3, [5.0, 0.0])], &p).unwrap();
+        let plot = build_plot(&pts, &labels, Some(&h), &[(3, [5.0, 0.0], f64::NAN)], &p).unwrap();
         assert_eq!(plot.models.iter().map(|m| m.0).collect::<Vec<_>>(), vec![1, 3]);
         assert_eq!(plot.skipped, vec![(2, "100 points".to_string())]);
         assert_eq!(plot.points, vec![(1, 8000), (3, 6000)]);
