@@ -16,6 +16,7 @@ from . import canopy, coreg, filters, ground, io, leaves, limits, progress, qsm,
 from . import interpolate
 from . import masks
 from . import coords
+from . import change
 from ._core import __version__ as _core_version
 from .io import read, write
 from .pointcloud import PointCloud
@@ -33,6 +34,7 @@ __all__ = [
     "write",
     "read_riscan_project",
     "canopy",
+    "change",
     "coords",
     "coreg",
     "filters",
