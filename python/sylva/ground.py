@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import _core
+from . import _core, interpolate
 from .pointcloud import PointCloud
 from .raster import Raster
 
@@ -135,11 +135,12 @@ def ground_mask(cloud: PointCloud) -> np.ndarray:
     return np.asarray(cloud.attrs["classification"]) == GROUND
 
 
-def make_dtm(cloud: PointCloud, resolution: float = 0.5, bounds=None) -> Raster:
+def make_dtm(cloud: PointCloud, resolution: float = 0.5, bounds=None,
+             method: str = "lowest") -> Raster:
     """Digital terrain model from the ground points.
 
-    Each cell takes its lowest ground point. Empty cells (under stems,
-    behind occlusion) are filled from the nearest measured cells and
+    By default each cell takes its lowest ground point. Empty cells (under
+    stems, behind occlusion) are filled from the nearest measured cells and
     smoothed; measured cells keep their value.
 
     Parameters
@@ -152,6 +153,16 @@ def make_dtm(cloud: PointCloud, resolution: float = 0.5, bounds=None) -> Raster:
         ``(xmin, ymin, xmax, ymax)`` of the grid; the extent of the ground
         points if None. Pass the plot extent to get identical grids across
         dates.
+    method : {"lowest", "tin", "natural", "idw"}
+        ``"lowest"`` (the default) is the per-cell minimum described above.
+        The others interpolate the ground points at cell centres with
+        :func:`sylva.interpolate.grid` (a triangulation, natural neighbours
+        or inverse distance weighting with its defaults); cells outside the
+        convex hull of the ground points are then filled from the nearest
+        interpolated cell. Interpolation passes through every ground point,
+        so thin the ground to one point per cell or so first
+        (e.g. ``filters.voxel_downsample``), or noise in the ground returns
+        shows up as roughness in the surface.
 
     Returns
     -------
@@ -161,10 +172,18 @@ def make_dtm(cloud: PointCloud, resolution: float = 0.5, bounds=None) -> Raster:
     Raises
     ------
     ValueError
-        With fewer than 3 ground points or no ``classification``.
+        With fewer than 3 ground points, no ``classification`` or an unknown
+        method.
     """
+    if method not in ("lowest", "tin", "natural", "idw"):
+        raise ValueError(f"unknown method {method!r}; expected 'lowest', 'tin', 'natural' or 'idw'")
     ground = cloud[ground_mask(cloud)]
-    return Raster._from_core(_core.make_dtm(ground.xyz, resolution, bounds))
+    if method == "lowest":
+        return Raster._from_core(_core.make_dtm(ground.xyz, resolution, bounds))
+    if len(ground) < 3:
+        raise ValueError("need at least 3 ground points")
+    dtm = interpolate.grid(ground, resolution, method=method, bounds=bounds)
+    return dtm.fill_nearest() if np.isnan(dtm.data).any() else dtm
 
 
 def normalize_height(cloud: PointCloud, dtm: Raster, attr: str = "height") -> PointCloud:
