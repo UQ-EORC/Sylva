@@ -14,6 +14,7 @@ use sylva_rs::{filters, io};
 
 mod canopy;
 mod shots;
+mod riscan;
 mod convert;
 
 use convert::{cloud_from_r, cloud_to_r, err, Result};
@@ -57,6 +58,7 @@ extendr_module! {
     mod sylva;
     use canopy;
     use shots;
+    use riscan;
     fn core_read;
     fn core_write;
     fn core_cloud;
