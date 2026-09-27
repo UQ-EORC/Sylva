@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import __version__, canopy, coreg, filters, ground, io, progress, qsm, riscan, trees, voxels
+from . import __version__, als, canopy, coreg, filters, ground, io, progress, qsm, riscan, trees, voxels
 from .raster import Raster
 from .shots import Shots
 
@@ -247,6 +247,68 @@ def _cmd_coreg(args):
     print(msg)
 
 
+def _write_raster(r: Raster, path: str) -> None:
+    if path.lower().endswith((".tif", ".tiff")):
+        r.to_geotiff(path)
+    else:
+        r.to_ascii_grid(path)
+
+
+def _als_run(args) -> dict:
+    return {"chunk_size": args.chunk_size, "buffer": args.buffer, "workers": args.workers}
+
+
+def _cmd_als_catalog(args):
+    cat = als.catalog(args.input, pattern=args.pattern, recursive=args.recursive,
+                      tolerance=args.tolerance)
+    print(cat.report(), end="")
+    if args.strict and cat.issues():
+        raise ValueError(f"{len(cat.issues())} problem(s) in the catalogue")
+
+
+def _cmd_als_ground(args):
+    cat = als.catalog(args.input, pattern=args.pattern)
+    out = als.classify_ground(cat, args.output, method=args.method,
+                              cloth_resolution=args.resolution, cell_size=args.resolution,
+                              last_returns=args.last_returns, **_als_run(args))
+    print(f"classified {out.n_points:,} points in {len(out)} tiles -> {args.output}")
+
+
+def _cmd_als_dtm(args):
+    cat = als.catalog(args.input, pattern=args.pattern)
+    dtm = als.dtm(cat, resolution=args.resolution, method=args.method, **_als_run(args))
+    _write_raster(dtm, args.output)
+    print(f"DTM {dtm.shape} at {args.resolution} m from {len(cat)} tiles -> {args.output}")
+
+
+def _cmd_als_chm(args):
+    cat = als.catalog(args.input, pattern=args.pattern)
+    dtm = None if args.normalized else (Raster.from_ascii_grid(args.dtm) if args.dtm else "auto")
+    chm = als.chm(cat, resolution=args.resolution, dtm=dtm, dtm_resolution=args.dtm_resolution,
+                  min_height=args.min_height, **_als_run(args))
+    _write_raster(chm, args.output)
+    print(f"CHM {chm.shape} at {args.resolution} m, max {np.nanmax(chm.data):.1f} m -> "
+          f"{args.output}")
+
+
+def _cmd_als_normalize(args):
+    cat = als.catalog(args.input, pattern=args.pattern)
+    dtm = Raster.from_ascii_grid(args.dtm) if args.dtm else "auto"
+    out = als.normalize(cat, args.output, dtm=dtm, dtm_resolution=args.dtm_resolution,
+                        replace_z=args.replace_z, **_als_run(args))
+    print(f"normalised {out.n_points:,} points in {len(out)} tiles -> {args.output}")
+
+
+def _als_common(s, buffer: float = 20.0):
+    s.add_argument("--pattern", default="*.la[sz]", help="file name pattern within the directory")
+    s.add_argument("--chunk-size", type=float, default=None,
+                   help="process square chunks of this size (m) rather than one tile at a time")
+    s.add_argument("--buffer", type=float, default=buffer,
+                   help="band of neighbouring points read around each chunk (m)")
+    s.add_argument("--workers", type=int, default=None,
+                   help="chunks at once (default: one per CPU, fewer if memory is short)")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="sylva",
                                 description="Terrestrial laser scanning for forest ecology.",
@@ -429,6 +491,62 @@ def main(argv=None):
     s.add_argument("--voxel", type=float, default=0.02, help="thinning of the merged cloud (m)")
     s.add_argument("--quiet", action="store_true", help="only print the summary")
     s.set_defaults(func=_cmd_coreg)
+
+    s = sub.add_parser("als-catalog", help="summarise and check a directory of ALS tiles "
+                       "(headers only)", **fmt)
+    s.add_argument("input", nargs="+", help="directory of LAS/LAZ tiles, or files")
+    s.add_argument("--pattern", default="*.la[sz]", help="file name pattern within directories")
+    s.add_argument("--recursive", action="store_true", help="search subdirectories too")
+    s.add_argument("--tolerance", type=float, default=1.0,
+                   help="overlap or shortfall between tile extents that counts as a problem (m)")
+    s.add_argument("--strict", action="store_true", help="exit with status 1 if problems are found")
+    s.set_defaults(func=_cmd_als_catalog)
+
+    s = sub.add_parser("als-ground", help="classify ground over a directory of ALS tiles", **fmt)
+    s.add_argument("input", help="directory of LAS/LAZ tiles")
+    s.add_argument("output", help="directory for the classified tiles")
+    s.add_argument("--method", choices=["csf", "pmf"], default="csf",
+                   help="cloth simulation or progressive morphological filter")
+    s.add_argument("--resolution", type=float, default=0.5, help="cloth or filter cell size (m)")
+    s.add_argument("--last-returns", action="store_true", help="only last returns can be ground")
+    _als_common(s)
+    s.set_defaults(func=_cmd_als_ground)
+
+    s = sub.add_parser("als-dtm", help="DTM of a directory of ground-classified ALS tiles", **fmt)
+    s.add_argument("input", help="directory of LAS/LAZ tiles with ground classified")
+    s.add_argument("output", help=".asc, or .tif (needs rasterio)")
+    s.add_argument("--resolution", type=float, default=1.0, help="cell size (m)")
+    s.add_argument("--method", choices=["lowest", "tin", "natural", "idw"], default="lowest",
+                   help="lowest ground point per cell, or an interpolation at cell centres")
+    _als_common(s)
+    s.set_defaults(func=_cmd_als_dtm)
+
+    s = sub.add_parser("als-chm", help="canopy height model of a directory of ALS tiles", **fmt)
+    s.add_argument("input", help="directory of LAS/LAZ tiles with ground classified")
+    s.add_argument("output", help=".asc, or .tif (needs rasterio)")
+    s.add_argument("--resolution", type=float, default=0.5, help="cell size (m)")
+    s.add_argument("--dtm-resolution", type=float, default=1.0,
+                   help="cell size of the DTM made on the fly from the ground points (m)")
+    s.add_argument("--dtm", help="use this DTM (.asc) instead of making one")
+    s.add_argument("--normalized", action="store_true",
+                   help="the tiles are already normalised (z is height)")
+    s.add_argument("--min-height", type=float, default=0.0,
+                   help="cells with nothing this high are 0 (m)")
+    _als_common(s)
+    s.set_defaults(func=_cmd_als_chm)
+
+    s = sub.add_parser("als-normalize", help="height above ground for a directory of ALS tiles",
+                       **fmt)
+    s.add_argument("input", help="directory of LAS/LAZ tiles with ground classified")
+    s.add_argument("output", help="directory for the normalised tiles")
+    s.add_argument("--dtm-resolution", type=float, default=1.0,
+                   help="cell size of the DTM made on the fly from the ground points (m)")
+    s.add_argument("--dtm", help="use this DTM (.asc) instead of making one")
+    s.add_argument("--replace-z", action="store_true",
+                   help="replace z by the height (elevation kept as an attribute) rather than "
+                        "adding a height attribute")
+    _als_common(s)
+    s.set_defaults(func=_cmd_als_normalize)
 
     args = p.parse_args(argv)
     try:
