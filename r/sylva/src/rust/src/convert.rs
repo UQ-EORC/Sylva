@@ -222,6 +222,8 @@ pub fn positions(idx: &[usize]) -> Vec<f64> {
 /// Booleans as an R logical vector.
 pub fn logicals(v: &[bool]) -> Logicals {
     v.iter().map(|&b| Rbool::from(b)).collect()
+}
+
 /// `NULL` or the first value of a numeric vector.
 pub fn optional_f64(v: &Robj, what: &str) -> Result<Option<f64>> {
     if v.is_null() {
