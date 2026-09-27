@@ -13,6 +13,7 @@ LICENSE file. There is no warranty, to the extent permitted by law.
 """
 
 from . import canopy, coreg, filters, ground, io, leaves, limits, progress, qsm, quality, registration, riscan, synthetic, trees, voxels
+from . import coords
 from ._core import __version__ as _core_version
 from .io import read, write
 from .pointcloud import PointCloud
@@ -30,6 +31,7 @@ __all__ = [
     "write",
     "read_riscan_project",
     "canopy",
+    "coords",
     "coreg",
     "filters",
     "ground",
