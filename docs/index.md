@@ -22,14 +22,17 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 
 | Module | What it does |
 |---|---|
-| [`sylva.io`](api/io.md) | LAS/LAZ (typed extra bytes), PLY (incl. raycloudtools ray clouds), XYZ/CSV/PTS, RIEGL `.rxp` via RiVLib, RiSCAN project parsing |
+| [`sylva.io`](api/io.md) | LAS/LAZ (typed extra bytes, CRS), PLY (incl. raycloudtools ray clouds), XYZ/CSV/PTS, RIEGL `.rxp` via RiVLib, RiSCAN project parsing |
+| [`sylva.coords`](api/coords.md) | translation, rotation, recentring, reprojection between CRSs, applying transform files to many scans |
 | [`sylva.filters`](api/filters.md) | voxel / random / Poisson-disk subsampling, box & cylinder crops, statistical & radius outlier removal, PCA normals, planarity, Euclidean clustering, kNN |
-| [`sylva.ground`](api/ground.md) | Cloth Simulation Filter and Progressive Morphological Filter ground classification, DTM, height normalisation, CHM |
+| [`sylva.ground`](api/ground.md) | Cloth Simulation Filter and Progressive Morphological Filter ground classification, DTM (lowest point, TIN, natural neighbour or IDW), height normalisation, CHM |
+| [`sylva.interpolate`](api/interpolate.md) | attributes carried between clouds, grids from points (IDW, TIN, natural neighbour), rasters sampled onto points |
+| [`sylva.masks`](api/masks.md) | masks and crops by polygons, rasters, attribute expressions and distance to another cloud |
 | [`sylva.trees`](api/trees.md) | RANSAC circle fitting, stem detection & DBH, basal area, taper profiles, graph-based tree segmentation, tree heights, crown metrics |
 | [`sylva.canopy`](api/canopy.md) | voxel grids, contact-frequency PAD profiles, zenith-ring gap fraction, hinge/Miller LAI, ray-traced density grids from pulse data |
 | [`sylva.voxels`](api/voxels.md) | AMAPVox-style ray-traced voxels (port of raycloudtools `rayvoxel`): echo-weighted free / potential path lengths, FPL / PPL / transmittance / Bailey attenuation, analytic or estimated leaf-angle `G`, PAD / LAD / WAD, occlusion, sub-voxel exploration, QSM wood volume, `.vox` export |
 | [`sylva.registration`](api/registration.md) | Kabsch, point-to-point / point-to-plane (trimmed) ICP, scan merging |
-| [`sylva.qsm`](api/qsm.md) | cylinder fitting, geodesic skeletonisation, cylinder QSMs with volumes and branch orders, `_trees.txt` export |
+| [`sylva.qsm`](api/qsm.md) | cylinder fitting, geodesic skeletonisation, cylinder QSMs with volumes and branch orders, a QSM for every tree of a plot, buttress meshes, `_trees.txt` export |
 | [`sylva.Shots`](api/shots.md) | pulse-centric data (origin, direction, CSR echoes) for ray-based metrics, with a compact Parquet file format that stores misses without far points and streams into the voxeliser |
 | [`sylva.leaves`](api/leaves.md) | graph-based leaf/wood separation, leaf angle distributions, leaf area density from points or voxels, leaf meshes placed on a QSM |
 | [`sylva.quality`](api/quality.md) | scan noise and per-scan registration offsets measured on tree stems |
@@ -49,7 +52,12 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 - [Ray-traced voxels](guide/voxels.md): AMAPVox-style attenuation and plant
   area density.
 - [QSMs](guide/qsm.md): wood filtering and cylinder models of single trees.
-- [Example notebooks](examples/index.md), one per stage, on synthetic data.
+- [Coordinates](guide/coordinates.md), [interpolation](guide/interpolation.md)
+  and [masking](guide/masking.md): moving clouds between frames and
+  coordinate systems, carrying values between clouds and grids, and selecting
+  points by area, raster, expression or proximity.
+- [Example notebooks](examples/index.md), one per stage, on a tile of the
+  TERN Litchfield plot and on synthetic data.
 - [Benchmarks](benchmarks/trees.md) against reference plots, felled trees and
   raycloudtools.
 - The [function index](api/index.md) lists every public function; the API
@@ -59,10 +67,10 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 
 ## Related tools
 
-- [Segfix](https://github.com/tim-devereux/segfix) — a GUI for correcting the
+- [Segfix](https://github.com/tim-devereux/segfix): a GUI for correcting the
   instance segmentation of a plot; it reads and writes the `tree_id` column
   Sylva produces ([how](guide/trees.md#correcting-labels-by-hand)).
-- [raycloudtools](https://github.com/csiro-robotics/raycloudtools) — ray
+- [raycloudtools](https://github.com/csiro-robotics/raycloudtools): ray
   clouds, which `sylva.read` and `Shots.from_ray_cloud` accept.
 - Everything Sylva implements is cited on the [references](references.md) page.
 
