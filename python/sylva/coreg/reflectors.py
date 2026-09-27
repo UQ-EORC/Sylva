@@ -11,19 +11,18 @@ four. Where scans saw targets they are tried before stems.
 Targets come from what the scanner or RiSCAN PRO already found (a RIEGL
 ``.tpl`` tie-point list beside each scan, or a RiSCAN ``.rfl`` reflector
 list), or are detected in the cloud by their return strength: retro-reflectors
-return far more energy than anything natural.
+return far more energy than anything natural. Reading, detection and matching
+run in the Rust core.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
 from .. import _core
-from .transforms import kabsch, transform_points
 
 __all__ = [
     "Reflector",
@@ -70,31 +69,7 @@ def read_tiepoint_list(path: str | Path) -> list[Reflector]:
         Empty for a missing or unreadable file: a position that found no
         targets is normal.
     """
-    try:
-        payload = json.loads(Path(path).read_text())
-    except (OSError, ValueError, UnicodeDecodeError):
-        return []
-    if not isinstance(payload, list):
-        return []
-    out = []
-    for entry in payload:
-        cartesian = (entry.get("positionCartesian") if isinstance(entry, dict) else None) or {}
-        try:
-            x, y, z = float(cartesian["x"]), float(cartesian["y"]), float(cartesian["z"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        out.append(
-            Reflector(
-                x,
-                y,
-                z,
-                float(entry.get("reflectance", float("nan"))),
-                float(entry.get("diameter", float("nan"))),
-                int(entry.get("pointcount", 0)),
-                str(entry.get("name", "")),
-            )
-        )
-    return out
+    return [Reflector(*r) for r in _core.coreg_read_tiepoint_list(Path(path))]
 
 
 def read_reflector_list(path: str | Path) -> list[Reflector]:
@@ -116,43 +91,7 @@ def read_reflector_list(path: str | Path) -> list[Reflector]:
     list of Reflector
         Empty for a missing or unreadable file.
     """
-    try:
-        lines = Path(path).read_text(errors="replace").splitlines()
-    except OSError:
-        return []
-    columns: list[str] = []
-    out = []
-    for line in lines:
-        key, _, value = line.partition("=")
-        if key.strip() == "ReflectorIdx":
-            columns = [c.strip().lower() for c in value.split(",")]
-            continue
-        if not key.strip().startswith("Reflector") or not columns:
-            continue
-        row = dict(zip(columns, (v.strip() for v in value.split(",")), strict=False))
-        try:
-            x, y, z = float(row["x"]), float(row["y"]), float(row["z"])
-        except (KeyError, ValueError):
-            continue
-
-        def num(k: str, default=float("nan"), row=row):
-            try:
-                return float(row[k])
-            except (KeyError, ValueError):
-                return default
-
-        out.append(
-            Reflector(
-                x,
-                y,
-                z,
-                num("reflectance"),
-                num("diameter"),
-                int(num("points", 0)),
-                row.get("name", ""),
-            )
-        )
-    return out
+    return [Reflector(*r) for r in _core.coreg_read_reflector_list(Path(path))]
 
 
 def detect_reflectors(
@@ -191,32 +130,15 @@ def detect_reflectors(
     """
     if reflectance is None or len(xyz) == 0:
         return []
-    values = np.asarray(reflectance, dtype=np.float64)
-    bright = values >= min_reflectance
-    if not bright.any():
-        return []
-    points = np.ascontiguousarray(np.asarray(xyz, dtype=np.float64)[bright])
-    values = values[bright]
-    labels = np.asarray(_core.euclidean_clusters(points, float(cluster_radius), int(min_points)))
-    out = []
-    for label in np.unique(labels[labels >= 0]):
-        members = np.flatnonzero(labels == label)
-        cluster = points[members]
-        extent = cluster.max(axis=0) - cluster.min(axis=0)
-        if extent.max() > max_extent:
-            continue
-        centre = np.average(cluster, axis=0, weights=values[members] - values[members].min() + 1.0)
-        out.append(
-            Reflector(
-                float(centre[0]),
-                float(centre[1]),
-                float(centre[2]),
-                float(np.median(values[members])),
-                float(np.linalg.norm(extent[:2])),
-                len(members),
-            )
-        )
-    return out
+    found = _core.coreg_detect_reflectors(
+        np.ascontiguousarray(np.asarray(xyz, dtype=np.float64).reshape(-1, 3)),
+        np.ascontiguousarray(np.asarray(reflectance, dtype=np.float64).reshape(-1)),
+        float(min_reflectance),
+        float(cluster_radius),
+        int(min_points),
+        float(max_extent),
+    )
+    return [Reflector(*r) for r in found]
 
 
 @dataclass
@@ -265,79 +187,19 @@ def match_reflectors(
     Returns
     -------
     ReflectorMatch
+        Its ``correspondences`` are ordered by source index.
     """
-    src, dst = _positions(source), _positions(target)
-    failure = ReflectorMatch(np.eye(4), 0, float("inf"))
-    if len(src) < 3 or len(dst) < 3:
-        return failure
-    dst_d = np.linalg.norm(dst[:, None, :] - dst[None, :, :], axis=2)
-    best = failure
-    for a in range(len(src)):
-        for b in range(a + 1, len(src)):
-            d_ab = float(np.linalg.norm(src[a] - src[b]))
-            for c in range(b + 1, len(src)):
-                d_ac = float(np.linalg.norm(src[a] - src[c]))
-                d_bc = float(np.linalg.norm(src[b] - src[c]))
-                if min(d_ab, d_ac, d_bc) < 0.3 or _collinear(src[[a, b, c]]):
-                    continue
-                for i, j, k in _congruent_triangles(dst_d, d_ab, d_ac, d_bc, distance_tolerance):
-                    cand = _score(src, dst, [a, b, c], [i, j, k], tolerance)
-                    if cand.n_inliers > best.n_inliers or (
-                        cand.n_inliers == best.n_inliers and cand.rmse < best.rmse
-                    ):
-                        best = cand
-    if best.n_inliers < min_inliers:
-        return failure
-    best.success = True
-    return best
-
-
-def _collinear(points: np.ndarray, tolerance: float = 0.05) -> bool:
-    a, b, c = points
-    area = 0.5 * np.linalg.norm(np.cross(b - a, c - a))
-    longest = max(np.linalg.norm(b - a), np.linalg.norm(c - a), np.linalg.norm(c - b))
-    return area < tolerance * longest**2
-
-
-def _congruent_triangles(
-    distances: np.ndarray, d_ab: float, d_ac: float, d_bc: float, tolerance: float
-):
-    n = len(distances)
-    for i in range(n):
-        for j in range(n):
-            if j == i or abs(distances[i, j] - d_ab) > tolerance:
-                continue
-            for k in range(n):
-                if (
-                    k in (i, j)
-                    or abs(distances[i, k] - d_ac) > tolerance
-                    or abs(distances[j, k] - d_bc) > tolerance
-                ):
-                    continue
-                yield i, j, k
-
-
-def _score(
-    src: np.ndarray, dst: np.ndarray, src_index: list[int], dst_index: list[int], tolerance: float
-) -> ReflectorMatch:
-    try:
-        T = kabsch(src[src_index], dst[dst_index])
-    except (ValueError, np.linalg.LinAlgError):
-        return ReflectorMatch(np.eye(4), 0, float("inf"))
-    gaps = np.linalg.norm(transform_points(T, src)[:, None, :] - dst[None, :, :], axis=2)
-    nearest = np.argmin(gaps, axis=1)
-    smallest = gaps[np.arange(len(src)), nearest]
-    hit = smallest <= tolerance
-    if hit.sum() < 3:
-        return ReflectorMatch(T, int(hit.sum()), float("inf"))
-    pairs, seen = [], set()
-    for s in np.argsort(smallest):  # one target cannot stand in for two
-        if hit[s] and nearest[s] not in seen:
-            seen.add(int(nearest[s]))
-            pairs.append((int(s), int(nearest[s])))
-    if len(pairs) < 3:
-        return ReflectorMatch(T, len(pairs), float("inf"))
-    p = np.array(pairs)
-    refined = kabsch(src[p[:, 0]], dst[p[:, 1]])
-    residual = np.linalg.norm(transform_points(refined, src[p[:, 0]]) - dst[p[:, 1]], axis=1)
-    return ReflectorMatch(refined, len(pairs), float(np.sqrt(np.mean(residual**2))), p)
+    d = _core.coreg_match_reflectors(
+        np.ascontiguousarray(_positions(source), dtype=np.float64),
+        np.ascontiguousarray(_positions(target), dtype=np.float64),
+        float(tolerance),
+        int(min_inliers),
+        float(distance_tolerance),
+    )
+    return ReflectorMatch(
+        d["transform"],
+        int(d["n_inliers"]),
+        float(d["rmse"]),
+        np.asarray(d["correspondences"], dtype=int).reshape(-1, 2),
+        bool(d["success"]),
+    )

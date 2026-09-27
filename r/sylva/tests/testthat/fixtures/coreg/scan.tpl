@@ -1,0 +1,1 @@
+[{"name": "TP00", "reflectance": 27.3, "diameter": 0.057, "pointcount": 415, "positionCartesian": {"x": 4.52, "y": -1.08, "z": -1.28}}, {"name": "broken"}, {"name": 7, "pointcount": 12.9, "positionCartesian": {"x": "1.5", "y": " -2 ", "z": 3}}]

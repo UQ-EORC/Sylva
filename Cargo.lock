@@ -985,6 +985,7 @@ dependencies = [
 name = "sylva-py"
 version = "0.1.0"
 dependencies = [
+ "nalgebra",
  "numpy",
  "pyo3",
  "rayon",

@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 sylva-rs = { path = "../sylva-rs" }
+nalgebra.workspace = true
 pyo3.workspace = true
 rayon.workspace = true
 numpy.workspace = true
