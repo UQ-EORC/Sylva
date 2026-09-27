@@ -1,0 +1,4 @@
+# RiSCAN export
+riegl.Deviation; 0; 12
+range, 2.5, 30
+REFLECTANCE , -20, 5

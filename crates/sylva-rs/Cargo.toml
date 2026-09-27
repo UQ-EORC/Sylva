@@ -21,3 +21,4 @@ thiserror.workspace = true
 byteorder.workspace = true
 libloading.workspace = true
 parquet.workspace = true
+roxmltree.workspace = true

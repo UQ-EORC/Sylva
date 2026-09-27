@@ -15,6 +15,7 @@ mod canopy;
 mod quality;
 mod shots;
 mod trees;
+mod riscan;
 mod convert;
 mod filters;
 mod ground;
@@ -35,4 +36,5 @@ extendr_module! {
     use limits;
     use raster;
     use registration;
+    use riscan;
 }
