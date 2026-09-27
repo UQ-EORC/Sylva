@@ -4,9 +4,10 @@
 
 Unlike the other examples this one reads a full RIEGL project from disk (the
 TERN Litchfield core plot, 64 scan positions, 35 GB), so it is kept out of
-``build_notebooks.py`` and run by hand. It needs RiVLib and about 25 GB of
-memory; the first run takes 20-30 minutes, later runs reuse the cached read
-(in ``SYLVA_RUNS_DIR``, ``~/sylva_runs`` by default).
+``build_notebooks.py`` and run by hand. It needs RiVLib and about 40 GB of
+memory; the first run takes about an hour, of which reading the scans takes
+25 minutes, and later runs reuse the cached read (in ``SYLVA_RUNS_DIR``,
+``~/sylva_runs`` by default).
 """
 
 from __future__ import annotations
@@ -45,10 +46,10 @@ positions (36 on a 20 m grid inside the plot, 28 on a ring around it).
 | 8. Canopy | `canopy.GapProfile` | PAI, PAVD profile, clumping |
 | 9. Voxels | `voxels.ray_voxelize`, `occlusion_profile`, `tree_sampling` | plant area density, what was seen |
 
-It needs RiVLib (see *Point clouds and files*) and about 25 GB of memory.
-The first run reads 35 GB from the project and takes 20-30 minutes; the
-thinned read is cached in `OUT`, so later runs start at step 3 within a
-minute. The data are TERN's.
+It needs RiVLib (see *Point clouds and files*) and about 40 GB of memory at
+its peak. The first run reads 35 GB from the project, which takes about 25
+minutes; the thinned read is cached in `OUT`, so later runs start at step 3
+within a minute. The data are TERN's.
 
 Step 3 finds that the ring positions are not registered with the inner grid
 (metres off in height) and registers them into it with `sylva.coreg`, so
@@ -105,9 +106,9 @@ ax.set(aspect="equal", xlabel="x (m)", ylabel="y (m)", title="Scan positions")
 ax.legend(loc="upper right", fontsize=8);""",
     md("""## 2. One pass over the scans
 
-Reading a scan is limited by the disk (about 8 s per 0.6 GB scan, whatever
-the thinning), so every scan is read once, as pulses, and everything is
-derived from that read:
+Reading a scan takes about 20 s per 0.6 GB scan, whatever the thinning, so
+every scan is read once, as pulses, and everything is derived from that
+read:
 
 - `shot_stride=STRIDE` keeps every 8th pulse with all its echoes.
 - **Points.** The pulses' echoes, moved into the project frame with the
@@ -130,7 +131,8 @@ hi = np.array([PLOT[2] + BUFFER, PLOT[3] + BUFFER, np.inf])
 
 def fired_per_line(s, pattern):
     \"\"\"Median pulses per zenith line on the downward lines, where every pulse returns.\"\"\"
-    theta, edges = s._zenith_lines(pattern)
+    theta = pattern["theta_start"] + pattern["theta_delta"] * np.arange(pattern["theta_count"])   # line zeniths
+    edges = np.r_[theta - pattern["theta_delta"] / 2, theta[-1] + pattern["theta_delta"] / 2]
     observed, _ = np.histogram(s.zenith_azimuth()[0], bins=edges)
     return int(round(np.median(observed[(theta >= 100) & (theta <= 125)])))
 
@@ -324,7 +326,7 @@ Two settings differ from the defaults, both for a plot this size:
   1.4 m wide at the diameter limit.
 - `voxel_size=0.1` for the merge and segmentation graphs. On 70-76 M
   points the default 5 cm graph took 17 minutes and 38 GB. At 10 cm the
-  whole step takes about 3 minutes and 15 GB.
+  whole step takes about 4 minutes and 15 GB.
 
 Some stems come out wider than 40 cm yet lower than 8 m: solid, round and
 short. On this plot these are most likely termite mounds, or stumps. The
@@ -484,7 +486,8 @@ it), occluded (only pulses already stopped reached it) or unreached.
   median voxel saw at least 50 pulses are counted. With every 32nd pulse,
   that is where the numbers can be trusted.
 
-The voxel PAI comes out at the gap profile's clumping-corrected hinge PAI.
+The voxel PAI comes out close to the gap profile's hinge PAI (0.88 against
+0.87, or 0.93 with the clumping correction).
 They are independent estimates from the same pulses: one traces every
 pulse through the grid, the other counts gaps by zenith ring. Both depend
 on the misses being there. Traced without them, the grid gave about twice
