@@ -61,6 +61,6 @@ teaching. Cite TERN if you use it for anything else, and see
 
 Notebook 10 is different: it reads a whole RiSCAN PRO project, the TERN
 Litchfield core hectare (64 VZ-2000i positions, 35 GB), so it needs RiVLib,
-the project on disk and about 25 GB of memory, and is run by hand with
+the project on disk and about 40 GB of memory, and is run by hand with
 `build_riscan_notebook.py` rather than by `build_notebooks.py`. Point
 `PROJECT` at your own project and `PLOT` at its extent to run it elsewhere.
