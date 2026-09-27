@@ -3,11 +3,13 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Wavefront OBJ files for triangle meshes: wood and leaf meshes out, a
-//! single leaf blade in.
+//! single leaf blade in; and binary PLY meshes out.
 //!
 //! Several meshes go to one file as named objects (`o wood`, `o leaves`,
 //! `tree_1`, ...), vertices with four decimals (a tenth of a millimetre)
-//! and 1-based face indices running on across the objects.
+//! and 1-based face indices running on across the objects. A PLY mesh is
+//! little-endian binary: float32 vertices, int32 triangles and, if given,
+//! one colour per face.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -114,6 +116,52 @@ pub fn read_obj(path: impl AsRef<Path>) -> Result<(Vec<Point>, Vec<[u32; 3]>)> {
     Ok((v, faces))
 }
 
+/// The bytes of a binary little-endian PLY triangle mesh: vertices stored
+/// as float32, faces as int32 lists, `face_rgb` one colour per face.
+pub fn ply_bytes(vertices: &[Point], faces: &[[i32; 3]], face_rgb: Option<&[[u8; 3]]>) -> Result<Vec<u8>> {
+    if face_rgb.is_some_and(|c| c.len() != faces.len()) {
+        return Err(Error::invalid("face_rgb must have one colour per face"));
+    }
+    let mut header = vec![
+        "ply".to_string(),
+        "format binary_little_endian 1.0".into(),
+        "comment sylva QSM mesh".into(),
+        format!("element vertex {}", vertices.len()),
+        "property float x".into(),
+        "property float y".into(),
+        "property float z".into(),
+        format!("element face {}", faces.len()),
+        "property list uchar int vertex_indices".into(),
+    ];
+    if face_rgb.is_some() {
+        header.extend(["property uchar red".into(), "property uchar green".into(), "property uchar blue".into()]);
+    }
+    header.push("end_header".into());
+    let mut out = (header.join("\n") + "\n").into_bytes();
+    out.reserve(vertices.len() * 12 + faces.len() * 16);
+    for v in vertices {
+        for c in v {
+            out.extend_from_slice(&(*c as f32).to_le_bytes());
+        }
+    }
+    for (i, f) in faces.iter().enumerate() {
+        out.push(3);
+        for k in f {
+            out.extend_from_slice(&k.to_le_bytes());
+        }
+        if let Some(rgb) = face_rgb {
+            out.extend_from_slice(&rgb[i]);
+        }
+    }
+    Ok(out)
+}
+
+/// Write a binary PLY triangle mesh ([`ply_bytes`]).
+pub fn write_ply(path: impl AsRef<Path>, vertices: &[Point], faces: &[[i32; 3]], face_rgb: Option<&[[u8; 3]]>) -> Result<()> {
+    std::fs::write(path, ply_bytes(vertices, faces, face_rgb)?)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,6 +184,17 @@ mod tests {
         let t = obj_text(&[ObjMesh { name: "a", vertices: &v, faces: &f }, ObjMesh { name: "b", vertices: &v, faces: &f }]);
         assert!(t.starts_with("# sylva QSM mesh\no a\nv 0.0000 0.0000 0.0000\n"));
         assert!(t.ends_with("o b\nv 0.0000 0.0000 0.0000\nv 1.0000 0.0000 0.0000\nv 0.0000 1.0000 0.0000\nf 4 5 6\n"));
+    }
+
+    #[test]
+    fn ply_records_are_packed() {
+        let v = [[0.0, 1.0, 2.0]];
+        let b = ply_bytes(&v, &[[0, 0, 0]], Some(&[[1, 2, 3]])).unwrap();
+        let head = "ply\nformat binary_little_endian 1.0\ncomment sylva QSM mesh\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nelement face 1\nproperty list uchar int vertex_indices\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n";
+        assert!(b.starts_with(head.as_bytes()));
+        assert_eq!(b.len(), head.len() + 12 + 16);
+        assert_eq!(&b[b.len() - 4..], &[0, 1, 2, 3]);
+        assert!(ply_bytes(&v, &[[0, 0, 0]], Some(&[])).is_err());
     }
 
     #[test]

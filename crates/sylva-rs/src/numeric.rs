@@ -95,6 +95,7 @@ pub fn quantile_sorted(v: &[f64], q: f64) -> f64 {
 }
 
 /// `np.median(values)`: the mean of the two middle values for an even count.
+/// As NumPy's mean, the sum starts from +0, so a median of -0 is +0.
 pub fn median(values: &[f64]) -> f64 {
     let n = values.len();
     if n == 0 {
@@ -103,9 +104,9 @@ pub fn median(values: &[f64]) -> f64 {
     let mut v = values.to_vec();
     v.sort_by(|a, b| a.total_cmp(b));
     if n % 2 == 1 {
-        v[n / 2]
+        0.0 + v[n / 2]
     } else {
-        (v[n / 2 - 1] + v[n / 2]) / 2.0
+        (0.0 + v[n / 2 - 1] + v[n / 2]) / 2.0
     }
 }
 
@@ -250,6 +251,7 @@ mod tests {
     fn quantile_and_median_follow_numpy() {
         let v = [1.0, 2.0, 3.0, 4.0];
         assert_eq!(median(&v), 2.5);
+        assert!(median(&[1.0, -0.0, -0.0]).is_sign_positive() && median(&[-0.0, -0.0]).is_sign_positive());
         assert!((quantile(&v, 0.98) - 3.94).abs() < 1e-12);
         assert_eq!(quantile(&v, 0.0), 1.0);
         assert_eq!(quantile(&v, 1.0), 4.0);
