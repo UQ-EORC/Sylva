@@ -62,6 +62,7 @@ pub mod shots_ops;
 pub mod spatial;
 pub mod stems;
 pub mod synthetic;
+pub mod synthetic_als;
 pub mod transform;
 pub mod tree_prune;
 pub mod trees;
