@@ -19,6 +19,7 @@ mod shots;
 mod trees;
 mod riscan;
 mod voxels;
+mod qsm;
 mod convert;
 mod filters;
 mod ground;
@@ -43,4 +44,5 @@ extendr_module! {
     use registration;
     use riscan;
     use voxels;
+    use qsm;
 }

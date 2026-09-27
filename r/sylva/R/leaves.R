@@ -13,8 +13,7 @@ leaf_xyz <- function(points) {
 
 cylinder_rows <- function(model) {
   if (is.null(model)) return(NULL)
-  if (is.list(model) && !is.null(model$cylinders)) model <- model$cylinders
-  m <- matrix(as.double(model), ncol = 12)
+  m <- qsm_rows(model)
   if (nrow(m)) m else NULL
 }
 
@@ -402,11 +401,11 @@ print.sylva_leaf_mesh <- function(x, ...) {
 }
 
 #' @rdname add_leaves
-#' @param leaf_mesh,mesh A `sylva_leaf_mesh`.
+#' @param leaf_mesh,x A `sylva_leaf_mesh`.
 #' @param path Output OBJ file.
 #' @export
-to_obj <- function(mesh, path) {
-  m <- unclass(mesh)
+to_obj.sylva_leaf_mesh <- function(x, path, ...) {
+  m <- unclass(x)
   invisible(core_write_obj(path.expand(path), list(list(vertices = m$vertices, faces = as_faces(m$faces))), "leaves"))
 }
 
