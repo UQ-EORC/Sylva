@@ -1,0 +1,8 @@
+useDynLib(sylva, .registration = TRUE)
+export(read_cloud)
+export(write_cloud)
+export(point_cloud)
+export(voxel_downsample)
+S3method(print, sylva_cloud)
+S3method(length, sylva_cloud)
+S3method("[", sylva_cloud)

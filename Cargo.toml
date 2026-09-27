@@ -1,5 +1,7 @@
 [workspace]
 members = ["crates/sylva-rs", "crates/sylva-py", "crates/sylva-cli"]
+# The R bindings build through R CMD INSTALL, which provides R's headers.
+exclude = ["r"]
 resolver = "2"
 
 [workspace.package]
