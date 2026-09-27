@@ -16,6 +16,7 @@ mod leaves;
 mod quality;
 mod coreg;
 mod shots;
+mod synthetic;
 mod trees;
 mod riscan;
 mod voxels;
@@ -34,6 +35,7 @@ extendr_module! {
     use quality;
     use coreg;
     use shots;
+    use synthetic;
     use trees;
     use filters;
     use ground;

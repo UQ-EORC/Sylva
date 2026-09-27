@@ -210,7 +210,8 @@ reflectors <- function(position) {
 #' @param position A `sylva_scan_position`.
 #' @param pop Also apply this project-to-global matrix (`project$pop`).
 #' @param fill_missing Reconstruct the no-return pulses from the scan
-#'   pattern. Not yet available in R.
+#'   pattern (see [fill_missing()]) before applying the SOP. Needed for gap
+#'   fraction and ray tracing.
 #' @param ... Passed to [read_rxp()] or [read_rxp_shots()] (`shot_stride`,
 #'   `min_range`, `echoes`, ...).
 #' @export
@@ -224,11 +225,13 @@ read_points <- function(position, pop = NULL, ...) {
 #' @export
 read_shots <- function(position, pop = NULL, fill_missing = FALSE, ...) {
   if (is.null(position$rxp)) stop("scan position ", position$name, " has no .rxp")
+  shots <- read_rxp_shots(position$rxp, ...)
   if (fill_missing) {
     if (is.null(position$pattern)) stop("scan position ", position$name, " has no scan pattern in project.rsp")
-    stop("fill_missing is not yet available in R")
+    stride <- list(...)$shot_stride
+    shots <- sylva::fill_missing(shots, position$pattern, shot_stride = if (is.null(stride)) 1 else stride)
   }
-  transform(read_rxp_shots(position$rxp, ...), transform(position, pop))
+  transform(shots, transform(position, pop))
 }
 
 #' RiSCAN PRO's export filter
