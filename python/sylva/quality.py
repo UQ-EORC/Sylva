@@ -67,19 +67,14 @@ def scan_ids_from_origins(origins, tolerance: float = 0.05) -> np.ndarray:
         int64 id per point, ``0 .. n-1`` in sorted order of the origins.
     """
     o = np.asarray(origins, dtype=float)
-    key = np.round(o / tolerance).astype(np.int64)
-    _, ids = np.unique(key, axis=0, return_inverse=True)
-    return ids.ravel().astype(np.int64)
+    o = np.ascontiguousarray(o.reshape(o.shape[0], int(np.prod(o.shape[1:]))))
+    return _core.scan_ids_from_origins(o, float(tolerance))
 
 
 def _wmedian(x, w):
-    x, w = np.asarray(x, float), np.asarray(w, float)
-    ok = np.isfinite(x) & (w > 0)
-    if not ok.any():
-        return float("nan")
-    o = np.argsort(x[ok])
-    c = np.cumsum(w[ok][o])
-    return float(x[ok][o][np.searchsorted(c, c[-1] / 2)])
+    x = np.ascontiguousarray(np.ravel(np.asarray(x, float)))
+    w = np.ascontiguousarray(np.ravel(np.asarray(w, float)))
+    return _core.weighted_median(x, w)
 
 
 @dataclass
@@ -137,24 +132,15 @@ class StemNoise:
         """
         sl, ss, sc = self.slices, self.scan_slices, self.scans
         n = len(sl["height"])
-        out = {"n_stems": int(len(np.unique(sl["stem"]))) if n else 0, "n_slices": int(n),
-               "n_scans": int(len(sc["scan"]))}
-        if n == 0:
-            return out
-        out["sigma_total"] = _wmedian(sl["sigma_first"], sl["n_points"])
-        out["sigma_corrected"] = _wmedian(sl["sigma"], sl["n_points"])
-        out["sigma_within"] = _wmedian(ss["sigma_within"], ss["n_points"])
-        out["sigma_local"] = _wmedian(ss["sigma_local"], ss["n_points"])
-        out["tail_fraction"] = float(np.average(sl["tail_fraction"], weights=sl["n_points"]))
-        ok = np.asarray(sc["n_slices"]) >= min_scan_slices
-        out["n_scans_registered"] = int(ok.sum())
-        if ok.sum() > 1:
-            off = np.hypot(np.asarray(sc["tx"])[ok], np.asarray(sc["ty"])[ok])
-            w = np.asarray(sc["n_points"])[ok]
-            out["registration_rms"] = float(np.sqrt(np.average(off ** 2, weights=w)))
-            out["registration_max"] = float(off.max())
-            out["worst_scan"] = int(np.asarray(sc["scan"])[ok][np.argmax(off)])
-        return out
+
+        def cols(d, keys, dtype=float):
+            return {k: np.ascontiguousarray(d[k] if n else d.get(k, ()), dtype=dtype) for k in keys}
+
+        slices = {**cols(sl, ["stem"], np.int64), **cols(sl, ["n_points", "sigma", "sigma_first", "tail_fraction"])}
+        scan_slices = cols(ss, ["n_points", "sigma_within", "sigma_local"])
+        scans = {"scan": np.ascontiguousarray(sc["scan"], dtype=np.int64),
+                 **cols(sc, ["n_points", "n_slices", "tx", "ty"])}
+        return _core.stem_noise_summary(n, slices, scan_slices, scans, float(min_scan_slices))
 
 
 def stem_noise(cloud: PointCloud, scan_id=None, stems=None, height_attr: str = "height",

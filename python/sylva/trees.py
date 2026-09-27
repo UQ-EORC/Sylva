@@ -242,34 +242,15 @@ def prune_trees(trees: list[Tree], labels: np.ndarray, min_height: float = 3.0,
     labels : numpy.ndarray
         Labels remapped to the new ids; points of dropped trees are -1.
     """
-    keep = [t for t in trees if t.height >= min_height  # NaN height (no points) is dropped
-            and (max_dbh is None or t.dbh <= max_dbh)
-            and (t.n_slices >= short_slices or t.quality >= min_quality_short)]
-    keep.sort(key=lambda t: -t.n_points)
-    survivors: list[Tree] = []
-    absorbed: dict[int, int] = {}
-    for t in keep:
-        for s in survivors:
-            if np.hypot(t.x - s.x, t.y - s.y) <= merge_radius:
-                absorbed[t.tree_id] = s.tree_id
-                break
-        else:
-            survivors.append(t)
-    survivors.sort(key=lambda t: -t.dbh)
-    new_id = {t.tree_id: i + 1 for i, t in enumerate(survivors)}
-    lut = np.full(int(max(labels.max(), max((t.tree_id for t in trees), default=0))) + 2, -1,
-                  dtype=np.int64)
-    for old, new in new_id.items():
-        lut[old] = new
-    for old, target in absorbed.items():
-        lut[old] = new_id[target]
-    labels = np.asarray(labels, dtype=np.int64)
-    out_labels = np.where(labels >= 0, lut[np.clip(labels, 0, len(lut) - 1)], -1)
+    kept, out_labels = _core.prune_trees([t._to_core() for t in trees], np.ascontiguousarray(labels, dtype=np.int64),
+                                         float(min_height), float(merge_radius),
+                                         None if max_dbh is None else float(max_dbh), float(min_quality_short),
+                                         int(short_slices))
     out = []
-    for t in survivors:
-        n = int((out_labels == new_id[t.tree_id]).sum())
-        out.append(Tree(new_id[t.tree_id], t.x, t.y, t.dbh, t.height, n, t.inlier_fraction,
-                        t.n_slices, t.rmse, t.lean_deg, t.quality, dict(t.extra)))
+    for i, d in kept:
+        t = Tree._from_core(d)
+        t.extra = dict(trees[i].extra)
+        out.append(t)
     return out, out_labels
 
 
@@ -306,8 +287,7 @@ def basal_area(trees, area: float, min_dbh: float = 0.0) -> float:
         raise ValueError(f"area must be positive, got {area}")
     dbh = np.array([getattr(t, "dbh", t) for t in np.ravel(np.asarray(trees, dtype=object))],
                    dtype=float)
-    dbh = dbh[np.isfinite(dbh) & (dbh >= min_dbh)]
-    return float(np.sum(np.pi * (dbh / 2) ** 2) / area * 1e4)
+    return _core.basal_area(dbh, float(area), float(min_dbh))
 
 
 def dbh_profile(cloud: PointCloud, center_xy, height_attr: str = "height",
@@ -603,35 +583,7 @@ def crown_metrics_all(cloud: PointCloud, labels: np.ndarray, height_attr: str = 
 def _count_ridges(persistence: np.ndarray, level: float = 0.6, dip: float = 0.2) -> int:
     """Flanges around the stem: runs of angle where protrusions persist, split
     where persistence dips by ``dip`` between two peaks (neighbouring flanges)."""
-    ridge = persistence >= level
-    if not ridge.any():
-        return 0
-    if ridge.all():
-        return 1
-    start = int(np.flatnonzero(~ridge)[0])            # rotate so no run wraps around
-    p = np.roll(persistence, -start)
-    count, i, n = 0, 0, len(p)
-    while i < n:
-        if p[i] < level:
-            i += 1
-            continue
-        j = i
-        while j < n and p[j] >= level:
-            j += 1
-        run = p[i:j]
-        count += 1
-        peak = run[0]
-        low = run[0]
-        for v in run[1:]:
-            if v > peak:
-                peak = v
-            if v < low:
-                low = v
-            if peak - low >= dip and v - low >= dip:     # a dip between two peaks
-                count += 1
-                peak = low = v
-        i = j
-    return count
+    return _core.count_ridges(np.ascontiguousarray(persistence, dtype=float), float(level), float(dip))
 
 
 def detect_buttress(cloud: PointCloud, base_xy=None, height_attr: str = "height",
@@ -708,78 +660,11 @@ def detect_buttress(cloud: PointCloud, base_xy=None, height_attr: str = "height"
     --------
     sylva.qsm.buttress_mesh : rebuild the base once it is known to be buttressed.
     """
-    if voxel:
-        cloud = cloud[_core.voxel_downsample_indices(cloud.xyz, voxel)]
-    h_all = np.asarray(cloud.heights(height_attr), dtype=float)
-    xyz = cloud.xyz
-    if base_xy is None:
-        band = (h_all > 2.5) & (h_all < 3.5)
-        if band.sum() < 50:
-            band = (h_all > 1.2) & (h_all < 1.8)
-        centre = np.median(xyz[band, :2], axis=0) if band.any() else np.median(xyz[:, :2], axis=0)
-    else:
-        centre = np.asarray(base_xy, dtype=float)[:2]
-    keep = ((np.hypot(xyz[:, 0] - centre[0], xyz[:, 1] - centre[1]) < max_radius) & (h_all >= 0)
-            & (h_all < max_height + slice_height))
-    xyz, h = xyz[keep], h_all[keep]
-    if bark_only and len(xyz) > 20:
-        sub = PointCloud(xyz)
-        planarity, _ = _core.planarity_linearity(sub.xyz, 20)
-        nz = np.abs(_core.estimate_normals(sub.xyz, 20)[:, 2])
-        bark = (planarity >= 0.4) & (nz <= 0.5)
-        xyz, h = xyz[bark], h[bark]
-    z0s = np.arange(0.2, max_height, slice_height)
-    radius = np.full(len(z0s), np.nan)
-    fit = np.full(len(z0s), np.nan)
-    slices = []
-    for k, z0 in enumerate(z0s):
-        pts = xyz[(h >= z0) & (h < z0 + slice_height), :2]
-        slices.append(pts)
-        if len(pts) < 30:
-            continue
-        try:
-            _, _, r, inl = fit_circle_ransac(pts, threshold=0.02, iterations=200,
-                                             max_radius=max_radius, seed=k)
-        except ValueError:
-            fit[k] = 0.0
-            continue
-        radius[k], fit[k] = r, float(np.mean(inl))
-    up = (z0s >= 2.0) & np.isfinite(fit)
-    round_up = up & (fit >= 0.5)
-    ref = round_up if round_up.sum() >= 3 else up
-    stem_r = float(np.nanmedian(radius[ref])) if ref.any() else float("nan")
-    stem_fit = float(np.nanmedian(fit[ref])) if ref.any() else float("nan")
-    base = (z0s < low) & np.isfinite(fit)
-    base_fit = float(np.nanmedian(fit[base])) if base.any() else float("nan")
-    marks, spread = [], []
-    for z0, pts in zip(z0s, slices, strict=True):
-        if z0 >= low or len(pts) < 30 or not np.isfinite(stem_r):
-            continue
-        d = pts - centre
-        dist = np.hypot(d[:, 0], d[:, 1])
-        spread.append(np.percentile(dist, 95))
-        b = ((np.arctan2(d[:, 1], d[:, 0]) + np.pi) / (2 * np.pi) * bins).astype(int) % bins
-        mk = np.zeros(bins, bool)
-        mk[b[dist > 1.4 * stem_r + 0.1]] = True
-        marks.append(mk)
-    persistence = np.mean(marks, axis=0) if marks else np.zeros(bins)
-    ridges = _count_ridges(persistence)
-    buttressed = bool(np.isfinite(base_fit) and base_fit < max_circle_fit and ridges >= min_ridges)
-    top = float("nan")
-    if buttressed and np.isfinite(stem_fit):
-        # The lowest height from which a circle explains the stem again, for three slices running.
-        good = np.isfinite(fit) & (fit >= min(0.8 * stem_fit, stem_fit - 0.1))
-        for k in range(len(z0s) - 2):
-            if z0s[k] >= low and good[k:k + 3].all():
-                top = float(z0s[k])
-                break
-        else:
-            top = float(max_height)
-    return {"buttressed": buttressed, "base_circle_fit": base_fit, "stem_circle_fit": stem_fit,
-            "stem_radius": stem_r, "ridges": int(ridges),
-            "ridge_share": float((persistence >= 0.6).mean()),
-            "spread": float(np.median(spread) / stem_r) if spread and stem_r > 0 else float("nan"),
-            "top": top, "centre": centre}
+    h = np.ascontiguousarray(cloud.heights(height_attr), dtype=float)
+    base = None if base_xy is None else tuple(float(v) for v in np.asarray(base_xy, dtype=float)[:2])
+    return _core.detect_buttress(np.ascontiguousarray(cloud.xyz, dtype=float), h, base, float(max_radius),
+                                 float(slice_height), float(max_height), float(low), int(bins),
+                                 float(max_circle_fit), int(min_ridges), bool(bark_only), float(voxel))
 
 
 def convex_hull_area(xy: np.ndarray) -> float:
