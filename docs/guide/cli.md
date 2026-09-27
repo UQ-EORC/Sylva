@@ -9,6 +9,8 @@ version.
 
 ```bash
 sylva info plot.laz
+sylva reproject plot.laz plot_lonlat.laz --to EPSG:7844
+sylva transform ScanPos001.laz ScanPos001_project.laz --matrix ScanPos001.DAT
 sylva ground plot.laz plot_norm.laz --dtm dtm.tif
 sylva trees plot_norm.laz -o trees.csv --segment plot_trees.laz
 sylva chm plot_norm.laz chm.tif
@@ -44,8 +46,8 @@ sylva qsm-plot plot_norm_segmented.laz --cylinders --meshes
 | `voxel` | `<input>.vox` |
 | `coreg` | `<project>_coreg/` (`transforms.json`, `report.txt`, one `.dat` per scan) |
 
-`convert` is the exception: its format comes from the output extension, so it
-needs one. `pad` prints to stdout by design.
+`convert`, `reproject` and `transform` are the exceptions: the output format
+comes from its extension, so they need one. `pad` prints to stdout by design.
 
 `crates/sylva-cli` builds a standalone Rust binary with the same commands
 and no Python dependency (`cargo install --path crates/sylva-cli`). Its
@@ -55,14 +57,53 @@ options can differ in detail, so check its `--help`.
 
 ### `info`
 
-`sylva info INPUT`: prints the point count, bounds, and each attribute's type
-and range.
+`sylva info INPUT`: prints the point count, bounds, the CRS (LAS/LAZ
+headers) and each attribute's type and range.
 
 ### `convert`
 
 `sylva convert INPUT OUTPUT [--voxel SIZE]`: converts between any readable
 and writable formats (by extension). `--voxel` keeps one point per voxel of
 that size (m).
+
+### `reproject`
+
+`sylva reproject INPUT OUTPUT --to CRS [--from CRS]`: transforms the points
+into another coordinate reference system with
+[`sylva.coords.reproject`](coordinates.md#reprojecting). A CRS is an EPSG code
+(`EPSG:7855`, or a compound `EPSG:7855+5711`), a PROJ string or WKT (quote
+both on the command line). `--from` defaults to the CRS in the input's
+LAS/LAZ header; other formats carry none, so need it. A LAS/LAZ output stores
+the new CRS. The summary names the kind of transformation, and an
+approximate one (a datum change without known parameters, a vertical datum
+change) also prints a warning saying what was not applied.
+
+```bash
+sylva reproject plot.laz plot_wgs84.laz --to EPSG:4326          # CRS from the header
+sylva reproject plot.ply plot_mga55.laz --from EPSG:28355 --to EPSG:7855
+```
+
+### `transform`
+
+`sylva transform INPUT OUTPUT (--matrix FILE | --translate DX DY DZ | --rotate DEG [--axis x|y|z] [--about X Y Z])`:
+applies one rigid transformation and keeps every attribute and the CRS.
+
+- `--matrix FILE` applies a 4x4 matrix stored as 16 numbers in row-major
+  order: a RiSCAN SOP or POP `.DAT`, or a `.dat` written by `sylva coreg`.
+- `--translate DX DY DZ` shifts every point, e.g. to move projected
+  coordinates to a local origin and back.
+- `--rotate DEG` rotates by `DEG` degrees about `--axis` (default `z`),
+  counter-clockwise seen from the positive axis, through `--about`
+  (default the origin).
+
+```bash
+sylva transform ScanPos003.rxp ScanPos003.laz --matrix plot_coreg/ScanPos003.dat
+sylva transform plot.laz plot_local.laz --translate -512000 -5412000 0
+sylva transform plot.laz plot_turned.laz --rotate 12.5 --about 512025 5412025 0
+```
+
+To put a whole survey in one frame with a `transforms.json` or a folder of
+`.DAT` files, use [`sylva.coords.apply_transforms`](coordinates.md#applying-registration-results).
 
 ### `ground`
 

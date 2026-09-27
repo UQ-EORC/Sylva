@@ -30,11 +30,21 @@ class PointCloud:
         Mapping of attribute name to a length-``N`` array (``intensity``,
         ``classification``, ``height``, ...). Names follow laspy conventions
         so LAS files round-trip.
+    crs
+        Coordinate reference system of ``xyz``, or None when unknown: an
+        EPSG code (``"EPSG:7855"``; an integer is turned into that form), a
+        PROJ string or WKT. :func:`sylva.read` sets it from LAS/LAZ headers
+        and :func:`sylva.write` stores it in LAS/LAZ files. It is carried
+        through subsetting, :meth:`transform`, :meth:`translate`,
+        :meth:`rotate`, :meth:`recentre` and :meth:`concatenate` unchanged,
+        so after a local shift it describes the frame the offset returns
+        to; :func:`sylva.coords.reproject` changes it.
 
     Raises
     ------
     ValueError
-        If ``xyz`` is not ``(N, 3)`` or an attribute is not length ``N``.
+        If ``xyz`` is not ``(N, 3)``, an attribute is not length ``N`` or
+        ``crs`` is not a string, integer or None.
 
     Notes
     -----
@@ -60,8 +70,14 @@ class PointCloud:
 
     xyz: np.ndarray
     attrs: dict[str, np.ndarray] = field(default_factory=dict)
+    crs: str | None = None
 
     def __post_init__(self) -> None:
+        if self.crs is not None:
+            if isinstance(self.crs, (int, np.integer)) and not isinstance(self.crs, bool):
+                self.crs = f"EPSG:{int(self.crs)}"
+            elif not isinstance(self.crs, str):
+                raise ValueError(f"crs must be a string, an EPSG code or None, got {type(self.crs).__name__}")
         self.xyz = np.ascontiguousarray(np.asarray(self.xyz, dtype=np.float64))
         if self.xyz.ndim != 2 or self.xyz.shape[1] != 3:
             raise ValueError(f"xyz must have shape (N, 3), got {self.xyz.shape}")
@@ -76,11 +92,14 @@ class PointCloud:
         return len(self.xyz)
 
     def __repr__(self) -> str:
-        return f"PointCloud(n={len(self):,}, attrs={sorted(self.attrs)})"
+        if self.crs is None:
+            return f"PointCloud(n={len(self):,}, attrs={sorted(self.attrs)})"
+        crs = self.crs if len(self.crs) <= 40 else self.crs[:37] + "..."
+        return f"PointCloud(n={len(self):,}, attrs={sorted(self.attrs)}, crs={crs!r})"
 
     def __getitem__(self, index) -> PointCloud:
         """Subset by boolean mask, integer indices or slice."""
-        return PointCloud(self.xyz[index], {k: v[index] for k, v in self.attrs.items()})
+        return PointCloud(self.xyz[index], {k: v[index] for k, v in self.attrs.items()}, self.crs)
 
     @property
     def x(self) -> np.ndarray:
@@ -128,7 +147,7 @@ class PointCloud:
             A cloud whose coordinates and attribute arrays are independent
             of this one's.
         """
-        return PointCloud(self.xyz.copy(), {k: v.copy() for k, v in self.attrs.items()})
+        return PointCloud(self.xyz.copy(), {k: v.copy() for k, v in self.attrs.items()}, self.crs)
 
     def with_attrs(self, **attrs: np.ndarray) -> PointCloud:
         """Add or replace attributes.
@@ -144,7 +163,7 @@ class PointCloud:
             A new cloud sharing the coordinate array; existing attributes are
             kept unless replaced.
         """
-        return PointCloud(self.xyz, {**self.attrs, **attrs})
+        return PointCloud(self.xyz, {**self.attrs, **attrs}, self.crs)
 
     def without(self, *names: str) -> PointCloud:
         """Drop attributes.
@@ -159,7 +178,7 @@ class PointCloud:
         PointCloud
             A new cloud sharing the coordinate array.
         """
-        return PointCloud(self.xyz, {k: v for k, v in self.attrs.items() if k not in names})
+        return PointCloud(self.xyz, {k: v for k, v in self.attrs.items() if k not in names}, self.crs)
 
     def where(self, expr: str) -> PointCloud:
         """Points satisfying an attribute expression.
@@ -212,7 +231,116 @@ class PointCloud:
         matrix = np.asarray(matrix, dtype=np.float64)
         if matrix.shape != (4, 4):
             raise ValueError("matrix must be 4x4")
-        return PointCloud(_core.transform_xyz(self.xyz, matrix), dict(self.attrs))
+        return PointCloud(_core.transform_xyz(self.xyz, matrix), dict(self.attrs), self.crs)
+
+    def translate(self, dx: float, dy: float, dz: float = 0.0) -> PointCloud:
+        """Shift every point by a constant offset.
+
+        Parameters
+        ----------
+        dx, dy, dz
+            Offset in the units of the coordinates (m).
+
+        Returns
+        -------
+        PointCloud
+            Shifted copy with the same attributes and ``crs``. Each
+            coordinate gets one addition, so shifting back by the negated
+            offset returns the original to within one rounding, and exactly
+            for whole-metre offsets of millimetre data.
+
+        Raises
+        ------
+        ValueError
+            If an offset is not finite.
+
+        Examples
+        --------
+        >>> local = cloud.translate(-500_000, -6_900_000)
+        """
+        from .coords import translation_matrix
+
+        return PointCloud(_core.coords_apply(self.xyz, translation_matrix(dx, dy, dz)),
+                          dict(self.attrs), self.crs)
+
+    def rotate(self, angle_deg: float, axis: str | Iterable[float] = "z",
+               about: Iterable[float] | None = None) -> PointCloud:
+        """Rotate every point about an axis.
+
+        Parameters
+        ----------
+        angle_deg
+            Angle in degrees, positive counter-clockwise when looking down
+            the axis towards the origin (right-handed): 90 about ``"z"``
+            turns +x into +y.
+        axis
+            ``"x"``, ``"y"``, ``"z"`` or any 3-vector (normalised here).
+        about
+            A point ``(x, y, z)`` on the axis; the origin if None. Rotate
+            about the plot centre, or :meth:`recentre` first, to keep
+            projected coordinates from swinging far away.
+
+        Returns
+        -------
+        PointCloud
+            Rotated copy with the same attributes and ``crs``. Direction-like
+            attributes (``nx``, ``ny``, ``nz``) are not rotated. Multiples
+            of 90 degrees are exact.
+
+        Raises
+        ------
+        ValueError
+            If the angle, axis or centre is not finite, the axis is zero or
+            an unknown name, or ``about`` does not have three values.
+
+        Examples
+        --------
+        >>> turned = cloud.rotate(30, about=cloud.xyz.mean(axis=0))
+        """
+        from .coords import rotation_matrix
+
+        return PointCloud(_core.coords_apply(self.xyz, rotation_matrix(angle_deg, axis, about)),
+                          dict(self.attrs), self.crs)
+
+    def recentre(self, origin: Iterable[float] | None = None) -> tuple[PointCloud, np.ndarray]:
+        """Move the coordinates close to zero.
+
+        Projected coordinates in the millions of metres leave float32 (and
+        many viewers and meshing tools) with centimetre precision; local
+        coordinates keep it.
+
+        Parameters
+        ----------
+        origin
+            Point that becomes ``(0, 0, 0)``. By default the minimum corner
+            of the (finite) points rounded down to whole metres, so the
+            offset is exact and short.
+
+        Returns
+        -------
+        cloud : PointCloud
+            Shifted copy with the same attributes and ``crs``.
+        offset : numpy.ndarray
+            Length-3 offset that undoes the shift:
+            ``cloud.translate(*offset)`` gives the original coordinates.
+
+        Raises
+        ------
+        ValueError
+            If ``origin`` is not three finite numbers.
+
+        Examples
+        --------
+        >>> local, offset = cloud.recentre()
+        >>> restored = local.translate(*offset)
+        """
+        if origin is None:
+            o = np.asarray(_core.coords_recentre_origin(self.xyz), dtype=np.float64)
+        else:
+            o = np.asarray(origin, dtype=np.float64).reshape(-1)
+            if o.shape != (3,) or not np.all(np.isfinite(o)):
+                raise ValueError(f"origin must be three finite numbers, got {origin!r}")
+        return self.translate(*(-o)), o
 
     @classmethod
     def concatenate(cls, clouds: Iterable[PointCloud]) -> PointCloud:
@@ -228,20 +356,30 @@ class PointCloud:
         PointCloud
             All points; only attributes present in *every* input are kept.
             Use :func:`sylva.registration.merge_scans` to also record which
-            scan each point came from.
+            scan each point came from. ``crs`` is the inputs' common CRS
+            (clouds without one are taken to share it), or None.
 
         Raises
         ------
         ValueError
-            If ``clouds`` is empty.
+            If ``clouds`` is empty, or two clouds have different CRSs.
         """
         clouds = list(clouds)
         if not clouds:
             raise ValueError("no clouds to concatenate")
         common = set.intersection(*(set(c.attrs) for c in clouds))
+        crss = list(dict.fromkeys(c.crs for c in clouds if c.crs is not None))
+        if len(crss) > 1:
+            from .coords import same_crs
+
+            crss = [c for i, c in enumerate(crss) if not any(same_crs(c, d) for d in crss[:i])]
+        if len(crss) > 1:
+            raise ValueError(f"cannot concatenate clouds in different CRSs: {crss}; "
+                             "reproject them first (sylva.coords.reproject)")
         return cls(
             np.vstack([c.xyz for c in clouds]),
             {k: np.concatenate([c.attrs[k] for c in clouds]) for k in sorted(common)},
+            crss[0] if crss else None,
         )
 
     @classmethod

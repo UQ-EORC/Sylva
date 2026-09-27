@@ -167,11 +167,13 @@ pub fn read_las(path: impl AsRef<Path>) -> Result<PointCloud> {
 pub struct LasWriteOptions {
     pub point_format: u8,
     pub scale: f64,
+    /// CRS to store as an OGC WKT VLR (see [`crate::crs::Crs::to_wkt`]).
+    pub crs_wkt: Option<String>,
 }
 
 impl Default for LasWriteOptions {
     fn default() -> Self {
-        LasWriteOptions { point_format: 6, scale: 0.001 }
+        LasWriteOptions { point_format: 6, scale: 0.001, crs_wkt: None }
     }
 }
 
@@ -247,6 +249,15 @@ pub fn write_las(cloud: &PointCloud, path: impl AsRef<Path>, opts: &LasWriteOpti
             description: "Extra Bytes".to_string(),
             data,
         });
+    }
+
+    if let Some(wkt) = opts.crs_wkt.as_deref().filter(|w| !w.trim().is_empty()) {
+        // LAS 1.4 R15: the WKT is a null-terminated string in a LASF_Projection
+        // record 2112, with the global-encoding WKT bit set.
+        let mut data = wkt.trim().as_bytes().to_vec();
+        data.push(0);
+        builder.vlrs.push(Vlr { user_id: "LASF_Projection".to_string(), record_id: 2112, description: "OGC WKT".to_string(), data });
+        builder.has_wkt_crs = true;
     }
 
     let (lo, _) = cloud.bounds().unwrap_or(([0.0; 3], [0.0; 3]));

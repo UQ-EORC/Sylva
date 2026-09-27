@@ -22,6 +22,7 @@ PAGES = {
     "progress": "progress.md", "limits": "limits.md",
     "masks": "masks.md",
 }
+PAGES["coords"] = "coords.md"
 
 
 def _summary(obj) -> str:

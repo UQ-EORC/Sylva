@@ -49,12 +49,14 @@ pub struct WriteOptions {
     pub scale: f64,
     /// Binary little-endian PLY rather than ASCII (PLY only).
     pub binary: bool,
+    /// CRS stored as a WKT VLR (LAS/LAZ only; other formats have no place for it).
+    pub crs_wkt: Option<String>,
 }
 
 impl Default for WriteOptions {
     fn default() -> Self {
         let las = las::LasWriteOptions::default();
-        WriteOptions { point_format: las.point_format, scale: las.scale, binary: true }
+        WriteOptions { point_format: las.point_format, scale: las.scale, binary: true, crs_wkt: None }
     }
 }
 
@@ -67,7 +69,7 @@ pub fn write(cloud: &PointCloud, path: impl AsRef<Path>) -> Result<()> {
 pub fn write_with(cloud: &PointCloud, path: impl AsRef<Path>, opts: &WriteOptions) -> Result<()> {
     let path = path.as_ref();
     match ext(path).as_str() {
-        "las" | "laz" => las::write_las(cloud, path, &las::LasWriteOptions { point_format: opts.point_format, scale: opts.scale }),
+        "las" | "laz" => las::write_las(cloud, path, &las::LasWriteOptions { point_format: opts.point_format, scale: opts.scale, crs_wkt: opts.crs_wkt.clone() }),
         "ply" => ply::write_ply(cloud, path, opts.binary),
         "xyz" | "txt" | "asc" | "pts" => ascii::write_ascii(cloud, path, " ", true, 4),
         "csv" => ascii::write_ascii(cloud, path, ",", true, 4),

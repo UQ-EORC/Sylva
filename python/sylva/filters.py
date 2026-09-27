@@ -49,7 +49,7 @@ def voxel_downsample(cloud: PointCloud, voxel_size: float, method: str = "first"
     if method == "first":
         return cloud[_core.voxel_downsample_indices(cloud.xyz, voxel_size)]
     if method == "centroid":
-        return PointCloud(_core.voxel_centroids(cloud.xyz, voxel_size))
+        return PointCloud(_core.voxel_centroids(cloud.xyz, voxel_size), crs=cloud.crs)
     raise ValueError(f"unknown method {method!r}")
 
 

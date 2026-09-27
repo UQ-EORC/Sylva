@@ -30,6 +30,8 @@ spade = "2.15"
 robust = "1.2"
 shapefile = "0.9"
 geojson = { version = "1.0", default-features = false }
+proj4rs = "0.2"
+crs-definitions = "0.6"
 
 [profile.release]
 opt-level = 3

@@ -34,6 +34,7 @@ use sylva_rs::{canopy, cluster, coreg, coreg_geometry, coreg_ground, coreg_icp a
 mod coreg_pipeline_py;
 mod interpolate_py;
 mod masks_py;
+mod coords_py;
 
 fn err(e: sylva_rs::Error) -> PyErr {
     match e {
@@ -258,10 +259,10 @@ fn read<'py>(py: Python<'py>, path: PathBuf) -> PyResult<(Bound<'py, PyArray2<f6
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, xyz, attrs=None, point_format=6, scale=0.001, binary=true))]
-fn write(py: Python<'_>, path: PathBuf, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>, point_format: u8, scale: f64, binary: bool) -> PyResult<()> {
+#[pyo3(signature = (path, xyz, attrs=None, point_format=6, scale=0.001, binary=true, crs_wkt=None))]
+fn write(py: Python<'_>, path: PathBuf, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>, point_format: u8, scale: f64, binary: bool, crs_wkt: Option<String>) -> PyResult<()> {
     let c = cloud_from_py(xyz, attrs)?;
-    py.detach(|| io::write_with(&c, &path, &io::WriteOptions { point_format, scale, binary })).map_err(err)
+    py.detach(|| io::write_with(&c, &path, &io::WriteOptions { point_format, scale, binary, crs_wkt })).map_err(err)
 }
 
 #[pyfunction]
@@ -1513,6 +1514,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     coreg_pipeline_py::register(m)?;
     interpolate_py::register(m)?;
     masks_py::register(m)?;
+    coords_py::register(m)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyProgressTask>()?;
     m.add_class::<PyCoregKdTree>()?;

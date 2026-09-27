@@ -38,6 +38,14 @@ def _cmd_info(args):
     lo, hi = cloud.bounds
     print(f"{args.input}: {len(cloud):,} points")
     print(f"  min: {lo}\n  max: {hi}")
+    if cloud.crs is not None:
+        from .coords import crs_info
+
+        try:
+            info = crs_info(cloud.crs)
+            print(f"  crs: {info.label} ({info.name})" if info.label != info.name else f"  crs: {info.name}")
+        except ValueError:
+            print(f"  crs: {cloud.crs[:80]}")
     for k, v in cloud.attrs.items():
         print(f"  {k}: {v.dtype} [{v.min()} .. {v.max()}]")
 
@@ -48,6 +56,36 @@ def _cmd_convert(args):
         cloud = filters.voxel_downsample(cloud, args.voxel)
     io.write(cloud, args.output)
     print(f"wrote {len(cloud):,} points to {args.output}")
+
+
+def _cmd_reproject(args):
+    from . import coords
+
+    cloud = io.read(args.input)
+    src = args.src if args.src else cloud.crs
+    if src is None:
+        raise ValueError(f"{args.input} declares no CRS; give it with --from")
+    out = coords.reproject(cloud, args.to, src_crs=src)
+    io.write(out, args.output)
+    t = coords.transformation(src, args.to)
+    print(f"reprojected {len(out):,} points to {coords.crs_info(args.to).label} ({t.kind}); "
+          f"wrote {args.output}")
+
+
+def _cmd_transform(args):
+    cloud = io.read(args.input)
+    if args.matrix:
+        cloud = cloud.transform(io.read_matrix_file(args.matrix))
+        what = f"matrix {args.matrix}"
+    elif args.translate:
+        cloud = cloud.translate(*args.translate)
+        what = "translation by ({:g}, {:g}, {:g})".format(*args.translate)
+    else:
+        cloud = cloud.rotate(args.rotate, axis=args.axis, about=args.about)
+        about = "the origin" if args.about is None else "({:g}, {:g}, {:g})".format(*args.about)
+        what = f"rotation by {args.rotate:g} degrees about {args.axis} through {about}"
+    io.write(cloud, args.output)
+    print(f"applied {what} to {len(cloud):,} points; wrote {args.output}")
 
 
 def _cmd_ground(args):
@@ -267,6 +305,30 @@ def main(argv=None):
     s.add_argument("--voxel", type=float, default=None,
                    help="keep one point per voxel of this size (m)")
     s.set_defaults(func=_cmd_convert)
+
+    s = sub.add_parser("reproject", help="reproject a point cloud into another CRS", **fmt)
+    s.add_argument("input", help="point cloud")
+    s.add_argument("output", help="point cloud; format from the extension (LAS/LAZ store the CRS)")
+    s.add_argument("--to", required=True, metavar="CRS",
+                   help="target CRS: EPSG code (EPSG:7855), PROJ string or WKT")
+    s.add_argument("--from", dest="src", metavar="CRS",
+                   help="source CRS (default: the CRS in the input's LAS header)")
+    s.set_defaults(func=_cmd_reproject)
+
+    s = sub.add_parser("transform", help="apply a 4x4 matrix, a shift or a rotation", **fmt)
+    s.add_argument("input", help="point cloud")
+    s.add_argument("output", help="point cloud; format from the extension")
+    how = s.add_mutually_exclusive_group(required=True)
+    how.add_argument("--matrix", metavar="FILE",
+                     help="4x4 matrix file (16 numbers, row-major; RiSCAN .DAT, sylva coreg .dat)")
+    how.add_argument("--translate", type=float, nargs=3, metavar=("DX", "DY", "DZ"),
+                     help="shift by this offset (m)")
+    how.add_argument("--rotate", type=float, metavar="DEG",
+                     help="rotate by this angle (degrees, counter-clockwise seen from +axis)")
+    s.add_argument("--axis", choices=["x", "y", "z"], default="z", help="rotation axis")
+    s.add_argument("--about", type=float, nargs=3, metavar=("X", "Y", "Z"),
+                   help="point the rotation axis passes through (default: the origin)")
+    s.set_defaults(func=_cmd_transform)
 
     s = sub.add_parser("ground", help="classify ground, build DTM and add height attribute", **fmt)
     s.add_argument("input", help="point cloud, z up")

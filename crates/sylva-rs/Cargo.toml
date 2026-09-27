@@ -26,3 +26,5 @@ spade.workspace = true
 robust.workspace = true
 shapefile.workspace = true
 geojson.workspace = true
+proj4rs.workspace = true
+crs-definitions.workspace = true
