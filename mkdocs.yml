@@ -30,6 +30,7 @@ nav:
       - Plot workflow: guide/quickstart.md
       - Point clouds and files: guide/io.md
       - Filtering and registration: guide/preprocessing.md
+      - Coordinates: guide/coordinates.md
       - Trees and crowns: guide/trees.md
       - Pulse data: guide/pulses.md
       - Ray-traced voxels: guide/voxels.md
@@ -65,6 +66,7 @@ nav:
       - canopy: api/canopy.md
       - voxels: api/voxels.md
       - registration: api/registration.md
+      - coords: api/coords.md
       - coreg: api/coreg.md
       - qsm: api/qsm.md
       - leaves: api/leaves.md
