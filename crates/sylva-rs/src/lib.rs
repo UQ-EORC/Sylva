@@ -35,6 +35,8 @@ pub mod json;
 pub mod limits;
 pub mod leaves;
 pub mod nprandom;
+pub mod leaf_model;
+pub mod mesh_io;
 pub mod numeric;
 pub mod optim;
 pub mod pointcloud;
@@ -52,6 +54,7 @@ pub mod transform;
 pub mod tree_prune;
 pub mod trees;
 pub mod voxel;
+pub mod voxel_grid;
 
 pub use error::{Error, Result};
 pub use pointcloud::{Attr, PointCloud};

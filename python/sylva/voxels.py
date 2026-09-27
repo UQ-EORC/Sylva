@@ -231,31 +231,7 @@ class RayVoxelGrid:
             ``unobserved``, ``mean_beams`` (one value per layer) and
             ``total``: ``{"observed", "occluded", "unobserved", "top"}``.
         """
-        state = self["state"]
-        if "distance_from_ground" in self.metrics and np.isfinite(self["distance_from_ground"]).any():
-            h = self["distance_from_ground"]
-        else:
-            h = np.broadcast_to(((np.arange(self.shape[2]) + 0.5) * self.voxel_size)[:, None, None], state.shape)
-        filled = state == STATES["filled"]
-        top = max_height if max_height is not None else (float(np.nanmax(np.where(filled, h, np.nan))) if filled.any() else 0.0)
-        space = np.isfinite(h) & (h >= min_height) & (h <= top)
-        edges = np.arange(min_height, top + self.voxel_size, self.voxel_size)
-        k = np.clip(np.digitize(h, edges) - 1, 0, max(len(edges) - 2, 0))
-        n_layers = max(len(edges) - 1, 1)
-        def per_layer(mask, weights=None):
-            return np.bincount(k[space & mask], weights=None if weights is None else weights[space & mask], minlength=n_layers)[:n_layers]
-        n = per_layer(np.ones_like(space))
-        obs = per_layer(state >= STATES["empty"])
-        occ = per_layer(state == STATES["occluded"])
-        beams = per_layer(np.ones_like(space), np.asarray(self["num_beams"], float))
-        with np.errstate(invalid="ignore", divide="ignore"):
-            out = {"height": 0.5 * (edges[:-1] + edges[1:])[:n_layers], "n_voxels": n,
-                   "observed": obs / n, "occluded": occ / n, "unobserved": (n - obs - occ) / n,
-                   "mean_beams": beams / n}
-        tot = max(n.sum(), 1)
-        out["total"] = {"observed": float(obs.sum() / tot), "occluded": float(occ.sum() / tot),
-                        "unobserved": float((n.sum() - obs.sum() - occ.sum()) / tot), "top": float(top)}
-        return out
+        return self._core.occlusion_profile(float(min_height), None if max_height is None else float(max_height))
 
     def observed_map(self, min_height: float = 0.0, max_height: float | None = None) -> np.ndarray:
         """Map of how much of each column's canopy space was observed.
@@ -271,16 +247,7 @@ class RayVoxelGrid:
             ``(ny, nx)`` share observed; NaN for columns with no canopy
             space. Useful to find the parts of a plot to rescan.
         """
-        state = self["state"]
-        if "distance_from_ground" in self.metrics and np.isfinite(self["distance_from_ground"]).any():
-            h = self["distance_from_ground"]
-        else:
-            h = np.broadcast_to(((np.arange(self.shape[2]) + 0.5) * self.voxel_size)[:, None, None], state.shape)
-        filled = state == STATES["filled"]
-        top = max_height if max_height is not None else (float(np.nanmax(np.where(filled, h, np.nan))) if filled.any() else 0.0)
-        space = np.isfinite(h) & (h >= min_height) & (h <= top)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            return (space & (state >= STATES["empty"])).sum(axis=0) / space.sum(axis=0)
+        return self._core.observed_map(float(min_height), None if max_height is None else float(max_height))
 
     def z_levels(self) -> np.ndarray:
         """Bottom z of each voxel layer.
@@ -290,7 +257,7 @@ class RayVoxelGrid:
         numpy.ndarray
             Length ``nz``, bottom first (m).
         """
-        return self.origin[2] + np.arange(self.shape[2]) * self.voxel_size
+        return self._core.z_levels()
 
     def centers(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Voxel-centre coordinates.
@@ -300,10 +267,7 @@ class RayVoxelGrid:
         X, Y, Z : numpy.ndarray
             Each ``(nz, ny, nx)``, aligned with the voxel arrays.
         """
-        axes = [self.origin[a] + (np.arange(n) + 0.5) * self.voxel_size
-                for a, n in enumerate(self.shape)]
-        Z, Y, X = np.meshgrid(axes[2], axes[1], axes[0], indexing="ij")
-        return X, Y, Z
+        return self._core.centers()
 
     def profile(self, name: str = "pad_fpl", min_beams: int = 1) -> np.ndarray:
         """Mean of a metric per vertical layer over voxels crossed by at least
@@ -324,10 +288,7 @@ class RayVoxelGrid:
             One value per layer, bottom first; NaN where no voxel qualifies.
             Layers are in grid z, not height above ground.
         """
-        ok = self["num_beams"] >= min_beams
-        values = np.where(ok, self[name], 0.0).sum(axis=(1, 2))
-        count = ok.sum(axis=(1, 2))
-        return np.divide(values, count, out=np.full(len(count), np.nan), where=count > 0)
+        return self._core.profile(name, float(min_beams))
 
     @property
     def tree_iad(self) -> dict[int, dict]:
@@ -560,35 +521,24 @@ def ray_voxelize(
     if ground is not None:
         ground = np.ascontiguousarray(ground, dtype=bool)
     elif ground_class is not None:
-        ground = np.ascontiguousarray(_echo_codes(shots, class_attr) == ground_class)
-    elif dtm is not None and ground_distance > 0:
-        xyz = shots.echo_xyz()
-        h = xyz[:, 2] - dtm.sample(xyz[:, 0], xyz[:, 1])
-        ground = np.ascontiguousarray(h <= ground_distance)
-
+        _echo_codes(shots, class_attr)
     if foliage is not None:
         foliage = np.ascontiguousarray(foliage, dtype=np.uint8)
     elif len(leaf_classes) or len(wood_classes):
-        codes = _echo_codes(shots, class_attr)
-        foliage = np.where(codes < 3, EXCLUDED, PLANT).astype(np.uint8)
-        foliage[np.isin(codes, list(wood_classes))] = WOOD
-        foliage[np.isin(codes, list(leaf_classes))] = LEAF
-
-    tree_id = None
-    if tree_attr is not None and tree_attr in shots.echo_attrs:
-        tree_id = np.ascontiguousarray(shots.echo_attrs[tree_attr], dtype=np.int32)
-    intensity = None
+        _echo_codes(shots, class_attr)
     if weighting in ("relative", "strongest"):
-        intensity = np.ascontiguousarray(_echo_codes(shots, intensity_attr), dtype=np.float64)
+        _echo_codes(shots, intensity_attr)
     for name, a in (("ground", ground), ("foliage", foliage)):
         if a is not None and len(a) != n:
             raise ValueError(f"{name} has {len(a)} values for {n} echoes")
 
+    # Echo labels not given as arrays come from the attributes, as for a file.
     core = _core.ray_voxelize(
         shots._to_core(), float(voxel_size),
         None if bounds is None else (tuple(map(float, bounds[0])), tuple(map(float, bounds[1]))),
-        ground, foliage, intensity, tree_id,
-        None if dtm is None else (dtm.data, dtm.xmin, dtm.ymin, dtm.resolution),
+        ground, foliage, None if dtm is None else (dtm.data, dtm.xmin, dtm.ymin, dtm.resolution),
+        class_attr, ground_class, float(ground_distance), [int(c) for c in leaf_classes],
+        [int(c) for c in wood_classes], tree_attr or "", intensity_attr,
         weighting, occlusion, flat_top, int(neighbour_prior_min_rays),
         None if beam is None else (float(beam[0]), float(beam[1])),
         int(subvoxel_split), int(subvoxel_min_beams), float(average_leaf_area), lad,
@@ -646,8 +596,4 @@ def tree_sampling(grid: RayVoxelGrid, cloud, labels, min_beams: float = 10.0,
     """
     xyz = np.ascontiguousarray(cloud.xyz if hasattr(cloud, "xyz") else cloud, dtype=float)
     lab = np.ascontiguousarray(labels, dtype=np.int64)
-    state = np.ascontiguousarray(grid["state"], dtype=np.uint8).ravel()
-    beams = np.ascontiguousarray(grid["num_beams"], dtype=float).ravel()
-    o = tuple(float(x) for x in grid.origin)
-    return _core.tree_sampling(xyz, lab, o, float(grid.voxel_size), tuple(int(x) for x in grid.shape),
-                               state, beams, float(min_beams), float(above))
+    return grid._core.tree_sampling(xyz, lab, float(min_beams), float(above))

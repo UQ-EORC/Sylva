@@ -222,4 +222,36 @@ pub fn positions(idx: &[usize]) -> Vec<f64> {
 /// Booleans as an R logical vector.
 pub fn logicals(v: &[bool]) -> Logicals {
     v.iter().map(|&b| Rbool::from(b)).collect()
+/// `NULL` or the first value of a numeric vector.
+pub fn optional_f64(v: &Robj, what: &str) -> Result<Option<f64>> {
+    if v.is_null() {
+        return Ok(None);
+    }
+    doubles(v, what)?.first().copied().map(Some).ok_or_else(|| Error::Other(format!("{what} is empty")))
+}
+
+/// Triangles from an `n x 3` matrix of 0-based vertex indices.
+pub fn faces_from_r(faces: &Robj) -> Result<Vec<[u32; 3]>> {
+    let (n, d): (usize, Vec<f64>) = if let Ok(m) = RMatrix::<f64>::try_from(faces) {
+        if m.ncols() != 3 {
+            return fail("faces must have 3 columns");
+        }
+        (m.nrows(), m.data().to_vec())
+    } else if let Ok(m) = RMatrix::<i32>::try_from(faces) {
+        if m.ncols() != 3 {
+            return fail("faces must have 3 columns");
+        }
+        (m.nrows(), m.data().iter().map(|&v| v as f64).collect())
+    } else {
+        return fail("faces must be a numeric matrix with 3 columns");
+    };
+    if d.iter().any(|&v| !(v >= 0.0 && v <= u32::MAX as f64 && v.fract() == 0.0)) {
+        return fail("faces must hold non-negative whole indices");
+    }
+    Ok((0..n).map(|i| [d[i] as u32, d[n + i] as u32, d[2 * n + i] as u32]).collect())
+}
+
+/// An `n x 3` integer matrix of 0-based vertex indices.
+pub fn faces_to_r(faces: &[[u32; 3]]) -> Robj {
+    RMatrix::new_matrix(faces.len(), 3, |r, c| faces[r][c] as i32).into()
 }

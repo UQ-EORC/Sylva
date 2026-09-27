@@ -12,11 +12,13 @@
 use extendr_api::prelude::*;
 
 mod canopy;
+mod leaves;
 mod quality;
 mod coreg;
 mod shots;
 mod trees;
 mod riscan;
+mod voxels;
 mod convert;
 mod filters;
 mod ground;
@@ -28,6 +30,7 @@ mod registration;
 extendr_module! {
     mod sylva;
     use canopy;
+    use leaves;
     use quality;
     use coreg;
     use shots;
@@ -39,4 +42,5 @@ extendr_module! {
     use raster;
     use registration;
     use riscan;
+    use voxels;
 }

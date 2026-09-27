@@ -17,6 +17,7 @@ use pyo3::types::{PyDict, PyList};
 use sylva_rs::pointcloud::Attr;
 
 mod canopy_py;
+mod leaves_py;
 mod quality_py;
 mod trees_py;
 mod filters_py;
@@ -26,6 +27,8 @@ mod registration_py;
 mod riscan_py;
 mod coreg_py;
 use sylva_rs::{canopy, cluster, coreg, coreg_geometry, coreg_ground, coreg_icp as coreg_icp_rs, filters, ground, io, qsm, registration, trees, voxel, Point, PointCloud, Raster, Shots, Transform};
+mod voxels_py;
+use sylva_rs::{canopy, cluster, coreg, coreg_geometry, coreg_ground, coreg_icp as coreg_icp_rs, filters, ground, io, qsm, registration, trees, Point, PointCloud, Raster, Shots, Transform};
 
 fn err(e: sylva_rs::Error) -> PyErr {
     match e {
@@ -543,146 +546,6 @@ fn density_grid<'py>(py: Python<'py>, shots: &Bound<'_, PyDict>, voxel_size: f64
     Ok(d)
 }
 
-// --------------------------------------------------------------- ray voxels
-
-/// Ray-traced voxel statistics. The grid stays on the Rust side; arrays are
-/// copied out on request, shaped `(nz, ny, nx)`.
-#[pyclass(name = "RayVoxels")]
-struct PyRayVoxels {
-    inner: voxel::RayVoxels,
-}
-
-#[pymethods]
-impl PyRayVoxels {
-    #[getter]
-    fn origin<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-        self.inner.origin.to_vec().into_pyarray(py)
-    }
-
-    #[getter]
-    fn voxel_size(&self) -> f64 {
-        self.inner.voxel_size
-    }
-
-    /// `(nx, ny, nz)`.
-    #[getter]
-    fn shape(&self) -> (usize, usize, usize) {
-        let s = self.inner.shape;
-        (s[0], s[1], s[2])
-    }
-
-    #[getter]
-    fn has_leaf(&self) -> bool {
-        self.inner.has_leaf
-    }
-
-    #[getter]
-    fn has_wood(&self) -> bool {
-        self.inner.has_wood
-    }
-
-    /// Names accepted by `field`.
-    fn field_names(&self) -> Vec<&'static str> {
-        let v = &self.inner;
-        let mut names: Vec<&'static str> = voxel::I::ALL.iter().map(|f| f.name()).collect();
-        names.extend(voxel::F::ALL.iter().filter(|f| !v.f[**f as usize].is_empty()).map(|f| f.name()));
-        for (name, on) in [("ppl_lambda", v.ppl_lambda.is_some()), ("wood_volume", v.wood_volume.is_some()), ("predominant_tree", v.predominant_tree.is_some()), ("subvoxel_counts", v.subvoxel_counts.is_some()), ("ground_height", v.ground_height.is_some())] {
-            if on {
-                names.push(name);
-            }
-        }
-        names
-    }
-
-    /// A raw accumulator as an array.
-    fn field<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
-        let v = &self.inner;
-        let shp = [v.shape[2], v.shape[1], v.shape[0]];
-        let missing = || PyValueError::new_err(format!("no voxel field {name:?} (see field_names())"));
-        if let Some(f) = voxel::I::ALL.iter().find(|f| f.name() == name) {
-            return Ok(PyArray1::from_vec(py, v.i[*f as usize].clone()).reshape(shp)?.into_any());
-        }
-        if let Some(f) = voxel::F::ALL.iter().find(|f| f.name() == name) {
-            let data = &v.f[*f as usize];
-            if data.is_empty() {
-                return Err(missing());
-            }
-            return Ok(PyArray1::from_vec(py, data.clone()).reshape(shp)?.into_any());
-        }
-        match name {
-            "ppl_lambda" => Ok(PyArray1::from_vec(py, v.ppl_lambda.clone().ok_or_else(missing)?).reshape(shp)?.into_any()),
-            "wood_volume" => Ok(PyArray1::from_vec(py, v.wood_volume.clone().ok_or_else(missing)?).reshape(shp)?.into_any()),
-            "predominant_tree" => Ok(PyArray1::from_vec(py, v.predominant_tree.clone().ok_or_else(missing)?).reshape(shp)?.into_any()),
-            "ground_height" => Ok(PyArray1::from_vec(py, v.ground_height.clone().ok_or_else(missing)?).reshape([shp[1], shp[2]])?.into_any()),
-            "subvoxel_counts" => {
-                let n_sub = v.params.subvoxel_split.pow(3);
-                Ok(PyArray1::from_vec(py, v.subvoxel_counts.clone().ok_or_else(missing)?).reshape([shp[0], shp[1], shp[2], n_sub])?.into_any())
-            }
-            _ => Err(missing()),
-        }
-    }
-
-    /// A derived per-voxel quantity (`pad_fpl`, `attenuation_ppl`, `transmittance`, ...).
-    fn metric<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
-        let v = &self.inner;
-        let data = py.detach(|| v.metric(name)).map_err(err)?;
-        let shp = [v.shape[2], v.shape[1], v.shape[0]];
-        if name == "state" {
-            return Ok(PyArray1::from_vec(py, data.iter().map(|&s| s as u8).collect()).reshape(shp)?.into_any());
-        }
-        Ok(PyArray1::from_vec(py, data).reshape(shp)?.into_any())
-    }
-
-    fn metric_names(&self) -> Vec<&'static str> {
-        voxel::RayVoxels::METRICS.to_vec()
-    }
-
-    /// Per-tree inclination distributions: `{tree_id: {...}}`.
-    fn tree_iad<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let out = PyDict::new(py);
-        for (tid, t) in &self.inner.tree_iad {
-            let d = PyDict::new(py);
-            d.set_item("bin_centres", t.bin_centres.clone().into_pyarray(py))?;
-            for (k, h) in [("liad", &t.liad), ("wiad", &t.wiad), ("piad", &t.piad), ("liad_bailey", &t.liad_bailey), ("wiad_bailey", &t.wiad_bailey), ("piad_bailey", &t.piad_bailey)] {
-                d.set_item(k, h.clone().into_pyarray(py))?;
-            }
-            for (k, g) in [("g_leaf", t.g_leaf), ("g_wood", t.g_wood), ("g_plant", t.g_plant), ("bailey_g_leaf", t.bailey_g_leaf), ("bailey_g_wood", t.bailey_g_wood)] {
-                d.set_item(k, g)?;
-            }
-            d.set_item("leaf_hits", t.leaf_hits)?;
-            d.set_item("wood_hits", t.wood_hits)?;
-            d.set_item("liad_de_wit", t.liad_de_wit)?;
-            d.set_item("wiad_de_wit", t.wiad_de_wit)?;
-            d.set_item("piad_de_wit", t.piad_de_wit)?;
-            out.set_item(*tid, d)?;
-        }
-        Ok(out)
-    }
-
-    /// Rasterise QSM cylinders (12-column rows) into per-voxel woody volume.
-    fn add_wood_volume(&mut self, py: Python<'_>, cylinders: PyReadonlyArray2<f64>) -> PyResult<()> {
-        let q = qsm_from_rows(cylinders)?;
-        let v = &mut self.inner;
-        py.detach(|| v.add_wood_volume(&q.cylinders));
-        Ok(())
-    }
-
-    /// Write `.vox` (AMAPVox) or `.txt`; returns the number of voxels written.
-    #[pyo3(signature = (path, format="vox", include_unobserved=false, filled_only=false))]
-    fn write(&self, py: Python<'_>, path: PathBuf, format: &str, include_unobserved: bool, filled_only: bool) -> PyResult<usize> {
-        let opts = voxel::WriteOptions { include_unobserved, filled_only };
-        let v = &self.inner;
-        match format {
-            "vox" => py.detach(|| v.write_vox(&path, opts)).map_err(err),
-            "text" => py.detach(|| v.write_text(&path, opts)).map_err(err),
-            other => Err(PyValueError::new_err(format!("unknown voxel format {other:?} (vox|text)"))),
-        }
-    }
-
-    fn write_iad_csv(&self, path: PathBuf) -> PyResult<()> {
-        self.inner.write_iad_csv(path).map_err(err)
-    }
-}
 
 #[pyfunction]
 #[pyo3(signature = (shots, path, double=false, row_group_size=1048576, zstd_level=3, origin_tolerance=1e-3))]
@@ -722,87 +585,6 @@ fn shots_info<'py>(py: Python<'py>, path: PathBuf) -> PyResult<Bound<'py, PyDict
     Ok(d)
 }
 
-/// Voxelise a shots file one batch of row groups at a time.
-#[pyfunction]
-#[pyo3(signature = (path, voxel_size=0.1, bounds=None, dtm=None, class_attr="classification", ground_class=None, ground_distance=0.2, leaf_classes=vec![], wood_classes=vec![], tree_attr="tree_id", intensity_attr="intensity", weighting="equal", occlusion=false, flat_top=false, neighbour_prior_min_rays=0, beam=None, subvoxel_split=0, subvoxel_min_beams=10, average_leaf_area=0.005, lad="spherical", lad_params=vec![], attenuation=vec!["fpl".to_string()], inclination=false, n_iad_bins=18, knn_normal=10, triangle_lmax=0.05, unbounded_range=f64::INFINITY))]
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
-fn ray_voxelize_file(py: Python<'_>, path: PathBuf, voxel_size: f64, bounds: Option<((f64, f64, f64), (f64, f64, f64))>, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, class_attr: &str, ground_class: Option<i64>, ground_distance: f64, leaf_classes: Vec<i64>, wood_classes: Vec<i64>, tree_attr: &str, intensity_attr: &str, weighting: &str, occlusion: bool, flat_top: bool, neighbour_prior_min_rays: u32, beam: Option<(f64, f64)>, subvoxel_split: usize, subvoxel_min_beams: u8, average_leaf_area: f64, lad: &str, lad_params: Vec<f64>, attenuation: Vec<String>, inclination: bool, n_iad_bins: usize, knn_normal: usize, triangle_lmax: f64, unbounded_range: f64) -> PyResult<PyRayVoxels> {
-    let params = voxel::VoxelParams {
-        voxel_size,
-        bounds: bounds.map(|(lo, hi)| ([lo.0, lo.1, lo.2], [hi.0, hi.1, hi.2])),
-        weighting: voxel::WeightMethod::parse(weighting).map_err(err)?,
-        occlusion,
-        flat_top,
-        neighbour_prior_min_rays,
-        beam: beam.map(|(diameter, divergence)| voxel::BeamSpec { diameter, divergence }),
-        subvoxel_split,
-        subvoxel_min_beams,
-        average_leaf_area,
-        lad: voxel::Lad::parse(lad, &lad_params).map_err(err)?,
-        attenuation: attenuation.iter().map(|m| voxel::Attenuation::parse(m)).collect::<Result<_, _>>().map_err(err)?,
-        inclination,
-        n_iad_bins,
-        knn_normal,
-        triangle_lmax,
-        unbounded_range,
-    };
-    let labels = voxel::EchoLabels { class_attr: class_attr.into(), ground_class, ground_distance, leaf_classes, wood_classes, tree_attr: tree_attr.into(), intensity_attr: intensity_attr.into() };
-    let dtm = dtm.map(|(data, xmin, ymin, res)| raster_from_py(data, xmin, ymin, res));
-    let inner = py.detach(|| voxel::voxelize_file(&io::shots::ShotsFile::open(&path)?, &params, &labels, dtm.as_ref())).map_err(err)?;
-    Ok(PyRayVoxels { inner })
-}
-
-#[pyfunction]
-#[pyo3(signature = (shots, voxel_size=0.1, bounds=None, ground=None, foliage=None, intensity=None, tree_id=None, dtm=None, weighting="equal", occlusion=false, flat_top=false, neighbour_prior_min_rays=0, beam=None, subvoxel_split=0, subvoxel_min_beams=10, average_leaf_area=0.005, lad="spherical", lad_params=vec![], attenuation=vec!["fpl".to_string()], inclination=false, n_iad_bins=18, knn_normal=10, triangle_lmax=0.05, unbounded_range=f64::INFINITY))]
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
-fn ray_voxelize(py: Python<'_>, shots: &Bound<'_, PyDict>, voxel_size: f64, bounds: Option<((f64, f64, f64), (f64, f64, f64))>, ground: Option<PyReadonlyArray1<bool>>, foliage: Option<PyReadonlyArray1<u8>>, intensity: Option<PyReadonlyArray1<f64>>, tree_id: Option<PyReadonlyArray1<i32>>, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, weighting: &str, occlusion: bool, flat_top: bool, neighbour_prior_min_rays: u32, beam: Option<(f64, f64)>, subvoxel_split: usize, subvoxel_min_beams: u8, average_leaf_area: f64, lad: &str, lad_params: Vec<f64>, attenuation: Vec<String>, inclination: bool, n_iad_bins: usize, knn_normal: usize, triangle_lmax: f64, unbounded_range: f64) -> PyResult<PyRayVoxels> {
-    let s = shots_from_py(shots)?;
-    let params = voxel::VoxelParams {
-        voxel_size,
-        bounds: bounds.map(|(lo, hi)| ([lo.0, lo.1, lo.2], [hi.0, hi.1, hi.2])),
-        weighting: voxel::WeightMethod::parse(weighting).map_err(err)?,
-        occlusion,
-        flat_top,
-        neighbour_prior_min_rays,
-        beam: beam.map(|(diameter, divergence)| voxel::BeamSpec { diameter, divergence }),
-        subvoxel_split,
-        subvoxel_min_beams,
-        average_leaf_area,
-        lad: voxel::Lad::parse(lad, &lad_params).map_err(err)?,
-        attenuation: attenuation.iter().map(|m| voxel::Attenuation::parse(m)).collect::<Result<_, _>>().map_err(err)?,
-        inclination,
-        n_iad_bins,
-        knn_normal,
-        triangle_lmax,
-        unbounded_range,
-    };
-    let ground = ground.map(|a| a.as_array().to_vec());
-    let foliage = foliage.map(|a| a.as_array().to_vec());
-    let intensity = intensity.map(|a| a.as_array().to_vec());
-    let tree_id = tree_id.map(|a| a.as_array().to_vec());
-    let dtm = dtm.map(|(data, xmin, ymin, res)| raster_from_py(data, xmin, ymin, res));
-    let inner = py
-        .detach(|| {
-            let inputs = voxel::VoxelInputs { shots: &s, ground: ground.as_deref(), foliage: foliage.as_deref(), intensity: intensity.as_deref(), tree_id: tree_id.as_deref(), dtm: dtm.as_ref() };
-            voxel::voxelize(&inputs, &params)
-        })
-        .map_err(err)?;
-    Ok(PyRayVoxels { inner })
-}
-
-/// `(beam diameter at exit [m], divergence [rad])` of a scanner known to AMAPVox.
-#[pyfunction]
-fn laser_spec(name: &str) -> Option<(f64, f64)> {
-    voxel::laser_spec(name)
-}
-
-/// Projection function G of an analytic leaf angle distribution at beam zenith `theta` (rad).
-#[pyfunction]
-#[pyo3(signature = (theta, lad="spherical", lad_params=vec![]))]
-fn leaf_projection<'py>(py: Python<'py>, theta: PyReadonlyArray1<f64>, lad: &str, lad_params: Vec<f64>) -> PyResult<Bound<'py, PyArray1<f64>>> {
-    let lad = voxel::Lad::parse(lad, &lad_params).map_err(err)?;
-    Ok(theta.as_array().iter().map(|&t| voxel::compute_g(t, &lad)).collect::<Vec<_>>().into_pyarray(py))
-}
 
 // --------------------------------------------------------------- registration
 
@@ -1442,120 +1224,6 @@ fn skeletonize<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, base_xy: Option
     Ok(d)
 }
 
-#[pyfunction]
-#[pyo3(signature = (xyz, k=12))]
-fn leaf_inclinations<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, k: usize) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray2<f64>>)> {
-    let p = xyz_from_py(xyz)?;
-    let (incl, normals) = py.detach(|| sylva_rs::leaves::inclinations(&p, k));
-    Ok((incl.into_pyarray(py), xyz_to_py(py, &normals)))
-}
-
-fn leaf_angles_to_py<'py>(py: Python<'py>, a: &sylva_rs::leaves::LeafAngles) -> PyResult<Bound<'py, PyDict>> {
-    let d = PyDict::new(py);
-    d.set_item("bin_centres", a.bin_centres.clone().into_pyarray(py))?;
-    d.set_item("density", a.density.clone().into_pyarray(py))?;
-    d.set_item("mean", a.mean)?;
-    d.set_item("std", a.std)?;
-    d.set_item("beta_a", a.beta_a)?;
-    d.set_item("beta_b", a.beta_b)?;
-    d.set_item("chi", a.chi)?;
-    d.set_item("de_wit", a.de_wit)?;
-    Ok(d)
-}
-
-#[pyfunction]
-#[pyo3(signature = (inclination, weights=None, n_bins=18))]
-fn leaf_angle_distribution<'py>(py: Python<'py>, inclination: PyReadonlyArray1<f64>, weights: Option<PyReadonlyArray1<f64>>, n_bins: usize) -> PyResult<Bound<'py, PyDict>> {
-    let incl = inclination.as_array().to_vec();
-    let w = weights.map(|w| w.as_array().to_vec());
-    if let Some(w) = &w {
-        if w.len() != incl.len() {
-            return Err(PyValueError::new_err("weights must match inclination"));
-        }
-    }
-    leaf_angles_to_py(py, &sylva_rs::leaves::angle_distribution(&incl, w.as_deref(), n_bins))
-}
-
-#[pyfunction]
-fn leaf_projection_histogram(bin_centres: PyReadonlyArray1<f64>, density: PyReadonlyArray1<f64>, beam_zenith: PyReadonlyArray1<f64>) -> PyResult<Vec<f64>> {
-    let a = sylva_rs::leaves::LeafAngles { bin_centres: bin_centres.as_array().to_vec(), density: density.as_array().to_vec(), mean: 0.0, std: 0.0, beta_a: 0.0, beta_b: 0.0, chi: 1.0, de_wit: None };
-    Ok(beam_zenith.as_array().iter().map(|&t| sylva_rs::leaves::projection(&a, t)).collect())
-}
-
-#[pyfunction]
-#[pyo3(signature = (xyz, res=0.01, k=12))]
-fn point_leaf_area<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, res: f64, k: usize) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
-    let p = xyz_from_py(xyz)?;
-    let (pts, area, incl) = py.detach(|| sylva_rs::leaves::point_leaf_area(&p, res, k));
-    Ok((xyz_to_py(py, &pts), area.into_pyarray(py), incl.into_pyarray(py)))
-}
-
-#[pyfunction]
-#[pyo3(signature = (xyz, voxel_size=0.02, k=20, high_threshold=0.85, medium_threshold=0.75, scale_radius=0.1, graph_k=10, max_edge=1.0, base_height=0.25, target_res=0.2, min_passage=3, assign_dist=0.05, assign_scale=0.0, component_res=0.05, component_min=200, sor_k=50, sor_std=1.0, dilate_dist=0.03, passage=true))]
-#[allow(clippy::too_many_arguments)]
-fn classify_leaf_wood<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, k: usize, high_threshold: f64, medium_threshold: f64, scale_radius: f64, graph_k: usize, max_edge: f64, base_height: f64, target_res: f64, min_passage: usize, assign_dist: f64, assign_scale: f64, component_res: f64, component_min: usize, sor_k: usize, sor_std: f64, dilate_dist: f64, passage: bool) -> PyResult<Bound<'py, PyArray1<bool>>> {
-    let p = xyz_from_py(xyz)?;
-    let params = qsm::wood::WoodParams { k, high_threshold, medium_threshold, scale_radius, graph_k, max_edge, base_height, target_res, min_passage, assign_dist, assign_scale, component_res, component_min, sor_k, sor_std, dilate_dist, passage };
-    Ok(py.detach(|| sylva_rs::leaves::classify_leaf_wood(&p, voxel_size, &params)).into_pyarray(py))
-}
-
-#[pyfunction]
-#[pyo3(signature = (xyz, voxel_size=0.02, graph_k=8, max_edge=1.0, base_height=0.25, intervals=vec![0.1, 0.2, 0.3, 0.5, 1.0], max_angle=std::f64::consts::FRAC_PI_4, linearity=0.9, circle_error=0.2, min_points=10))]
-#[allow(clippy::too_many_arguments)]
-fn classify_leaf_wood_gbs<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, graph_k: usize, max_edge: f64, base_height: f64, intervals: Vec<f64>, max_angle: f64, linearity: f64, circle_error: f64, min_points: usize) -> PyResult<Bound<'py, PyArray1<bool>>> {
-    let p = xyz_from_py(xyz)?;
-    if intervals.is_empty() || intervals.iter().any(|v| !(*v > 0.0)) {
-        return Err(PyValueError::new_err("intervals must be positive"));
-    }
-    let params = qsm::wood::GbsParams { graph_k, max_edge, base_height, intervals, max_angle, linearity, circle_error, min_points };
-    Ok(py.detach(|| sylva_rs::leaves::classify_leaf_wood_gbs(&p, voxel_size, &params)).into_pyarray(py))
-}
-
-#[pyfunction]
-#[pyo3(signature = (cell_centres, cell_area, voxel_size, seeds, bin_centres, density, cylinders, length=0.08, width=0.04, max_branch_distance=0.5, jitter=0.01, seed=1, blade_vertices=None, blade_faces=None))]
-#[allow(clippy::too_many_arguments)]
-fn insert_leaves<'py>(py: Python<'py>, cell_centres: PyReadonlyArray2<f64>, cell_area: PyReadonlyArray1<f64>, voxel_size: f64, seeds: PyReadonlyArray2<f64>, bin_centres: PyReadonlyArray1<f64>, density: PyReadonlyArray1<f64>, cylinders: PyReadonlyArray2<f64>, length: f64, width: f64, max_branch_distance: f64, jitter: f64, seed: u64, blade_vertices: Option<PyReadonlyArray2<f64>>, blade_faces: Option<PyReadonlyArray2<u32>>) -> PyResult<Bound<'py, PyDict>> {
-    let centres = xyz_from_py(cell_centres)?;
-    let area = cell_area.as_array().to_vec();
-    if area.len() != centres.len() {
-        return Err(PyValueError::new_err("cell_area must have one value per cell centre"));
-    }
-    let cells: Vec<(sylva_rs::Point, f64)> = centres.into_iter().zip(area).collect();
-    let seeds = xyz_from_py(seeds)?;
-    let angles = sylva_rs::leaves::LeafAngles { bin_centres: bin_centres.as_array().to_vec(), density: density.as_array().to_vec(), mean: 0.0, std: 0.0, beta_a: 0.0, beta_b: 0.0, chi: 1.0, de_wit: None };
-    if angles.bin_centres.len() != angles.density.len() || angles.density.is_empty() {
-        return Err(PyValueError::new_err("bin_centres and density must be non-empty and equal in length"));
-    }
-    let model = if cylinders.as_array().nrows() > 0 { qsm_from_rows(cylinders)? } else { Default::default() };
-    let blade = match (blade_vertices, blade_faces) {
-        (Some(v), Some(f)) => {
-            let vertices = xyz_from_py(v)?;
-            let f = f.as_array();
-            if f.ncols() != 3 {
-                return Err(PyValueError::new_err("blade_faces must have three columns"));
-            }
-            let faces: Vec<[u32; 3]> = f.rows().into_iter().map(|r| [r[0], r[1], r[2]]).collect();
-            if faces.is_empty() || faces.iter().flatten().any(|&i| i as usize >= vertices.len()) {
-                return Err(PyValueError::new_err("blade_faces must be non-empty and index blade_vertices"));
-            }
-            sylva_rs::leaves::LeafBlade { vertices, faces }
-        }
-        (None, None) => sylva_rs::leaves::LeafBlade::default(),
-        _ => return Err(PyValueError::new_err("blade_vertices and blade_faces must be given together")),
-    };
-    let params = sylva_rs::leaves::LeafParams { length, width, blade, max_branch_distance, jitter, seed };
-    let mesh = py.detach(|| sylva_rs::leaves::insert_leaves(&cells, voxel_size, &seeds, &angles, &model.cylinders, &params));
-    let d = PyDict::new(py);
-    let nf = mesh.faces.len();
-    d.set_item("vertices", xyz_to_py(py, &mesh.vertices))?;
-    d.set_item("faces", PyArray1::from_vec(py, mesh.faces.iter().flat_map(|f| f.iter().cloned()).collect::<Vec<u32>>()).reshape([nf, 3])?)?;
-    d.set_item("centres", xyz_to_py(py, &mesh.centres))?;
-    d.set_item("normals", xyz_to_py(py, &mesh.normals))?;
-    d.set_item("inclination", mesh.inclination.clone().into_pyarray(py))?;
-    d.set_item("cylinder", mesh.cylinder.clone().into_pyarray(py))?;
-    d.set_item("leaf_area", mesh.leaf_area)?;
-    Ok(d)
-}
 
 fn crown_shape_to_py<'py>(py: Python<'py>, c: &trees::CrownShape) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new(py);
@@ -1665,38 +1333,6 @@ fn pgap_histogram<'py>(py: Python<'py>, shots: &Bound<'_, PyDict>, echo_heights:
     Ok((hist.hits.into_pyarray(py), hist.shots.into_pyarray(py)))
 }
 
-#[pyfunction]
-#[pyo3(signature = (xyz, labels, origin, voxel_size, shape, state, beams, min_beams=10.0, above=2.0))]
-#[allow(clippy::too_many_arguments)]
-fn tree_sampling<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, labels: PyReadonlyArray1<i64>, origin: (f64, f64, f64), voxel_size: f64, shape: (usize, usize, usize), state: PyReadonlyArray1<u8>, beams: PyReadonlyArray1<f64>, min_beams: f64, above: f64) -> PyResult<Bound<'py, PyDict>> {
-    let p = xyz_from_py(xyz)?;
-    let l = labels.as_array().to_vec();
-    let (st, bm) = (state.as_array().to_vec(), beams.as_array().to_vec());
-    let n = shape.0 * shape.1 * shape.2;
-    if l.len() != p.len() || st.len() != n || bm.len() != n {
-        return Err(PyValueError::new_err("labels must match the points, state and beams the grid"));
-    }
-    let r = py.detach(|| voxel::quality::tree_sampling(&p, &l, [origin.0, origin.1, origin.2], voxel_size, [shape.0, shape.1, shape.2], &st, &bm, min_beams, above));
-    let d = PyDict::new(py);
-    macro_rules! col {
-        ($name:literal, $f:expr) => {
-            d.set_item($name, r.iter().map($f).collect::<Vec<_>>().into_pyarray(py))?;
-        };
-    }
-    col!("tree_id", |x| x.tree_id);
-    col!("n_voxels", |x| x.n_voxels as i64);
-    col!("volume", |x| x.volume);
-    col!("observed_fraction", |x| x.observed_fraction);
-    col!("occluded_fraction", |x| x.occluded_fraction);
-    col!("unobserved_fraction", |x| x.unobserved_fraction);
-    col!("median_beams", |x| x.median_beams);
-    col!("p10_beams", |x| x.p10_beams);
-    col!("well_sampled_fraction", |x| x.well_sampled_fraction);
-    col!("above_observed_fraction", |x| x.above_observed_fraction);
-    let q: Vec<f64> = r.iter().flat_map(|x| x.beams_by_quarter).collect();
-    d.set_item("beams_by_quarter", PyArray1::from_vec(py, q).reshape([r.len(), 4])?)?;
-    Ok(d)
-}
 
 #[pyfunction]
 #[pyo3(signature = (xyz, heights, stems, scan_ids=None, height_min=1.0, height_max=3.0, step=0.25, thickness=0.1, min_radius=0.05, max_radius=1.0, min_arc=270.0, min_inlier_fraction=0.5, cut_min=0.05, cut_fraction=0.3, min_scan_points=30, iterations=3))]
@@ -1861,9 +1497,10 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     registration_py::register(m)?;
     riscan_py::register(m)?;
     coreg_py::register(m)?;
+    leaves_py::register(m)?;
+    voxels_py::register(m)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyProgressTask>()?;
-    m.add_class::<PyRayVoxels>()?;
     m.add_class::<PyCoregKdTree>()?;
     m.add_class::<PyCoregIcpTarget>()?;
     for f in [
@@ -1887,18 +1524,10 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(estimate_normals, m)?,
         wrap_pyfunction!(planarity_linearity, m)?,
         wrap_pyfunction!(wood_mask, m)?,
-        wrap_pyfunction!(leaf_inclinations, m)?,
-        wrap_pyfunction!(leaf_angle_distribution, m)?,
-        wrap_pyfunction!(leaf_projection_histogram, m)?,
-        wrap_pyfunction!(point_leaf_area, m)?,
-        wrap_pyfunction!(classify_leaf_wood, m)?,
-        wrap_pyfunction!(classify_leaf_wood_gbs, m)?,
-        wrap_pyfunction!(insert_leaves, m)?,
         wrap_pyfunction!(crown_shape, m)?,
         wrap_pyfunction!(qsm_metrics, m)?,
         wrap_pyfunction!(qsm_branches, m)?,
         wrap_pyfunction!(pgap_histogram, m)?,
-        wrap_pyfunction!(tree_sampling, m)?,
         wrap_pyfunction!(stem_noise, m)?,
         wrap_pyfunction!(euclidean_clusters, m)?,
         wrap_pyfunction!(knn, m)?,
@@ -1917,13 +1546,9 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(lai_from_gap_fraction, m)?,
         wrap_pyfunction!(canopy_cover, m)?,
         wrap_pyfunction!(density_grid, m)?,
-        wrap_pyfunction!(ray_voxelize, m)?,
-        wrap_pyfunction!(ray_voxelize_file, m)?,
         wrap_pyfunction!(write_shots, m)?,
         wrap_pyfunction!(read_shots, m)?,
         wrap_pyfunction!(shots_info, m)?,
-        wrap_pyfunction!(laser_spec, m)?,
-        wrap_pyfunction!(leaf_projection, m)?,
         wrap_pyfunction!(kabsch, m)?,
         wrap_pyfunction!(icp, m)?,
         wrap_pyfunction!(match_stem_maps, m)?,
