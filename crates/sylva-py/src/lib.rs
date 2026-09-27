@@ -1183,7 +1183,7 @@ fn qsm_from_rows(rows: PyReadonlyArray2<f64>) -> PyResult<qsm::Qsm> {
     if a.ncols() != 12 {
         return Err(PyValueError::new_err("cylinder array must have 12 columns"));
     }
-    Ok(qsm::Qsm {
+    let q = qsm::Qsm {
         cylinders: a
             .rows()
             .into_iter()
@@ -1198,7 +1198,8 @@ fn qsm_from_rows(rows: PyReadonlyArray2<f64>) -> PyResult<qsm::Qsm> {
                 n_points: r[11] as usize,
             })
             .collect(),
-    })
+    };
+    Ok(q)
 }
 
 #[pyfunction]
@@ -1257,6 +1258,7 @@ fn crown_shape<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, base_xy: Option
 #[pyo3(signature = (cylinders, crown_branch_length=1.0, crown_slice=0.5))]
 fn qsm_metrics<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>, crown_branch_length: f64, crown_slice: f64) -> PyResult<Bound<'py, PyDict>> {
     let q = qsm_from_rows(cylinders)?;
+    q.check().map_err(err)?;
     let m = qsm::metrics::tree_metrics(&q, crown_branch_length, crown_slice.max(1e-3));
     let d = PyDict::new(py);
     d.set_item("height", m.height)?;
@@ -1289,6 +1291,7 @@ fn qsm_metrics<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>, crown_bra
 #[pyfunction]
 fn qsm_branches<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>) -> PyResult<Bound<'py, PyDict>> {
     let q = qsm_from_rows(cylinders)?;
+    q.check().map_err(err)?;
     let b = qsm::metrics::branches(&q);
     let d = PyDict::new(py);
     macro_rules! col {

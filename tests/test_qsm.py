@@ -458,3 +458,16 @@ def test_contiguous_mesh_is_closed_and_smaller():
     assert oriented(f0) and oriented(f1)
     assert enclosed(v1, f1) == pytest.approx(model.total_volume, rel=0.1)
     assert enclosed(v0, f0) == pytest.approx(model.total_volume, rel=0.1)
+
+
+def test_a_parent_past_the_last_cylinder_is_refused():
+    rows = np.zeros((2, 12))
+    rows[:, 5] = 1.0          # axis up
+    rows[:, 6] = 1.0          # length
+    rows[:, 7] = 0.1          # radius
+    rows[0, 8] = -1
+    rows[1, 8] = 5            # names a cylinder that does not exist
+    with pytest.raises(ValueError, match="parent 5"):
+        qsm.QSM(rows).metrics()
+    with pytest.raises(ValueError, match="parent 5"):
+        qsm.QSM(rows).branches()

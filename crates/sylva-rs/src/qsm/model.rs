@@ -43,6 +43,17 @@ pub struct Qsm {
 }
 
 impl Qsm {
+    /// Every parent index names a cylinder of this model (negative: a root).
+    /// Models built from outside data are checked, since the metrics follow
+    /// parents without bounds checks.
+    pub fn check(&self) -> Result<()> {
+        let n = self.cylinders.len() as i64;
+        match self.cylinders.iter().position(|c| c.parent >= n) {
+            Some(i) => Err(Error::invalid(format!("cylinder {i} has parent {} but the model has {n} cylinders", self.cylinders[i].parent))),
+            None => Ok(()),
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.cylinders.len()
     }

@@ -248,7 +248,9 @@ fn usizes(v: &[usize]) -> Vec<f64> {
 /// @noRd
 #[extendr]
 fn core_qsm_metrics(cylinders: Robj, crown_branch_length: f64, crown_slice: f64) -> Result<List> {
-    let m = tree_metrics(&qsm_from_rows(&rows_from_r(&cylinders)?), crown_branch_length, crown_slice.max(1e-3));
+    let q = qsm_from_rows(&rows_from_r(&cylinders)?);
+    q.check().map_err(err)?;
+    let m = tree_metrics(&q, crown_branch_length, crown_slice.max(1e-3));
     let l = List::from_names_and_values(
         [
             "height", "dbh", "total_volume", "stem_volume", "branch_volume", "total_length", "stem_length", "max_order", "n_branches_by_order", "length_by_order", "volume_by_order", "n_tips", "path_fraction", "crown_base_height", "lean", "lean_direction", "sweep", "taper_heights", "taper_radii", "crown",
@@ -287,7 +289,9 @@ fn core_qsm_metrics(cylinders: Robj, crown_branch_length: f64, crown_slice: f64)
 /// @noRd
 #[extendr]
 fn core_qsm_branches(cylinders: Robj) -> Result<List> {
-    let b = branches(&qsm_from_rows(&rows_from_r(&cylinders)?));
+    let q = qsm_from_rows(&rows_from_r(&cylinders)?);
+    q.check().map_err(err)?;
+    let b = branches(&q);
     macro_rules! col {
         ($f:expr) => {
             b.iter().map($f).collect::<Vec<f64>>()
