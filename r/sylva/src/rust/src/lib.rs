@@ -13,6 +13,7 @@ use extendr_api::prelude::*;
 use sylva_rs::{filters, io};
 
 mod canopy;
+mod coreg;
 mod shots;
 mod convert;
 
@@ -56,6 +57,7 @@ fn core_voxel_downsample(cloud: List, voxel_size: f64, centroid: bool) -> Result
 extendr_module! {
     mod sylva;
     use canopy;
+    use coreg;
     use shots;
     fn core_read;
     fn core_write;
