@@ -174,3 +174,52 @@ pub fn raster_from_r(data: &Robj, xmin: f64, ymin: f64, resolution: f64) -> Resu
 pub fn matrix_from_rows(rows: usize, cols: usize, v: &[f64]) -> Robj {
     RMatrix::new_matrix(rows, cols, |r, c| v[r * cols + c]).into()
 }
+
+/// A 4 x 4 transform from an R matrix (column-major, as R stores it).
+pub fn matrix4_from_r(m: &Robj) -> Result<sylva_rs::Transform> {
+    let v = doubles(m, "matrix")?;
+    if v.len() != 16 || m.dim().map(|d| d.len() == 2 && d.iter().all(|x| x.0 == 4)) == Some(false) {
+        return fail("matrix must be 4 x 4");
+    }
+    Ok(sylva_rs::Transform(nalgebra::Matrix4::from_column_slice(&v)))
+}
+
+/// A 4 x 4 R matrix from a transform.
+pub fn matrix4_to_r(t: &sylva_rs::Transform) -> Robj {
+    RMatrix::new_matrix(4, 4, |r, c| t.0[(r, c)]).into()
+}
+
+/// A raster as `list(data, xmin, ymin, resolution)`, `data` with rows from `ymin` up.
+pub fn raster_to_r(r: &Raster) -> List {
+    list!(data = matrix_from_rows(r.nrows, r.ncols, &r.data), xmin = r.xmin, ymin = r.ymin, resolution = r.resolution)
+}
+
+/// `NULL` or four numbers `(xmin, ymin, xmax, ymax)`.
+pub fn bounds_from_r(b: &Robj) -> Result<Option<(f64, f64, f64, f64)>> {
+    if b.is_null() {
+        return Ok(None);
+    }
+    let v = doubles(b, "bounds")?;
+    if v.len() != 4 {
+        return fail("bounds must be c(xmin, ymin, xmax, ymax)");
+    }
+    Ok(Some((v[0], v[1], v[2], v[3])))
+}
+
+/// Three numbers as a point.
+pub fn point_from_r(v: &[f64], what: &str) -> Result<Point> {
+    if v.len() != 3 {
+        return fail(format!("{what} must have three values"));
+    }
+    Ok([v[0], v[1], v[2]])
+}
+
+/// 0-based indices as R's 1-based positions (doubles, so no size limit).
+pub fn positions(idx: &[usize]) -> Vec<f64> {
+    idx.iter().map(|&i| i as f64 + 1.0).collect()
+}
+
+/// Booleans as an R logical vector.
+pub fn logicals(v: &[bool]) -> Logicals {
+    v.iter().map(|&b| Rbool::from(b)).collect()
+}

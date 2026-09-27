@@ -10,50 +10,18 @@
 //! integers to double, smaller integers to integer, booleans to logical.
 
 use extendr_api::prelude::*;
-use sylva_rs::{filters, io};
 
 mod canopy;
 mod quality;
 mod shots;
 mod trees;
 mod convert;
-
-use convert::{cloud_from_r, cloud_to_r, err, Result};
-
-// ------------------------------------------------------------------------ I/O
-
-/// Read a point cloud (LAS/LAZ, PLY, ASCII or RIEGL RXP).
-/// @noRd
-#[extendr]
-fn core_read(path: &str) -> Result<List> {
-    Ok(cloud_to_r(&io::read(path).map_err(err)?))
-}
-
-/// Write a point cloud, the format taken from the extension.
-/// @noRd
-#[extendr]
-fn core_write(cloud: List, path: &str) -> Result<()> {
-    io::write(&cloud_from_r(&cloud)?, path).map_err(err)
-}
-
-/// Check and normalise a cloud built in R (lengths, types).
-/// @noRd
-#[extendr]
-fn core_cloud(cloud: List) -> Result<List> {
-    Ok(cloud_to_r(&cloud_from_r(&cloud)?))
-}
-
-// -------------------------------------------------------------------- filters
-
-/// One point per voxel: the first, or the centroid.
-/// @noRd
-#[extendr]
-fn core_voxel_downsample(cloud: List, voxel_size: f64, centroid: bool) -> Result<List> {
-    if !(voxel_size > 0.0) {
-        return Err(Error::Other("voxel_size must be positive".into()));
-    }
-    Ok(cloud_to_r(&filters::voxel_downsample(&cloud_from_r(&cloud)?, voxel_size, centroid)))
-}
+mod filters;
+mod ground;
+mod io;
+mod limits;
+mod raster;
+mod registration;
 
 extendr_module! {
     mod sylva;
@@ -61,8 +29,10 @@ extendr_module! {
     use quality;
     use shots;
     use trees;
-    fn core_read;
-    fn core_write;
-    fn core_cloud;
-    fn core_voxel_downsample;
+    use filters;
+    use ground;
+    use io;
+    use limits;
+    use raster;
+    use registration;
 }

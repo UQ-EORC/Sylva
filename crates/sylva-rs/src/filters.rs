@@ -116,39 +116,77 @@ pub fn random_indices(total: usize, n: usize, seed: u64) -> Vec<usize> {
     idx
 }
 
-/// Keep points inside an axis-aligned box; use ±infinity for open bounds.
-pub fn crop_box(cloud: &PointCloud, min: Point, max: Point) -> PointCloud {
-    let mask: Vec<bool> =
-        cloud.xyz.iter().map(|p| (0..3).all(|k| p[k] >= min[k] && p[k] <= max[k])).collect();
-    cloud.filter(&mask)
+/// Mask of points inside an axis-aligned box, bounds inclusive. A NaN bound
+/// leaves that side open (as ±infinity); a NaN coordinate is never inside.
+pub fn crop_box_mask(points: &[Point], min: Point, max: Point) -> Vec<bool> {
+    let lo = min.map(|v| if v.is_nan() { f64::NEG_INFINITY } else { v });
+    let hi = max.map(|v| if v.is_nan() { f64::INFINITY } else { v });
+    points.iter().map(|p| (0..3).all(|k| p[k] >= lo[k] && p[k] <= hi[k])).collect()
 }
 
-/// Keep points inside a vertical cylinder (a circular plot).
-pub fn crop_cylinder(cloud: &PointCloud, cx: f64, cy: f64, radius: f64, zmin: f64, zmax: f64) -> PointCloud {
+/// Keep points inside an axis-aligned box; use ±infinity (or NaN) for open bounds.
+pub fn crop_box(cloud: &PointCloud, min: Point, max: Point) -> PointCloud {
+    cloud.filter(&crop_box_mask(&cloud.xyz, min, max))
+}
+
+/// Mask of points inside a vertical cylinder: horizontal distance from
+/// `(cx, cy)` at most `radius`, and `zmin <= z <= zmax`.
+pub fn crop_cylinder_mask(points: &[Point], cx: f64, cy: f64, radius: f64, zmin: f64, zmax: f64) -> Vec<bool> {
     let r2 = radius * radius;
-    let mask: Vec<bool> = cloud
-        .xyz
+    points
         .iter()
         .map(|p| {
             let dx = p[0] - cx;
             let dy = p[1] - cy;
             dx * dx + dy * dy <= r2 && p[2] >= zmin && p[2] <= zmax
         })
-        .collect();
-    cloud.filter(&mask)
+        .collect()
 }
 
-/// Keep points within `[min_range, max_range]` of `origin`.
-pub fn range_filter(cloud: &PointCloud, origin: Point, min_range: f64, max_range: f64) -> PointCloud {
-    let mask: Vec<bool> = cloud
-        .xyz
+/// Keep points inside a vertical cylinder (a circular plot).
+pub fn crop_cylinder(cloud: &PointCloud, cx: f64, cy: f64, radius: f64, zmin: f64, zmax: f64) -> PointCloud {
+    cloud.filter(&crop_cylinder_mask(&cloud.xyz, cx, cy, radius, zmin, zmax))
+}
+
+/// Mask of points whose 3-D distance from `origin` is in `[min_range, max_range]`.
+pub fn range_mask(points: &[Point], origin: Point, min_range: f64, max_range: f64) -> Vec<bool> {
+    points
         .iter()
         .map(|p| {
             let r = crate::transform::norm(&crate::transform::sub(p, &origin));
             r >= min_range && r <= max_range
         })
-        .collect();
-    cloud.filter(&mask)
+        .collect()
+}
+
+/// Keep points within `[min_range, max_range]` of `origin`.
+pub fn range_filter(cloud: &PointCloud, origin: Point, min_range: f64, max_range: f64) -> PointCloud {
+    cloud.filter(&range_mask(&cloud.xyz, origin, min_range, max_range))
+}
+
+/// The `k` nearest of `points` to each query, nearest first, as row-major
+/// `queries.len() x k` distances and indices; a query with fewer than `k`
+/// points to find gets infinity and -1 in the missing places.
+pub fn knn(points: &[Point], queries: &[Point], k: usize) -> (Vec<f64>, Vec<i64>) {
+    let tree = KdTree::new(points);
+    let rows: Vec<Vec<(usize, f64)>> = queries.par_iter().map(|x| tree.knn(x, k)).collect();
+    let mut d = Vec::with_capacity(queries.len() * k);
+    let mut i = Vec::with_capacity(queries.len() * k);
+    for r in rows {
+        for j in 0..k {
+            match r.get(j) {
+                Some(&(idx, dist)) => {
+                    d.push(dist);
+                    i.push(idx as i64);
+                }
+                None => {
+                    d.push(f64::INFINITY);
+                    i.push(-1);
+                }
+            }
+        }
+    }
+    (d, i)
 }
 
 /// Statistical outlier removal mask (Rusu et al. 2008): `true` = keep.
@@ -256,3 +294,31 @@ pub fn planarity_linearity(points: &[Point], k: usize) -> (Vec<f64>, Vec<f64>) {
         .unzip()
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_box_with_nan_bounds_is_open_on_those_sides() {
+        let p = vec![[0.0, 0.0, 0.0], [1.0, 5.0, -3.0], [2.0, 1.0, 1.0], [f64::NAN, 0.0, 0.0]];
+        let m = crop_box_mask(&p, [f64::NAN, 0.0, f64::NEG_INFINITY], [1.0, f64::NAN, 0.5]);
+        assert_eq!(m, vec![true, true, false, false]);
+    }
+
+    #[test]
+    fn knn_pads_what_it_cannot_find() {
+        let p = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [3.0, 0.0, 0.0]];
+        let (d, i) = knn(&p, &[[0.9, 0.0, 0.0]], 4);
+        assert_eq!(i, vec![1, 0, 2, -1]);
+        assert!((d[0] - 0.1).abs() < 1e-12 && (d[2] - 2.1).abs() < 1e-12 && d[3].is_infinite());
+    }
+
+    #[test]
+    fn cylinder_and_range_bounds_are_inclusive() {
+        let p = vec![[3.0, 0.0, 1.0], [3.0, 0.1, 1.0], [0.0, 0.0, 2.0], [0.0, 0.0, 2.5]];
+        assert_eq!(crop_cylinder_mask(&p, 0.0, 0.0, 3.0, 0.0, 2.0), vec![true, false, true, false]);
+        assert_eq!(range_mask(&p, [0.0, 0.0, 1.0], 1.0, 1.5), vec![false, false, true, true]);
+        assert_eq!(range_mask(&p, [0.0, 0.0, 0.0], 2.0, 2.5), vec![false, false, true, true]);
+    }
+}

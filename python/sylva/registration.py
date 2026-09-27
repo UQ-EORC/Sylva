@@ -147,10 +147,7 @@ def rotation_z(angle_deg: float) -> np.ndarray:
     numpy.ndarray
         ``(4, 4)`` matrix.
     """
-    a = np.radians(angle_deg)
-    m = np.eye(4)
-    m[:2, :2] = [[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]
-    return m
+    return _core.rotation_z(float(angle_deg))
 
 
 def translation(dx: float, dy: float, dz: float) -> np.ndarray:
@@ -166,6 +163,4 @@ def translation(dx: float, dy: float, dz: float) -> np.ndarray:
     numpy.ndarray
         ``(4, 4)`` matrix.
     """
-    m = np.eye(4)
-    m[:3, 3] = [dx, dy, dz]
-    return m
+    return _core.translation(float(dx), float(dy), float(dz))

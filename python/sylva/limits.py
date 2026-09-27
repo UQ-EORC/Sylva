@@ -78,12 +78,7 @@ def human(bytes_: float) -> str:
     -------
     str
     """
-    v = float(bytes_)
-    for unit in ("B", "kB", "MB", "GB", "TB"):
-        if v < 1000 or unit == "TB":
-            return f"{v:.0f} {unit}" if unit == "B" else f"{v:.1f} {unit}"
-        v /= 1000
-    return f"{v:.1f} TB"
+    return _core.memory_human(float(bytes_))
 
 
 def check(cells: int, per_cell: int, what: str, hint: str) -> None:
