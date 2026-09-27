@@ -22,3 +22,5 @@ byteorder.workspace = true
 libloading.workspace = true
 parquet.workspace = true
 roxmltree.workspace = true
+proj4rs.workspace = true
+crs-definitions.workspace = true
