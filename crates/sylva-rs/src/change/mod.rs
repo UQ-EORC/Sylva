@@ -6,7 +6,9 @@
 //!
 //! Real change is separated from noise and from not having seen something:
 //! every change carries an uncertainty or a level of detection, and what the
-//! data cannot support is labelled rather than reported as change.
+//! data cannot support (space neither epoch observed, model parts filled in
+//! by priors) is labelled rather than reported as change.
 
 pub mod points;
 pub mod voxels;
+pub mod qsm;
