@@ -471,3 +471,14 @@ def test_a_parent_past_the_last_cylinder_is_refused():
         qsm.QSM(rows).metrics()
     with pytest.raises(ValueError, match="parent 5"):
         qsm.QSM(rows).branches()
+
+
+def test_build_plot_anchors_each_model_on_its_stem_dbh():
+    """build_plot passes each detected stem's DBH / 2 as base_radius, so a
+    model equals build_qsm on the same points with that anchor."""
+    tree = synthetic.tree(seed=5)
+    labels = np.zeros(len(tree), np.int64)
+    stem = trees.Tree(tree_id=0, x=0.0, y=0.0, dbh=0.24, height=float(tree.xyz[:, 2].max()))
+    plot = qsm.build_plot(tree, labels, [stem], voxel_size=0.0, wood=False)
+    alone = qsm.build_qsm(tree, base_xy=(0.0, 0.0), base_radius=0.12)
+    np.testing.assert_allclose(plot.models[0].cylinders, alone.cylinders)

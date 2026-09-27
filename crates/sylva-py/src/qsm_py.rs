@@ -239,14 +239,14 @@ fn qsm_params_from_py(d: &Bound<'_, PyDict>) -> PyResult<QsmParams> {
 
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
-fn qsm_build_plot<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, labels: PyReadonlyArray1<i64>, heights: Option<PyReadonlyArray1<f64>>, stem_ids: Vec<i64>, stem_xy: Vec<(f64, f64)>, voxel_size: f64, wood: bool, buttress: bool, min_points: f64, params: &Bound<'_, PyDict>) -> PyResult<Bound<'py, PyDict>> {
+fn qsm_build_plot<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, labels: PyReadonlyArray1<i64>, heights: Option<PyReadonlyArray1<f64>>, stem_ids: Vec<i64>, stem_xy: Vec<(f64, f64)>, stem_dbh: Vec<f64>, voxel_size: f64, wood: bool, buttress: bool, min_points: f64, params: &Bound<'_, PyDict>) -> PyResult<Bound<'py, PyDict>> {
     let pts = xyz_from_py(xyz)?;
     let labels = labels.as_array().to_vec();
     let h = heights.map(|h| h.as_array().to_vec());
-    if stem_ids.len() != stem_xy.len() {
-        return Err(PyValueError::new_err("one stem position per stem id"));
+    if stem_ids.len() != stem_xy.len() || stem_ids.len() != stem_dbh.len() {
+        return Err(PyValueError::new_err("one stem position and DBH per stem id"));
     }
-    let stems: Vec<(i64, [f64; 2])> = stem_ids.into_iter().zip(stem_xy).map(|(t, (x, y))| (t, [x, y])).collect();
+    let stems: Vec<(i64, [f64; 2], f64)> = stem_ids.into_iter().zip(stem_xy).zip(stem_dbh).map(|((t, (x, y)), d)| (t, [x, y], d)).collect();
     let p = PlotParams { voxel_size, wood, buttress, min_points, qsm: qsm_params_from_py(params)? };
     let r = py.detach(|| plot::build_plot(&pts, &labels, h.as_deref(), &stems, &p)).map_err(err)?;
     let share = py.detach(|| plot::median_measured_length(r.models.iter().map(|m| m.1.as_slice())));
