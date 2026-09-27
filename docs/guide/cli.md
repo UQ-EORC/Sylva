@@ -18,6 +18,8 @@ sylva voxel plot.parquet plot.vox --voxel 0.25 --ground-class 2 --laser VZ-400 -
 sylva qsm tree.ply tree_qsm.csv
 sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/ --meshes meshes/
 sylva coreg survey.PROJ -o survey_coreg/ --merged survey.laz
+sylva als-catalog tiles/                           # airborne tiles: headers only
+sylva als-ground tiles/ ground/ && sylva als-dtm ground/ dtm.tif --resolution 1
 ```
 
 ## Where the outputs go
@@ -45,7 +47,8 @@ sylva qsm-plot plot_norm_segmented.laz --cylinders --meshes
 | `coreg` | `<project>_coreg/` (`transforms.json`, `report.txt`, one `.dat` per scan) |
 
 `convert` is the exception: its format comes from the output extension, so it
-needs one. `pad` prints to stdout by design.
+needs one. So are the `als-*` commands, which read a directory of tiles and
+write a directory or a raster. `pad` prints to stdout by design.
 
 `crates/sylva-cli` builds a standalone Rust binary with the same commands
 and no Python dependency (`cargo install --path crates/sylva-cli`). Its
@@ -188,3 +191,34 @@ same tree seen from both scans, a check that needs no ground truth) and a
 | `--workers` | 0 | scans and pairs processed at once; 0 picks from cores and memory |
 | `--merged PATH` | none | also write the merged, registered cloud |
 | `--voxel` | 0.02 | thinning of the merged cloud (m) |
+
+### Airborne tiles: `als-catalog`, `als-ground`, `als-dtm`, `als-chm`, `als-normalize`
+
+These work on a directory of LAS/LAZ tiles (see [Airborne lidar
+tiles](als.md)), processed in buffered chunks so that tile edges do not show.
+
+```bash
+sylva als-catalog tiles/ [--pattern '*.la[sz]'] [--recursive] [--tolerance 1] [--strict]
+sylva als-ground tiles/ ground/ [--method csf|pmf] [--resolution 0.5] [--last-returns]
+sylva als-dtm ground/ dtm.tif [--resolution 1] [--method lowest|tin|natural|idw]
+sylva als-chm ground/ chm.tif [--resolution 0.5] [--dtm-resolution 1] [--dtm DTM.asc] [--normalized]
+sylva als-normalize ground/ normalised/ [--dtm-resolution 1] [--dtm DTM.asc] [--replace-z]
+```
+
+`als-catalog` prints the catalogue report: extent, points, density, formats,
+CRS and every problem found (missing or unreadable files, mixed CRS or point
+formats, overlapping tiles, holes); with `--strict` it exits with status 1 if
+there is any. `als-ground` writes the tiles with ground classified;
+`als-dtm` and `als-chm` write one raster for the whole area (`.tif` needs
+`rasterio`, otherwise `.asc`); `als-chm` normalises on the fly from the
+ground points unless given `--dtm` or `--normalized` (tiles whose z is
+already height); `als-normalize` writes the tiles with a `height` attribute,
+or with z replaced by it (`--replace-z`, the elevation kept as
+`elevation`).
+
+| Option | Default | What |
+|---|---|---|
+| `--pattern` | `*.la[sz]` | file name pattern within the directory (case-insensitive) |
+| `--chunk-size M` | one chunk per tile | process squares of this size instead |
+| `--buffer M` | 20 | band of neighbouring points read around each chunk |
+| `--workers N` | one per CPU | chunks at once; fewer if memory is short |

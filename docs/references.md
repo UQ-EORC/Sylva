@@ -227,6 +227,14 @@ precision tree models from terrestrial laser scanner data. *Remote Sensing*,
 — TreeQSM, the cylinder-model approach that QSMs such as
 [`sylva.qsm`](api/qsm.md) build on.
 
+Roussel, J.-R., Auty, D., Coops, N. C., Tompalski, P., Goodbody, T. R. H.,
+Meador, A. S., Bourdon, J.-F., de Boissieu, F., & Achim, A. (2020). lidR: An R
+package for analysis of Airborne Laser Scanning (ALS) data. *Remote Sensing of
+Environment*, *251*, 112061. <https://doi.org/10.1016/j.rse.2020.112061>
+— the catalogue of tiles processed in buffered chunks that
+[`sylva.als`](api/als.md) follows, and the reference its DTMs and CHMs were
+checked against.
+
 Rusu, R. B., Marton, Z. C., Blodow, N., Dolha, M., & Beetz, M. (2008). Towards
 3D point cloud based object maps for household environments. *Robotics and
 Autonomous Systems*, *56*(11), 927–941.
