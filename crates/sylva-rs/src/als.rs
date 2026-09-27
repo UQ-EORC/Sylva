@@ -703,7 +703,12 @@ pub const BYTES_PER_POINT: u64 = 256;
 /// fewer if the largest chunk times that many would exceed the memory
 /// budget. Refuses outright when a single chunk will not fit.
 pub fn workers_for(chunks: &[Chunk], workers: usize, bytes_per_point: u64) -> Result<usize> {
-    let largest = chunks.iter().map(|c| c.est_points).max().unwrap_or(0);
+    workers_for_estimates(&chunks.iter().map(|c| c.est_points).collect::<Vec<_>>(), workers, bytes_per_point)
+}
+
+/// [`workers_for`] from the chunks' estimated point counts alone.
+pub fn workers_for_estimates(est_points: &[u64], workers: usize, bytes_per_point: u64) -> Result<usize> {
+    let largest = est_points.iter().copied().max().unwrap_or(0);
     let need = largest.saturating_mul(bytes_per_point);
     limits::check(need, &format!("a chunk of about {} points", group_thousands(largest)), "a smaller chunk_size or buffer")?;
     let w = if workers == 0 { std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) } else { workers };
@@ -711,7 +716,7 @@ pub fn workers_for(chunks: &[Chunk], workers: usize, bytes_per_point: u64) -> Re
         Some(b) if need > 0 => (b / need).max(1) as usize,
         _ => usize::MAX,
     };
-    Ok(w.min(fit).min(chunks.len().max(1)).max(1))
+    Ok(w.min(fit).min(est_points.len().max(1)).max(1))
 }
 
 /// Run `f` on every chunk that has core points, on `workers` threads (see

@@ -96,6 +96,8 @@ fn write_chunks(cat: &Catalog, out_dir: &Path, format: Option<&str>, opts: &RunO
     Ok(written.into_iter().flatten().flatten().collect())
 }
 
+const NO_GROUND: &str = "no chunk has 3 ground points (classification 2); classify ground first (als.classify_ground)";
+
 fn classification(cloud: &PointCloud) -> Result<Vec<u8>> {
     let c = cloud.attr("classification").ok_or_else(|| Error::invalid("the tiles have no 'classification'; classify ground first (als.classify_ground)"))?;
     Ok((0..cloud.len()).map(|i| c.get_f64(i) as u8).collect())
@@ -197,6 +199,9 @@ pub fn dtm(cat: &Catalog, resolution: f64, method: &DtmMethod, opts: &RunOptions
     let (chunks, w) = chunks_and_workers(cat, opts)?;
     let parts = run(cat, &chunks, w, "DTM", |chunk, data| Ok(chunk_dtm(&grid, chunk, &ground_points(&data.cloud)?, method)?.map(|r| (r, chunk.core))))?;
     let parts: Vec<(Raster, [f64; 4])> = parts.into_iter().flatten().flatten().collect();
+    if parts.is_empty() {
+        return Err(Error::invalid(NO_GROUND));
+    }
     mosaic(&grid, &parts)
 }
 
@@ -249,6 +254,9 @@ pub fn chm(cat: &Catalog, resolution: f64, heights: &Heights, min_height: f64, o
         Ok(Some((ground::make_chm(&data.cloud.xyz, &h, resolution, Some(b), min_height)?, chunk.core)))
     })?;
     let parts: Vec<(Raster, [f64; 4])> = parts.into_iter().flatten().flatten().collect();
+    if parts.is_empty() && matches!(heights, Heights::Auto { .. }) {
+        return Err(Error::invalid(NO_GROUND));
+    }
     mosaic(&grid, &parts)
 }
 
@@ -265,7 +273,7 @@ pub fn normalize(cat: &Catalog, out_dir: &Path, heights: &Heights, replace_z: bo
         let idx = data.core_indices();
         let core = data.cloud.take(&idx);
         let h = chunk_heights(cat, chunk, &core_with_buffer_ground(&data), heights)?
-            .ok_or_else(|| Error::invalid("fewer than 3 ground points within the buffer; classify ground first or give a DTM"))?;
+            .ok_or_else(|| Error::invalid("fewer than 3 ground points (classification 2) within the buffer; classify ground first (als.classify_ground) or give a DTM"))?;
         // chunk_heights saw the buffer's ground but returned heights for the
         // core points only (they come first, see core_with_buffer_ground).
         let h = &h[..core.len()];
