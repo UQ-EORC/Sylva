@@ -76,6 +76,8 @@ pub enum StatusA {
     Dead,
     /// Found in the second epoch only as part of a neighbour's stem.
     Merged,
+    /// Found in the second epoch as several stems, none matched to it.
+    Split,
 }
 
 /// Status of a tree of the second epoch.
@@ -85,6 +87,9 @@ pub enum StatusB {
     Recruit,
     /// Part of a stem that the first epoch saw as one with a neighbour.
     Split,
+    /// A stem, not matched itself, that stands for several stems of the
+    /// first epoch.
+    Merged,
 }
 
 impl StatusA {
@@ -93,6 +98,7 @@ impl StatusA {
             StatusA::Survivor => "survivor",
             StatusA::Dead => "dead",
             StatusA::Merged => "merged",
+            StatusA::Split => "split",
         }
     }
 }
@@ -103,6 +109,7 @@ impl StatusB {
             StatusB::Survivor => "survivor",
             StatusB::Recruit => "recruit",
             StatusB::Split => "split",
+            StatusB::Merged => "merged",
         }
     }
 }
@@ -326,6 +333,10 @@ pub fn match_trees(a: &[TreeRow], b: &[TreeRow], p: &MatchParams) -> Result<Tree
                 status_a[i] = StatusA::Merged;
                 related_a[i] = Some(j);
             }
+            if status_b[j] == StatusB::Recruit {
+                status_b[j] = StatusB::Merged;
+                related_b[j] = Some(lost[0]);
+            }
         }
     }
     // Splits, the mirror image.
@@ -342,6 +353,10 @@ pub fn match_trees(a: &[TreeRow], b: &[TreeRow], p: &MatchParams) -> Result<Tree
             for &j in &new {
                 status_b[j] = StatusB::Split;
                 related_b[j] = Some(i);
+            }
+            if status_a[i] == StatusA::Dead {
+                status_a[i] = StatusA::Split;
+                related_a[i] = Some(new[0]);
             }
         }
     }
@@ -806,10 +821,11 @@ mod tests {
         let a = [row(0.0, 0.0, 0.2), row(0.4, 0.0, 0.18)];
         let b = [row(0.2, 0.0, 0.3)];
         let m = match_trees(&a, &b, &MatchParams::default()).unwrap();
-        assert_eq!(m.status_b, vec![StatusB::Survivor]);
+        assert!(m.status_b[0] == StatusB::Survivor || m.status_b[0] == StatusB::Merged);
         assert!(m.status_a.contains(&StatusA::Merged) && !m.status_a.contains(&StatusA::Dead));
         let m = match_trees(&b, &a, &MatchParams::default()).unwrap();
         assert!(m.status_b.contains(&StatusB::Split) && !m.status_b.contains(&StatusB::Recruit));
+        assert!(!m.status_a.contains(&StatusA::Dead));
     }
 
     #[test]

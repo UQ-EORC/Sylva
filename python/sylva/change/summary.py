@@ -172,7 +172,8 @@ def plot_summary(increments: TreeIncrements, area: float, years: float = 1.0, n_
 
     dead = singles(ma, m.trees_a, np.flatnonzero(m.status_a == "dead"))
     rec = singles(mb, m.trees_b, np.flatnonzero(m.status_b == "recruit"))
-    n_amb = int(amb.sum()) + int(np.sum(m.status_a == "merged")) + int(np.sum(m.status_b == "split"))
+    n_amb = int(amb.sum()) + int(np.sum(np.isin(m.status_a, ["merged", "split"]))) \
+        + int(np.sum(np.isin(m.status_b, ["merged", "split"])))
     rows = _core.change_plot_summary(np.ascontiguousarray(surv), np.ascontiguousarray(dead), np.ascontiguousarray(rec),
                                      n_amb, float(area), float(years), int(n_draws), float(confidence),
                                      float(form_factor), float("nan") if wood_density is None else float(wood_density),

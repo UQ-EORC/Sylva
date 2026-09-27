@@ -78,11 +78,14 @@ class TreeMatch:
     cost
         Assignment cost of each pair.
     status_a
-        Per tree of the first epoch: ``survivor``, ``dead``, or ``merged``
-        (found in the second epoch only as part of a neighbour's stem).
+        Per tree of the first epoch: ``survivor``, ``dead``, ``merged``
+        (found in the second epoch only as part of a neighbour's stem) or
+        ``split`` (found as several stems, none of them matched to it).
     status_b
-        Per tree of the second epoch: ``survivor``, ``recruit``, or ``split``
-        (part of a stem the first epoch saw as one with a neighbour).
+        Per tree of the second epoch: ``survivor``, ``recruit``, ``split``
+        (part of a stem the first epoch saw as one with a neighbour) or
+        ``merged`` (one stem standing for several of the first epoch, none
+        of them matched to it).
     related_a, related_b
         The partner (for a survivor) or the stem merged into / split from,
         as an index into the other epoch's trees; -1 for deaths and recruits.
@@ -125,12 +128,14 @@ class TreeMatch:
 
     @property
     def merged(self) -> list[tuple]:
-        """``(tree in epoch a, stem in epoch b it went into)`` of merged trees."""
+        """``(tree in epoch a, stem in epoch b it went into)`` of the trees
+        of the first epoch that merged into a neighbour's stem."""
         return [(self.trees_a[i], self.trees_b[self.related_a[i]]) for i, s in enumerate(self.status_a) if s == "merged"]
 
     @property
     def split(self) -> list[tuple]:
-        """``(stem in epoch a it came from, tree in epoch b)`` of split trees."""
+        """``(stem in epoch a it came from, tree in epoch b)`` of the trees
+        of the second epoch that split off a stem of the first."""
         return [(self.trees_a[self.related_b[j]], self.trees_b[j]) for j, s in enumerate(self.status_b) if s == "split"]
 
     def ambiguous_pairs(self) -> np.ndarray:
@@ -147,10 +152,12 @@ class TreeMatch:
         return np.array([int(j) in merged_into or int(i) in split_from for i, j in self.pairs], dtype=bool)
 
     def counts(self) -> dict:
-        """Numbers of survivors, deaths, recruits, merged and split trees."""
+        """Numbers of survivors, deaths and recruits, and of the trees of
+        either epoch in a merge or a split."""
         return {"survivors": len(self.pairs), "deaths": int(np.sum(self.status_a == "dead")),
                 "recruits": int(np.sum(self.status_b == "recruit")),
-                "merged": int(np.sum(self.status_a == "merged")), "split": int(np.sum(self.status_b == "split"))}
+                "merged": int(np.sum(self.status_a == "merged") + np.sum(self.status_b == "merged")),
+                "split": int(np.sum(self.status_a == "split") + np.sum(self.status_b == "split"))}
 
 
 def match_trees(trees_a, trees_b, max_distance: float = 1.0, transform=None, dbh_tolerance: float = 0.35,
