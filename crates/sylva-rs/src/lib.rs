@@ -14,6 +14,7 @@
 //! Algorithms are grouped by topic: [`filters`], [`cluster`], [`ground`],
 //! [`canopy`], [`voxel`], [`trees`], [`registration`] and [`qsm`].
 
+pub mod buttress_detect;
 pub mod canopy;
 pub mod canopy_profile;
 pub mod cluster;
@@ -33,12 +34,14 @@ pub mod pointcloud;
 pub mod progress;
 pub mod qsm;
 pub mod quality;
+pub mod quality_summary;
 pub mod raster;
 pub mod registration;
 pub mod shots;
 pub mod spatial;
 pub mod stems;
 pub mod transform;
+pub mod tree_prune;
 pub mod trees;
 pub mod voxel;
 

@@ -17,6 +17,8 @@ use pyo3::types::{PyDict, PyList};
 use sylva_rs::pointcloud::Attr;
 
 mod canopy_py;
+mod quality_py;
+mod trees_py;
 use sylva_rs::{canopy, cluster, coreg, coreg_geometry, coreg_ground, coreg_icp as coreg_icp_rs, filters, ground, io, qsm, registration, trees, voxel, Point, PointCloud, Raster, Shots, Transform};
 
 fn err(e: sylva_rs::Error) -> PyErr {
@@ -1872,6 +1874,8 @@ fn qsm_write_treefile(cylinders: PyReadonlyArray2<f64>, path: PathBuf) -> PyResu
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     canopy_py::register(m)?;
+    quality_py::register(m)?;
+    trees_py::register(m)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyProgressTask>()?;
     m.add_class::<PyRayVoxels>()?;
