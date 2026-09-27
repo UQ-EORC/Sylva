@@ -32,6 +32,7 @@ pub mod coreg_transforms;
 pub mod error;
 pub mod filters;
 pub mod ground;
+pub mod interpolate;
 pub mod io;
 pub mod json;
 pub mod limits;

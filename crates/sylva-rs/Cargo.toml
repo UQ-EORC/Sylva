@@ -22,3 +22,4 @@ byteorder.workspace = true
 libloading.workspace = true
 parquet.workspace = true
 roxmltree.workspace = true
+spade.workspace = true
