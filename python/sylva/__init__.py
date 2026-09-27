@@ -17,6 +17,7 @@ from . import interpolate
 from . import masks
 from . import coords
 from . import als
+from . import change
 from ._core import __version__ as _core_version
 from .io import read, write
 from .pointcloud import PointCloud
@@ -36,6 +37,7 @@ __all__ = [
     "als",
     "canopy",
     "coords",
+    "change",
     "coreg",
     "filters",
     "ground",

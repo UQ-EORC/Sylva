@@ -37,6 +37,7 @@ nav:
       - Ray-traced voxels: guide/voxels.md
       - Interpolation: guide/interpolation.md
       - Airborne lidar tiles: guide/als.md
+      - Change detection: guide/change.md
       - QSMs: guide/qsm.md
       - Leaves on a QSM: guide/leaves.md
       - Scan quality: guide/quality.md
@@ -71,6 +72,7 @@ nav:
       - ground: api/ground.md
       - interpolate: api/interpolate.md
       - als: api/als.md
+      - change: api/change.md
       - trees: api/trees.md
       - canopy: api/canopy.md
       - voxels: api/voxels.md
