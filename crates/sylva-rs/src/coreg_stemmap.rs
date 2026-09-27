@@ -3,7 +3,7 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Stem maps as files: the JSON the Python package's `StemMap.save` writes,
-//! read and written here for the R package, and the stem quality score.
+//! read and written here so every binding shares one format, and the stem quality score.
 
 use std::path::Path;
 

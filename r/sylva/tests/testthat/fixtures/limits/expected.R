@@ -1,1 +1,0 @@
-expected <- list(human = c("0 B", "1 B", "999 B", "999 B", "1000 B", "1.0 kB", "1.0 kB", "1.1 kB", "1.0 MB", "12.3 MB", "2.5 GB", "7.8 TB", "3200.0 TB", "0 B", "-5 B"), budget = 2500000000.0, message = "a 100 x 100 x 100 grid needs 5.0 GB, and only 2.5 GB is available: try a larger voxel. Set SYLVA_MEM_BUDGET (GB) to raise the limit.")

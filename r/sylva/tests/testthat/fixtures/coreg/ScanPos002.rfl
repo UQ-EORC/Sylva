@@ -1,5 +1,0 @@
-RieglRflID=1.1
-ReflectorIdx=name,index,status,x,y,z,r,theta,phi,reflectance,diameter,points,linkname
-Reflector0=ScanPos002/a.rxp,0,5,18.406487,1.751866,-1.807602,18.58,95.58,5.44,14.69,0.0997,19060,$Nolink
-Reflector1=ScanPos002/b.rxp,1,5,23.672012,2.619638,-2.476889,23.94,95.94,6.31,18.98,0.0840,14397,$Nolink
-Reflector2=broken

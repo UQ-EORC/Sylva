@@ -17,7 +17,3 @@ site/
 .ipynb_checkpoints/
 .cache/
 paper/
-# R package build output
-r/sylva/src/rust/target/
-r/sylva/src/*.o
-r/sylva/src/*.so
