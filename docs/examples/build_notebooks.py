@@ -527,13 +527,17 @@ real = qsm.build_qsm(qsm.wood_points(points, voxel_size=0.02), base_xy=(tallest.
 print(f"detection: DBH {tallest.dbh:.3f} m, height {tallest.height:.1f} m")
 print(f"QSM:       DBH {real.dbh:.3f} m, stem {real.stem_volume:.2f} m3, total {real.total_volume:.2f} m3, "
       f"{real.summary()['n_cylinders']} cylinders")
-print(f"measured volume fraction: {real.metrics()['measured_volume_fraction']:.2f} "
-      "-- on a single-tree scan this is above 0.8")""",
-    md("""Two lessons. The DBHs agree (0.31 m against 0.32 m), because breast
-height is where the stem is best sampled. The volume should not be quoted:
-less than half of it was fitted to points. Keeping the grass out of the base
-matters too -- without the height cut the base cylinder swallows the tussocks
-and the QSM DBH comes out at 0.50 m. Volumes are validated against felled
+m = real.metrics()
+print(f"fitted to points: {m['measured_volume_fraction']:.0%} of the volume, "
+      f"{m['measured_length_fraction']:.0%} of the length")""",
+    md("""Two lessons. The DBHs agree (0.316 m against 0.319 m), because breast
+height is where the stem is best sampled. The two fractions differ widely:
+most of the volume lies in the trunk and the main limbs, which were fitted to
+points, but only about a fifth of the length was, so the finer branches come
+from the taper and pipe-model priors. The total volume is supported by the
+data here; the branch volume and length are not. The height cut keeps the
+grass layer out of the base fit; on this tree it changes little, but tussocks
+against a trunk can widen the base cylinder. Volumes are validated against felled
 trees in [Benchmarks](../benchmarks/qsm.md), on single-tree clouds two orders
 of magnitude denser than this tile."""),
     md("## Export\n\nA cylinder table, a raycloudtools-style tree file, and meshes for Blender / CloudCompare."),
@@ -846,6 +850,470 @@ streamed = voxels.ray_voxelize(DATA / "litch_tile_shots.parquet", 0.5, ((0, 0, 0
                                ground_class=2, leaf_classes=[4])
 print("streamed from the file:", streamed,
       "- same echo count:", int(streamed.num_hits.sum()) == int(grid.num_hits.sum()))""",
+]
+
+NOTEBOOKS["11_coordinates"] = [
+    md("""# 11. Coordinates
+
+Coordinate reference systems on point clouds, reprojection, shifts and
+rotations, and registration matrices applied to a set of scans, with
+`sylva.coords` and the `PointCloud` methods `translate`, `rotate` and
+`recentre`. The [guide](../guide/coordinates.md) gives the rules behind
+them."""),
+    SETUP + "\nfrom sylva import coords, filters\n\ncloud = sylva.read(DATA / \"litch_tile.laz\")",
+    md("""## A CRS on the cloud
+
+`sylva.read` takes the CRS of a LAS/LAZ file from its header. The tile is
+stored in a local frame with its south-west corner at (0, 0), so its header
+names none and `cloud.crs` is None. To have map coordinates to work with,
+the tile is placed here in GDA2020 / MGA zone 52 (EPSG:7852), the zone of the
+Litchfield plot, near the site. The offset is illustrative: it is not the
+plot's surveyed position. A shift by whole metres is exact, so nothing is
+lost on the way."""),
+    """\
+print("CRS read from the header:", cloud.crs)
+site = coords.reproject(np.array([[130.7945, -13.1790, 0.0]]), "EPSG:7852", "EPSG:7844")   # longitude, latitude
+E0, N0 = np.floor(site[0, :2])
+plot = cloud.translate(E0, N0, 20.0)
+plot.crs = "EPSG:7852"                     # an EPSG code, a PROJ string or WKT
+info = coords.crs_info(plot.crs)
+print(plot)
+print(f"{info.name}: {info.proj4}")""",
+    md("""`sylva.write` stores the CRS in LAS/LAZ files as an OGC WKT record,
+which PDAL, LAStools, CloudCompare and QGIS read, and `sylva.read` restores
+it. PLY and text files carry no CRS."""),
+    """\
+import tempfile
+tmp = Path(tempfile.mkdtemp())
+sylva.write(plot, tmp / "plot_mga.laz")
+back = sylva.read(tmp / "plot_mga.laz")
+print("CRS read back:", back.crs[:48], "...")
+print("the same CRS:", coords.same_crs(back.crs, 7852),
+      "| largest coordinate change:", np.abs(back.xyz - plot.xyz).max(), "m")
+sylva.write(plot[::50], tmp / "plot.ply")
+print("CRS from a PLY file:", sylva.read(tmp / "plot.ply").crs)""",
+    md("""## Reprojecting
+
+`coords.transformation` reports, before anything is moved, how one CRS
+reaches another: a conversion between projections on one datum is exact, a
+Helmert datum change is exact to its published parameters, and a change
+between datums with no parameters between them is a *null* transformation
+that is not applied."""),
+    """\
+import pandas as pd
+
+targets = {"EPSG:7844": "GDA2020 latitude, longitude", "EPSG:32752": "WGS 84 / UTM zone 52S",
+           "EPSG:28352": "GDA94 / MGA zone 52"}
+rows = []
+for code, name in targets.items():
+    t = coords.transformation(plot.crs, code)
+    rows.append({"from EPSG:7852 to": f"{name} ({code})", "kind": t.kind, "exact": t.exact, "changes z": t.changes_z})
+pd.DataFrame(rows)""",
+    """\
+lonlat = coords.reproject(plot, "EPSG:7844")
+print(lonlat.crs, "first point:", lonlat.xyz[0].round(7))
+again = coords.reproject(lonlat, "EPSG:7852")
+print(f"MGA -> latitude, longitude -> MGA: largest error {np.abs(again.xyz - plot.xyz).max() * 1e9:.1f} nm")""",
+    md("""To WGS 84 the transformation is a null one: the EPSG definition of
+GDA2020 gives no parameters to WGS 84, so latitude and longitude are
+carried across unchanged and the datum difference is not applied.
+`reproject` still returns coordinates, and says so with an
+`ApproximateTransformationWarning`. MGA zone 52 and UTM zone 52S use the
+same projection on nearly identical ellipsoids, so the coordinates come out
+the same to within a tenth of a millimetre; the warning is the only sign
+that they should not have. Where a silent error of this kind
+matters, turn the warning into an error with
+`warnings.simplefilter("error", coords.ApproximateTransformationWarning)`."""),
+    """\
+import warnings
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    utm = coords.reproject(plot, "EPSG:32752")
+for w in caught:
+    print(f"{w.category.__name__}: {w.message}")
+print("largest change from the MGA coordinates:", np.abs(utm.xyz - plot.xyz).max(), "m")""",
+    md("""A datum change with published parameters is applied. Suppose the same
+numbers had been delivered in GDA94 / MGA zone 52: EPSG again gives no
+parameters from GDA94 to GDA2020, but GDA2020 can be written as a PROJ
+string carrying the published Helmert (EPSG:8048), and the shift is then
+applied. A Helmert change treats z as ellipsoidal height and moves it too;
+TLS heights are local or orthometric, so keep the original z afterwards."""),
+    """\
+gda94 = plot.copy()
+gda94.crs = "EPSG:28352"                  # the same numbers, read as GDA94
+gda2020 = ("+proj=utm +zone=52 +south +ellps=GRS80 +units=m +no_defs "
+           "+towgs84=-0.06155,0.01087,0.04019,-0.0394924,-0.0327221,-0.0328979,0.009994")
+print(coords.transformation("EPSG:28352", gda2020).note)
+shifted = coords.reproject(gda94, gda2020)
+d = shifted.xyz - gda94.xyz
+print("shift east, north, up (m):", d.mean(axis=0).round(3),
+      f"| its variation across the tile: {d.std(axis=0).max() * 1000:.4f} mm")
+print(f"and back to GDA94: largest error {np.abs(coords.reproject(shifted, 'EPSG:28352').xyz - gda94.xyz).max() * 1000:.4f} mm")
+shifted.xyz[:, 2] = gda94.z               # keep the heights
+shifted.crs = "EPSG:7852"                 # and label the result with the code once shifted""",
+    md("""## Shifting, rotating and recentring
+
+Map coordinates are large numbers. Float32 holds about seven significant
+digits, so a northing of 8.5 million metres is stored to the nearest metre,
+with errors of up to half a metre, and tools or formats that work in float32 lose the detail of the
+cloud. `recentre` moves the cloud to a local origin, by default its minimum
+corner rounded down to whole metres, and returns the offset;
+`translate(*offset)` undoes it exactly."""),
+    """\
+local, offset = plot.recentre()
+print("offset:", offset.tolist(), "| local extent:", local.bounds[0], "to", local.bounds[1])
+for name, c in (("map", plot), ("local", local)):
+    err = np.abs(c.xyz.astype(np.float32) - c.xyz).max(axis=0)
+    print(f"largest float32 rounding of {name:5s} coordinates (x, y, z):", ", ".join(f"{e * 1000:.4g}" for e in err), "mm")""",
+    md("""`rotate` takes degrees, counter-clockwise looking down the axis, about
+the origin unless `about` names a point. Rotating map coordinates about the
+origin swings the plot around the grid's (0, 0), thousands of kilometres
+away, so rotate about the plot, or recentre first. The same operations are
+available as 4 x 4 matrices, to compose with registration results."""),
+    """\
+centre = local.xyz.mean(axis=0)
+turned = local.rotate(30, about=centre)
+restored = turned.rotate(-30, about=centre).translate(*offset)
+print("rotated by 30 deg, back, and shifted to the map again: largest error",
+      np.abs(restored.xyz - plot.xyz).max(), "m")
+M = coords.rotation_matrix(30, about=centre)
+print("the same as a matrix: largest difference", np.abs(local.transform(M).xyz - turned.xyz).max(), "m")
+swung = plot.rotate(30)
+print(f"rotated about the grid origin instead, the tile moves "
+      f"{np.linalg.norm(swung.xyz.mean(axis=0) - plot.xyz.mean(axis=0)) / 1000:,.0f} km")
+
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.scatter(local.x[::40], local.y[::40], s=0.2, c="0.7", label="local")
+ax.scatter(turned.x[::40], turned.y[::40], s=0.2, c="C0", label="rotated 30 deg about the centre")
+ax.set(aspect="equal", xlabel="x (m)", ylabel="y (m)")
+ax.legend(markerscale=20, loc="upper right", fontsize=8);""",
+    md("""## Applying registration matrices
+
+Registration yields one matrix per scan: RiSCAN SOPs, `.DAT` files, or the
+`transforms.json` of `sylva.coreg`. `coords.apply_transforms` puts the scans
+into one frame with them and can merge the result. The repository holds no
+per-scan files, so three scans are made from the tile: the points within
+9 m of three positions, each moved into its own scanner frame by the inverse
+of an SOP-like matrix (the scanner 1.5 m above the ground, a heading, and a
+1.2 degree tilt). The matrices are written as RiSCAN `.DAT` files and the
+scans as LAZ files, named as RiSCAN exports them."""),
+    """\
+positions = {"ScanPos001": (4.0, 4.0, 25.0), "ScanPos002": (16.0, 5.0, 140.0), "ScanPos003": (10.0, 16.0, 260.0)}
+(tmp / "DAT").mkdir()
+seen = {}
+for name, (x, y, heading) in positions.items():
+    sop = (coords.translation_matrix(x, y, 1.5) @ coords.rotation_matrix(heading)
+           @ coords.rotation_matrix(1.2, axis="x"))
+    seen[name] = filters.range_filter(cloud, origin=(x, y, 1.5), max_range=9.0)
+    np.savetxt(tmp / "DAT" / f"{name}.DAT", sop)                               # 4 rows of 4 numbers
+    sylva.write(seen[name].transform(np.linalg.inv(sop)), tmp / f"{name}_5cm.laz")   # scanner frame
+print(sorted(p.name for p in tmp.glob("ScanPos*")), sorted(p.name for p in (tmp / "DAT").iterdir()))""",
+    md("""Each file is matched to a matrix by name: `ScanPos001_5cm.laz` takes
+`ScanPos001.DAT`, because the file stem starts with the matrix name followed
+by a separator."""),
+    """\
+files = sorted(tmp.glob("ScanPos*_5cm.laz"))
+merged = coords.apply_transforms(files, tmp / "DAT", merge=True)
+reference = sylva.PointCloud.concatenate([seen[n] for n in positions])
+print(merged)
+print("points per scan:", np.bincount(merged.attrs["scan_id"]))
+print(f"largest distance from the tile's own coordinates: {np.abs(merged.xyz - reference.xyz).max() * 1000:.2f} mm")
+
+raw = [sylva.read(f) for f in files]
+fig, ax = plt.subplots(1, 2, figsize=(11, 4.6))
+for i, r in enumerate(raw):
+    ax[0].scatter(r.x[::30], r.y[::30], s=0.2, c=f"C{i}", label=files[i].stem)
+ax[0].set(aspect="equal", title="each scan in its own frame", xlabel="x (m)", ylabel="y (m)")
+ax[0].legend(markerscale=20, fontsize=8)
+for i in range(len(files)):
+    m = merged.attrs["scan_id"] == i
+    ax[1].scatter(merged.x[m][::30], merged.y[m][::30], s=0.2, c=f"C{i}")
+ax[1].set(aspect="equal", title="after apply_transforms", xlabel="x (m)");""",
+    md("""The scans come back to within a millimetre of where they started. The
+remaining error is the LAZ files' 1 mm coordinate scale, applied to the
+points in their scanner frames before the matrices moved them back; with
+clouds and matrices in memory the round trip is exact to float rounding.
+`apply_transforms` also takes a mapping of clouds and matrices, a list by
+position, a `transforms.json`, or a RiSCAN project, whose SOPs it applies,
+and it writes the result with `out=`."""),
+    """\
+sops = {n: np.loadtxt(tmp / "DAT" / f"{n}.DAT") for n in positions}
+scans = {n: seen[n].transform(np.linalg.inv(sops[n])) for n in positions}      # scanner frames, not rounded
+in_memory = coords.apply_transforms(scans, sops)
+print("in memory: largest error", max(np.abs(c.xyz - seen[n].xyz).max() for c, n in zip(in_memory, positions)), "m")""",
+]
+
+NOTEBOOKS["12_interpolation"] = [
+    md("""# 12. Interpolation
+
+Moving values between point clouds and rasters with `sylva.interpolate`:
+labels computed on a thinned copy carried back to every point, terrain
+models interpolated from the ground returns, and rasters read back onto the
+points as attributes. The [guide](../guide/interpolation.md) describes the
+methods."""),
+    SETUP + "\nimport pandas as pd\nfrom sylva import filters, ground, interpolate, trees\n\ncloud = sylva.read(DATA / \"litch_tile.laz\")",
+    md("""## Labels from a thinned copy
+
+Much of the work on a plot cloud is done on a thinned copy, and the result
+then has to reach every point. The tile's own `classification` (ground and
+vegetation, from PMF) is known at every point, so it shows how well a
+transfer does: thin to 20 cm, carry the classes back, and compare.
+`"nearest"` copies the class of the nearest point of the copy;
+`"majority"` takes the most common class of the `k` nearest, which is the
+method for labels, since they must not be averaged."""),
+    """\
+thin = filters.voxel_downsample(cloud, 0.2)
+truth = cloud.attrs["classification"]
+print(f"{len(thin):,} points in the 20 cm copy, {len(cloud):,} in the tile")
+for method, k in (("nearest", 1), ("majority", 5), ("majority", 9)):
+    back = interpolate.transfer_attributes(thin, cloud, "classification", method=method, k=k)
+    agree = back.attrs["classification"] == truth
+    print(f"{method:8s} k = {k}: {agree.mean():.2%} of the points get their own class back")
+back = interpolate.transfer_attributes(thin, cloud, "classification", method="majority", k=5)
+wrong = back.attrs["classification"] != truth
+print(f"of the points that do not, {np.mean(cloud.z[wrong] < 1.0):.0%} lie below 1 m")""",
+    md("""The labels that do not come back lie where ground and grass meet,
+which a 20 cm copy cannot resolve. On this tile the majority vote does no
+better than the nearest point: the classes form large, clean regions, and
+the vote only helps where isolated labels are wrong.
+
+The same holds for trees. Segmentation (notebook 5) is one of the costlier
+steps and grows with the number of points, so a common pattern is to
+segment a 10 cm copy and carry `tree_id` back. Here both run from the same
+stems, and the segmentation of the full tile is the reference.
+`max_distance` leaves a point with no labelled point within 15 cm
+unassigned (-1) rather than copying a distant label."""),
+    """\
+import time
+
+cloud = ground.normalize_height(cloud, ground.make_dtm(cloud, 0.5, bounds=(0, 0, 20, 20)))
+stems, _ = trees.merge_branches(cloud, trees.detect_stems(cloud))
+t0 = time.perf_counter()
+direct = np.asarray(trees.segment_trees(cloud, stems))
+t_full = time.perf_counter() - t0
+
+t0 = time.perf_counter()
+coarse = filters.voxel_downsample(cloud, 0.1)
+coarse = coarse.with_attrs(tree_id=np.asarray(trees.segment_trees(coarse, stems)))
+moved = interpolate.transfer_attributes(coarse, cloud, "tree_id", method="majority", k=5, max_distance=0.15)
+t_coarse = time.perf_counter() - t0
+
+tid = moved.attrs["tree_id"]
+in_tree = (direct > 0) | (tid > 0)
+print(f"segmenting all {len(cloud):,} points: {t_full:.1f} s; "
+      f"{len(coarse):,} points and the transfer: {t_coarse:.1f} s")
+print(f"the same label as the full segmentation: {np.mean(tid == direct):.1%} of all points, "
+      f"{np.mean(tid[in_tree] == direct[in_tree]):.1%} of the points either assigns to a tree")""",
+    """\
+slab = (cloud.y > 6.5) & (cloud.y < 8.5)
+differ = slab & in_tree & (tid != direct)
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.scatter(cloud.x[slab], cloud.attrs["height"][slab], s=0.2, c="0.85")
+ax.scatter(cloud.x[differ], cloud.attrs["height"][differ], s=1.0, c="C3", label="label differs")
+ax.set(title="2 m slice: where the transferred tree label differs from the full segmentation",
+       xlabel="x (m)", ylabel="height (m)", aspect="equal")
+ax.legend(markerscale=8, loc="upper right");""",
+    md("""## Terrain models by interpolation
+
+`ground.make_dtm` takes the lowest ground point in each cell by default.
+With `method="tin"`, `"natural"` or `"idw"` it interpolates the ground
+points instead: a linear surface on a Delaunay triangulation, Sibson's
+natural-neighbour weights, or inverse-distance weighting. These surfaces
+pass through the points, so they follow the ground returns rather than
+their lowest members, and they carry the returns' noise unless the ground is
+thinned first; here it is thinned to 25 cm."""),
+    """\
+ground_pts = filters.voxel_downsample(cloud[ground.ground_mask(cloud)], 0.25)
+lowest = ground.make_dtm(cloud, 0.25, bounds=(0, 0, 20, 20))
+dtms = {m: ground.make_dtm(ground_pts, 0.25, bounds=(0, 0, 20, 20), method=m) for m in ("tin", "natural", "idw")}
+rows = []
+for m, d in dtms.items():
+    diff = d.data - lowest.data
+    rows.append({"method": m, "median above lowest (m)": np.nanmedian(diff),
+                 "5th percentile": np.nanpercentile(diff, 5), "95th percentile": np.nanpercentile(diff, 95)})
+print(f"{len(ground_pts):,} ground points after thinning; grids of {lowest.data.shape[1]} x {lowest.data.shape[0]} cells")
+pd.DataFrame(rows).round(3)""",
+    md("""`make_dtm` fills the cells outside the ground points' convex hull from
+the nearest interpolated cell, so its DTM has no gaps, like the default.
+`interpolate.grid` keeps them, and with `max_distance` also leaves out cells
+far from any ground point, which keeps the surface from bridging the ground
+hidden under stems and shrubs."""),
+    """\
+holes = interpolate.grid(ground_pts, 0.25, method="tin", bounds=(0, 0, 20, 20), max_distance=0.5)
+print(f"cells with no ground point within 0.5 m: {np.isnan(holes.data).mean():.1%}")
+ext = (lowest.xmin, lowest.xmax, lowest.ymin, lowest.ymax)
+fig, ax = plt.subplots(1, 4, figsize=(15, 3.6))
+im = ax[0].imshow(lowest.data, origin="lower", extent=ext, cmap="terrain")
+fig.colorbar(im, ax=ax[0], shrink=0.8); ax[0].set_title("lowest point per cell (m)")
+for a, m in zip(ax[1:3], ("tin", "natural")):
+    im = a.imshow(dtms[m].data - lowest.data, origin="lower", extent=ext, cmap="RdBu_r", vmin=-0.2, vmax=0.2)
+    fig.colorbar(im, ax=a, shrink=0.8); a.set_title(f"{m} minus lowest (m)")
+im = ax[3].imshow(holes.data, origin="lower", extent=ext, cmap="terrain")
+fig.colorbar(im, ax=ax[3], shrink=0.8); ax[3].set_title("TIN, max_distance 0.5 m")
+for a in ax:
+    a.set(xlabel="x (m)")""",
+    md("""## Rasters onto points
+
+`sample_rasters` reads several rasters at every point in one call and adds
+each as an attribute. Sampling the DTM gives height above ground, as
+`normalize_height` does. Sampling the CHM gives the canopy height of each
+point's column, and the ratio of the two places a point within the canopy
+above it."""),
+    """\
+dtm = ground.make_dtm(cloud, 0.5, bounds=(0, 0, 20, 20))
+chm = ground.make_chm(cloud, 0.5, bounds=(0, 0, 20, 20))
+pts = interpolate.sample_rasters(cloud, {"ground": dtm, "canopy_height": chm})
+h = pts.z - pts.attrs["ground"]
+print("largest difference from normalize_height:", np.abs(h - cloud.attrs["height"]).max(), "m")
+tall = (pts.attrs["canopy_height"] > 10) & (cloud.attrs["classification"] == 4)
+relative = h / pts.attrs["canopy_height"]
+print(f"vegetation under canopy taller than 10 m: {tall.sum():,} points, "
+      f"{np.mean(relative[tall] < 1 / 3):.0%} of them in the lowest third of their column")
+
+small = ground.make_dtm(cloud, 0.5, bounds=(5, 5, 15, 15))
+outside = np.isnan(interpolate.sample_raster(cloud, small, "ground").attrs["ground"])
+print(f"a DTM of the inner 10 x 10 m only: {outside.mean():.0%} of the points fall outside it and get NaN")
+
+slab = (cloud.y > 9) & (cloud.y < 11)
+fig, ax = plt.subplots(figsize=(10, 4))
+sc = ax.scatter(cloud.x[slab], h[slab], c=np.clip(relative[slab], 0, 1), s=0.3, cmap="viridis")
+ax.set(title="2 m slice, coloured by height relative to the CHM above", xlabel="x (m)", ylabel="height (m)", aspect="equal")
+fig.colorbar(sc, ax=ax, shrink=0.8);""",
+]
+
+NOTEBOOKS["13_masking"] = [
+    md("""# 13. Masking
+
+Selecting points with `sylva.masks`: by polygons read from a file, by the
+raster cell under each point, by an expression over the attributes, and by
+the distance to another cloud. A mask is a boolean array, one entry per
+point, so masks from different sources combine with `&`, `|` and `~`. The
+[guide](../guide/masking.md) has the details."""),
+    SETUP + """
+import json
+from sylva import ground, masks
+
+cloud = sylva.read(DATA / "litch_tile.laz")
+cloud = ground.normalize_height(cloud, ground.make_dtm(cloud, 0.5, bounds=(0, 0, 20, 20)))""",
+    md("""## Polygons
+
+`read_polygons` reads GeoJSON and ESRI shapefiles. The file below holds two
+subplots with a `treatment` property: a rectangle with a circular hole
+around the tile's largest stem (excluded, say, for destructive sampling),
+and a pentagon. Coordinates are in the tile's frame; polygons are never
+reprojected, so they have to be in the cloud's frame."""),
+    """\
+import tempfile
+tmp = Path(tempfile.mkdtemp())
+t = np.linspace(0, 2 * np.pi, 33)[:-1]
+hole = np.column_stack([4.8 + 1.5 * np.cos(t), 7.5 + 1.5 * np.sin(t)])[::-1].tolist()
+features = [
+    {"type": "Feature", "properties": {"name": "west", "treatment": "burnt"},
+     "geometry": {"type": "Polygon", "coordinates": [[[1, 1], [9, 1], [9, 15], [1, 15], [1, 1]], hole + hole[:1]]}},
+    {"type": "Feature", "properties": {"name": "east", "treatment": "control"},
+     "geometry": {"type": "Polygon", "coordinates": [[[11, 3], [19, 3], [19, 11], [15, 19], [11, 11], [11, 3]]]}},
+]
+json.dump({"type": "FeatureCollection", "features": features}, open(tmp / "subplots.geojson", "w"))
+
+subplots = masks.read_polygons(tmp / "subplots.geojson")
+print(len(subplots), "features:", [f.properties for f in subplots])
+which = masks.polygon_index(cloud, subplots)             # index of the polygon, -1 outside all
+for i, f in enumerate(subplots):
+    print(f"{f.properties['name']:5s} {np.sum(which == i):>9,} points")
+burnt = masks.crop_polygons(cloud, subplots[[f.properties["treatment"] == "burnt" for f in subplots]])
+print("burnt subplot:", burnt)""",
+    """\
+fig, ax = plt.subplots(figsize=(5.5, 5.5))
+colours = np.array(["0.85", "C1", "C0"])
+ax.scatter(cloud.x[::10], cloud.y[::10], s=0.2, c=colours[which[::10] + 1])
+for f in subplots:
+    for part in f.parts:
+        ax.plot(*part.exterior.T, "k", lw=0.8)
+        for h in part.holes:
+            ax.plot(*h.T, "k--", lw=0.8)
+ax.set(aspect="equal", xlabel="x (m)", ylabel="y (m)", title="points by subplot; the hole stays out");""",
+    md("""## Raster masks
+
+`raster_mask` tests the raster cell under each point against a range
+(`min`, `max`, inclusive) or a set of `values`. With the CHM it separates
+the points under tall canopy from those in the gaps. Points outside the
+raster or over NaN cells are never kept."""),
+    """\
+chm = ground.make_chm(cloud, 0.5, bounds=(0, 0, 20, 20))
+under_tall = masks.raster_mask(cloud, chm, min=10)
+in_gaps = masks.raster_mask(cloud, chm, max=2)
+print(f"under canopy of 10 m or more: {under_tall.mean():.0%} of the points; in cells below 2 m: {in_gaps.mean():.0%}")
+low_veg = masks.expression(cloud, "0.3 < height < 2 & classification == 4")
+print(f"vegetation between 0.3 and 2 m: {np.mean(under_tall[low_veg]):.0%} of it under tall canopy, "
+      f"{np.mean(in_gaps[low_veg]):.0%} in the gaps")
+
+fig, ax = plt.subplots(1, 2, figsize=(11, 4.6))
+im = ax[0].imshow(chm.data, origin="lower", extent=(chm.xmin, chm.xmax, chm.ymin, chm.ymax), cmap="YlGn")
+fig.colorbar(im, ax=ax[0], shrink=0.8); ax[0].set(title="CHM (m)", xlabel="x (m)", ylabel="y (m)")
+m = low_veg & under_tall
+ax[1].scatter(cloud.x[low_veg & ~m][::4], cloud.y[low_veg & ~m][::4], s=0.2, c="C1", label="elsewhere")
+ax[1].scatter(cloud.x[m][::4], cloud.y[m][::4], s=0.2, c="C2", label="under canopy >= 10 m")
+ax[1].set(aspect="equal", title="vegetation 0.3-2 m", xlabel="x (m)"); ax[1].legend(markerscale=20, fontsize=8);""",
+    md("""## Expressions
+
+`cloud.where`, `masks.expression` and `masks.crop_expression` take a
+condition over `x`, `y`, `z` and the attributes, which the Rust core parses
+and evaluates; the text is never run as Python. Comparisons can be chained,
+`in` tests membership, and `&` and `|` bind more loosely than comparisons,
+so no parentheses are needed where NumPy would need them."""),
+    """\
+veg = cloud.where("height > 2 & classification != 2")
+numpy_way = cloud[(cloud.attrs["height"] > 2) & (cloud.attrs["classification"] != 2)]
+print(veg, "| the same as the NumPy mask:", np.array_equal(veg.xyz, numpy_way.xyz))
+print("chained:", masks.expression(cloud, "1.3 <= height < 5").sum(),
+      "| membership:", masks.expression(cloud, "classification in (3, 4, 5)").sum(),
+      "| arithmetic:", masks.expression(cloud, "x + y < 10 & not (height > 1)").sum())
+try:
+    cloud.where("hieght > 2")
+except ValueError as err:
+    print(err)""",
+    md("""## Distance to another cloud
+
+`near` keeps the points within a distance of another cloud and
+`difference` returns those beyond it, which is change detection between
+two epochs of the same scene. Here the second epoch is a copy of the tile
+with a 3 x 3 m block between 0.5 and 6 m removed, which takes a section of
+a stem and the shrubs beside it, as if they had been cut, and every
+remaining point moved by 5 mm of random noise, as a
+re-survey would. `difference(before, after, d)` should find the block and
+nothing else, provided `d` is above the noise and the point spacing."""),
+    """\
+block = (cloud.x > 14) & (cloud.x < 17) & (cloud.y > 14) & (cloud.y < 17) & (cloud.z > 0.5) & (cloud.z < 6)
+rng = np.random.default_rng(1)
+kept = cloud[~block]
+after = sylva.PointCloud(kept.xyz + rng.normal(0, 0.005, kept.xyz.shape), kept.attrs)
+print(f"{block.sum():,} points removed")
+
+
+def in_block(c):
+    return (c.x > 14) & (c.x < 17) & (c.y > 14) & (c.y < 17) & (c.z > 0.5) & (c.z < 6)
+
+
+for d in (0.01, 0.05, 0.10):
+    lost = masks.difference(cloud, after, d)
+    print(f"d = {d * 100:4.0f} cm: {len(lost):>9,} points found, {in_block(lost).sum():,} of them in the block")
+print("appeared (after against before, 5 cm):", len(masks.difference(after, cloud, 0.05)))""",
+    md("""At 1 cm the noise itself reads as change. At 5 cm only points of the
+block are found, but not all of them: a removed point within 5 cm of a
+point that stayed, on the faces of the block, is matched to that neighbour.
+A larger distance loses more of the block's edge, so choose it just above
+the registration error and the point spacing."""),
+    """\
+lost = masks.difference(cloud, after, 0.05)
+missed = block & ~masks.near(cloud, lost, 1e-6)
+fig, ax = plt.subplots(figsize=(6, 5))
+side = (cloud.y > 14) & (cloud.y < 17)
+ax.scatter(cloud.x[side & ~block], cloud.z[side & ~block], s=0.2, c="0.8")
+ax.scatter(lost.x, lost.z, s=0.4, c="C3", label="found by difference")
+ax.scatter(cloud.x[missed], cloud.z[missed], s=0.8, c="C0", label="removed but matched to a neighbour")
+ax.set(xlim=(12, 19), ylim=(-0.5, 8), xlabel="x (m)", ylabel="z (m)", title="the removed block, side view")
+ax.legend(markerscale=10, fontsize=8);""",
 ]
 
 

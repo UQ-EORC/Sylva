@@ -54,6 +54,9 @@ nav:
       - 8. Pulses and shots files: examples/08_shots.ipynb
       - 9. Ray-traced voxels: examples/09_voxels.ipynb
       - 10. A RIEGL project, end to end: examples/10_riscan_pipeline.ipynb
+      - 11. Coordinates: examples/11_coordinates.ipynb
+      - 12. Interpolation: examples/12_interpolation.ipynb
+      - 13. Masking: examples/13_masking.ipynb
   - Benchmarks:
       - Tree detection: benchmarks/trees.md
       - QSMs: benchmarks/qsm.md
