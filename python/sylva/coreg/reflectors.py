@@ -187,6 +187,7 @@ def match_reflectors(
     Returns
     -------
     ReflectorMatch
+        Its ``correspondences`` are ordered by source index.
     """
     d = _core.coreg_match_reflectors(
         np.ascontiguousarray(_positions(source), dtype=np.float64),

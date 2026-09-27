@@ -381,6 +381,9 @@ fn score(src: &[Point], dst: &[Point], s: [usize; 3], d: [usize; 3], tolerance: 
     if pairs.len() < 3 {
         return Ok(ReflectorMatch::failure(t, pairs.len()));
     }
+    // By source index, not by residual: candidate transforms that tie up to
+    // rounding would otherwise order the same pairs differently.
+    pairs.sort_unstable();
     let a: Vec<Point> = pairs.iter().map(|p| src[p[0]]).collect();
     let b: Vec<Point> = pairs.iter().map(|p| dst[p[1]]).collect();
     let refined = kabsch(&a, &b, None)?;
