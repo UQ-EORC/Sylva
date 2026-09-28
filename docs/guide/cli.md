@@ -269,6 +269,27 @@ or with z replaced by it (`--replace-z`, the elevation kept as
 raster per metric or a CSV table of plots; see [Area-based ALS
 metrics](als_metrics.md#command-line).
 
+### TLS and ALS together: `fusion-register`, `fusion-trees`, `fusion-upscale`
+
+```bash
+sylva fusion-register plot.laz tiles/ reg.json [--initial gnss.txt] [--search-radius 10]
+                      [--heading-range 180] [--refine all|ground|none] [--transformed plot_map.laz]
+sylva fusion-trees tls_trees.csv als_trees.csv linked.csv [--crowns crowns.geojson]
+                   [--registration reg.json] [--als-output als_linked.csv]
+sylva fusion-upscale plots.csv metrics/ out/ --response agb --predictors zq95,cover [--model loglog]
+```
+
+`fusion-register` places a TLS plot (ground classified) on a directory of
+ALS tiles or one ALS file with [`fusion.register`](../api/fusion.md),
+writes the transform, residuals and uncertainty as JSON and prints the
+report; `--initial` is a text file with the 4 x 4 matrix of a rough
+placement, and `--transformed` also writes the moved cloud.
+`fusion-trees` links a CSV of TLS trees to the trees and crowns written by
+`als-trees`, and writes each TLS tree's status, ALS tree and combined
+height. `fusion-upscale` fits a plot value on ALS metrics and writes
+`mean`, `se`, `lower`, `upper` and `extrapolated` rasters over the grid of
+`als-metrics`. See [TLS and ALS together](fusion.md#command-line).
+
 ### Airborne trees: `als-trees`
 
 ```bash

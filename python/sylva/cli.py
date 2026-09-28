@@ -637,6 +637,9 @@ def main(argv=None):
     from . import als_metrics
     als_metrics._add_commands(sub, fmt, _als_common, _write_raster)
 
+    from . import fusion
+    fusion._add_commands(sub, fmt)
+
     s = sub.add_parser("als-trees", help="tree tops and crowns over a directory of ALS tiles",
                        **fmt)
     s.add_argument("input", help="directory of LAS/LAZ tiles (ground classified, or normalised)")

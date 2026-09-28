@@ -40,6 +40,7 @@ pub mod coreg_transforms;
 pub mod crs;
 pub mod error;
 pub mod filters;
+pub mod fusion;
 pub mod ground;
 pub mod interpolate;
 pub mod io;

@@ -39,6 +39,7 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 | [`sylva.als_metrics`](api/als_metrics.md) | area-based metrics (the lidR standard set, cover, gap fraction) as rasters or plot tables |
 | [`sylva.als_trees`](api/als_trees.md) | tree tops, crowns (watershed, Dalponte 2016, Li 2012), crown outlines and labelled tiles |
 | [`sylva.als_canopy`](api/als_canopy.md) | pulses from the flight trajectory, gap-fraction and PAD profiles corrected for beam angle, ray-traced voxels |
+| [`sylva.fusion`](api/fusion.md) | TLS and ALS together: a plot registered on a survey, stems linked to airborne trees, merged clouds and plant area profiles, plot values upscaled with leave-one-out checks |
 | [`sylva.waveform`](api/waveform.md) | LAS wave packets and PulseWaves, Gaussian decomposition into echoes, waveforms to pulses |
 | [`sylva.Shots`](api/shots.md) | pulse-centric data (origin, direction, CSR echoes) for ray-based metrics, with a compact Parquet file format that stores misses without far points and streams into the voxeliser |
 | [`sylva.leaves`](api/leaves.md) | graph-based leaf/wood separation, leaf angle distributions, leaf area density from points or voxels, leaf meshes placed on a QSM |

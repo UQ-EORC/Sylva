@@ -36,6 +36,12 @@ leaf area and leaf orientation using terrestrial LiDAR scanning data.
 In Sylva: the `bailey` attenuation estimator and triangle-facet *G* in
 [`sylva.voxels`](api/voxels.md).
 
+Baskerville, G. L. (1972). Use of logarithmic regression in the estimation of
+plant biomass. *Canadian Journal of Forest Research*, *2*(1), 49–53.
+<https://doi.org/10.1139/x72-009>
+In Sylva: the back-transformation `exp(σ²/2)` of log-log models in
+`fusion.fit_model` and `fusion.upscale`.
+
 Beaton, A. E., & Tukey, J. W. (1974). The fitting of power series, meaning
 polynomials, illustrated on band-spectroscopic data. *Technometrics*, *16*(2),
 147–185. <https://doi.org/10.1080/00401706.1974.10489171>
@@ -167,6 +173,12 @@ Transactions on Instrumentation and Measurement*, *IM-25*(1), 8–14.
 In Sylva: the algebraic circle fit that starts `trees.fit_circle`, the stem detector
 and `quality.stem_noise`.
 
+Kuhn, H. W. (1955). The Hungarian method for the assignment problem. *Naval
+Research Logistics Quarterly*, *2*(1–2), 83–97.
+<https://doi.org/10.1002/nav.3800020109>
+In Sylva: the optimal assignment of trees in `change.match_trees` and
+`fusion.link_trees`.
+
 Lang, A. R. G., & Xiang, Y. (1986). Estimation of leaf area index from
 transmission of direct sunlight in discontinuous canopies. *Agricultural and
 Forest Meteorology*, *37*(3), 229–243.
@@ -224,6 +236,19 @@ implementation (see Software).
 Miller, J. B. (1967). A formula for average foliage density. *Australian Journal
 of Botany*, *15*(1), 141–144. <https://doi.org/10.1071/BT9670141>
 In Sylva: `method="miller"` in `canopy.lai_from_gap_fraction`.
+
+Munkres, J. (1957). Algorithms for the assignment and transportation problems.
+*Journal of the Society for Industrial and Applied Mathematics*, *5*(1),
+32–38. <https://doi.org/10.1137/0105003>
+In Sylva: with Kuhn (1955), the assignment of `change.match_trees` and
+`fusion.link_trees`.
+
+Næsset, E. (2002). Predicting forest stand characteristics with airborne
+scanning laser using a practical two-stage procedure and field data. *Remote
+Sensing of Environment*, *80*(1), 88–99.
+<https://doi.org/10.1016/S0034-4257(01)00290-5>
+In Sylva: the area-based approach of `fusion.upscale`, plot values regressed
+on ALS metrics and predicted over a grid.
 
 Olofsson, K., Holmgren, J., & Olsson, H. (2014). Tree stem and height
 measurements using terrestrial laser scanning and the RANSAC algorithm.

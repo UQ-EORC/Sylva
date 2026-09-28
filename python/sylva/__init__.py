@@ -19,6 +19,7 @@ from . import coords
 from . import als
 from . import change
 from . import waveform
+from . import fusion
 from ._core import __version__ as _core_version
 from .io import read, write
 from .pointcloud import PointCloud
@@ -41,6 +42,7 @@ __all__ = [
     "coords",
     "coreg",
     "filters",
+    "fusion",
     "ground",
     "interpolate",
     "io",
