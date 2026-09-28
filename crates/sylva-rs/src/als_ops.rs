@@ -218,7 +218,7 @@ pub enum Heights {
 }
 
 impl Heights {
-    fn check(&self) -> Result<()> {
+    pub(crate) fn check(&self) -> Result<()> {
         match self {
             Heights::Auto { resolution } if !(resolution.is_finite() && *resolution > 0.0) => Err(Error::invalid(format!("dtm_resolution must be a positive number, got {resolution}"))),
             Heights::Dtm(r) if r.data.is_empty() => Err(Error::invalid("the DTM is empty")),

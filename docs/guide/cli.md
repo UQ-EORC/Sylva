@@ -268,3 +268,24 @@ or with z replaced by it (`--replace-z`, the elevation kept as
 `als-metrics` and `als-plot-metrics` compute area-based metrics as one
 raster per metric or a CSV table of plots; see [Area-based ALS
 metrics](als_metrics.md#command-line).
+### Airborne trees: `als-trees`
+
+```bash
+sylva als-trees ground/ trees.csv [--crowns crowns.geojson] [--labelled labelled/]
+                [--method dalponte2016|watershed|li2012|tops] [--resolution 0.5]
+                [--window 5 | --window-linear INTERCEPT SLOPE MIN MAX] [--hmin 2]
+                [--dtm DTM.asc | --normalized] [--buffer 30]
+```
+
+Finds the trees of a directory of tiles with
+[`als.find_trees`](../api/als.md) (see [Airborne trees](als_trees.md)) and
+writes one CSV row per tree (`id`, `x`, `y`, `height`, `crown_area`,
+`n_points`); `--crowns` also writes the crown polygons as GeoJSON (the tree
+tops with `--method tops`) and `--labelled` the tiles with each point's tree
+id in a `tree_id` attribute. Heights come from the ground points unless
+given `--dtm` or `--normalized`. The detection and segmentation settings
+(`--shape`, `--tops-from`, `--smooth`, `--th-tree`, `--th-seed`, `--th-cr`,
+`--max-cr`, `--dt1`, `--dt2`, `--R`, `--Zu`, `--speed-up`, `--hull`,
+`--concavity`, `--min-point-height`) are those of the function; the
+buffer is 30 m by default, and it takes `--pattern`, `--chunk-size` and
+`--workers` as the other `als-*` commands do.

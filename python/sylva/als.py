@@ -1092,3 +1092,19 @@ from .als_canopy import (  # noqa: E402
     read_trajectory,
     week_seconds,
 )
+
+# Individual trees (tree tops, crowns, labelled tiles) live in their own module.
+from .als_trees import (  # noqa: E402
+    LinearWindow,
+    Trees,
+    TreeTops,
+    crown_hull,
+    find_trees,
+    li2012,
+    locate_trees,
+    segment_crowns,
+    segment_trees,
+)
+
+__all__ += ["LinearWindow", "TreeTops", "Trees", "locate_trees", "segment_crowns", "li2012",
+            "crown_hull", "segment_trees", "find_trees"]

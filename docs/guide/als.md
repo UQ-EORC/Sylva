@@ -120,6 +120,7 @@ Progress shows through [`sylva.progress`](../api/progress.md), with
 | `als.decimate(cat, out, method="random", "voxel" or "highest")` | thinned tiles | `filters.random_subsample` |
 | `als.write_tiles(cloud, out, size)` | tiles from one cloud | `io.write` |
 | `als.grid_metrics(cat, resolution)`, `als.plot_metrics(cat, plots)` | area-based metrics as rasters or a plot table ([Area-based ALS metrics](als_metrics.md)) | `als.cloud_metrics` |
+| `als.find_trees(cat, out=None, method=...)` | trees, and tiles with tree ids | `als.segment_trees`; see [Airborne trees](als_trees.md) |
 
 Functions that write tiles write one per chunk into the output directory,
 in the point format, quantisation and CRS of the input tile, and return the

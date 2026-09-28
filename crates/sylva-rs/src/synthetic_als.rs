@@ -758,6 +758,211 @@ pub fn fly(scene: &PointCloud, p: &FlightParams) -> Result<Flight> {
     Ok(Flight { points, trajectory: traj, n_pulses })
 }
 
+// ------------------------------------------------------------------ the trees of a scene
+
+/// A tree of a synthetic scene: the truth that tree detection and crown
+/// delineation are checked against.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneTree {
+    /// The scene's `tree_id`.
+    pub id: i32,
+    /// Stem position: the mean x, y of the tree's wood points (all its
+    /// points without a `classification`) within 1 m of its lowest point.
+    pub stem: [f64; 2],
+    /// The tree's highest point.
+    pub top: Point,
+    /// Height of the top above the terrain beneath it
+    /// ([`crate::synthetic::terrain_height`] with `terrain_slope`).
+    pub height: f64,
+    /// Convex hull of the tree's points seen from above, counter-clockwise.
+    pub crown: Vec<[f64; 2]>,
+    /// Area of `crown` (m²).
+    pub crown_area: f64,
+}
+
+/// The trees of a scene made by [`crate::synthetic::forest`] (points with
+/// a `tree_id`, 0 or less for no tree), in order of id.
+pub fn scene_trees(scene: &PointCloud, terrain_slope: f64) -> Result<Vec<SceneTree>> {
+    let ids = scene.attr("tree_id").ok_or_else(|| Error::invalid("the scene has no 'tree_id'; make it with synthetic.forest"))?;
+    let cls = scene.attr("classification");
+    let mut groups: std::collections::BTreeMap<i32, Vec<usize>> = std::collections::BTreeMap::new();
+    for i in 0..scene.len() {
+        let id = ids.get_f64(i) as i32;
+        if id > 0 && scene.xyz[i].iter().all(|v| v.is_finite()) {
+            groups.entry(id).or_default().push(i);
+        }
+    }
+    Ok(groups
+        .into_par_iter()
+        .map(|(id, idx)| {
+            let p = &scene.xyz;
+            let zmin = idx.iter().map(|&i| p[i][2]).fold(f64::INFINITY, f64::min);
+            let wood = |i: usize| cls.is_none_or(|c| c.get_f64(i) == 5.0);
+            let low: Vec<usize> = idx.iter().copied().filter(|&i| p[i][2] <= zmin + 1.0 && wood(i)).collect();
+            let low = if low.is_empty() { idx.iter().copied().filter(|&i| p[i][2] <= zmin + 1.0).collect() } else { low };
+            let stem = [low.iter().map(|&i| p[i][0]).sum::<f64>() / low.len() as f64, low.iter().map(|&i| p[i][1]).sum::<f64>() / low.len() as f64];
+            let top = idx.iter().map(|&i| p[i]).fold([f64::NAN, f64::NAN, f64::NEG_INFINITY], |a, q| if q[2] > a[2] { q } else { a });
+            let xy: Vec<[f64; 2]> = idx.iter().map(|&i| [p[i][0], p[i][1]]).collect();
+            let crown = crate::trees::convex_hull(&xy);
+            let crown_area = if crown.len() >= 3 { crate::trees::polygon_area(&crown) } else { 0.0 };
+            SceneTree { id, stem, top, height: top[2] - crate::synthetic::terrain_height(top[0], top[1], terrain_slope), crown, crown_area }
+        })
+        .collect())
+}
+
+/// `n` trees `(x, y, dbh, height)` for [`crate::synthetic::forest`], at
+/// random in the `size` m square, no two stems closer than `min_spacing`,
+/// heights uniform in `heights` and `dbh = 0.1 + 0.015 * height`. Stems
+/// are drawn uniformly and rejected when too close to one already placed.
+pub fn stand(n: usize, size: f64, min_spacing: f64, heights: (f64, f64), seed: u64) -> Result<Vec<(f64, f64, f64, f64)>> {
+    if !(size.is_finite() && size > 0.0) || !(min_spacing.is_finite() && min_spacing >= 0.0) {
+        return Err(Error::invalid(format!("size must be positive and min_spacing zero or more, got {size} and {min_spacing}")));
+    }
+    if !(heights.0.is_finite() && heights.1.is_finite() && heights.0 > 1.0 && heights.1 >= heights.0) {
+        return Err(Error::invalid(format!("heights must be (low, high) with 1 < low <= high, got {heights:?}")));
+    }
+    let mut rng = Generator::new(seed);
+    let mut out: Vec<(f64, f64, f64, f64)> = Vec::with_capacity(n);
+    let mut tries = 0usize;
+    while out.len() < n {
+        tries += 1;
+        if tries > 1000 * n.max(1) {
+            return Err(Error::invalid(format!("could not place {n} trees {min_spacing} m apart in a {size} m square (placed {})", out.len())));
+        }
+        let (x, y) = (rng.uniform(0.0, size), rng.uniform(0.0, size));
+        if out.iter().any(|t| (t.0 - x).hypot(t.1 - y) < min_spacing) {
+            continue;
+        }
+        let h = rng.uniform(heights.0, heights.1);
+        out.push((x, y, 0.1 + 0.015 * h, h));
+    }
+    Ok(out)
+}
+
+/// Shape of the crowns of [`crown_forest`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CrownForm {
+    /// An ellipsoid of revolution: horizontal semi-axis the crown radius,
+    /// vertical semi-axis half the crown length, its top at the tree height.
+    Ellipsoid,
+    /// A cone with its apex at the tree height and its base, of the crown
+    /// radius, a crown length below.
+    Cone,
+}
+
+impl CrownForm {
+    pub fn parse(s: &str) -> Result<CrownForm> {
+        match s {
+            "ellipsoid" => Ok(CrownForm::Ellipsoid),
+            "cone" => Ok(CrownForm::Cone),
+            _ => Err(Error::invalid(format!("unknown crown shape {s:?}; expected 'ellipsoid' or 'cone'"))),
+        }
+    }
+
+    /// Is the point at horizontal distance `d` from the axis and `u` below
+    /// the top inside a crown of radius `r` and length `l`?
+    fn contains(self, d: f64, u: f64, r: f64, l: f64) -> bool {
+        if !(0.0..=l).contains(&u) {
+            return false;
+        }
+        match self {
+            CrownForm::Ellipsoid => {
+                let c = (u - l / 2.0) / (l / 2.0);
+                (d / r).powi(2) + c * c <= 1.0
+            }
+            CrownForm::Cone => d <= r * u / l,
+        }
+    }
+
+    /// Volume of a crown of radius `r` and length `l`.
+    fn volume(self, r: f64, l: f64) -> f64 {
+        match self {
+            CrownForm::Ellipsoid => 4.0 / 3.0 * PI * r * r * l / 2.0,
+            CrownForm::Cone => PI * r * r * l / 3.0,
+        }
+    }
+}
+
+/// A scene of trees with solid crowns, for airborne lidar: each tree
+/// `(x, y, dbh, height)` has a stem (points on a cylinder of diameter
+/// `dbh`, `classification` 5) from the terrain to its crown and a crown of
+/// `form` filled uniformly with `density` leaf points per m³
+/// (`classification` 4), of radius `crown_radius * height` and length
+/// `crown_length * height`, its top `height` above the terrain at the
+/// stem. The terrain is that of [`crate::synthetic::forest`] (slope 0.05),
+/// with `ground_points` points over the `size` m square grown by `margin`.
+/// `tree_id` is 0 for ground, then 1.. in list order. The crown of tree
+/// `i` is drawn from seed `seed + i + 1`. Unlike the trees of
+/// [`crate::synthetic::tree`], whose leaves cluster at the ends of a few
+/// limbs, these crowns have the closed, convex outline that airborne
+/// tree detection assumes, and a known projected area `π (crown_radius *
+/// height)²`.
+#[allow(clippy::too_many_arguments)]
+pub fn crown_forest(trees: &[(f64, f64, f64, f64)], form: CrownForm, crown_radius: f64, crown_length: f64, density: f64, size: f64, ground_points: usize, margin: f64, seed: u64) -> Result<PointCloud> {
+    if !(crown_radius.is_finite() && crown_radius > 0.0 && crown_length.is_finite() && crown_length > 0.0 && crown_length <= 1.0 && density.is_finite() && density > 0.0) {
+        return Err(Error::invalid(format!("crown_radius and density must be positive and crown_length in (0, 1], got {crown_radius}, {density} and {crown_length}")));
+    }
+    if trees.iter().any(|t| !(t.0.is_finite() && t.1.is_finite() && t.2.is_finite() && t.2 >= 0.0 && t.3.is_finite() && t.3 > 0.0)) {
+        return Err(Error::invalid("every tree needs finite x, y, a dbh of 0 or more and a positive height"));
+    }
+    let total: f64 = trees.iter().map(|t| form.volume(crown_radius * t.3, crown_length * t.3) * density).sum();
+    limits::check((total as u64 + ground_points as u64).saturating_mul(64), &format!("a scene of about {} points", total as u64), "a lower density or fewer trees")?;
+    let mut ground = crate::synthetic::forest(&[], size, ground_points, margin, seed);
+    let parts: Vec<(Vec<Point>, Vec<u8>)> = trees
+        .par_iter()
+        .enumerate()
+        .map(|(i, &(x, y, dbh, h))| {
+            let mut rng = Generator::new(seed + i as u64 + 1);
+            let z0 = crate::synthetic::terrain_height(x, y, 0.05);
+            let (r, l) = (crown_radius * h, crown_length * h);
+            let mut pts = Vec::new();
+            let mut cls = Vec::new();
+            // Stem up to the crown base.
+            let stem_len = h - l;
+            let ns = (200.0 * stem_len).round().max(0.0) as usize;
+            if dbh > 0.0 {
+                let t = rng.uniform_n(0.0, 1.0, ns);
+                let a = rng.uniform_n(0.0, 2.0 * PI, ns);
+                for k in 0..ns {
+                    pts.push([x + dbh / 2.0 * a[k].cos(), y + dbh / 2.0 * a[k].sin(), z0 + t[k] * stem_len]);
+                    cls.push(5u8);
+                }
+            }
+            // Crown: uniform in its bounding cylinder, kept inside the form.
+            let want = (form.volume(r, l) * density).round() as usize;
+            let mut got = 0;
+            while got < want {
+                let v = rng.uniform_n(0.0, 1.0, 3 * 1024);
+                for c in v.as_chunks::<3>().0 {
+                    if got == want {
+                        break;
+                    }
+                    let (d, a, u) = (r * c[0].sqrt(), 2.0 * PI * c[1], l * c[2]);
+                    if form.contains(d, u, r, l) {
+                        pts.push([x + d * a.cos(), y + d * a.sin(), z0 + h - u]);
+                        cls.push(4u8);
+                        got += 1;
+                    }
+                }
+            }
+            (pts, cls)
+        })
+        .collect();
+    let mut cls = match ground.attrs.remove("classification") {
+        Some(Attr::U8(c)) => c,
+        _ => vec![2; ground.len()],
+    };
+    let mut ids = vec![0i32; ground.len()];
+    for (i, (p, c)) in parts.into_iter().enumerate() {
+        ids.resize(ids.len() + p.len(), i as i32 + 1);
+        ground.xyz.extend(p);
+        cls.extend(c);
+    }
+    ground.attrs.insert("classification".into(), Attr::U8(cls));
+    ground.attrs.insert("tree_id".into(), Attr::I32(ids));
+    Ok(ground)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -841,5 +1046,47 @@ mod tests {
         }
         let Some(Attr::U8(nr)) = f.points.attrs.get("number_of_returns") else { panic!() };
         assert!(nr.iter().any(|&c| c > 1));
+    }
+
+    #[test]
+    fn scene_trees_know_their_tops_and_crowns() {
+        let trees = stand(6, 30.0, 6.0, (10.0, 20.0), 2).unwrap();
+        assert_eq!(trees.len(), 6);
+        for (i, a) in trees.iter().enumerate() {
+            for b in &trees[i + 1..] {
+                assert!((a.0 - b.0).hypot(a.1 - b.1) >= 6.0);
+            }
+        }
+        let scene = crate::synthetic::forest(&trees, 30.0, 1000, 4.0, 0);
+        let st = scene_trees(&scene, 0.05).unwrap();
+        assert_eq!(st.len(), 6);
+        for (t, s) in trees.iter().zip(&st) {
+            assert!((s.stem[0] - t.0).abs() < 0.05 && (s.stem[1] - t.1).abs() < 0.05, "{s:?}");
+            assert!(s.height > 0.8 * t.3 && s.height < 1.3 * t.3, "{} vs {}", s.height, t.3);
+            assert!(s.crown_area > 1.0);
+        }
+        assert!(stand(100, 10.0, 5.0, (10.0, 20.0), 0).is_err());
+    }
+
+    #[test]
+    fn crown_forest_has_solid_crowns_of_known_size() {
+        let trees = [(10.0, 10.0, 0.3, 20.0), (25.0, 12.0, 0.2, 12.0)];
+        for form in [CrownForm::Ellipsoid, CrownForm::Cone] {
+            let s = crown_forest(&trees, form, 0.25, 0.5, 40.0, 40.0, 500, 0.0, 1).unwrap();
+            let st = scene_trees(&s, 0.05).unwrap();
+            assert_eq!(st.len(), 2);
+            for (t, s) in trees.iter().zip(&st) {
+                let r = 0.25 * t.3;
+                assert!((s.stem[0] - t.0).abs() < 0.05 && (s.stem[1] - t.1).abs() < 0.05);
+                assert!(s.height > t.3 - 0.6 && s.height <= t.3 + 0.2, "{form:?} {}", s.height);
+                let a = PI * r * r;
+                assert!(s.crown_area < a && s.crown_area > 0.85 * a, "{form:?} {} vs {a}", s.crown_area);
+            }
+            let want = form.volume(5.0, 10.0) * 40.0;
+            let got = (0..s.len()).filter(|&i| s.attr("tree_id").unwrap().get_f64(i) == 1.0 && s.attr("classification").unwrap().get_f64(i) == 4.0).count();
+            assert!((got as f64 - want).abs() <= 1.0);
+        }
+        assert!(crown_forest(&trees, CrownForm::Cone, 0.0, 0.5, 40.0, 40.0, 10, 0.0, 1).is_err());
+        assert!(CrownForm::parse("sphere").is_err());
     }
 }
