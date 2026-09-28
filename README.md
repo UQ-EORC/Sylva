@@ -27,6 +27,7 @@ kept on the `r-package` branch.
 | `sylva.als_metrics` | area-based metrics (the lidR standard set, cover, gap fraction) as rasters or plot tables, or any user function |
 | `sylva.als_trees` | tree tops from local maxima, crowns by watershed, Dalponte 2016 or Li 2012, crown outlines and labelled tiles, each tree once across tiles |
 | `sylva.als_canopy` | ALS and UAV pulses from the flight trajectory (SBET or text, or estimated), gap-fraction and PAD profiles corrected for beam angle, ray-traced voxels |
+| `sylva.fusion` | TLS and ALS together: a plot registered on a survey (canopy and terrain search, robust ICP, residuals and uncertainty), TLS stems linked to ALS trees with the trees under each crown, merged clouds and plant area profiles weighted by sampling, plot values upscaled by regression with leave-one-out checks |
 | `sylva.waveform` | full waveforms: LAS 1.3/1.4 wave packets and PulseWaves read and written, Gaussian decomposition into echoes, waveforms to pulses |
 | `sylva.Shots` | pulse-centric data (origin, direction, CSR echoes) for ray-based metrics, with a compact Parquet file format that stores misses without far points and streams into the voxeliser; pulses that returned nothing rebuilt from the scan pattern or from the returns alone |
 | `sylva.synthetic` | synthetic trees, plots, scans, repeat surveys, airborne flights and waveforms with known answers, for examples and tests |
