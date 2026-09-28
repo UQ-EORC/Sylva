@@ -16,7 +16,9 @@
 
 pub mod als;
 pub mod als_metrics;
+pub mod als_canopy;
 pub mod als_ops;
+pub mod als_trajectory;
 pub mod buttress_detect;
 pub mod canopy;
 pub mod canopy_profile;

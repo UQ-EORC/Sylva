@@ -238,7 +238,8 @@ against a known truth:
   `roll`, `pitch`, `heading`, `line`) sampled at `trajectory_rate` while
   the laser is on.
 
-The geometry is exact, which is what ray-based methods need. Frames are map
+The geometry is exact, which is what ray-based methods need (see
+[Canopy structure from airborne lidar](als_canopy.md)). Frames are map
 x east, y north, z up and body x forward, y right, z down; a body vector `b`
 points along `M Rz(heading) Ry(pitch) Rx(roll) b` in the map (roll positive
 right wing down, pitch positive nose up, `M` from north-east-down to

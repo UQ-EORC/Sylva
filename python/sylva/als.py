@@ -60,6 +60,10 @@ __all__ = [
     "Tile", "Catalog", "Chunk", "catalog", "apply", "classify_ground", "dtm", "chm", "normalize",
     "filter", "retile", "decimate", "write_tiles", "grid_metrics", "pixel_metrics", "plot_metrics",
     "cloud_metrics", "metric_names", "PlotMetrics",
+    "filter", "retile", "decimate", "write_tiles",
+    # Ray-based canopy structure (sylva.als_canopy)
+    "Trajectory", "read_trajectory", "estimate_trajectory", "pulses", "ALSProfile", "gap_profile",
+    "ALSVoxels", "ray_voxelize", "week_seconds",
 ]
 
 _BUFFER_ATTR = "buffer"
@@ -1076,4 +1080,15 @@ from .als_metrics import (  # noqa: E402
     metric_names,
     pixel_metrics,
     plot_metrics,
+# Ray-based canopy structure lives in its own module; it uses this one's engine.
+from .als_canopy import (  # noqa: E402
+    ALSProfile,
+    ALSVoxels,
+    Trajectory,
+    estimate_trajectory,
+    gap_profile,
+    pulses,
+    ray_voxelize,
+    read_trajectory,
+    week_seconds,
 )

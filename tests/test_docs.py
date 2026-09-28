@@ -8,7 +8,8 @@ import numpy as np
 import pytest
 
 MODULES = ["pointcloud", "raster", "io", "shots", "riscan", "filters", "ground", "trees", "canopy",
-           "voxels", "registration", "coreg", "qsm", "leaves", "quality", "synthetic", "als"]
+           "voxels", "registration", "coreg", "qsm", "leaves", "quality", "synthetic", "als",
+           "als_canopy"]
 
 
 def _public(mod):

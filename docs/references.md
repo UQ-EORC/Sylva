@@ -47,6 +47,13 @@ Besl, P. J., & McKay, N. D. (1992). A method for registration of 3-D shapes.
 — iterative closest point, `registration.icp` (`method="point"`) and
 `sylva.coreg.icp`.
 
+Bouvier, M., Durrieu, S., Fournier, R. A., & Renaud, J.-P. (2015). Generalizing
+predictive models of forest inventory attributes using an area-based approach
+with airborne LiDAR data. *Remote Sensing of Environment*, *156*, 322–334.
+<https://doi.org/10.1016/j.rse.2014.10.004>
+Used by: the gap-fraction profile of lidR's `LAD()`, which
+[`als.gap_profile`](guide/als_canopy.md) reproduces with `weighting="all"`.
+
 Calders, K., Armston, J., Newnham, G., Herold, M., & Goodwin, N. (2014).
 Implications of sensor configuration and topography on vertical plant profiles
 derived from terrestrial LiDAR. *Agricultural and Forest Meteorology*, *194*,
@@ -104,6 +111,13 @@ cartography. *Communications of the ACM*, *24*(6), 381–395.
 — RANSAC circle fits in `trees.detect_stems`, `trees.fit_circle_ransac`,
 `trees.dbh_profile`, `trees.detect_buttress`, `quality.stem_noise` and the
 stem maps of `sylva.coreg`.
+
+Gatziolis, D., & McGaughey, R. J. (2019). Reconstructing aircraft trajectories
+from multi-return airborne laser-scanning data. *Remote Sensing*, *11*(19),
+2258. <https://doi.org/10.3390/rs11192258>
+Used by: the trajectory estimate of
+[`als.estimate_trajectory`](guide/als_canopy.md), from the lines of
+multiple-return pulses.
 
 Gibson, S. F. F. (1998). Constrained elastic surface nets: Generating smooth
 surfaces from binary segmented data. In *Medical Image Computing and
@@ -188,6 +202,11 @@ Lu, F., & Milios, E. (1997). Globally consistent range scan alignment for
 environment mapping. *Autonomous Robots*, *4*(4), 333–349.
 <https://doi.org/10.1023/A:1008854305733>
 — the pose graph of `sylva.coreg`.
+
+MacArthur, R. H., & Horn, H. S. (1969). Foliage profile by vertical
+measurements. *Ecology*, *50*(5), 802–804. <https://doi.org/10.2307/1933693>
+Used by: the layer-by-layer inversion of gap fraction into plant area
+density in [`als.gap_profile`](guide/als_canopy.md).
 
 Marquardt, D. W. (1963). An algorithm for least-squares estimation of
 nonlinear parameters. *Journal of the Society for Industrial and Applied

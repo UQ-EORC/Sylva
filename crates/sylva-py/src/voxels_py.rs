@@ -220,7 +220,7 @@ impl PyRayVoxels {
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-fn params(voxel_size: f64, bounds: Option<((f64, f64, f64), (f64, f64, f64))>, weighting: &str, occlusion: bool, flat_top: bool, neighbour_prior_min_rays: u32, beam: Option<(f64, f64)>, subvoxel_split: usize, subvoxel_min_beams: u8, average_leaf_area: f64, lad: &str, lad_params: Vec<f64>, attenuation: Vec<String>, inclination: bool, n_iad_bins: usize, knn_normal: usize, triangle_lmax: f64, unbounded_range: f64) -> PyResult<voxel::VoxelParams> {
+pub(crate) fn params(voxel_size: f64, bounds: Option<((f64, f64, f64), (f64, f64, f64))>, weighting: &str, occlusion: bool, flat_top: bool, neighbour_prior_min_rays: u32, beam: Option<(f64, f64)>, subvoxel_split: usize, subvoxel_min_beams: u8, average_leaf_area: f64, lad: &str, lad_params: Vec<f64>, attenuation: Vec<String>, inclination: bool, n_iad_bins: usize, knn_normal: usize, triangle_lmax: f64, unbounded_range: f64) -> PyResult<voxel::VoxelParams> {
     Ok(voxel::VoxelParams {
         voxel_size,
         bounds: bounds.map(|(lo, hi)| ([lo.0, lo.1, lo.2], [hi.0, hi.1, hi.2])),

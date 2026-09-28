@@ -112,7 +112,7 @@ pub(crate) fn layout(chunk_size: Option<f64>, origin: Option<(f64, f64)>) -> Lay
     }
 }
 
-fn run_options(chunk_size: Option<f64>, buffer: f64, workers: usize) -> RunOptions {
+pub(crate) fn run_options(chunk_size: Option<f64>, buffer: f64, workers: usize) -> RunOptions {
     RunOptions { layout: layout(chunk_size, None), buffer, workers }
 }
 
