@@ -1079,6 +1079,8 @@ from .als_metrics import (  # noqa: E402
     metric_names,
     pixel_metrics,
     plot_metrics,
+)
+
 # Ray-based canopy structure lives in its own module; it uses this one's engine.
 from .als_canopy import (  # noqa: E402
     ALSProfile,

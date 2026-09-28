@@ -646,6 +646,25 @@ def waveforms(shots: Shots, gps_time=None, pulse_width: float = 1.5, interval: f
     truth : sylva.waveform.Echoes
         The echoes they contain: time, peak amplitude and width after the
         convolution, position and range.
+
+    Raises
+    ------
+    ValueError
+        For non-positive widths, intervals or sample counts, negative noise,
+        or ``gps_time`` of the wrong length.
+    """
+    from .waveform import Echoes, Waveforms
+
+    t = None if gps_time is None else np.ascontiguousarray(gps_time, dtype=np.float64).ravel()
+    w, e = _core.synthetic_waveforms(shots._to_core(), t, float(pulse_width), float(interval),
+                                     int(n_samples), float(margin),
+                                     None if start_range is None else float(start_range),
+                                     float(background), float(noise), bool(digitise), int(bits),
+                                     float(amplitude), float(metres_per_ns), int(seed))
+    return (Waveforms._from_core(w),
+            Echoes(e["waveform"], e["time"], e["amplitude"], e["width"], e["xyz"], e["range"]))
+
+
 def stand(n_trees: int, size: float = 100.0, min_spacing: float = 4.0, heights=(10.0, 25.0),
           seed: int = 0) -> list[tuple[float, float, float, float]]:
     """Random trees for :func:`forest`: a stand of a given density.
@@ -674,19 +693,6 @@ def stand(n_trees: int, size: float = 100.0, min_spacing: float = 4.0, heights=(
     Raises
     ------
     ValueError
-        For non-positive widths, intervals or sample counts, negative noise,
-        or ``gps_time`` of the wrong length.
-    """
-    from .waveform import Echoes, Waveforms
-
-    t = None if gps_time is None else np.ascontiguousarray(gps_time, dtype=np.float64).ravel()
-    w, e = _core.synthetic_waveforms(shots._to_core(), t, float(pulse_width), float(interval),
-                                     int(n_samples), float(margin),
-                                     None if start_range is None else float(start_range),
-                                     float(background), float(noise), bool(digitise), int(bits),
-                                     float(amplitude), float(metres_per_ns), int(seed))
-    return (Waveforms._from_core(w),
-            Echoes(e["waveform"], e["time"], e["amplitude"], e["width"], e["xyz"], e["range"]))
         For bad settings, or if the trees cannot be placed that far apart.
     """
     lo, hi = (float(v) for v in heights)
