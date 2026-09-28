@@ -38,7 +38,7 @@ fn offsets(a: &PyReadonlyArray1<'_, i64>, len: usize, what: &str) -> PyResult<Ve
     Ok(v.iter().map(|&x| x as usize).collect())
 }
 
-fn features_from_flat(coords: PyReadonlyArray2<f64>, ring_start: PyReadonlyArray1<i64>, part_start: PyReadonlyArray1<i64>, feature_start: PyReadonlyArray1<i64>) -> PyResult<Vec<MultiPolygon>> {
+pub(crate) fn features_from_flat(coords: PyReadonlyArray2<f64>, ring_start: PyReadonlyArray1<i64>, part_start: PyReadonlyArray1<i64>, feature_start: PyReadonlyArray1<i64>) -> PyResult<Vec<MultiPolygon>> {
     if coords.shape()[1] != 2 {
         return Err(PyValueError::new_err("coords must have shape (M, 2)"));
     }

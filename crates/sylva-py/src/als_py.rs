@@ -30,7 +30,7 @@ fn get<'py, T: FromPyObjectOwned<'py>>(d: &Bound<'py, PyDict>, key: &str) -> PyR
     })
 }
 
-fn catalog_from_py(d: &Bound<'_, PyDict>) -> PyResult<Catalog> {
+pub(crate) fn catalog_from_py(d: &Bound<'_, PyDict>) -> PyResult<Catalog> {
     let paths: Vec<PathBuf> = get(d, "paths")?;
     let bounds: Vec<(f64, f64, f64, f64, f64, f64)> = get(d, "bounds")?;
     let n_points: Vec<u64> = get(d, "n_points")?;
@@ -85,7 +85,7 @@ fn catalog_to_py<'py>(py: Python<'py>, c: &Catalog) -> PyResult<Bound<'py, PyDic
     Ok(d)
 }
 
-fn chunk_to_py<'py>(py: Python<'py>, c: &Chunk) -> PyResult<Bound<'py, PyDict>> {
+pub(crate) fn chunk_to_py<'py>(py: Python<'py>, c: &Chunk) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new(py);
     d.set_item("index", c.index)?;
     d.set_item("core", (c.core[0], c.core[1], c.core[2], c.core[3]))?;
@@ -97,7 +97,7 @@ fn chunk_to_py<'py>(py: Python<'py>, c: &Chunk) -> PyResult<Bound<'py, PyDict>> 
     Ok(d)
 }
 
-fn chunk_from_py(d: &Bound<'_, PyDict>) -> PyResult<Chunk> {
+pub(crate) fn chunk_from_py(d: &Bound<'_, PyDict>) -> PyResult<Chunk> {
     let b4 = |k: &str| -> PyResult<[f64; 4]> {
         let v: (f64, f64, f64, f64) = get(d, k)?;
         Ok([v.0, v.1, v.2, v.3])
@@ -105,7 +105,7 @@ fn chunk_from_py(d: &Bound<'_, PyDict>) -> PyResult<Chunk> {
     Ok(Chunk { index: get(d, "index")?, core: b4("core")?, outer: b4("outer")?, own: get(d, "own")?, files: get(d, "files")?, est_points: get(d, "est_points")?, name: get(d, "name")? })
 }
 
-fn layout(chunk_size: Option<f64>, origin: Option<(f64, f64)>) -> Layout {
+pub(crate) fn layout(chunk_size: Option<f64>, origin: Option<(f64, f64)>) -> Layout {
     match chunk_size {
         Some(size) => Layout::Grid { size, origin },
         None => Layout::Tiles,
@@ -245,7 +245,7 @@ fn als_dtm<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolution: f64, m
     raster_to_py(py, &py.detach(|| als_ops::dtm(&c, resolution, &m, &opts)).map_err(err)?)
 }
 
-fn heights(mode: &str, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, dtm_resolution: f64) -> PyResult<Heights> {
+pub(crate) fn heights(mode: &str, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, dtm_resolution: f64) -> PyResult<Heights> {
     Ok(match (mode, dtm) {
         ("z", _) => Heights::Z,
         ("auto", _) => Heights::Auto { resolution: dtm_resolution },

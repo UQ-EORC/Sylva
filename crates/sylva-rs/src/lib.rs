@@ -15,6 +15,7 @@
 //! [`canopy`], [`voxel`], [`trees`], [`registration`] and [`qsm`].
 
 pub mod als;
+pub mod als_metrics;
 pub mod als_ops;
 pub mod buttress_detect;
 pub mod canopy;

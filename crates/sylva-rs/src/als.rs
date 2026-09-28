@@ -550,7 +550,9 @@ fn coord_name(v: f64) -> String {
     }
 }
 
-fn est_points(cat: &Catalog, outer: &[f64; 4], files: &[usize]) -> u64 {
+/// Points expected in `outer` from the header counts of `files`, each tile
+/// assumed evenly covered.
+pub fn est_points(cat: &Catalog, outer: &[f64; 4], files: &[usize]) -> u64 {
     files
         .iter()
         .map(|&i| {

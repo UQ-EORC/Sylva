@@ -119,6 +119,7 @@ Progress shows through [`sylva.progress`](../api/progress.md), with
 | `als.retile(cat, out, size, buffer=0)` | new square tiles | |
 | `als.decimate(cat, out, method="random", "voxel" or "highest")` | thinned tiles | `filters.random_subsample` |
 | `als.write_tiles(cloud, out, size)` | tiles from one cloud | `io.write` |
+| `als.grid_metrics(cat, resolution)`, `als.plot_metrics(cat, plots)` | area-based metrics as rasters or a plot table ([Area-based ALS metrics](als_metrics.md)) | `als.cloud_metrics` |
 
 Functions that write tiles write one per chunk into the output directory,
 in the point format, quantisation and CRS of the input tile, and return the
