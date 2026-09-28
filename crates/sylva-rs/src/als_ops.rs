@@ -229,7 +229,7 @@ impl Heights {
 
 /// Height above ground of every point of a chunk; None when it has too
 /// little ground for [`Heights::Auto`].
-fn chunk_heights(cat: &Catalog, chunk: &Chunk, cloud: &PointCloud, heights: &Heights) -> Result<Option<Vec<f64>>> {
+pub(crate) fn chunk_heights(cat: &Catalog, chunk: &Chunk, cloud: &PointCloud, heights: &Heights) -> Result<Option<Vec<f64>>> {
     Ok(match heights {
         Heights::Z => Some(cloud.xyz.iter().map(|p| p[2]).collect()),
         Heights::Dtm(r) => Some(ground::heights_above(&cloud.xyz, r)),

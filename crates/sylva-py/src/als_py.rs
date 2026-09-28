@@ -30,7 +30,7 @@ fn get<'py, T: FromPyObjectOwned<'py>>(d: &Bound<'py, PyDict>, key: &str) -> PyR
     })
 }
 
-fn catalog_from_py(d: &Bound<'_, PyDict>) -> PyResult<Catalog> {
+pub(crate) fn catalog_from_py(d: &Bound<'_, PyDict>) -> PyResult<Catalog> {
     let paths: Vec<PathBuf> = get(d, "paths")?;
     let bounds: Vec<(f64, f64, f64, f64, f64, f64)> = get(d, "bounds")?;
     let n_points: Vec<u64> = get(d, "n_points")?;
@@ -112,7 +112,7 @@ fn layout(chunk_size: Option<f64>, origin: Option<(f64, f64)>) -> Layout {
     }
 }
 
-fn run_options(chunk_size: Option<f64>, buffer: f64, workers: usize) -> RunOptions {
+pub(crate) fn run_options(chunk_size: Option<f64>, buffer: f64, workers: usize) -> RunOptions {
     RunOptions { layout: layout(chunk_size, None), buffer, workers }
 }
 
@@ -245,7 +245,7 @@ fn als_dtm<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolution: f64, m
     raster_to_py(py, &py.detach(|| als_ops::dtm(&c, resolution, &m, &opts)).map_err(err)?)
 }
 
-fn heights(mode: &str, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, dtm_resolution: f64) -> PyResult<Heights> {
+pub(crate) fn heights(mode: &str, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, dtm_resolution: f64) -> PyResult<Heights> {
     Ok(match (mode, dtm) {
         ("z", _) => Heights::Z,
         ("auto", _) => Heights::Auto { resolution: dtm_resolution },

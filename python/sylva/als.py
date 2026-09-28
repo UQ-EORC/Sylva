@@ -57,6 +57,9 @@ from .raster import Raster
 __all__ = [
     "Tile", "Catalog", "Chunk", "catalog", "apply", "classify_ground", "dtm", "chm", "normalize",
     "filter", "retile", "decimate", "write_tiles",
+    # Ray-based canopy structure (sylva.als_canopy)
+    "Trajectory", "read_trajectory", "estimate_trajectory", "pulses", "ALSProfile", "gap_profile",
+    "ALSVoxels", "ray_voxelize", "week_seconds",
 ]
 
 _BUFFER_ATTR = "buffer"
@@ -1064,3 +1067,16 @@ def write_tiles(cloud: PointCloud, out: str | Path, size: float, origin=None, fo
         return Catalog([], tolerance=tolerance)
     return Catalog._from_core(_core.als_catalog([p for p, _ in written]), float(tolerance))
 
+
+# Ray-based canopy structure lives in its own module; it uses this one's engine.
+from .als_canopy import (  # noqa: E402
+    ALSProfile,
+    ALSVoxels,
+    Trajectory,
+    estimate_trajectory,
+    gap_profile,
+    pulses,
+    ray_voxelize,
+    read_trajectory,
+    week_seconds,
+)
