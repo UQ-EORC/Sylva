@@ -1,7 +1,7 @@
 # Sylva
 
-Terrestrial laser scanning processing for forest ecology and remote
-sensing. A Rust core (the `sylva-rs` crate) holds every computation and file
+Terrestrial and airborne laser scanning processing for forest ecology and
+remote sensing. A Rust core (the `sylva-rs` crate) holds every computation and file
 format; Python gets a numpy-friendly API (`import sylva`) and a `sylva`
 command over it. An R package on the same core, with the same functions, is
 kept on the `r-package` branch.
@@ -22,8 +22,14 @@ kept on the `r-package` branch.
 | `sylva.qsm` | cylinder fitting, geodesic skeletonisation, cylinder QSMs with volumes and branch orders, a QSM for every tree of a plot anchored on its measured DBH, buttress meshes, `_trees.txt` export, tree metrics (branch table, taper, lean, sweep, crown, share of the model fitted to points) |
 | `sylva.leaves` | leaf / wood labels, leaf angle distribution, leaf area density from points or voxels, leaf meshes placed on a QSM |
 | `sylva.quality` | scan quality from stems: range noise with the stem shape removed, per-scan registration offsets, mixed-pixel tails |
+| `sylva.change` | change between two epochs of a plot: epoch alignment on stems and ground, tree matching with increments and their uncertainty, plot summaries (growth, mortality, recruitment), point change (C2C, M3C2, DEM of difference, voxel occupancy with occlusion), QSM change by height and branch, each labelled trusted or not |
+| `sylva.als` | airborne lidar over tiled areas: catalogues and buffered chunks, ground, DTM, CHM, normalisation, filtering, retiling and thinning over whole areas |
+| `sylva.als_metrics` | area-based metrics (the lidR standard set, cover, gap fraction) as rasters or plot tables, or any user function |
+| `sylva.als_trees` | tree tops from local maxima, crowns by watershed, Dalponte 2016 or Li 2012, crown outlines and labelled tiles, each tree once across tiles |
+| `sylva.als_canopy` | ALS and UAV pulses from the flight trajectory (SBET or text, or estimated), gap-fraction and PAD profiles corrected for beam angle, ray-traced voxels |
+| `sylva.waveform` | full waveforms: LAS 1.3/1.4 wave packets and PulseWaves read and written, Gaussian decomposition into echoes, waveforms to pulses |
 | `sylva.Shots` | pulse-centric data (origin, direction, CSR echoes) for ray-based metrics, with a compact Parquet file format that stores misses without far points and streams into the voxeliser; pulses that returned nothing rebuilt from the scan pattern or from the returns alone |
-| `sylva.synthetic` | synthetic trees, plots and scans with known answers, for examples and tests |
+| `sylva.synthetic` | synthetic trees, plots, scans, repeat surveys, airborne flights and waveforms with known answers, for examples and tests |
 
 ## Install
 
@@ -77,6 +83,20 @@ sylva coreg survey.PROJ -o survey_coreg/ --merged survey.laz
 sylva voxel plot.parquet plot.vox --voxel 0.25 --ground-class 2
 sylva reproject plot.laz plot_mga55.laz --to EPSG:7855
 sylva transform scan.laz scan_project.laz --matrix ScanPos001.DAT
+sylva als-ground tiles/ ground/ --method csf                  # airborne tiles
+sylva als-metrics ground/ metrics/ --resolution 20 --metrics zq95,zmean,cover
+sylva als-trees ground/ trees.csv --crowns crowns.geojson
+```
+
+```python
+from sylva import als, change
+
+cat = als.catalog("ground/")                                  # ALS tiles
+metrics = als.grid_metrics(cat, 20.0)                          # rasters, one per metric
+found = als.find_trees(cat, method="dalponte2016")             # tops and crowns
+
+m = change.match_trees(stems_2019, stems_2024)                 # two epochs of a plot
+inc = change.tree_increments(m, cloud_2019, cloud_2024, labels_2019, labels_2024)
 ```
 
 ## Documentation
@@ -86,7 +106,11 @@ The documentation lives in [`docs/`](https://github.com/UQ-EORC/Sylva/blob/main/
 - Guides: [plot workflow](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/quickstart.md), [pulse data and shots files](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/pulses.md),
   [ray-traced voxels](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/voxels.md), [QSMs](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/qsm.md),
   [coordinates](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/coordinates.md), [interpolation](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/interpolation.md),
-  [masking](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/masking.md), [command line](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/cli.md)
+  [masking](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/masking.md), [change detection](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/change.md),
+  [command line](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/cli.md)
+- Airborne lidar: [tiles](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/als.md), [area-based metrics](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/als_metrics.md),
+  [trees](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/als_trees.md), [canopy structure](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/als_canopy.md),
+  [full waveforms](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/waveform.md)
 - [Example notebooks](https://github.com/UQ-EORC/Sylva/blob/main/docs/examples/index.md), one per stage, on a tile of the TERN Litchfield plot and on synthetic data
 - [Design notes](https://github.com/UQ-EORC/Sylva/blob/main/docs/dev/rust-core.md): the Rust core, the Python layer over it, and how changes are checked
 - Benchmarks: [tree detection](https://github.com/UQ-EORC/Sylva/blob/main/docs/benchmarks/trees.md), [QSMs against felled trees](https://github.com/UQ-EORC/Sylva/blob/main/docs/benchmarks/qsm.md)

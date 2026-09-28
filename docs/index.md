@@ -1,7 +1,7 @@
 # Sylva
 
-Terrestrial laser scanning (TLS) processing for forest ecology and remote
-sensing. A Rust core (the `sylva-rs` crate) does the work; Python gets a
+Terrestrial (TLS) and airborne (ALS) laser scanning processing for forest
+ecology and remote sensing. A Rust core (the `sylva-rs` crate) does the work; Python gets a
 numpy-friendly API (`import sylva`) and a `sylva` command.
 
 ```bash
@@ -32,11 +32,18 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 | [`sylva.canopy`](api/canopy.md) | voxel grids, contact-frequency PAD profiles, zenith-ring gap fraction, hinge/Miller LAI, ray-traced density grids from pulse data |
 | [`sylva.voxels`](api/voxels.md) | AMAPVox-style ray-traced voxels (port of raycloudtools `rayvoxel`): echo-weighted free / potential path lengths, FPL / PPL / transmittance / Bailey attenuation, analytic or estimated leaf-angle `G`, PAD / LAD / WAD, occlusion, sub-voxel exploration, QSM wood volume, `.vox` export |
 | [`sylva.registration`](api/registration.md) | Kabsch, point-to-point / point-to-plane (trimmed) ICP, scan merging |
+| [`sylva.coreg`](api/coreg.md) | marker-free coregistration of scan positions from the trees and the ground, with reflectors where present, and a report of the stem agreement |
 | [`sylva.qsm`](api/qsm.md) | cylinder fitting, geodesic skeletonisation, cylinder QSMs with volumes and branch orders, a QSM for every tree of a plot, buttress meshes, `_trees.txt` export |
+| [`sylva.change`](api/change.md) | change between two epochs of a plot: alignment, tree matching and increments, plot summaries, point change (C2C, M3C2, DEM of difference, voxel occupancy), QSM change, each labelled trusted or not |
+| [`sylva.als`](api/als.md) | airborne lidar over tiled areas: catalogues and buffered chunks, ground, DTM, CHM, normalisation, filtering, retiling and thinning |
+| [`sylva.als_metrics`](api/als_metrics.md) | area-based metrics (the lidR standard set, cover, gap fraction) as rasters or plot tables |
+| [`sylva.als_trees`](api/als_trees.md) | tree tops, crowns (watershed, Dalponte 2016, Li 2012), crown outlines and labelled tiles |
+| [`sylva.als_canopy`](api/als_canopy.md) | pulses from the flight trajectory, gap-fraction and PAD profiles corrected for beam angle, ray-traced voxels |
+| [`sylva.waveform`](api/waveform.md) | LAS wave packets and PulseWaves, Gaussian decomposition into echoes, waveforms to pulses |
 | [`sylva.Shots`](api/shots.md) | pulse-centric data (origin, direction, CSR echoes) for ray-based metrics, with a compact Parquet file format that stores misses without far points and streams into the voxeliser |
 | [`sylva.leaves`](api/leaves.md) | graph-based leaf/wood separation, leaf angle distributions, leaf area density from points or voxels, leaf meshes placed on a QSM |
 | [`sylva.quality`](api/quality.md) | scan noise and per-scan registration offsets measured on tree stems |
-| [`sylva.synthetic`](api/synthetic.md) | small synthetic trees, plots and scans with known answers, for examples and tests |
+| [`sylva.synthetic`](api/synthetic.md) | small synthetic trees, plots, scans, repeat surveys, airborne flights and waveforms with known answers, for examples and tests |
 
 ## Where to start
 
@@ -56,6 +63,13 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
   and [masking](guide/masking.md): moving clouds between frames and
   coordinate systems, carrying values between clouds and grids, and selecting
   points by area, raster, expression or proximity.
+- [Change detection](guide/change.md): two epochs of a plot, from alignment
+  and matched trees to point, voxel and QSM change, with what can and cannot
+  be trusted.
+- Airborne lidar: [tiles](guide/als.md) (ground, DTM, CHM over large areas),
+  [area-based metrics](guide/als_metrics.md), [trees](guide/als_trees.md),
+  [canopy structure from the pulses](guide/als_canopy.md) and
+  [full waveforms](guide/waveform.md).
 - [Example notebooks](examples/index.md), one per stage, on a tile of the
   TERN Litchfield plot and on synthetic data.
 - [Benchmarks](benchmarks/trees.md) against reference plots, felled trees and
