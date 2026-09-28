@@ -367,12 +367,15 @@ def test_scenario_volume_totals(scenario):
     # Stem: trusted change against the known increment over the same bins.
     truth_stem = sum(_stem_change(z0, min(z1, HEIGHT)) for z0, z1 in zip(t["z0"][t["trusted"]], t["z1"][t["trusted"]]))
     assert c.orders["trusted_change"][0] == pytest.approx(truth_stem, rel=0.08)
-    # The hidden limb's volume is not trusted change: it is the untrusted part of order 1.
-    hidden = c.lost["status"] == "unobserved"
-    assert c.orders["untrusted_change"][1] == pytest.approx(-c.lost["volume"][hidden].sum(), abs=1e-12)
-    # Everything trusted against the known edits: stem increment, cut limb, extension.
+    # Order 1, trusted, against the cut limb and the extension; the hidden
+    # limb's volume is left out of it, as untrusted change.
     h, az, zen, length, rb = LIMBS["cut"]
     grown = _limb_volume("grown", LIMBS["grown"][3], LIMBS["grown"][3] + EXTENSION)
+    truth_branches = grown - _limb_volume("cut", _limb_start(h, zen, 0.0), length)
+    assert c.orders["trusted_change"][1] == pytest.approx(truth_branches, rel=0.2)
+    hidden = c.lost["status"] == "unobserved"
+    assert c.orders["untrusted_change"][1] < 0 and not c.lost["trusted"][hidden].any()
+    # Everything trusted against the known edits: stem increment, cut limb, extension.
     truth = truth_stem - _limb_volume("cut", _limb_start(h, zen, 0.0), length) + grown
     assert abs(c.trusted_change - truth) < 2 * c.trusted_sigma
     assert c.change == pytest.approx(c.trusted_change + c.untrusted_change, abs=1e-12)

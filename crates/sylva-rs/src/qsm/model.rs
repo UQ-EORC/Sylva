@@ -929,12 +929,16 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
     }
     let mut radius: Vec<f64> = vec![f64::NAN; n_seg];
     let mut weight: Vec<f64> = vec![0.0; n_seg];
-    let accept = |s: usize, est: f64, radius: &mut [f64], weight: &mut [f64]| {
+    // Segments whose own circle was set aside for a prior value: their
+    // cylinders report no points, so they do not count as measured.
+    let mut from_prior: Vec<bool> = vec![false; n_seg];
+    let accept = |s: usize, est: f64, radius: &mut [f64], weight: &mut [f64], from_prior: &mut [bool]| {
         if let Some((r, n, arc, frac)) = fits[s] {
             let strong = arc >= 300.0 && frac >= 0.7;
             if !strong && (r - est).abs() > p.allometry_tolerance * est {
                 radius[s] = est;
                 weight[s] = 1.0;
+                from_prior[s] = true;
             } else {
                 radius[s] = r;
                 weight[s] = n as f64 * if strong { 2.0 } else { 1.0 };
@@ -983,7 +987,7 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
         let Some(k_last) = chain.iter().rposition(|&q| fits[q].is_some()) else { continue };
         let measured = &chain[..=k_last];
         for &q in measured {
-            accept(q, prior[q], &mut radius, &mut weight);
+            accept(q, prior[q], &mut radius, &mut weight, &mut from_prior);
         }
         isotonic_fill(measured, &mut radius, &weight, p.apex_radius);
         for &q in measured {
@@ -1023,7 +1027,7 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
         };
         let est = est.clamp(p.apex_radius, r_a.max(p.apex_radius));
         prior[s] = est;
-        accept(s, est, &mut radius, &mut weight);
+        accept(s, est, &mut radius, &mut weight, &mut from_prior);
         if !radius[s].is_finite() {
             radius[s] = est;
             weight[s] = 0.5;
@@ -1053,6 +1057,13 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
             // never below the lowest strong fit nor above the swell cap.
             let pred = if prior[q].is_finite() { prior[q] } else { radius[q] };
             radius[q] = pred.clamp(radius[chain[k0]], cap);
+            // Replaced, as in the allometry check, only when the result is
+            // further from the node's own circle than `allometry_tolerance`.
+            if let Some((r, ..)) = fits[q] {
+                if (radius[q] - r).abs() > p.allometry_tolerance * r {
+                    from_prior[q] = true;
+                }
+            }
         }
     }
     for &s in &topo {
@@ -1204,7 +1215,7 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
             parent: parent_of.get(&s).map(|&q| q as i64).unwrap_or(-1),
             branch_order: order[s],
             branch_id: branch[s],
-            n_points: fits[s].map(|f| f.1).unwrap_or(0),
+            n_points: if from_prior[s] { 0 } else { fits[s].map(|f| f.1).unwrap_or(0) },
         });
     }
     // Nearest live ancestor as parent, then compact.

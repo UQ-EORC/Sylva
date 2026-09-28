@@ -169,7 +169,8 @@ def test_tree_metrics(single_tree):
     assert sum(m["length_by_order"]) == pytest.approx(m["total_length"])
     assert m["lean"] < 3 and m["sweep"] < 0.05  # a straight vertical stem
     assert m["crown_base_height"] == pytest.approx(4.0, abs=0.3)  # the branch leaves at 4 m
-    assert 0.9 < m["measured_volume_fraction"] <= 1.0
+    # Cylinders whose circle was replaced by the allometric prior do not count.
+    assert 0.8 < m["measured_volume_fraction"] <= 1.0
     assert 0 < m["path_fraction"] <= 1
     assert len(m["taper_heights"]) == len(m["taper_radii"]) > 10
     b = model.branches()
@@ -270,12 +271,14 @@ def test_a_thinned_cloud_is_fitted_at_its_own_spacing():
         assert any("too sparse" in str(c.message) for c in caught), [str(c.message) for c in caught]
     assert held.table()[0]["measured_length"] < 0.2
 
-    # Scaled to the cloud's own spacing (the default) it is measured again.
+    # Scaled to the cloud's own spacing (the default) it is measured again:
+    # most of the volume, and far more of the length than when held.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         scaled = qsm.build_plot(sparse, labels, wood=False, voxel_size=0.0, min_points=500)
         assert not [c for c in caught if "too sparse" in str(c.message)]
-    assert scaled.table()[0]["measured_length"] > 0.5
+    assert scaled.table()[0]["measured_volume"] > 0.5
+    assert scaled.table()[0]["measured_length"] > 10 * held.table()[0]["measured_length"]
     assert scaled.table()[0]["dbh_m"] == pytest.approx(0.30, abs=0.06)   # the stem is 0.15 m
 
 

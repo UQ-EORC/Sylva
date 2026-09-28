@@ -472,15 +472,13 @@ from every later scan. Over five noise draws:
 | Cut limb | lost | lost in every draw; volume +8 % (the QSM's own bias) |
 | Extended limb | +1.00 m | matched, +0.95 to +1.00 m |
 | Hidden limb | unobserved | unobserved in every draw; its volume untrusted |
-| Stem volume change over the trusted bins | 0.065 to 0.069 m³ | within 7 % |
-| Trusted volume change | 0.056 to 0.060 m³ | within 0.8 of the stated uncertainty (5 to 8 L) |
+| Stem volume change over the trusted bins | 0.061 to 0.065 m³ | within 6 % |
+| Trusted volume change | 0.051 to 0.056 m³ | within 0.93 of the stated uncertainty (4 to 6 L) |
 
-The main error in the trusted total is a limb whose weak fits the QSM
-replaced by its allometric prior in one epoch but not the other: its
-volume changed by 5 to 7 L although the limb did not change, and the
-cylinders still count as measured because the QSM keeps their point count
-when it replaces the radius. Treat trusted growth of thin branches that
-exceeds its `volume_sigma` by far with care.
+A cylinder whose own circle the QSM replaced by its allometric prior
+reports no points (`n_points` 0), so a limb fitted in one epoch and
+filled in by the prior in the other is untrusted rather than read as
+growth.
 
 Limitations: both models must be in one frame, and the matching is greedy
 rather than a global assignment, so a branch that forked differently in

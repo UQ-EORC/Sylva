@@ -336,11 +336,9 @@ def compare_qsms(qsm_a: QSM, qsm_b: QSM, grid_a=None, grid_b=None, *, height_ste
     matched 0.95 to 1.00 m longer, and a limb hidden by foliage in the later
     epoch was unobserved in every draw.
 
-    A cylinder is measured when its ``n_points`` is positive. The QSM keeps
-    that count when it replaces a weak fit by its allometric prior, so a
-    measured branch can still carry a prior radius; such a branch shows as
-    trusted radius change that did not happen. Check large trusted growth
-    of thin branches against ``volume_sigma``.
+    A cylinder is measured when its ``n_points`` is positive; the QSM sets
+    it to 0 where it replaced the cylinder's own circle by its allometric
+    prior, so a prior radius is never read as trusted change.
 
     Examples
     --------
