@@ -24,6 +24,7 @@ PAGES = {
     "change": "change.md",
 }
 PAGES["coords"] = "coords.md"
+PAGES["waveform"] = "waveform.md"
 
 
 def _summary(obj) -> str:
