@@ -201,10 +201,12 @@ grid = voxels.ray_voxelize(shots, 1.0)
 
 The flight fires 110,994 pulses at the plot, whose 124,804 returns become
 13.3 million samples written to a 33 MB LAS file. Decomposing it finds
-118,606 echoes (most of the rest are weak returns below the detection
-threshold), each a median 3.6 mm from the range of its simulated return;
-the shots, one per pulse with its origin from the trajectory, go straight
-into the voxel grid. The whole run takes about six seconds on a laptop.
+118,606 echoes, each a median 3.6 mm from the range of its simulated return.
+Nearly all of the returns not found lie beyond the end of the record: 120
+samples at 1 ns cover about 18 m of range from 3 m before the first return,
+so under tall crowns the ground return falls outside it (a larger
+`n_samples` keeps it). The shots, one per pulse with its origin from the
+trajectory, go straight into the voxel grid. The whole run takes about six seconds on a laptop.
 
 ## Validation
 

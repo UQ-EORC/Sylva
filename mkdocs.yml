@@ -62,6 +62,9 @@ nav:
       - 11. Coordinates: examples/11_coordinates.ipynb
       - 12. Interpolation: examples/12_interpolation.ipynb
       - 13. Masking: examples/13_masking.ipynb
+      - 14. Change detection: examples/14_change.ipynb
+      - 15. Airborne lidar: examples/15_als.ipynb
+      - 16. Full waveforms: examples/16_waveform.ipynb
   - Benchmarks:
       - Tree detection: benchmarks/trees.md
       - QSMs: benchmarks/qsm.md

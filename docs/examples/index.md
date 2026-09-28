@@ -1,6 +1,7 @@
 # Example notebooks
 
-One notebook per stage of a TLS workflow. Most of them run on a real scan: a
+One notebook per stage of a TLS workflow, and three more on change between
+epochs, airborne lidar and full waveforms. Most of them run on a real scan: a
 20 × 20 m tile of the TERN [Litchfield Savanna
 SuperSite](https://www.tern.org.au) plot in the Northern Territory, scanned in
 2021 with a RIEGL VZ-2000i from many positions and registered into one cloud.
@@ -42,6 +43,9 @@ statistical outlier filter removes 4 % of the cloud, two thirds of it below
 | 11 | [Coordinates](11_coordinates.ipynb) | tile | CRS in LAS headers, reprojection and its warnings, translate / rotate / recentre, `apply_transforms` on scans |
 | 12 | [Interpolation](12_interpolation.ipynb) | tile | labels from a thinned copy, TIN / natural-neighbour / IDW DTMs, rasters sampled onto points |
 | 13 | [Masking](13_masking.ipynb) | tile | polygons from GeoJSON, raster masks, attribute expressions, change between two clouds |
+| 14 | [Change detection](14_change.ipynb) | synthetic | two epochs with known changes: alignment on stems and ground, tree matching, DBH increments and their detection limits, plot summary, C2C and M3C2, CHM differences, voxel occupancy, QSM change |
+| 15 | [Airborne lidar](15_als.ipynb) | synthetic | a simulated flight written as tiles: catalogue, ground, DTM, CHM, area-based metrics, individual trees against the known stand, pulses from the trajectory, gap profiles and ray-traced PAI against a known layer |
+| 16 | [Full waveforms](16_waveform.ipynb) | synthetic | waveforms of known targets, LAS wave packets written and read, Gaussian decomposition against the truth, echoes as pulses for ray-traced voxels |
 
 The numbers the notebooks print describe this one tile and are not validation.
 Accuracy against reference plots, felled trees and independent instruments is
