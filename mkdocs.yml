@@ -38,6 +38,7 @@ nav:
       - Interpolation: guide/interpolation.md
       - Airborne lidar tiles: guide/als.md
       - Area-based ALS metrics: guide/als_metrics.md
+      - Full waveforms: guide/waveform.md
       - Change detection: guide/change.md
       - QSMs: guide/qsm.md
       - Leaves on a QSM: guide/leaves.md
@@ -74,6 +75,7 @@ nav:
       - interpolate: api/interpolate.md
       - als: api/als.md
       - als_metrics: api/als_metrics.md
+      - waveform: api/waveform.md
       - change: api/change.md
       - trees: api/trees.md
       - canopy: api/canopy.md

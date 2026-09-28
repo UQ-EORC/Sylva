@@ -20,7 +20,7 @@ from .pointcloud import PointCloud
 from .shots import Shots
 
 __all__ = ["terrain_height", "tree", "forest", "scan", "leaf_area", "als_flight", "ALSFlight",
-           "forest_epochs", "ForestEpochs", "DEFAULT_TREES", "LEAF_RADIUS"]
+           "forest_epochs", "ForestEpochs", "DEFAULT_TREES", "LEAF_RADIUS", "waveforms"]
 
 #: Radius (m) of the leaf discs of :func:`tree`; each disc is 12 points.
 LEAF_RADIUS = 0.08
@@ -586,3 +586,79 @@ def forest_epochs(n_trees: int = 16, size: float = 30.0, deaths: int = 2, recrui
         origins=list(d["origins"]),
         range_noise=noise,
     )
+
+
+def waveforms(shots: Shots, gps_time=None, pulse_width: float = 1.5, interval: float = 1.0,
+              n_samples: int = 120, margin: float = 3.0, start_range: float | None = None,
+              background: float = 10.0, noise: float = 1.0, digitise: bool = True, bits: int = 16,
+              amplitude: float = 100.0, metres_per_ns: float = 0.299792458 / 2.0, seed: int = 0):
+    """Full waveforms of pulses whose targets are known.
+
+    The received waveform is the system pulse, a Gaussian of standard
+    deviation ``pulse_width``, convolved with the targets along the beam
+    (Wagner et al. 2006): each echo of ``shots`` is a target at its range,
+    with the peak amplitude of the echo attribute ``amplitude`` (for a point
+    target) and the depth of the echo attribute ``extent`` (standard
+    deviation along the beam, m; 0 if absent). A target of depth ``e``
+    gives a Gaussian echo of width ``s = sqrt(pulse_width^2 +
+    (e / metres_per_ns)^2)`` and, its energy being kept, peak
+    ``amplitude * pulse_width / s``. The echoes are added to a constant
+    ``background`` with Gaussian ``noise`` and, with ``digitise``, rounded
+    and clipped to ``0 .. 2^bits - 1`` as a digitiser would.
+
+    Parameters
+    ----------
+    shots
+        Pulses and their targets; a shot without an echo gives a waveform
+        of background and noise only.
+    gps_time
+        Time of each shot; the shot index by default.
+    pulse_width
+        Standard deviation of the system pulse (ns). A 3.5 ns full width at
+        half maximum is 1.5 ns.
+    interval
+        Sampling interval (ns).
+    n_samples
+        Samples per waveform.
+    margin
+        Range (m) before a shot's first echo at which its record starts
+        (a shot without an echo starts at the origin).
+    start_range
+        Range (m) at which every record starts, instead of ``margin``.
+    background, noise
+        Background level and noise standard deviation (sample units).
+    digitise
+        Round and clip the samples.
+    bits
+        Digitiser resolution.
+    amplitude
+        Peak of echoes without an ``amplitude`` attribute.
+    metres_per_ns
+        Range per nanosecond of round-trip time (m/ns).
+    seed
+        Seed of the noise.
+
+    Returns
+    -------
+    waveforms : sylva.waveform.Waveforms
+        One returning waveform per shot, anchored at its origin.
+    truth : sylva.waveform.Echoes
+        The echoes they contain: time, peak amplitude and width after the
+        convolution, position and range.
+
+    Raises
+    ------
+    ValueError
+        For non-positive widths, intervals or sample counts, negative noise,
+        or ``gps_time`` of the wrong length.
+    """
+    from .waveform import Echoes, Waveforms
+
+    t = None if gps_time is None else np.ascontiguousarray(gps_time, dtype=np.float64).ravel()
+    w, e = _core.synthetic_waveforms(shots._to_core(), t, float(pulse_width), float(interval),
+                                     int(n_samples), float(margin),
+                                     None if start_range is None else float(start_range),
+                                     float(background), float(noise), bool(digitise), int(bits),
+                                     float(amplitude), float(metres_per_ns), int(seed))
+    return (Waveforms._from_core(w),
+            Echoes(e["waveform"], e["time"], e["amplitude"], e["width"], e["xyz"], e["range"]))

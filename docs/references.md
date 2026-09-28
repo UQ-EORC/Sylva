@@ -117,6 +117,12 @@ leaf orientation in vegetation canopies. *Agronomy Journal*, *76*(5), 800–802.
 — the beta fit of the leaf inclination distribution in `sylva.leaves`
 and the two-parameter beta distribution of `sylva.voxels`.
 
+Hofton, M. A., Minster, J. B., & Blair, J. B. (2000). Decomposition of laser
+altimeter waveforms. *IEEE Transactions on Geoscience and Remote Sensing*,
+*38*(4), 1989–1996. <https://doi.org/10.1109/36.851780>
+— the inflection-point initial estimates of `waveform.decompose`
+(`peaks="inflection"`).
+
 Hosoi, F., & Omasa, K. (2006). Voxel-based 3-D modeling of individual trees for
 estimating leaf area density using high-resolution portable scanning lidar.
 *IEEE Transactions on Geoscience and Remote Sensing*, *44*(12), 3610–3618.
@@ -186,8 +192,8 @@ environment mapping. *Autonomous Robots*, *4*(4), 333–349.
 Marquardt, D. W. (1963). An algorithm for least-squares estimation of
 nonlinear parameters. *Journal of the Society for Industrial and Applied
 Mathematics*, *11*(2), 431–441. <https://doi.org/10.1137/0111030>
-— with Levenberg (1944), the pose-graph solver and the circle and cylinder
-fits.
+— with Levenberg (1944), the pose-graph solver, the circle and cylinder
+fits and the Gaussian fits of `waveform.decompose`.
 
 Maurer, C. R., Jr., Qi, R., & Raghavan, V. (2003). A linear time algorithm for
 computing exact Euclidean distance transforms of binary images in arbitrary
@@ -304,6 +310,21 @@ airborne laser scanning. A cross-validation study using LAI2200 optical sensor.
 *Remote Sensing of Environment*, *198*, 254–266.
 <https://doi.org/10.1016/j.rse.2017.05.034>
 — AMAPVox, whose voxel traversal and outputs `sylva.voxels` mirrors.
+
+Wagner, W. (2010). Radiometric calibration of small-footprint full-waveform
+airborne laser scanner measurements: Basic physical concepts. *ISPRS Journal
+of Photogrammetry and Remote Sensing*, *65*(6), 505–513.
+<https://doi.org/10.1016/j.isprsjprs.2010.06.007>
+— the Lambertian reference targets of `waveform.calibration_constant`.
+
+Wagner, W., Ullrich, A., Ducic, V., Melzer, T., & Studnicka, N. (2006).
+Gaussian decomposition and calibration of a novel small-footprint
+full-waveform digitising airborne laser scanner. *ISPRS Journal of
+Photogrammetry and Remote Sensing*, *60*(2), 100–112.
+<https://doi.org/10.1016/j.isprsjprs.2005.12.001>
+— the Gaussian decomposition of [`sylva.waveform`](api/waveform.md), its
+backscatter cross-section, and the pulse-target convolution of
+`synthetic.waveforms`.
 
 Wang, X., Yang, Z., Cheng, X., Stoter, J., Xu, W., Wu, Z., & Nan, L. (2023).
 GlobalMatch: Registration of forest terrestrial point clouds by global
@@ -441,12 +462,19 @@ scans and hemispherical photography, which are not deposited per plot; see
 American Society for Photogrammetry and Remote Sensing. (2019). *LAS
 specification 1.4 – R15*. <https://github.com/ASPRSorg/LAS>
 — `.las` and `.laz` reading and writing, including typed extra bytes, in
-[`sylva.io`](api/io.md).
+[`sylva.io`](api/io.md), and the waveform data packets of
+[`sylva.waveform`](api/waveform.md).
 
 Isenburg, M. (2013). LASzip: Lossless compression of LiDAR data.
 *Photogrammetric Engineering & Remote Sensing*, *79*(2), 209–217.
 <https://doi.org/10.14358/PERS.79.2.209>
 — `.laz` compression, through the `las` and `laz` crates.
+
+Isenburg, M. (2012). *PulseWaves: An open, vendor-neutral, stand-alone,
+LAS-compatible full waveform LiDAR standard* (version 0.3) and its reference
+library. rapidlasso. <https://github.com/PulseWaves/PulseWaves>
+— the `.pls` / `.wvs` reader and writer of [`sylva.waveform`](api/waveform.md);
+its sample files are used in the tests.
 
 ## Software
 

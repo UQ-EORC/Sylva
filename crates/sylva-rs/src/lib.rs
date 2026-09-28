@@ -73,6 +73,7 @@ pub mod tree_prune;
 pub mod trees;
 pub mod voxel;
 pub mod voxel_grid;
+pub mod waveform;
 
 pub use error::{Error, Result};
 pub use pointcloud::{Attr, PointCloud};
