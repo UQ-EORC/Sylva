@@ -24,6 +24,7 @@ pub mod buttress_detect;
 pub mod canopy;
 pub mod canopy_profile;
 pub mod change;
+pub mod change_als;
 pub mod cluster;
 pub mod coords;
 pub mod coreg;

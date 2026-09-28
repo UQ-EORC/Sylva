@@ -26,8 +26,36 @@ and :func:`occupancy`. QSMs: :func:`compare_qsms` and
 
 :func:`sylva.synthetic.forest_epochs` makes two scanned epochs of a plot with
 known changes, against which all of this is validated.
+
+Airborne surveys (catalogues of tiles, :mod:`sylva.change.als`):
+:func:`align_surveys`, :func:`chm_change` and :func:`dtm_change`
+(:func:`surface_change`), :func:`harmonise`, :func:`canopy_gaps` and
+:func:`gap_change`, :func:`tree_change`, :func:`metric_change` and
+:func:`pai_change`.
 """
 
+from .als import (
+    GAP_CELLS,
+    SURFACE_CLASSES,
+    ALSAlignment,
+    ALSTreeChange,
+    GapChange,
+    Gaps,
+    MetricChange,
+    PAIChange,
+    SurfaceChange,
+    align_surveys,
+    canopy_gaps,
+    chm_change,
+    dtm_change,
+    gap_change,
+    harmonise,
+    metric_change,
+    pai_change,
+    profile_change,
+    surface_change,
+    tree_change,
+)
 from .epochs import EpochAlignment, Provenance, ProvenanceWarning, align_epochs, provenance
 from .points import DoD, PointDistances, distances, dod
 from .qsm import PlotQSMChange, QSMChange, compare_plot_qsms, compare_qsms
@@ -45,4 +73,9 @@ __all__ = [
     "OCCUPANCY_CLASSES", "Occupancy", "occupancy",
     # QSMs
     "QSMChange", "compare_qsms", "PlotQSMChange", "compare_plot_qsms",
+    # airborne surveys
+    "ALSAlignment", "align_surveys", "SurfaceChange", "surface_change", "chm_change",
+    "dtm_change", "harmonise", "SURFACE_CLASSES", "Gaps", "canopy_gaps", "GAP_CELLS",
+    "GapChange", "gap_change", "ALSTreeChange", "tree_change", "MetricChange",
+    "metric_change", "PAIChange", "pai_change", "profile_change",
 ]

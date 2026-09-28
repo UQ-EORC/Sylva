@@ -42,6 +42,7 @@ nav:
       - Airborne canopy structure: guide/als_canopy.md
       - Airborne trees: guide/als_trees.md
       - Change detection: guide/change.md
+      - Airborne change: guide/change_als.md
       - QSMs: guide/qsm.md
       - Leaves on a QSM: guide/leaves.md
       - Scan quality: guide/quality.md
@@ -84,6 +85,7 @@ nav:
       - als (canopy): api/als_canopy.md
       - als (trees): api/als_trees.md
       - change: api/change.md
+      - change (airborne): api/change_als.md
       - trees: api/trees.md
       - canopy: api/canopy.md
       - voxels: api/voxels.md

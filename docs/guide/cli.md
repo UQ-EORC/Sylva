@@ -290,3 +290,26 @@ given `--dtm` or `--normalized`. The detection and segmentation settings
 `--concavity`, `--min-point-height`) are those of the function; the
 buffer is 30 m by default, and it takes `--pattern`, `--chunk-size` and
 `--workers` as the other `als-*` commands do.
+
+### Airborne change: `als-change`, `als-tree-change`
+
+```bash
+sylva als-change 2019/ 2024/ change/ [--surface chm|dsm|dtm] [--resolution 1]
+                 [--align [--stable-classes 2,6] [--block-size 100] [--model field]]
+                 [--harmonise [--density-cell 10]] [--first-returns] [--confidence 0.95]
+                 [--gaps [--gap-height 2] [--gap-min-area 10]] [--years 5] [--format asc|tif]
+sylva als-tree-change 2019/ 2024/ trees.csv [--resolution 0.5] [--method dalponte2016]
+                 [--window 5 | --window-linear INTERCEPT SLOPE MIN MAX] [--hmin 2]
+                 [--align] [--harmonise] [--max-distance 1.5] [--grid DIR --grid-resolution 50]
+```
+
+Compare two surveys of one area (see [Change between airborne
+surveys](change_als.md)). `als-change` writes the two surfaces, their
+difference, its level of detection and the class of each cell as rasters,
+with `--align` the alignment's blocks (`alignment.csv`) and with `--gaps`
+the gaps of both surveys with their status (`gaps_a.geojson`,
+`gaps_b.geojson`). `als-tree-change` finds the trees of both surveys (on
+thinned copies with `--harmonise`), compares them and writes one CSV row
+per tree, with `--grid` also the per-cell totals as rasters. Both print
+their reports and take `--pattern`, `--chunk-size`, `--buffer` and
+`--workers`.

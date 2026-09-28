@@ -783,3 +783,9 @@ def forest_trees(forest: PointCloud, terrain_slope: float = 0.05) -> dict:
         If the scene has no ``tree_id``.
     """
     return dict(_core.synthetic_scene_trees(forest.xyz, forest.attrs, float(terrain_slope)))
+
+
+# Two airborne surveys with known changes, for sylva.change.als; composed from the above.
+from .synthetic_als import ALSEpochs, als_epochs  # noqa: E402
+
+__all__ += ["ALSEpochs", "als_epochs"]
