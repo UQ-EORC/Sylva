@@ -337,6 +337,30 @@ def _cmd_als_normalize(args):
     print(f"normalised {out.n_points:,} points in {len(out)} tiles -> {args.output}")
 
 
+def _cmd_als_trees(args):
+    cat = als.catalog(args.input, pattern=args.pattern)
+    dtm = None if args.normalized else (Raster.from_ascii_grid(args.dtm) if args.dtm else "auto")
+    if args.window_linear is not None:
+        window = als.LinearWindow(*args.window_linear)
+    else:
+        window = args.window
+    trees = als.find_trees(
+        cat, out=args.labelled, method=args.method, resolution=args.resolution, dtm=dtm,
+        dtm_resolution=args.dtm_resolution, window=window, hmin=args.hmin, shape=args.shape,
+        tops_from=args.tops_from, th_tree=args.th_tree, th_seed=args.th_seed, th_cr=args.th_cr,
+        max_cr=args.max_cr, dt1=args.dt1, dt2=args.dt2, R=args.R, Zu=args.Zu,
+        speed_up=args.speed_up, hull=args.hull, concavity=args.concavity, smooth=args.smooth,
+        min_point_height=args.min_point_height, **_als_run(args))
+    trees.to_csv(args.output)
+    msg = f"{len(trees):,} trees from {len(cat)} tiles -> {args.output}"
+    if args.crowns:
+        trees.to_geojson(args.crowns, geometry="tops" if args.method == "tops" else "crowns")
+        msg += f"; {'tops' if args.method == 'tops' else 'crowns'} -> {args.crowns}"
+    if args.labelled:
+        msg += f"; labelled tiles -> {args.labelled}"
+    print(msg)
+
+
 def _als_common(s, buffer: float = 20.0):
     s.add_argument("--pattern", default="*.la[sz]", help="file name pattern within the directory")
     s.add_argument("--chunk-size", type=float, default=None,
@@ -609,6 +633,52 @@ def main(argv=None):
                         "adding a height attribute")
     _als_common(s)
     s.set_defaults(func=_cmd_als_normalize)
+
+    s = sub.add_parser("als-trees", help="tree tops and crowns over a directory of ALS tiles",
+                       **fmt)
+    s.add_argument("input", help="directory of LAS/LAZ tiles (ground classified, or normalised)")
+    s.add_argument("output", help="CSV of the trees: id, x, y, height, crown_area, n_points")
+    s.add_argument("--crowns", help="also write the crown polygons (the tops with --method tops) "
+                                    "as GeoJSON")
+    s.add_argument("--labelled", help="also write the tiles here with each point's tree id")
+    s.add_argument("--method", choices=["dalponte2016", "watershed", "li2012", "tops"],
+                   default="dalponte2016", help="crown segmentation, or tree tops only")
+    s.add_argument("--resolution", type=float, default=0.5, help="CHM cell size (m)")
+    s.add_argument("--window", type=float, default=5.0,
+                   help="local maximum window diameter (m)")
+    s.add_argument("--window-linear", type=float, nargs=4,
+                   metavar=("INTERCEPT", "SLOPE", "MIN", "MAX"),
+                   help="window growing with height h: clip(INTERCEPT + SLOPE h, MIN, MAX)")
+    s.add_argument("--hmin", type=float, default=2.0, help="lowest tree top (m)")
+    s.add_argument("--shape", choices=["circular", "square"], default="circular",
+                   help="window shape")
+    s.add_argument("--tops-from", choices=["chm", "points"], default="chm",
+                   help="find tops on the CHM or on the points")
+    s.add_argument("--smooth", type=int, default=0,
+                   help="mean-filter the CHM over (2k+1)^2 cells first")
+    s.add_argument("--th-tree", type=float, default=2.0, help="lowest crown cell (m)")
+    s.add_argument("--th-seed", type=float, default=0.45, help="dalponte2016 seed threshold")
+    s.add_argument("--th-cr", type=float, default=0.55, help="dalponte2016 crown threshold")
+    s.add_argument("--max-cr", type=float, default=10.0,
+                   help="dalponte2016 crown extent from the top (cells)")
+    s.add_argument("--dt1", type=float, default=1.5, help="li2012 spacing below Zu (m)")
+    s.add_argument("--dt2", type=float, default=2.0, help="li2012 spacing above Zu (m)")
+    s.add_argument("--R", type=float, default=2.0, help="li2012 local maximum window (m)")
+    s.add_argument("--Zu", type=float, default=15.0, help="li2012 height switching dt1 to dt2 (m)")
+    s.add_argument("--speed-up", type=float, default=10.0, help="li2012 largest crown radius (m)")
+    s.add_argument("--hull", choices=["convex", "concave"], default="convex",
+                   help="crown outline")
+    s.add_argument("--concavity", type=float, default=2.0,
+                   help="edge length of the concave outline (m)")
+    s.add_argument("--min-point-height", type=float, default=0.5,
+                   help="points lower than this belong to no tree (m)")
+    s.add_argument("--dtm-resolution", type=float, default=1.0,
+                   help="cell size of the DTM made on the fly from the ground points (m)")
+    s.add_argument("--dtm", help="use this DTM (.asc) instead of making one")
+    s.add_argument("--normalized", action="store_true",
+                   help="the tiles are already normalised (z is height)")
+    _als_common(s, buffer=30.0)
+    s.set_defaults(func=_cmd_als_trees)
 
     args = p.parse_args(argv)
     try:

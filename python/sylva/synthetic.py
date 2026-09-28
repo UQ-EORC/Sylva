@@ -20,6 +20,7 @@ from .pointcloud import PointCloud
 from .shots import Shots
 
 __all__ = ["terrain_height", "tree", "forest", "scan", "leaf_area", "als_flight", "ALSFlight",
+           "stand", "crown_forest", "forest_trees",
            "forest_epochs", "ForestEpochs", "DEFAULT_TREES", "LEAF_RADIUS"]
 
 #: Radius (m) of the leaf discs of :func:`tree`; each disc is 12 points.
@@ -586,3 +587,123 @@ def forest_epochs(n_trees: int = 16, size: float = 30.0, deaths: int = 2, recrui
         origins=list(d["origins"]),
         range_noise=noise,
     )
+
+
+def stand(n_trees: int, size: float = 100.0, min_spacing: float = 4.0, heights=(10.0, 25.0),
+          seed: int = 0) -> list[tuple[float, float, float, float]]:
+    """Random trees for :func:`forest`: a stand of a given density.
+
+    Stems are drawn uniformly in the ``size`` m square and rejected when
+    closer than ``min_spacing`` to one already placed; heights are uniform
+    in ``heights`` and ``dbh = 0.1 + 0.015 * height``.
+
+    Parameters
+    ----------
+    n_trees
+        Trees to place.
+    size
+        Side of the square (m).
+    min_spacing
+        Smallest distance between stems (m).
+    heights
+        ``(low, high)`` tree heights (m), ``1 < low <= high``.
+    seed
+        Random seed (NumPy's ``default_rng`` stream).
+
+    Returns
+    -------
+    list of (x, y, dbh, height)
+
+    Raises
+    ------
+    ValueError
+        For bad settings, or if the trees cannot be placed that far apart.
+    """
+    lo, hi = (float(v) for v in heights)
+    return [tuple(t) for t in _core.synthetic_stand(int(n_trees), float(size), float(min_spacing),
+                                                     (lo, hi), int(seed))]
+
+
+def crown_forest(trees, size: float = 100.0, shape: str = "ellipsoid",
+                 crown_radius: float = 0.25, crown_length: float = 0.5, density: float = 40.0,
+                 ground_points: int = 40000, margin: float = 4.0, seed: int = 0) -> PointCloud:
+    """A scene of trees with solid crowns, for airborne lidar.
+
+    Each tree ``(x, y, dbh, height)`` (e.g. from :func:`stand`) has a stem
+    (points on a cylinder of diameter ``dbh``, ``classification`` 5) from
+    the terrain up to its crown, and a crown filled uniformly with
+    ``density`` leaf points per m³ (``classification`` 4): an ellipsoid of
+    revolution or a cone of radius ``crown_radius * height`` and length
+    ``crown_length * height``, its top ``height`` above the terrain at the
+    stem. The trees of :func:`forest` carry their leaves in clusters at the
+    ends of a few limbs, which suits terrestrial scanning; these have the
+    closed outline that airborne tree detection assumes, and a projected
+    crown area of ``pi * (crown_radius * height) ** 2``.
+
+    Parameters
+    ----------
+    trees
+        ``(x, y, dbh, height)`` per tree.
+    size, ground_points, margin
+        Terrain as in :func:`forest` (slope 0.05).
+    shape : {"ellipsoid", "cone"}
+        Crown shape.
+    crown_radius, crown_length
+        Crown radius and length as fractions of the tree height
+        (``crown_length`` at most 1).
+    density
+        Leaf points per m³ of crown. With the default ``target_radius`` of
+        :func:`als_flight` (3 cm), 40 stops about 10 % of a beam's energy
+        per metre of crown.
+    seed
+        Random seed; the crown of tree ``i`` uses ``seed + i + 1``.
+
+    Returns
+    -------
+    PointCloud
+        With ``classification`` (2 ground, 4 leaf, 5 wood) and ``tree_id``
+        (0 for ground, then 1.. in list order); :func:`forest_trees` gives
+        the truth.
+
+    Raises
+    ------
+    ValueError
+        For a non-positive radius or density, a crown length outside
+        (0, 1], or trees without finite positions and positive heights.
+    """
+    rows = [tuple(float(v) for v in t) for t in trees]
+    xyz, attrs = _core.synthetic_crown_forest(rows, str(shape), float(crown_radius),
+                                              float(crown_length), float(density), float(size),
+                                              int(ground_points), float(margin), int(seed))
+    return PointCloud(xyz, attrs)
+
+
+def forest_trees(forest: PointCloud, terrain_slope: float = 0.05) -> dict:
+    """The true trees of a scene from :func:`forest`, to check tree
+    detection and crown delineation against.
+
+    Parameters
+    ----------
+    forest
+        The scene, from :func:`forest` or :func:`crown_forest`, with its
+        ``tree_id`` (0 for ground).
+    terrain_slope
+        Slope of the terrain under it (0.05 for :func:`forest`, and the
+        ``terrain_slope`` of :func:`als_flight`).
+
+    Returns
+    -------
+    dict
+        Columns in order of ``tree_id``: ``tree_id``; ``stem_x``,
+        ``stem_y`` (mean of the wood points within 1 m of the tree's lowest
+        point); ``top_x``, ``top_y``, ``top_z`` (the highest point);
+        ``height`` (of the top above the terrain beneath it);
+        ``crown_area`` (m², convex hull of all the tree's points seen from
+        above) and ``crowns`` (those hulls, ``(k, 2)`` each).
+
+    Raises
+    ------
+    ValueError
+        If the scene has no ``tree_id``.
+    """
+    return dict(_core.synthetic_scene_trees(forest.xyz, forest.attrs, float(terrain_slope)))

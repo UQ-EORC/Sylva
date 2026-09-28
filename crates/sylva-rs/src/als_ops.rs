@@ -218,7 +218,7 @@ pub enum Heights {
 }
 
 impl Heights {
-    fn check(&self) -> Result<()> {
+    pub(crate) fn check(&self) -> Result<()> {
         match self {
             Heights::Auto { resolution } if !(resolution.is_finite() && *resolution > 0.0) => Err(Error::invalid(format!("dtm_resolution must be a positive number, got {resolution}"))),
             Heights::Dtm(r) if r.data.is_empty() => Err(Error::invalid("the DTM is empty")),
@@ -229,7 +229,7 @@ impl Heights {
 
 /// Height above ground of every point of a chunk; None when it has too
 /// little ground for [`Heights::Auto`].
-fn chunk_heights(cat: &Catalog, chunk: &Chunk, cloud: &PointCloud, heights: &Heights) -> Result<Option<Vec<f64>>> {
+pub(crate) fn chunk_heights(cat: &Catalog, chunk: &Chunk, cloud: &PointCloud, heights: &Heights) -> Result<Option<Vec<f64>>> {
     Ok(match heights {
         Heights::Z => Some(cloud.xyz.iter().map(|p| p[2]).collect()),
         Heights::Dtm(r) => Some(ground::heights_above(&cloud.xyz, r)),

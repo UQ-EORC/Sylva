@@ -16,6 +16,7 @@
 
 pub mod als;
 pub mod als_ops;
+pub mod als_trees;
 pub mod buttress_detect;
 pub mod canopy;
 pub mod canopy_profile;

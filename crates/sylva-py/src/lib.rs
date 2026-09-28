@@ -36,6 +36,7 @@ mod interpolate_py;
 mod masks_py;
 mod coords_py;
 mod als_py;
+mod als_trees_py;
 mod change_points_py;
 mod change_qsm_py;
 mod change_trees_py;
@@ -1520,6 +1521,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     masks_py::register(m)?;
     coords_py::register(m)?;
     als_py::register(m)?;
+    als_trees_py::register(m)?;
     change_points_py::register(m)?;
     change_qsm_py::register(m)?;
     change_trees_py::register(m)?;

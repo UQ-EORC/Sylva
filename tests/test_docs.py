@@ -9,6 +9,7 @@ import pytest
 
 MODULES = ["pointcloud", "raster", "io", "shots", "riscan", "filters", "ground", "trees", "canopy",
            "voxels", "registration", "coreg", "qsm", "leaves", "quality", "synthetic", "als"]
+MODULES += ["als_trees"]
 
 
 def _public(mod):
