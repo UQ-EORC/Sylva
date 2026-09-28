@@ -264,3 +264,7 @@ or with z replaced by it (`--replace-z`, the elevation kept as
 | `--chunk-size M` | one chunk per tile | process squares of this size instead |
 | `--buffer M` | 20 | band of neighbouring points read around each chunk |
 | `--workers N` | one per CPU | chunks at once; fewer if memory is short |
+
+`als-metrics` and `als-plot-metrics` compute area-based metrics as one
+raster per metric or a CSV table of plots; see [Area-based ALS
+metrics](als_metrics.md#command-line).

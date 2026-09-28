@@ -610,6 +610,9 @@ def main(argv=None):
     _als_common(s)
     s.set_defaults(func=_cmd_als_normalize)
 
+    from . import als_metrics
+    als_metrics._add_commands(sub, fmt, _als_common, _write_raster)
+
     args = p.parse_args(argv)
     try:
         if args.no_progress:

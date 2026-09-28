@@ -25,8 +25,10 @@ lidR's ``LAScatalog`` (Roussel et al. 2020):
 :func:`apply` runs any function this way; :func:`classify_ground`,
 :func:`dtm`, :func:`chm`, :func:`normalize`, :func:`filter`,
 :func:`retile` and :func:`decimate` are built on the same engine, in the
-Rust core. :func:`sylva.synthetic.als_flight` simulates an airborne survey
-to try them on.
+Rust core, as are the area-based metrics of :mod:`sylva.als_metrics`
+(:func:`grid_metrics`, :func:`plot_metrics`), available here too.
+:func:`sylva.synthetic.als_flight` simulates an airborne survey to try
+them on.
 
 Examples
 --------
@@ -56,7 +58,8 @@ from .raster import Raster
 
 __all__ = [
     "Tile", "Catalog", "Chunk", "catalog", "apply", "classify_ground", "dtm", "chm", "normalize",
-    "filter", "retile", "decimate", "write_tiles",
+    "filter", "retile", "decimate", "write_tiles", "grid_metrics", "pixel_metrics", "plot_metrics",
+    "cloud_metrics", "metric_names", "PlotMetrics",
 ]
 
 _BUFFER_ATTR = "buffer"
@@ -1064,3 +1067,13 @@ def write_tiles(cloud: PointCloud, out: str | Path, size: float, origin=None, fo
         return Catalog([], tolerance=tolerance)
     return Catalog._from_core(_core.als_catalog([p for p, _ in written]), float(tolerance))
 
+
+# The area-based metrics live in their own module and build on this one.
+from .als_metrics import (  # noqa: E402
+    PlotMetrics,
+    cloud_metrics,
+    grid_metrics,
+    metric_names,
+    pixel_metrics,
+    plot_metrics,
+)
