@@ -43,6 +43,7 @@ nav:
       - Airborne trees: guide/als_trees.md
       - Change detection: guide/change.md
       - TLS and ALS together: guide/fusion.md
+      - Airborne change: guide/change_als.md
       - QSMs: guide/qsm.md
       - Leaves on a QSM: guide/leaves.md
       - Scan quality: guide/quality.md
@@ -86,6 +87,7 @@ nav:
       - als (trees): api/als_trees.md
       - change: api/change.md
       - fusion: api/fusion.md
+      - change (airborne): api/change_als.md
       - trees: api/trees.md
       - canopy: api/canopy.md
       - voxels: api/voxels.md

@@ -636,6 +636,8 @@ def main(argv=None):
 
     from . import als_metrics
     als_metrics._add_commands(sub, fmt, _als_common, _write_raster)
+    from .change import als as change_als
+    change_als._add_commands(sub, fmt, _als_common, _write_raster)
 
     from . import fusion
     fusion._add_commands(sub, fmt)

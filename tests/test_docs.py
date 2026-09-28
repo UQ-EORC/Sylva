@@ -12,6 +12,7 @@ MODULES = ["pointcloud", "raster", "io", "shots", "riscan", "filters", "ground",
            "als_canopy"]
 MODULES += ["als_trees"]
 MODULES += ["fusion"]
+MODULES += ["change.als", "synthetic_als"]
 
 
 def _public(mod):
