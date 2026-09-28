@@ -60,7 +60,6 @@ __all__ = [
     "Tile", "Catalog", "Chunk", "catalog", "apply", "classify_ground", "dtm", "chm", "normalize",
     "filter", "retile", "decimate", "write_tiles", "grid_metrics", "pixel_metrics", "plot_metrics",
     "cloud_metrics", "metric_names", "PlotMetrics",
-    "filter", "retile", "decimate", "write_tiles",
     # Ray-based canopy structure (sylva.als_canopy)
     "Trajectory", "read_trajectory", "estimate_trajectory", "pulses", "ALSProfile", "gap_profile",
     "ALSVoxels", "ray_voxelize", "week_seconds",

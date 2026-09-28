@@ -268,6 +268,7 @@ or with z replaced by it (`--replace-z`, the elevation kept as
 `als-metrics` and `als-plot-metrics` compute area-based metrics as one
 raster per metric or a CSV table of plots; see [Area-based ALS
 metrics](als_metrics.md#command-line).
+
 ### Airborne trees: `als-trees`
 
 ```bash

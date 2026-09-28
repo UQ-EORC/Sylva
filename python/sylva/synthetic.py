@@ -20,9 +20,8 @@ from .pointcloud import PointCloud
 from .shots import Shots
 
 __all__ = ["terrain_height", "tree", "forest", "scan", "leaf_area", "als_flight", "ALSFlight",
-           "forest_epochs", "ForestEpochs", "DEFAULT_TREES", "LEAF_RADIUS", "waveforms"]
            "stand", "crown_forest", "forest_trees",
-           "forest_epochs", "ForestEpochs", "DEFAULT_TREES", "LEAF_RADIUS"]
+           "forest_epochs", "ForestEpochs", "DEFAULT_TREES", "LEAF_RADIUS", "waveforms"]
 
 #: Radius (m) of the leaf discs of :func:`tree`; each disc is 12 points.
 LEAF_RADIUS = 0.08
