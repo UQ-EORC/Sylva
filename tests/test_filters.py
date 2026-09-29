@@ -50,6 +50,21 @@ def test_outlier_removal():
     assert not mask[-2:].any()
 
 
+def test_sor_is_cloudcompare_sor():
+    # CloudCompare's sorFilter: mean distance to the k nearest neighbours (the
+    # point itself excluded), population mean and std, keep d <= mean + n * std.
+    from scipy.spatial import cKDTree
+
+    rng = np.random.default_rng(3)
+    xyz = np.vstack([rng.normal(0, 0.2, (3000, 3)), rng.uniform(-3, 3, (60, 3))])
+    for k, n_sigma in ((6, 1.0), (10, 0.5), (4, 2.5)):
+        d, _ = cKDTree(xyz).query(xyz, k + 1)
+        mean_d = d[:, 1:].mean(axis=1)
+        expected = mean_d <= mean_d.mean() + n_sigma * mean_d.std()
+        got = filters.statistical_outlier_removal(PointCloud(xyz), k=k, std_ratio=n_sigma, return_mask=True)
+        assert np.array_equal(got, expected), (k, n_sigma)
+
+
 def test_normals_and_planarity(rng):
     xy = rng.uniform(0, 5, (3000, 2))
     plane = PointCloud(np.column_stack([xy, 0.3 * xy[:, 0] + rng.normal(0, 0.001, 3000)]))

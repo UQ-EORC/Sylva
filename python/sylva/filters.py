@@ -184,6 +184,11 @@ def statistical_outlier_removal(cloud: PointCloud, k: int = 8, std_ratio: float 
     the threshold is global, run it per scan or on a thinned cloud when
     density varies strongly with range.
 
+    This is the SOR filter of CloudCompare (``CloudSamplingTools::sorFilter``):
+    the same mean distance (the point itself excluded), population mean and
+    standard deviation, and keep condition. ``k=6, std_ratio=1.0`` gives
+    CloudCompare's defaults.
+
     Parameters
     ----------
     cloud
