@@ -203,7 +203,8 @@ def detect_stems(cloud: PointCloud, height_attr: str = "height", **params) -> li
 def prune_trees(trees: list[Tree], labels: np.ndarray, min_height: float = 3.0,
                 merge_radius: float = 0.2, max_dbh: float | None = None,
                 min_quality_short: float = 0.0,
-                short_slices: int = 4) -> tuple[list[Tree], np.ndarray]:
+                short_slices: int = 4, min_slenderness: float = 0.0,
+                slender_min_dbh: float = 0.2) -> tuple[list[Tree], np.ndarray]:
     """Drop short candidates and merge duplicates after segmentation.
 
     Trees lower than ``min_height`` (from :func:`tree_heights`; NaN, i.e. no
@@ -212,7 +213,12 @@ def prune_trees(trees: list[Tree], labels: np.ndarray, min_height: float = 3.0,
     other's points. ``min_quality_short`` additionally drops candidates
     supported by fewer than ``short_slices`` layers whose ``quality`` is
     below it (0.15 helps in conifer stands with many low branches, at a
-    small recall cost in dense rainforest).
+    small recall cost in dense rainforest). ``min_slenderness`` drops stems
+    wider than ``slender_min_dbh`` whose height is less than that many times
+    their DBH: a shrub or an understorey clump fitted as a stem gives a DBH
+    of a metre on a tree a few metres tall. In a tall eucalypt forest with a
+    dense understorey 10 removed 55 such stems (38 m² ha⁻¹ of basal area)
+    and no tree taller than 15 m, whose height / DBH was at least 13.5.
 
     Parameters
     ----------
@@ -233,6 +239,11 @@ def prune_trees(trees: list[Tree], labels: np.ndarray, min_height: float = 3.0,
         Minimum ``quality`` for short-chain candidates.
     short_slices
         Candidates with fewer layers than this count as short.
+    min_slenderness
+        Minimum height / DBH of stems wider than ``slender_min_dbh``; 0
+        (the default) keeps every stem.
+    slender_min_dbh
+        Stems no wider than this (m) are not tested for slenderness.
 
     Returns
     -------
@@ -245,7 +256,7 @@ def prune_trees(trees: list[Tree], labels: np.ndarray, min_height: float = 3.0,
     kept, out_labels = _core.prune_trees([t._to_core() for t in trees], np.ascontiguousarray(labels, dtype=np.int64),
                                          float(min_height), float(merge_radius),
                                          None if max_dbh is None else float(max_dbh), float(min_quality_short),
-                                         int(short_slices))
+                                         int(short_slices), float(min_slenderness), float(slender_min_dbh))
     out = []
     for i, d in kept:
         t = Tree._from_core(d)

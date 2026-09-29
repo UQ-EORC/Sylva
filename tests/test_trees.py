@@ -60,6 +60,12 @@ def test_prune_and_crowns(normalized, tree_specs):
     lab2 = np.concatenate([labels, [99, 98]])
     kept, _ = trees.prune_trees(cands + [weak, strong], lab2, min_quality_short=0.15)
     assert {(t.x, t.y) for t in kept} >= {(16.0, 16.0)} and (15.0, 15.0) not in {(t.x, t.y) for t in kept}
+    # A shrub fitted as a wide, short stem goes with min_slenderness, not by default.
+    shrub = trees.Tree(97, 17.0, 17.0, 1.2, height=3.5, n_points=5, n_slices=3, quality=0.3)
+    lab3 = np.concatenate([labels, [97]])
+    assert (17.0, 17.0) in {(t.x, t.y) for t in trees.prune_trees(cands + [shrub], lab3)[0]}
+    slim, _ = trees.prune_trees(cands + [shrub], lab3, min_slenderness=10)
+    assert (17.0, 17.0) not in {(t.x, t.y) for t in slim} and len(slim) == len(pruned)
     assert [t.tree_id for t in pruned] == list(range(1, len(pruned) + 1))
     assert set(np.unique(new_labels)) <= set(range(-1, len(pruned) + 1))
     assert sum(t.n_points for t in pruned) == int((new_labels >= 0).sum())

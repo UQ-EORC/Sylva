@@ -15,10 +15,11 @@ use crate::{err, tree_to_py, trees_from_py, xyz_from_py};
 
 /// Survivors as `(index of the input tree, tree dict)` and the new labels.
 #[pyfunction]
-#[pyo3(signature = (trees_list, labels, min_height=3.0, merge_radius=0.2, max_dbh=None, min_quality_short=0.0, short_slices=4))]
-fn prune_trees<'py>(py: Python<'py>, trees_list: &Bound<'_, PyList>, labels: PyReadonlyArray1<i64>, min_height: f64, merge_radius: f64, max_dbh: Option<f64>, min_quality_short: f64, short_slices: i64) -> PyResult<(Bound<'py, PyList>, Bound<'py, PyArray1<i64>>)> {
+#[pyo3(signature = (trees_list, labels, min_height=3.0, merge_radius=0.2, max_dbh=None, min_quality_short=0.0, short_slices=4, min_slenderness=0.0, slender_min_dbh=0.2))]
+#[allow(clippy::too_many_arguments)]
+fn prune_trees<'py>(py: Python<'py>, trees_list: &Bound<'_, PyList>, labels: PyReadonlyArray1<i64>, min_height: f64, merge_radius: f64, max_dbh: Option<f64>, min_quality_short: f64, short_slices: i64, min_slenderness: f64, slender_min_dbh: f64) -> PyResult<(Bound<'py, PyList>, Bound<'py, PyArray1<i64>>)> {
     let t = trees_from_py(trees_list)?;
-    let p = tp::PruneParams { min_height, merge_radius, max_dbh, min_quality_short, short_slices };
+    let p = tp::PruneParams { min_height, merge_radius, max_dbh, min_quality_short, short_slices, min_slenderness, slender_min_dbh };
     let (kept, lab) = tp::prune_trees(&t, &labels.as_array().to_vec(), &p).map_err(err)?;
     let list = PyList::empty(py);
     for (i, tr) in &kept {

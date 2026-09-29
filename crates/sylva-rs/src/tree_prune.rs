@@ -23,11 +23,15 @@ pub struct PruneParams {
     /// Minimum quality of candidates with fewer than `short_slices` layers.
     pub min_quality_short: f64,
     pub short_slices: i64,
+    /// Stems wider than `slender_min_dbh` with height / DBH below this are
+    /// dropped (shrubs and stumps fitted as stems); 0 disables.
+    pub min_slenderness: f64,
+    pub slender_min_dbh: f64,
 }
 
 impl Default for PruneParams {
     fn default() -> Self {
-        PruneParams { min_height: 3.0, merge_radius: 0.2, max_dbh: None, min_quality_short: 0.0, short_slices: 4 }
+        PruneParams { min_height: 3.0, merge_radius: 0.2, max_dbh: None, min_quality_short: 0.0, short_slices: 4, min_slenderness: 0.0, slender_min_dbh: 0.2 }
     }
 }
 
@@ -70,7 +74,8 @@ pub type Pruned = (Vec<(usize, Tree)>, Vec<i64>);
 ///
 /// Trees lower than `min_height` (NaN counts as low), wider than `max_dbh`,
 /// or supported by fewer than `short_slices` layers with a quality below
-/// `min_quality_short` are removed. The rest are taken by decreasing point
+/// `min_quality_short`, or wider than `slender_min_dbh` with a height / DBH
+/// ratio below `min_slenderness`, are removed. The rest are taken by decreasing point
 /// count; one within `merge_radius` of an earlier survivor is absorbed by
 /// it. Survivors are ordered by decreasing DBH (stable; a NaN DBH goes
 /// last) and renumbered 1..n, and the labels follow: points of absorbed
@@ -86,7 +91,8 @@ pub fn prune_trees(trees: &[Tree], labels: &[i64], p: &PruneParams) -> Result<Pr
     let mut keep: Vec<usize> = (0..trees.len())
         .filter(|&i| {
             let t = &trees[i];
-            t.height >= p.min_height && p.max_dbh.is_none_or(|m| t.dbh <= m) && (t.n_slices as i64 >= p.short_slices || t.quality >= p.min_quality_short)
+            let slender = p.min_slenderness <= 0.0 || !(t.dbh > p.slender_min_dbh) || t.height / t.dbh >= p.min_slenderness;
+            t.height >= p.min_height && p.max_dbh.is_none_or(|m| t.dbh <= m) && (t.n_slices as i64 >= p.short_slices || t.quality >= p.min_quality_short) && slender
         })
         .collect();
     keep.sort_by(|&a, &b| trees[b].n_points.cmp(&trees[a].n_points));
@@ -169,6 +175,21 @@ mod tests {
         let ids: Vec<(usize, i64, usize)> = out.iter().map(|(i, t)| (*i, t.tree_id, t.n_points)).collect();
         assert_eq!(ids, vec![(2, 1, 2), (0, 2, 4)]);
         assert_eq!(lab, vec![2, 2, 2, 2, 1, 1, -1, -1]);
+    }
+
+    #[test]
+    fn prune_drops_squat_stems_only_when_asked() {
+        // A shrub fitted as a 1.2 m stem 3 m tall, a real tree (0.8 m, 40 m),
+        // a thin sapling below the DBH gate (0.1 m, 1.5 m) and a NaN DBH.
+        let trees = vec![tree(1, 0.0, 1.2, 3.0, 1), tree(2, 5.0, 0.8, 40.0, 1), tree(3, 10.0, 0.1, 1.5 + 2.0, 1), tree(4, 15.0, f64::NAN, 5.0, 1)];
+        let labels = vec![1, 2, 3, 4];
+        let (all, _) = prune_trees(&trees, &labels, &PruneParams { min_height: 0.0, ..PruneParams::default() }).unwrap();
+        assert_eq!(all.len(), 4);
+        let p = PruneParams { min_height: 0.0, min_slenderness: 10.0, ..PruneParams::default() };
+        let (out, lab) = prune_trees(&trees, &labels, &p).unwrap();
+        let kept: Vec<usize> = out.iter().map(|(i, _)| *i).collect();
+        assert_eq!(kept, vec![1, 2, 3]);
+        assert_eq!(lab[0], -1);
     }
 
     #[test]
