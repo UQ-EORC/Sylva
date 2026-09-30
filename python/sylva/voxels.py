@@ -163,6 +163,8 @@ class RayVoxelGrid:
     def __init__(self, core) -> None:
         self._core = core
         self._cache: dict[str, np.ndarray] = {}
+        #: What a blocked trace did (``ray_voxelize(block_size=...)``), else None.
+        self.block_stats: dict | None = None
 
     @property
     def origin(self) -> np.ndarray:
@@ -419,7 +421,11 @@ def ray_voxelize(
     subvoxel_min_beams: int = 10,
     average_leaf_area: float = 0.005,
     unbounded_range: float = np.inf,
-) -> RayVoxelGrid:
+    block_size: int | Sequence[int] | None = None,
+    out: str | Path | None = None,
+    max_memory: float | None = None,
+    workers: int | None = None,
+):
     """Trace ``shots`` through a voxel grid (see the module docstring).
 
     ``shots`` may be the path of a shots file (:meth:`sylva.Shots.save`). It
@@ -438,7 +444,8 @@ def ray_voxelize(
         from either.
     voxel_size
         Voxel edge (m). 0.1-0.5 m is usual; memory is about 0.25 kB per
-        voxel while tracing, so a 50 x 50 x 40 m plot at 0.1 m needs ~25 GB.
+        voxel while tracing, so a 50 x 50 x 40 m plot at 0.1 m needs ~25 GB
+        unless it is traced in blocks (``block_size``, ``out``).
     bounds
         ``(min_xyz, max_xyz)``; by default the extent of the echoes. The max
         corner is snapped up to a whole number of voxels.
@@ -486,16 +493,39 @@ def ray_voxelize(
         of finite size (Pimont et al. 2018, 2019); 0 disables.
     unbounded_range
         How far pulses without an echo are traced (default: to the grid edge).
+    block_size
+        Trace the grid block by block, a few blocks at a time: voxels per
+        block edge, or ``(bx, by, bz)``. Every voxel receives exactly the sums
+        of a whole-grid trace (see the guide, "Block tracing"); memory while
+        tracing is ``max_memory`` rather than 0.25 kB per voxel of the grid.
+        64 when only ``out`` is given.
+    out
+        Directory to write the blocks to as they finish; the grid is then
+        returned as a :class:`~sylva.voxel_blocks.BlockedVoxelGrid` on disk.
+        Without it the blocks are assembled into one grid in memory (0.13 kB
+        per voxel). Neighbour priors, ``inclination`` and ``bailey`` need the
+        assembled grid.
+    max_memory
+        GB the tracing accumulators of one pass may take (default: half of
+        :func:`sylva.limits.budget`). Fewer GB means more passes over
+        the pulses.
+    workers
+        Threads for a blocked trace (default: all). Blocked results do not
+        depend on it.
 
     Returns
     -------
-    RayVoxelGrid
+    RayVoxelGrid or BlockedVoxelGrid
+        A :class:`~sylva.voxel_blocks.BlockedVoxelGrid` when ``out`` is given.
+        After a blocked trace, ``block_stats`` holds the blocks, passes and
+        the most voxels held at once (``peak_voxels``).
 
     Raises
     ------
     ValueError
         For inconsistent options (``laser`` and ``beam``; arrays with a shots
-        file; arrays of the wrong length; unknown methods).
+        file; arrays of the wrong length; unknown methods; a block that does
+        not fit in ``max_memory``).
     KeyError
         If a named echo attribute is missing.
     """
@@ -504,10 +534,30 @@ def ray_voxelize(
         if beam is not None:
             raise ValueError("give laser or beam, not both")
         beam = laser_spec(laser)
+    blocked = block_size is not None or out is not None
+    if not blocked and (max_memory is not None or workers is not None):
+        raise ValueError("max_memory and workers apply to a blocked trace; give block_size or out")
+    kw = dict(
+        voxel_size=float(voxel_size),
+        bounds=None if bounds is None else (tuple(map(float, bounds[0])), tuple(map(float, bounds[1]))),
+        dtm=None if dtm is None else (dtm.data, dtm.xmin, dtm.ymin, dtm.resolution),
+        class_attr=class_attr, ground_class=ground_class, ground_distance=float(ground_distance),
+        leaf_classes=[int(c) for c in leaf_classes], wood_classes=[int(c) for c in wood_classes],
+        tree_attr=tree_attr or "", intensity_attr=intensity_attr, weighting=weighting,
+        occlusion=occlusion, flat_top=flat_top, neighbour_prior_min_rays=int(neighbour_prior_min_rays),
+        beam=None if beam is None else (float(beam[0]), float(beam[1])),
+        subvoxel_split=int(subvoxel_split), subvoxel_min_beams=int(subvoxel_min_beams),
+        average_leaf_area=float(average_leaf_area), lad=lad, lad_params=[float(p) for p in lad_params],
+        attenuation=methods, inclination=inclination, n_iad_bins=int(n_iad_bins),
+        knn_normal=int(knn_normal), triangle_lmax=float(triangle_lmax), unbounded_range=float(unbounded_range),
+    )
     if isinstance(shots, (str, Path)):
         if ground is not None or foliage is not None:
             raise ValueError("ground / foliage arrays need in-memory shots; "
                              "label a shots file through its echo attributes")
+        if blocked:
+            from .voxel_blocks import _trace
+            return _trace(shots, True, block_size, max_memory, workers, out, kw)
         corners = None
         if bounds is not None:
             corners = (tuple(map(float, bounds[0])), tuple(map(float, bounds[1])))
@@ -540,6 +590,10 @@ def ray_voxelize(
             raise ValueError(f"{name} has {len(a)} values for {n} echoes")
 
     # Echo labels not given as arrays come from the attributes, as for a file.
+    if blocked:
+        from .voxel_blocks import _trace
+        return _trace(shots._to_core(), False, block_size, max_memory, workers, out,
+                      dict(kw, ground=ground, foliage=foliage))
     core = _core.ray_voxelize(
         shots._to_core(), float(voxel_size),
         None if bounds is None else (tuple(map(float, bounds[0])), tuple(map(float, bounds[1]))),
@@ -585,7 +639,8 @@ def tree_sampling(grid: RayVoxelGrid, cloud, labels, min_beams: float = 10.0,
     ----------
     grid
         Grid from :func:`ray_voxelize` with ``occlusion=True``, covering the
-        trees.
+        trees; a :class:`~sylva.voxel_blocks.BlockedVoxelGrid` is read a slab
+        of blocks at a time (it needs 5 bytes per voxel).
     cloud
         A :class:`~sylva.PointCloud` or ``(N, 3)`` array in the grid's frame.
     labels

@@ -18,9 +18,13 @@
 //! `G` from an analytic leaf angle distribution or from per-tree inclination
 //! angle distributions estimated on the echoes (Vicari et al. 2019).
 //!
-//! What is not ported: the out-of-core shard path, the NetCDF writer and the
-//! per-voxel LAS class histogram (only plant / leaf / wood hit counts are kept).
+//! What is not ported: the out-of-core shard path (grids too large for memory
+//! are traced block by block instead, see [`voxelize_blocks`]), the NetCDF
+//! writer and the per-voxel LAS class histogram (only plant / leaf / wood hit
+//! counts are kept).
 
+mod blocked;
+mod blocks;
 mod iad;
 pub(crate) mod metrics;
 pub mod quality;
@@ -36,6 +40,8 @@ use crate::qsm::Cylinder;
 use crate::transform::{add, scale};
 use crate::{Point, Raster, Shots};
 
+pub use blocked::BlockedGrid;
+pub use blocks::{voxelize_blocks, BlockOptions, BlockStats, Pulses};
 pub use iad::TreeIad;
 pub use metrics::{classify_de_wit, compute_g, compute_g_from_histogram, laser_spec, solve_bailey_pad, Lad};
 pub use write::WriteOptions;
@@ -446,14 +452,8 @@ impl Voxelizer {
         if params.attenuation.is_empty() {
             return Err(Error::invalid("at least one attenuation method is needed"));
         }
-        let (lo, hi) = bounds;
-        let mut shape = [0usize; 3];
-        for k in 0..3 {
-            if !(hi[k] > lo[k]) {
-                return Err(Error::invalid("grid bounds are empty"));
-            }
-            shape[k] = ((hi[k] - lo[k]) / params.voxel_size).ceil().max(1.0) as usize;
-        }
+        let lo = bounds.0;
+        let shape = grid_shape(params, bounds)?;
         // A grid is nx*ny*nz cells whatever the cloud holds: a plot asked for
         // at a centimetre is tens of billions of them.
         let cells = shape.iter().map(|&n| n as u128).product::<u128>();
@@ -465,15 +465,7 @@ impl Voxelizer {
             &format!("a {} x {} x {} voxel grid at {} m", shape[0], shape[1], shape[2], params.voxel_size),
             "a larger voxel, a smaller area, or splitting the plot into tiles",
         )?;
-        let ground_height = dtm.map(|dtm| {
-            let mut g = Vec::with_capacity(shape[0] * shape[1]);
-            for j in 0..shape[1] {
-                for i in 0..shape[0] {
-                    g.push(dtm.sample(lo[0] + (i as f64 + 0.5) * params.voxel_size, lo[1] + (j as f64 + 0.5) * params.voxel_size));
-                }
-            }
-            g
-        });
+        let ground_height = dtm.map(|dtm| column_ground(dtm, lo, params.voxel_size, shape));
         let wants_iad = params.inclination || params.attenuation.contains(&Attenuation::Bailey);
         Ok(Voxelizer {
             engine: traverse::Engine::new(params, traverse::Geom::new(lo, params.voxel_size, shape)),
@@ -533,12 +525,36 @@ impl Voxelizer {
     }
 }
 
+/// Voxels per axis of a grid over `bounds` (the max corner snapped up).
+pub(crate) fn grid_shape(params: &VoxelParams, bounds: (Point, Point)) -> Result<[usize; 3]> {
+    let (lo, hi) = bounds;
+    let mut shape = [0usize; 3];
+    for k in 0..3 {
+        if !(hi[k] > lo[k]) {
+            return Err(Error::invalid("grid bounds are empty"));
+        }
+        shape[k] = ((hi[k] - lo[k]) / params.voxel_size).ceil().max(1.0) as usize;
+    }
+    Ok(shape)
+}
+
+/// Terrain height under the centre of every column, `i + nx j`.
+pub(crate) fn column_ground(dtm: &Raster, lo: Point, size: f64, shape: [usize; 3]) -> Vec<f64> {
+    let mut g = Vec::with_capacity(shape[0] * shape[1]);
+    for j in 0..shape[1] {
+        for i in 0..shape[0] {
+            g.push(dtm.sample(lo[0] + (i as f64 + 0.5) * size, lo[1] + (j as f64 + 0.5) * size));
+        }
+    }
+    g
+}
+
 /// Bounds fitted to the echoes, grown by 0.1 mm: an echo exactly on the max
 /// face would otherwise fall in the cell beyond the last one and be dropped,
 /// and echoes decoded from a file's f32 angles and ranges can sit a hair
 /// outside the box recorded from the f64 originals. The same margin in memory
 /// and from a file keeps the two grids identical.
-fn pad_bounds(b: (Point, Point)) -> (Point, Point) {
+pub(crate) fn pad_bounds(b: (Point, Point)) -> (Point, Point) {
     let (mut lo, mut hi) = b;
     for k in 0..3 {
         let eps = 1e-4f64.max(hi[k].abs() * 1e-9);
@@ -652,6 +668,17 @@ pub fn voxelize_file(file: &crate::io::shots::ShotsFile, params: &VoxelParams, l
             v.add_peaks(&file.read_group(g)?);
         }
     }
+    for_each_file_batch(file, |shots| {
+        let notes = labels.annotate(&shots, dtm)?;
+        v.add(&notes.inputs(&shots, dtm))
+    })?;
+    v.finish()
+}
+
+/// Hand the pulses of a shots file to `f` in batches of a few row groups,
+/// decoding ahead while a batch is traced. The order is fixed: the same
+/// batches in the same order on every call.
+pub(crate) fn for_each_file_batch(file: &crate::io::shots::ShotsFile, mut f: impl FnMut(Shots) -> Result<()>) -> Result<()> {
     // Pulses fired together cross the same voxels, and threads adding to the
     // same voxels stall each other. So row groups are visited in strides that
     // put distant parts of the file next to each other, and traced a few at a time.
@@ -681,15 +708,12 @@ pub fn voxelize_file(file: &crate::io::shots::ShotsFile, params: &VoxelParams, l
                 crate::io::shots::append(&mut batch, part?)?;
                 due += 1;
                 if due % BATCH == 0 || due == n {
-                    let shots = std::mem::take(&mut batch);
-                    let notes = labels.annotate(&shots, dtm)?;
-                    v.add(&notes.inputs(&shots, dtm))?;
+                    f(std::mem::take(&mut batch))?;
                 }
             }
         }
         Ok::<(), Error>(())
-    })?;
-    v.finish()
+    })
 }
 
 fn gcd(a: usize, b: usize) -> usize {

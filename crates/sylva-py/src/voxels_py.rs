@@ -66,19 +66,8 @@ impl PyRayVoxels {
 
     /// A raw accumulator as an array, in its stored type.
     fn field<'py>(&self, py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
-        let shp = self.grid_shape();
         let f = self.inner.field(name).map_err(err)?;
-        let dims: Vec<usize> = match name {
-            "ground_height" => vec![shp[1], shp[2]],
-            "subvoxel_counts" => vec![shp[0], shp[1], shp[2], self.inner.params.subvoxel_split.pow(3)],
-            _ => shp.to_vec(),
-        };
-        Ok(match f {
-            FieldData::I32(v) => PyArray1::from_vec(py, v).reshape(dims)?.into_any(),
-            FieldData::F32(v) => PyArray1::from_vec(py, v).reshape(dims)?.into_any(),
-            FieldData::F64(v) => PyArray1::from_vec(py, v).reshape(dims)?.into_any(),
-            FieldData::U8(v) => PyArray1::from_vec(py, v).reshape(dims)?.into_any(),
-        })
+        field_array(py, f, name, self.inner.shape, self.inner.params.subvoxel_split)
     }
 
     /// A derived per-voxel quantity (`pad_fpl`, `attenuation_ppl`, `transmittance`, ...).
@@ -145,21 +134,7 @@ impl PyRayVoxels {
     /// Layer shares of the canopy space observed, occluded and unobserved.
     #[pyo3(signature = (min_height=0.0, max_height=None))]
     fn occlusion_profile<'py>(&self, py: Python<'py>, min_height: f64, max_height: Option<f64>) -> PyResult<Bound<'py, PyDict>> {
-        let p = self.inner.occlusion_profile(min_height, max_height).map_err(err)?;
-        let d = PyDict::new(py);
-        d.set_item("height", p.height.into_pyarray(py))?;
-        d.set_item("n_voxels", p.n_voxels.into_pyarray(py))?;
-        d.set_item("observed", p.observed.into_pyarray(py))?;
-        d.set_item("occluded", p.occluded.into_pyarray(py))?;
-        d.set_item("unobserved", p.unobserved.into_pyarray(py))?;
-        d.set_item("mean_beams", p.mean_beams.into_pyarray(py))?;
-        let t = PyDict::new(py);
-        t.set_item("observed", p.total_observed)?;
-        t.set_item("occluded", p.total_occluded)?;
-        t.set_item("unobserved", p.total_unobserved)?;
-        t.set_item("top", p.top)?;
-        d.set_item("total", t)?;
-        Ok(d)
+        occlusion_dict(py, self.inner.occlusion_profile(min_height, max_height).map_err(err)?)
     }
 
     /// `(ny, nx)` share of each column's canopy space observed.
@@ -197,26 +172,66 @@ impl PyRayVoxels {
         let l = labels.as_array().to_vec();
         let v = &self.inner;
         let r = py.detach(|| v.tree_sampling(&p, &l, min_beams, above)).map_err(err)?;
-        let d = PyDict::new(py);
-        macro_rules! col {
-            ($name:literal, $f:expr) => {
-                d.set_item($name, r.iter().map($f).collect::<Vec<_>>().into_pyarray(py))?;
-            };
-        }
-        col!("tree_id", |x| x.tree_id);
-        col!("n_voxels", |x| x.n_voxels as i64);
-        col!("volume", |x| x.volume);
-        col!("observed_fraction", |x| x.observed_fraction);
-        col!("occluded_fraction", |x| x.occluded_fraction);
-        col!("unobserved_fraction", |x| x.unobserved_fraction);
-        col!("median_beams", |x| x.median_beams);
-        col!("p10_beams", |x| x.p10_beams);
-        col!("well_sampled_fraction", |x| x.well_sampled_fraction);
-        col!("above_observed_fraction", |x| x.above_observed_fraction);
-        let q: Vec<f64> = r.iter().flat_map(|x| x.beams_by_quarter).collect();
-        d.set_item("beams_by_quarter", PyArray1::from_vec(py, q).reshape([r.len(), 4])?)?;
-        Ok(d)
+        sampling_dict(py, r)
     }
+}
+
+/// An occlusion profile as the dictionary the Python package returns.
+pub(crate) fn occlusion_dict(py: Python<'_>, p: voxel_grid::OcclusionProfile) -> PyResult<Bound<'_, PyDict>> {
+    let d = PyDict::new(py);
+    d.set_item("height", p.height.into_pyarray(py))?;
+    d.set_item("n_voxels", p.n_voxels.into_pyarray(py))?;
+    d.set_item("observed", p.observed.into_pyarray(py))?;
+    d.set_item("occluded", p.occluded.into_pyarray(py))?;
+    d.set_item("unobserved", p.unobserved.into_pyarray(py))?;
+    d.set_item("mean_beams", p.mean_beams.into_pyarray(py))?;
+    let t = PyDict::new(py);
+    t.set_item("observed", p.total_observed)?;
+    t.set_item("occluded", p.total_occluded)?;
+    t.set_item("unobserved", p.total_unobserved)?;
+    t.set_item("top", p.top)?;
+    d.set_item("total", t)?;
+    Ok(d)
+}
+
+/// Per-tree sampling rows as a dictionary of columns.
+pub(crate) fn sampling_dict(py: Python<'_>, r: Vec<voxel::quality::TreeSampling>) -> PyResult<Bound<'_, PyDict>> {
+    let d = PyDict::new(py);
+    macro_rules! col {
+        ($name:literal, $f:expr) => {
+            d.set_item($name, r.iter().map($f).collect::<Vec<_>>().into_pyarray(py))?;
+        };
+    }
+    col!("tree_id", |x| x.tree_id);
+    col!("n_voxels", |x| x.n_voxels as i64);
+    col!("volume", |x| x.volume);
+    col!("observed_fraction", |x| x.observed_fraction);
+    col!("occluded_fraction", |x| x.occluded_fraction);
+    col!("unobserved_fraction", |x| x.unobserved_fraction);
+    col!("median_beams", |x| x.median_beams);
+    col!("p10_beams", |x| x.p10_beams);
+    col!("well_sampled_fraction", |x| x.well_sampled_fraction);
+    col!("above_observed_fraction", |x| x.above_observed_fraction);
+    let q: Vec<f64> = r.iter().flat_map(|x| x.beams_by_quarter).collect();
+    d.set_item("beams_by_quarter", PyArray1::from_vec(py, q).reshape([r.len(), 4])?)?;
+    Ok(d)
+}
+
+/// A raw field as an array shaped `(nz, ny, nx)` (`ground_height` `(ny, nx)`,
+/// `subvoxel_counts` `(nz, ny, nx, split³)`).
+pub(crate) fn field_array<'py>(py: Python<'py>, f: FieldData, name: &str, shape: [usize; 3], split: usize) -> PyResult<Bound<'py, PyAny>> {
+    let shp = [shape[2], shape[1], shape[0]];
+    let dims: Vec<usize> = match name {
+        "ground_height" => vec![shp[1], shp[2]],
+        "subvoxel_counts" => vec![shp[0], shp[1], shp[2], split.pow(3)],
+        _ => shp.to_vec(),
+    };
+    Ok(match f {
+        FieldData::I32(v) => PyArray1::from_vec(py, v).reshape(dims)?.into_any(),
+        FieldData::F32(v) => PyArray1::from_vec(py, v).reshape(dims)?.into_any(),
+        FieldData::F64(v) => PyArray1::from_vec(py, v).reshape(dims)?.into_any(),
+        FieldData::U8(v) => PyArray1::from_vec(py, v).reshape(dims)?.into_any(),
+    })
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]

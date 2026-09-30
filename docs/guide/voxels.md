@@ -63,9 +63,10 @@ before any top-up and leave the outer voxel layer alone instead of padding;
 without `tree_id` all echoes share one inclination distribution; echoes under
 the DTM surface are ground, not vegetation; `pad_fpl` pairs the plant hits with
 the free path of every vegetation segment (rayvoxel uses only the segments
-ending in an echo that is neither leaf nor wood); there is no
-out-of-core mode, NetCDF output or per-voxel class histogram. Memory is about
-0.25 kB per voxel while tracing.
+ending in an echo that is neither leaf nor wood); there is no NetCDF output
+or per-voxel class histogram, and grids too large for memory are traced block
+by block (below) rather than in rayvoxel's shards. Memory is about 0.25 kB per
+voxel while tracing.
 
 ## What the scan saw
 
@@ -97,3 +98,87 @@ Ray tracing needs the real scanner position of every pulse. Ray clouds
 exported without sensor positions put every ray's start at the origin; they
 can still be voxelised, but the occlusion they give is that of pulses from
 below, not of the scan. `Shots.from_ray_cloud` warns about this case.
+
+## Block tracing
+
+A whole-grid trace holds about 0.23 kB of accumulators per voxel, so the
+grid, not the number of pulses, sets the memory: a 100 x 100 x 108 m plot at
+0.1 m is 1.08 billion voxels, some 240 GB. With `block_size` the grid is cut
+into blocks of that many voxels and traced a few blocks at a time, in passes
+of at most `max_memory` GB of accumulators; each pass streams every pulse
+once (from memory, or from a shots file a few row groups at a time) and
+traces it into the blocks of the pass that its line passes through. With
+`out` the blocks are written to a directory as they finish, and the grid is
+never held whole. Use it when the whole trace does not fit (`ray_voxelize`
+refuses a grid larger than the memory budget of `sylva.limits`), or to keep
+a fine grid on disk and read it a part at a time.
+
+```python
+from sylva import voxels
+from sylva.voxel_blocks import open_blocked
+
+grid = voxels.ray_voxelize(
+    "rays.parquet", 0.1, bounds, dtm=dtm, occlusion=True, beam=(0.007, 0.00027),
+    block_size=128, out="voxels_0.1m", max_memory=20,   # GB of accumulators per pass
+)
+grid.block_stats                                       # blocks, passes, peak_voxels held at once
+grid.block((3, 4, 0))                                  # one block as a RayVoxelGrid, every field and metric
+grid.read((0, 0, 0), (200, 200, 50))                   # any box of voxels
+grid.profile("pad_fpl", min_beams=5)                   # layer by layer, a slab of blocks at a time
+grid.occlusion_profile(min_height=0.5)
+voxels.tree_sampling(grid, cloud, labels)              # holds 5 bytes per voxel
+grid.write("voxels_0.1m.vox")                          # the whole grid's rows, slab by slab
+grid = open_blocked("voxels_0.1m")                     # later
+```
+
+Without `out` the blocks are assembled into one `RayVoxelGrid` (0.13 kB per
+voxel, where a whole-grid trace peaks at 0.35 kB), and neighbour priors,
+`inclination` and `bailey`, which need the whole grid, work as usual; with
+`out` they are refused. The blocks are Parquet files with one row per voxel
+and one column per raw field; blocks that no pulse reached are not written.
+
+**Exactness.** A pulse is always walked through the whole grid with the
+whole-grid arithmetic, from where it enters the grid, and a block keeps only
+the voxels that fall inside it. Every voxel therefore receives exactly the
+numbers a whole-grid trace adds to it, including those that depend on the
+whole ray: the share of the pulse still travelling after the echoes before
+the block (echo weighting), the leaving fraction of the potential path length
+solve, the beam section at the voxel's range, and the occlusion ray beyond
+the last echo. Whether a pulse reaches a block is decided by a slab test of
+its line against the block grown by 10⁻⁶ voxel, far more than the rounding of
+any walk, so no pulse is missed. Each block is filled by one thread, pulse
+after pulse in file order, so its double-precision sums are added in the same
+order whatever the block size or the number of `workers`: blocked results are
+identical for every block size and worker count, and identical to the bit to
+a whole-grid trace on one thread. A whole-grid trace on several threads adds
+to a voxel in the order the threads reach it, so its single-precision results
+differ from the blocked ones by one unit in the last place in a few voxels in
+a hundred thousand.
+
+On the Tumbarumba core hectare (87.6 million registered pulses, 0.5 m, DTM,
+occlusion, beam divergence; 8.64 million voxels), a blocked trace equalled a
+one-thread whole-grid trace in all 32 raw fields of every voxel, and the two
+`.vox` files were the same bytes. Against the usual multi-threaded whole
+trace, 30 fields were identical everywhere, 344 values of the mean-angle sums
+differed by one unit in the last place (1.2 x 10⁻⁷ relative), and 291 of the
+8.64 million `.vox` rows differed in the last printed digit of the mean
+zenith angle.
+
+**Cost.** Each block walks its pulses from the grid edge, and each pass reads
+the pulses again, but a voxel is only written by the pulses that reach it. On
+the same plot, on 8 shared cores:
+
+| Grid | Voxels | Trace | Passes | Peak memory | On disk |
+|---|---|---|---|---|---|
+| 0.5 m, whole grid | 8.6 M | 2.9 min | | 3.3 GB | |
+| 0.5 m, blocks of 64, assembled | 8.6 M | 2.7 min | 1 | 3.5 GB | |
+| 0.25 m, blocks of 64, 4 GB per pass | 69 M | 5.6 min | 4 | 5.5 GB | 3.7 GB |
+| 0.1 m, blocks of 128, 20 GB per pass | 1.08 G | 23 min | 13 | 24 GB | 58 GB |
+
+At 0.1 m the whole-grid trace would need about 240 GB. Over the blocked 0.1 m
+grid, the occlusion profile took 3 minutes and a layer profile 1.5 minutes.
+
+A block or box read alone has its own origin, so its voxel centres (and
+`distance_from_ground`) can differ from the whole grid's in the last bit,
+which can reach the last printed digit of a `.vox` row written from a blocked
+grid; the occlusion summaries use the whole grid's centres.
