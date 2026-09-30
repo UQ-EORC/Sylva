@@ -295,7 +295,7 @@ written when it is complete:
 | `scans/` | for a RiSCAN project only (a directory or `RiscanProject`): each scan read with its SOP (`read_options`), cropped to `bounds` and thinned; `transforms` are then the corrections applied after the SOPs |
 | `tiles/` | `from_scans` with `transforms` (and scans flagged False in `use` left out), `bounds`, `tile_size`, `voxel_size` |
 | `sor/` | `statistical_outlier_removal` (`sor`; False skips it) |
-| `ground_thin/`, `ground/`, `dtm.asc` | ground classified (`ground`) on a `ground_voxel` (5 cm) thinning, and the DTM (`dtm_resolution`) |
+| `ground_thin/`, `ground/`, `dtm.npz`, `dtm.asc` | ground classified (`ground`) on a `ground_voxel` (5 cm) thinning, and the DTM (`dtm_resolution`): at full precision in `dtm.npz`, which the heights are taken from, and as an ASCII grid for other software |
 | `heights/` | `normalize` with that DTM |
 | `stems.pkl` | `detect_stems` on the tiles inside `plot` (`stems`) |
 | `segmented/`, `trees.pkl` | `segment_trees` (`merge`, `segment`, `prune`, `percentile`, `buffer`) |

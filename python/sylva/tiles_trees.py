@@ -706,7 +706,7 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
     ``scans/``              (RiSCAN projects only) each scan read, moved by its SOP, cropped to ``bounds`` and thinned
     ``tiles/``              :func:`sylva.tiles.from_scans`: tiles thinned to ``voxel_size`` on one grid
     ``sor/``                :func:`sylva.tiles.statistical_outlier_removal`
-    ``ground/``             :func:`sylva.tiles.classify_ground` on a ``ground_voxel`` thinning; ``dtm.asc``
+    ``ground/``             :func:`sylva.tiles.classify_ground` on a ``ground_voxel`` thinning; the DTM in ``dtm.npz`` (full precision, used for the heights) and ``dtm.asc``
     ``heights/``            :func:`sylva.tiles.normalize` with that DTM
     ``stems.pkl``           :func:`sylva.tiles.detect_stems` on the tiles inside ``plot``
     ``segmented/``          :func:`segment_trees`, with ``trees.pkl``
@@ -870,19 +870,31 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
     ground_kw = {"method": "csf", "cloth_resolution": 0.5, "rigidness": 2, "buffer": 10.0}
     ground_kw.update(ground or {})
     dtm_path = out / "dtm.asc"
+    # The DTM the heights are taken from, at full precision; dtm.asc (a few
+    # decimals) is for reading elsewhere and would move heights by its rounding.
+    dtm_full = out / "dtm.npz"
+
+    def make_dtm(g):
+        d = tiles.dtm(g, resolution=dtm_resolution, buffer=float(ground_kw.get("buffer", 10.0)),
+                      workers=workers)
+        np.savez(dtm_full, data=d.data, origin=np.array([d.xmin, d.ymin, d.resolution]))
+        d.to_ascii_grid(dtm_path)
+        return d
 
     def run_ground():
         _fresh(cat_dirs["ground_thin"])
         _fresh(cat_dirs["ground"])
         thin = tiles.voxel_downsample(clean, cat_dirs["ground_thin"], ground_voxel, workers=workers)
         g = tiles.classify_ground(thin, cat_dirs["ground"], workers=workers, **ground_kw)
-        d = tiles.dtm(g, resolution=dtm_resolution, buffer=float(ground_kw.get("buffer", 10.0)),
-                      workers=workers)
-        d.to_ascii_grid(dtm_path)
+        d = make_dtm(g)
         return f"DTM {d.data.shape[1]} x {d.data.shape[0]} cells at {dtm_resolution} m"
 
     stage("ground", cat_dirs["ground"], run_ground)
-    dtm = Raster.from_ascii_grid(dtm_path)
+    if not dtm_full.exists():
+        make_dtm(catalog(cat_dirs["ground"]))
+    with np.load(dtm_full) as f:
+        x0, y0, res = (float(v) for v in f["origin"])
+        dtm = Raster(np.array(f["data"]), x0, y0, res)
 
     def run_heights():
         _fresh(cat_dirs["heights"])

@@ -6,7 +6,7 @@ import warnings
 import numpy as np
 import pytest
 
-from sylva import PointCloud, als, io, leaves, qsm, synthetic, tiles, tiles_trees, trees
+from sylva import PointCloud, als, ground, io, leaves, qsm, synthetic, tiles, tiles_trees, trees
 from sylva.cli import main
 
 POSITIONS = [(5, 5), (15, 15), (25, 5), (5, 25), (25, 25), (15, 3), (3, 15)]
@@ -312,6 +312,12 @@ def test_run_plot_resumes_after_an_interruption(tmp_path, monkeypatch):
     assert len(full.trees) >= 3 and len(full.table) == len(full.trees)
     assert {"tiles", "sor", "heights", "segmented", "wood"} <= set(full.catalogs)
     assert (tmp_path / "full" / "trees.csv").exists() and (tmp_path / "full" / "qsm_table.csv").exists()
+    # Heights come from the DTM at full precision, not from its ASCII grid.
+    dtm = tiles.dtm(tiles.catalog(tmp_path / "full" / "ground"), resolution=0.5, buffer=5.0)
+    np.testing.assert_array_equal(full.dtm.data, dtm.data)
+    h = full.catalogs["heights"].read()
+    np.testing.assert_array_equal(h.attrs["height"],
+                                  ground.normalize_height(PointCloud(h.xyz), dtm).attrs["height"])
 
     # Interrupted while fitting QSMs, after two trees.
     calls = []
