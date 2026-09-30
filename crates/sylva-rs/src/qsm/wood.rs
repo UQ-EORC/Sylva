@@ -111,9 +111,27 @@ fn anisotropy(points: &[Point], nbrs: &[(usize, f64)]) -> f64 {
 
 /// Per-point wood mask for one tree's points.
 pub fn wood_mask(points: &[Point], p: &WoodParams) -> Vec<bool> {
+    wood_scores(points, p).mask
+}
+
+/// The wood filter's decision and the two per-point cues it is made from.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WoodScores {
+    /// The filter's wood mask ([`wood_mask`]).
+    pub mask: Vec<bool>,
+    /// Local anisotropy, planarity + linearity (`1 - l_min / l_max`), in
+    /// `[0, 1]`; the lower of the two scales with `scale_radius`.
+    pub anisotropy: Vec<f64>,
+    /// Share of the target paths from the base that run through the point,
+    /// in `[0, 1]` (0 everywhere without the passage step).
+    pub passage: Vec<f64>,
+}
+
+/// [`wood_mask`] with the anisotropy and passage share of every point.
+pub fn wood_scores(points: &[Point], p: &WoodParams) -> WoodScores {
     let n = points.len();
     if n == 0 {
-        return Vec::new();
+        return WoodScores::default();
     }
     let (pl, li) = planarity_linearity(points, p.k);
     let mut like: Vec<f64> = pl.iter().zip(&li).map(|(a, b)| a + b).collect();
@@ -129,6 +147,7 @@ pub fn wood_mask(points: &[Point], p: &WoodParams) -> Vec<bool> {
         }
     }
     let mut wood = vec![false; n];
+    let mut share = vec![0.0; n];
 
     // 1. Passage: shortest paths from the base; a point's passage count is
     // the number of target cells whose path runs through it.
@@ -165,6 +184,9 @@ pub fn wood_mask(points: &[Point], p: &WoodParams) -> Vec<bool> {
         let z1 = points.iter().zip(&comp).filter(|(_, &c)| c == main).map(|(q, _)| q[2]).fold(f64::NEG_INFINITY, f64::max);
         let height = (z1 - z0).max(0.0);
         let n_targets = targets.len().max(1) as f64;
+        for (s, &c) in share.iter_mut().zip(&passage) {
+            *s = (c as f64 / n_targets).min(1.0);
+        }
         let tree = KdTree::new(points);
         let mut seed = vec![false; n];
         for i in 0..n {
@@ -209,7 +231,7 @@ pub fn wood_mask(points: &[Point], p: &WoodParams) -> Vec<bool> {
         }
         wood = out;
     }
-    wood
+    WoodScores { mask: wood, anisotropy: like, passage: share }
 }
 
 /// Components of `subset` (indices into `points`) under `res` connectivity;
@@ -353,10 +375,19 @@ fn classify_piece(points: &[Point], members: &[usize], step: &[Point], interval:
 
 /// Per-point wood mask (`true` = wood) for one tree, graph-based.
 pub fn gbs_mask(points: &[Point], p: &GbsParams) -> Vec<bool> {
+    gbs_scores(points, p).0
+}
+
+/// [`gbs_mask`] and, per point, the share of the shell scales (`intervals`)
+/// at which the point's piece was classified wood before the labels were
+/// spread along the paths: 1 for a piece that is cylindrical or linear at
+/// every scale, 0 for a point that is wood only by being on a path or next
+/// to wood.
+pub fn gbs_scores(points: &[Point], p: &GbsParams) -> (Vec<bool>, Vec<f64>) {
     use crate::transform::{dot, norm, sub};
     let n = points.len();
     if n <= p.graph_k {
-        return vec![false; n];
+        return (vec![false; n], vec![0.0; n]);
     }
     let graph = knn_graph(points, p.graph_k, p.max_edge);
     let (_, comp) = connected_components(&graph);
@@ -380,6 +411,7 @@ pub fn gbs_mask(points: &[Point], p: &GbsParams) -> Vec<bool> {
     };
     let min_piece = p.min_points.max(n / 20_000);
     let mut init = vec![false; n];
+    let mut votes = vec![0u32; n];
     for &interval in &p.intervals {
         let bin: Vec<i64> = dist.iter().map(|d| if d.is_finite() { (d / interval).floor() as i64 } else { -1 }).collect();
         let mut parent: Vec<usize> = (0..n).collect();
@@ -438,6 +470,7 @@ pub fn gbs_mask(points: &[Point], p: &GbsParams) -> Vec<bool> {
             if class[k].is_some() {
                 for &i in m {
                     init[i] = true;
+                    votes[i] += 1;
                 }
             }
         }
@@ -485,5 +518,6 @@ pub fn gbs_mask(points: &[Point], p: &GbsParams) -> Vec<bool> {
     for &s in &sources {
         wood[s] = true;
     }
-    wood
+    let scales = p.intervals.len().max(1) as f64;
+    (wood, votes.into_iter().map(|v| v as f64 / scales).collect())
 }

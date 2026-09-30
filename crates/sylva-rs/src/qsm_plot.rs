@@ -24,7 +24,7 @@ use crate::leaf_model::qsm_from_rows;
 use crate::qsm::buttress::{self as bm, Buttress};
 use crate::qsm::metrics::tree_metrics;
 use crate::qsm::wood::{wood_mask, WoodParams};
-use crate::qsm::{build_qsm, QsmParams};
+use crate::qsm::{build_qsm, build_qsm_weighted, QsmParams};
 use crate::qsm_ops::{self as ops, Row};
 use crate::{Error, Point, Result};
 
@@ -111,6 +111,16 @@ impl Default for PlotParams {
     }
 }
 
+/// Wood given per point of the plot, in place of the wood filter.
+#[derive(Debug, Clone, Copy)]
+pub enum PointWood<'a> {
+    /// Wood (`true`) or not: each tree is fitted on its wood points.
+    Labels(&'a [bool]),
+    /// A wood weight in `[0, 1]`: each tree is fitted on all its points with
+    /// these weights ([`build_qsm_weighted`]).
+    Weights(&'a [f64]),
+}
+
 /// The models of a plot, each list in tree order.
 #[derive(Debug, Clone, Default)]
 pub struct PlotModels {
@@ -140,6 +150,19 @@ pub struct PlotModels {
 /// crown is often foliage, and the thin stem was then replaced by a trunk of
 /// up to a metre.
 pub fn build_plot(points: &[Point], labels: &[i64], heights: Option<&[f64]>, stems: &[(i64, [f64; 2], f64)], p: &PlotParams) -> Result<PlotModels> {
+    build_plot_with(points, labels, heights, stems, p, None)
+}
+
+/// [`build_plot`] with the wood given per point (`wood`, one value per point
+/// of the plot) instead of found by the wood filter; `p.wood` is then not
+/// used. With labels each tree's wood points are selected and then thinned;
+/// with weights the tree is thinned and each kept point keeps its own weight.
+pub fn build_plot_with(points: &[Point], labels: &[i64], heights: Option<&[f64]>, stems: &[(i64, [f64; 2], f64)], p: &PlotParams, wood: Option<PointWood>) -> Result<PlotModels> {
+    match wood {
+        Some(PointWood::Labels(w)) if w.len() != points.len() => return Err(Error::invalid("wood labels must have one value per point")),
+        Some(PointWood::Weights(w)) => crate::qsm::weighted::check_weights(w, points.len())?,
+        _ => {}
+    }
     if labels.len() != points.len() {
         return Err(Error::invalid("labels must have one value per point"));
     }
@@ -185,7 +208,6 @@ pub fn build_plot(points: &[Point], labels: &[i64], heights: Option<&[f64]>, ste
                 [median(&xs), median(&ys)]
             }
         };
-        let input = if p.wood { wood_points(&thin) } else { thin };
         let mut qp = p.qsm.clone();
         if qp.base_radius <= 0.0 {
             if let Some(&d) = dbh.get(&tid) {
@@ -194,7 +216,22 @@ pub fn build_plot(points: &[Point], labels: &[i64], heights: Option<&[f64]>, ste
                 }
             }
         }
-        match build_qsm(&input, Some(base), &qp) {
+        let fitted = match wood {
+            None if p.wood => build_qsm(&wood_points(&thin), Some(base), &qp),
+            None => build_qsm(&thin, Some(base), &qp),
+            Some(PointWood::Labels(w)) => {
+                // Thinned after the selection, so a voxel shared with a leaf
+                // point keeps its wood.
+                let wood: Vec<Point> = idx.iter().filter(|&&i| w[i]).map(|&i| points[i]).collect();
+                let input: Vec<Point> = if p.voxel_size > 0.0 { voxel_downsample_indices(&wood, p.voxel_size).into_iter().map(|i| wood[i]).collect() } else { wood };
+                build_qsm(&input, Some(base), &qp)
+            }
+            Some(PointWood::Weights(w)) => {
+                let tw: Vec<f64> = keep.iter().map(|&k| w[idx[k]]).collect();
+                build_qsm_weighted(&thin, Some(base), &qp, &tw)
+            }
+        };
+        match fitted {
             Ok(q) => out.models.push((tid, q.to_rows())),
             Err(e) => {
                 out.skipped.push((tid, e.to_string()));
@@ -455,5 +492,35 @@ mod tests {
         write_cylinders(&dir, &entries, "c").unwrap();
         assert!(dir.join("c3.csv").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wood_can_be_given_per_point() {
+        let mut rng = Generator::new(4);
+        let mut pts = stem(&mut rng, 0.0, 0.15, 4.0, 8000);
+        let n_wood = pts.len();
+        // Clutter around the stem, labelled leaf.
+        pts.extend(stem(&mut rng, 0.0, 0.4, 4.0, 3000));
+        let labels = vec![1i64; pts.len()];
+        let p = PlotParams { wood: false, min_points: 1000.0, ..Default::default() };
+        let bare = build_plot(&pts[..n_wood], &labels[..n_wood], None, &[], &p).unwrap();
+        let wood: Vec<bool> = (0..pts.len()).map(|i| i < n_wood).collect();
+        // The wood filter setting is not used when wood is given.
+        let pw = PlotParams { wood: true, ..p.clone() };
+        let by_label = build_plot_with(&pts, &labels, None, &[], &pw, Some(PointWood::Labels(&wood))).unwrap();
+        assert!(!by_label.models.is_empty());
+        let v = |m: &PlotModels| ops::totals(&m.models[0].1).total_volume;
+        let truth = std::f64::consts::PI * 0.15 * 0.15 * 4.0;
+        assert!((v(&by_label) - truth).abs() < 0.2 * truth, "{} {truth}", v(&by_label));
+        assert!((v(&by_label) - v(&bare)).abs() < 0.1 * truth);
+        let ones = vec![1.0; pts.len()];
+        let all = build_plot(&pts, &labels, None, &[], &p).unwrap();
+        let weighted = build_plot_with(&pts, &labels, None, &[], &pw, Some(PointWood::Weights(&ones))).unwrap();
+        assert_eq!(weighted.models, all.models);
+        assert!(build_plot_with(&pts, &labels, None, &[], &p, Some(PointWood::Labels(&wood[1..]))).is_err());
+        assert!(build_plot_with(&pts, &labels, None, &[], &p, Some(PointWood::Weights(&ones[1..]))).is_err());
+        let mut bad = ones.clone();
+        bad[5] = f64::NAN;
+        assert!(build_plot_with(&pts, &labels, None, &[], &p, Some(PointWood::Weights(&bad))).is_err());
     }
 }

@@ -20,6 +20,11 @@ model has to guess it. Never cap or anchor stem radii on a breast-height
 slice: at 1.3 m the big tropical trees are 3 m-wide buttress stars where a
 circle explains 15 % of the points.
 
+Fitting on other wood inputs (graph-based labels, and all points weighted by
+a wood confidence) was scored the same way on 73 of these trees; none beat
+the passage filter (22.0 % rRMSE on that set, against 22.6-26.6 %); the
+table is in the [QSM guide](../guide/qsm.md#wood-labels-and-wood-weights).
+
 ## CHERLET plots against raycloudtools
 
 On the CHERLET plots, per matched tree, sylva / raycloudtools volume medians

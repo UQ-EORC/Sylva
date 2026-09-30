@@ -13,7 +13,9 @@ pub mod buttress;
 pub mod cylinder;
 pub mod metrics;
 pub mod model;
+pub mod weighted;
 pub mod wood;
 
 pub use cylinder::{fit_cylinder, fit_cylinder_ransac, CylinderFit};
 pub use model::{build_qsm, fit_cylinders, skeletonize, Cylinder, Qsm, QsmParams, Skeleton};
+pub use weighted::build_qsm_weighted;

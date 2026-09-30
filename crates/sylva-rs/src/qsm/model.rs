@@ -402,11 +402,17 @@ pub struct QsmParams {
     /// Fourier contour instead of the circle;
     /// 0 disables.
     pub fourier_min_radius: f64,
+    /// Weighted fits only ([`super::weighted::build_qsm_weighted`]): points
+    /// with a lower weight are dropped before the graph is built.
+    pub min_weight: f64,
+    /// Weighted fits only: a circle whose inliers have a lower mean weight
+    /// is not a measurement (the section is left to the priors).
+    pub min_mean_weight: f64,
 }
 
 impl Default for QsmParams {
     fn default() -> Self {
-        QsmParams { k: 15, max_edge: 1.0, bin_length: 0.1, min_points: 1, ransac_threshold: 0.02, max_radius: 1.0, taper_limit: 1.1, max_rmse: 0.03, smooth_steps: 10, apex_radius: 0.0025, min_arc_deg: 90.0, min_inlier_fraction: 0.05, prune_points: 5, fit_min_points: 50, crop_length: 0.0, butt_height: 0.6, relative_tolerance: 0.08, base_radius: 0.0, allometry_tolerance: 0.3, stem_radius_cap: 0.0, buttress_equivalent_area: true, buttress_max_inlier_fraction: 0.3, pipe_slack: 1.2, branch_min_inlier_fraction: 0.3, spacing_scale: 1.5, radius_power: 0.0, power_above_spacing: 0.025, sensor_noise: 0.02, cluster_eps: 0.1, centre_fit_points: 100, radius_smooth_steps: 15, butt_swell: 1.1, butt_vertical_run: 4, butt_max_lean_deg: 50.0, chain_max_d: 0.1, fourier_min_radius: 0.15 }
+        QsmParams { k: 15, max_edge: 1.0, bin_length: 0.1, min_points: 1, ransac_threshold: 0.02, max_radius: 1.0, taper_limit: 1.1, max_rmse: 0.03, smooth_steps: 10, apex_radius: 0.0025, min_arc_deg: 90.0, min_inlier_fraction: 0.05, prune_points: 5, fit_min_points: 50, crop_length: 0.0, butt_height: 0.6, relative_tolerance: 0.08, base_radius: 0.0, allometry_tolerance: 0.3, stem_radius_cap: 0.0, buttress_equivalent_area: true, buttress_max_inlier_fraction: 0.3, pipe_slack: 1.2, branch_min_inlier_fraction: 0.3, spacing_scale: 1.5, radius_power: 0.0, power_above_spacing: 0.025, sensor_noise: 0.02, cluster_eps: 0.1, centre_fit_points: 100, radius_smooth_steps: 15, butt_swell: 1.1, butt_vertical_run: 4, butt_max_lean_deg: 50.0, chain_max_d: 0.1, fourier_min_radius: 0.15, min_weight: 0.0, min_mean_weight: 0.5 }
     }
 }
 
@@ -696,6 +702,14 @@ fn assign_axes(n_seg: usize, topo: &[usize], roots: &[usize], children: &[Vec<us
 /// 4. Cylinders join consecutive nodes; unsupported leaf segments (no
 ///    accepted radius, few points) are pruned as foliage.
 pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qsm> {
+    fit_cylinders_with(xyz, skel, p, None)
+}
+
+/// [`fit_cylinders`], with a wood weight per point when `weights` is given:
+/// each section's radius then comes from the weighted circle fit of
+/// [`super::weighted::section_fit`], and an unmeasured leaf segment is pruned
+/// as foliage when its summed weight is below `prune_points`.
+pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, weights: Option<&[f64]>) -> Result<Qsm> {
     let n_seg = skel.centres.len();
     if n_seg == 0 {
         return Ok(Qsm::default());
@@ -795,6 +809,10 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
                     [dot(&d, &u), dot(&d, &v)]
                 })
                 .collect();
+            if let Some(w) = weights {
+                let ws: Vec<f64> = members[s].iter().map(|&i| w[i]).collect();
+                return super::weighted::section_fit(&xy, &ws, s as u64 + 1, p, &circle_params);
+            }
             if p.radius_power > 0.0 {
                 return power_mean_radius(&xy, p);
             }
@@ -1180,7 +1198,11 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
                 continue;
             }
             let has_live_child = children[s].iter().any(|&c| alive[c]);
-            if !has_live_child && members[s].len() < p.prune_points {
+            let few = match weights {
+                None => members[s].len() < p.prune_points,
+                Some(w) => members[s].iter().map(|&i| w[i]).sum::<f64>() < p.prune_points as f64,
+            };
+            if !has_live_child && few {
                 alive[s] = false;
                 changed = true;
             }
@@ -1331,7 +1353,7 @@ fn straighten_butt(qsm: &mut Qsm, p: &QsmParams) {
     qsm.cylinders = new;
 }
 
-const BINS: usize = 72;
+pub(super) const BINS: usize = 72;
 
 /// Fourier cross-section: polar radii about `(cx, cy)`, binned
 /// (median per 5 deg bin, empty bins filled with the overall median once at
@@ -1340,7 +1362,7 @@ const BINS: usize = 72;
 /// (area = 1/2 int r^2 dtheta = pi (c0^2 + 1/2 sum a_k^2 + b_k^2)). Medians
 /// rather than the outermost point per bin keep arm tips and noise from
 /// inflating the section.
-fn fourier_area_radius(xy: &[[f64; 2]], cx: f64, cy: f64, min_filled: usize) -> Option<f64> {
+pub(super) fn fourier_area_radius(xy: &[[f64; 2]], cx: f64, cy: f64, min_filled: usize) -> Option<f64> {
     const HARMONICS: usize = 10;
     let mut bins: Vec<Vec<f64>> = vec![Vec::new(); BINS];
     for q in xy {
@@ -1478,7 +1500,7 @@ fn isotonic_fill(chain: &[usize], radius: &mut [f64], weight: &[f64], apex_radiu
 /// Returns the same tuple as the circle fit: radius, points, angular coverage
 /// and a confidence in `[0, 1]` from `r / (mean |d - r| + sensor_noise)`,
 /// which falls as the section's points scatter.
-fn power_mean_radius(xy: &[[f64; 2]], p: &QsmParams) -> Option<(f64, usize, f64, f64)> {
+pub(super) fn power_mean_radius(xy: &[[f64; 2]], p: &QsmParams) -> Option<(f64, usize, f64, f64)> {
     let n = xy.len();
     if n < 3 {
         return None;
