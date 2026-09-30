@@ -31,6 +31,10 @@ branch.
 3. **Check.** `tests/test_parity.py` (tolerance 1e-9 relative) and the full
    Python suite must pass unchanged. A recording is regenerated only for a
    documented, intended change of behaviour, in its own commit.
+   The recordings belong to the machine that made them: another CPU or C
+   library shifts the last digits, and the coregistration's accept/reject
+   decisions can follow, so the release workflow runs every test except
+   these.
 
 `sylva_rs::numeric` holds NumPy-exact helpers (histograms, quantiles,
 `arange`, `gradient`, pairwise sums), and `sylva_rs::nprandom` reproduces
