@@ -62,6 +62,13 @@ They are generated from `docs/examples/build_notebooks.py`; edit that file and
 run it to regenerate and re-execute them (`python docs/examples/build_notebooks.py
 05_trees` for one).
 
+The figures share one style, `sylva.mplstyle` in the same folder, which the
+first cell of each notebook loads: fixed figure widths and font sizes, the
+colour-blind-safe Okabe-Ito palette for categories, viridis for magnitudes,
+and a diverging map centred on zero for signed differences. Ground, wood,
+leaves and grass keep the same colours in every notebook. Copy the file
+alongside a notebook to run it elsewhere.
+
 The tile is derived from TERN data, distributed here for documentation and
 teaching. Cite TERN if you use it for anything else, and see
 `data/README.md`.

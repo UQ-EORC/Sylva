@@ -32,16 +32,28 @@ class md(str):
     pass
 
 
+# The figure style shared by every notebook (sylva.mplstyle): sizes, fonts, the
+# colour-blind-safe Okabe-Ito colours as C0 to C7, viridis for magnitudes, and
+# DIVERGING, centred on zero, for signed differences. Classes keep one colour
+# throughout, and arbitrary labels (tree ids, clusters) cycle through LABELS.
+STYLE = """\
+plt.style.use("sylva.mplstyle")     # shared figure style; C0 to C7 are the Okabe-Ito colours
+GROUND, WOOD, LEAF, GRASS, CONTEXT = "#997A5C", "#4D2B12", "#009E73", "#E69F00", "0.8"   # the same in every notebook
+DIVERGING = "RdBu_r"                # for signed differences, centred on zero
+LABELS = ListedColormap(["#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77",
+                         "#CC6677", "#882255", "#AA4499"])   # tree ids and clusters: Paul Tol's muted set"""
+
 SETUP = """\
 from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 import sylva
 from sylva import synthetic
 
 DATA = Path("data")          # the Litchfield tile, cut by make_litch_subset.py
-plt.rcParams.update({"figure.dpi": 90, "figure.figsize": (7, 4), "axes.grid": False})"""
+""" + STYLE
 
 TILE = md("""The data: a 20 x 20 m tile of the TERN [Litchfield Savanna
 SuperSite](https://www.tern.org.au) plot in the Northern Territory, scanned in
@@ -78,15 +90,17 @@ cloud = cloud.with_attrs(range=np.linalg.norm(cloud.xyz - [10, 10, 1.5], axis=1)
 print(veg, ground_pts, sep="\\n")
 print("vegetation:", f"{len(veg) / len(cloud):.0%} of the tile")""",
     """\
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.4))
-s = ax[0].scatter(cloud.x[::4], cloud.y[::4], c=cloud.z[::4], s=0.2, cmap="viridis")
-ax[0].set(title="top view, coloured by height", xlabel="x (m)", ylabel="y (m)", aspect="equal")
-fig.colorbar(s, ax=ax[0], label="z (m)")
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.4))
+order = np.argsort(cloud.z[::4])                      # highest points drawn last
+top = cloud[::4][order]
+s = ax[0].scatter(top.x, top.y, c=top.z, s=0.2)
+ax[0].set(title="Top view, coloured by height", xlabel="x (m)", ylabel="y (m)", aspect="equal")
+fig.colorbar(s, ax=ax[0], label="z (m)", shrink=0.9)
 slab = (cloud.y > 9) & (cloud.y < 11)
 is_ground = cloud.attrs["classification"] == 2
-ax[1].scatter(cloud.x[slab & ~is_ground], cloud.z[slab & ~is_ground], s=0.2, c="tab:green", label="vegetation")
-ax[1].scatter(cloud.x[slab & is_ground], cloud.z[slab & is_ground], s=0.6, c="tab:brown", label="ground")
-ax[1].set(title="a 2 m slice through the tile", xlabel="x (m)", ylabel="z (m)", aspect="equal")
+ax[1].scatter(cloud.x[slab & ~is_ground], cloud.z[slab & ~is_ground], s=0.2, c=LEAF, label="vegetation (class 4)")
+ax[1].scatter(cloud.x[slab & is_ground], cloud.z[slab & is_ground], s=0.6, c=GROUND, label="ground (class 2)")
+ax[1].set(title="A 2 m slice at y = 9 to 11 m", xlabel="x (m)", ylabel="z (m)", aspect="equal")
 ax[1].legend(markerscale=12, loc="upper center", ncol=2);""",
     md("""## Reading and writing
 
@@ -140,12 +154,14 @@ for k, v in thin.items():
 box = filters.crop_box(cloud, (0, 0, 2.0), (20, 20, None))          # everything above 2 m
 plot = filters.crop_cylinder(cloud, (10.0, 10.0), radius=5.0)       # a 5 m radius subplot
 shell = filters.range_filter(cloud, origin=(10, 10, 1.0), min_range=4.0, max_range=8.0)
-fig, ax = plt.subplots(1, 3, figsize=(12, 3.8), sharex=True, sharey=True)
+fig, ax = plt.subplots(1, 3, figsize=(10, 3.7), sharex=True, sharey=True)
 for a, (name, c) in zip(ax, {"crop_box (z > 2 m)": box, "crop_cylinder (r = 5 m)": plot,
-                             "range_filter (4-8 m)": shell}.items()):
-    a.scatter(cloud.x[::20], cloud.y[::20], s=0.2, c="0.85")
-    a.scatter(c.x[::8], c.y[::8], s=0.2, c="C2")
-    a.set(title=f"{name}\\n{len(c):,} points", aspect="equal")""",
+                             "range_filter (4 to 8 m)": shell}.items()):
+    a.scatter(cloud.x[::20], cloud.y[::20], s=0.2, c=CONTEXT)
+    a.scatter(c.x[::8], c.y[::8], s=0.2, c="C0")
+    a.set(title=f"{name}: {len(c):,} points", aspect="equal", xlabel="x (m)")
+ax[0].set_ylabel("y (m)")
+fig.suptitle("Points kept (blue) by each crop, top view");""",
     md("""## Outliers
 
 Two filters, both deciding from the neighbourhood: statistical removal compares
@@ -167,13 +183,15 @@ for name, keep in (("statistical (k=8, 2 sd)", sor), ("radius (0.25 m, 4)", ror)
           f"median height of dropped points {np.median(thinned.z[drop]):5.1f} m vs {np.median(thinned.z):.1f} m overall")""",
     """\
 slab = (thinned.y > 9) & (thinned.y < 11)
-fig, ax = plt.subplots(1, 2, figsize=(12, 4.2), sharex=True, sharey=True)
-for a, keep, name in ((ax[0], sor, "statistical (k=8, 2 sd)"), (ax[1], ror, "radius (0.25 m, 4)")):
+fig, ax = plt.subplots(1, 2, figsize=(10, 3.6), sharex=True, sharey=True)
+for a, keep, name in ((ax[0], sor, "statistical (k = 8, 2 sd)"), (ax[1], ror, "radius (0.25 m, 4 neighbours)")):
     drop = slab & ~keep
-    a.scatter(thinned.x[slab & keep], thinned.z[slab & keep], s=0.2, c="0.8")
-    a.scatter(thinned.x[drop], thinned.z[drop], s=1.2, c="C3")
-    a.set(title=f"{name}: {int(drop.sum()):,} dropped in this slice", xlabel="x (m)", ylim=(-0.5, 8))
+    a.scatter(thinned.x[slab & keep], thinned.z[slab & keep], s=0.2, c=CONTEXT, label="kept")
+    a.scatter(thinned.x[drop], thinned.z[drop], s=4 if drop.sum() < 100 else 1.2, c="C3", label="dropped")
+    a.set(title=f"{name}: {int(drop.sum()):,} dropped", xlabel="x (m)", ylim=(-0.5, 8))
 ax[0].set_ylabel("z (m)")
+ax[0].legend(markerscale=4, loc="upper right")
+fig.suptitle("Points dropped by each outlier filter, in a 2 m slice at y = 9 to 11 m")
 print("of the points the statistical filter drops,", f"{np.mean(thinned.z[~sor] < 1.0):.0%}",
       "are below 1 m; for the radius filter,", f"{np.mean(thinned.z[~ror] < 1.0):.0%}")""",
     md("""## Local geometry
@@ -184,12 +202,12 @@ is linear at metre scale, while the grass layer is neither."""),
     """\
 stem = filters.crop_cylinder(cloud, (4.8, 7.5), radius=1.2, zmin=0.5, zmax=8.0)
 planarity, linearity = filters.planarity_linearity(stem, k=20)
-fig, ax = plt.subplots(1, 2, figsize=(9, 4.5), sharey=True)
-for a, v, name in ((ax[0], planarity, "planarity"), (ax[1], linearity, "linearity")):
-    sc = a.scatter(stem.x, stem.z, c=v, s=0.6, cmap="magma", vmin=0, vmax=1)
+fig, ax = plt.subplots(1, 2, figsize=(6, 5), sharey=True)
+for a, v, name in ((ax[0], planarity, "Planarity"), (ax[1], linearity, "Linearity")):
+    sc = a.scatter(stem.x, stem.z, c=v, s=0.6, vmin=0, vmax=1)
     a.set(title=name, xlabel="x (m)", aspect="equal")
 ax[0].set_ylabel("z (m)")
-fig.colorbar(sc, ax=ax, shrink=0.8);""",
+fig.colorbar(sc, ax=ax, shrink=0.8, label="value (0 to 1)");""",
     md("""## Clustering
 
 `euclidean_clusters` labels connected components of the radius graph. Above the
@@ -201,8 +219,11 @@ above = filters.voxel_downsample(cloud[cloud.z > 2.0], 0.15)
 labels = filters.euclidean_clusters(above.xyz, radius=0.4, min_points=200)
 print("clusters:", labels.max() + 1, " unassigned points:", int(np.sum(labels < 0)),
       " largest cluster:", int(np.sum(labels == 0)), "points")
-plt.scatter(above.x, above.y, c=np.where(labels < 0, np.nan, labels % 10), s=1.0, cmap="tab10")
-plt.gca().set(aspect="equal", xlabel="x (m)", ylabel="y (m)", title="crown clusters above 2 m");""",
+fig, ax = plt.subplots(figsize=(5.5, 5))
+ax.scatter(above.x[labels < 0], above.y[labels < 0], s=0.5, c=CONTEXT)
+ax.scatter(above.x[labels >= 0], above.y[labels >= 0], c=labels[labels >= 0] % LABELS.N, s=0.5,
+           cmap=LABELS, vmin=0, vmax=LABELS.N)
+ax.set(aspect="equal", xlabel="x (m)", ylabel="y (m)", title="Clusters above 2 m, one colour each (grey: none)");""",
 ]
 
 NOTEBOOKS["03_registration"] = [
@@ -233,12 +254,14 @@ report("point-to-point", *reg.icp(scan_b, scan_a, max_correspondence_distance=1.
 T, info = reg.icp(scan_b, scan_a, max_correspondence_distance=1.0, method="plane")
 report("point-to-plane", T, info)""",
     """\
-fig, ax = plt.subplots(1, 2, figsize=(10, 4), sharex=True, sharey=True)
-for a, b, title in ((ax[0], scan_b, "before"), (ax[1], scan_b.transform(T), "after ICP")):
-    a.scatter(scan_a.x[::4], scan_a.y[::4], s=0.2, c="C0", label="scan A")
-    a.scatter(b.x[::4], b.y[::4], s=0.2, c="C3", label="scan B")
-    a.set(title=title, aspect="equal")
-ax[0].legend(markerscale=20);""",
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.4), sharex=True, sharey=True)
+for a, b, title in ((ax[0], scan_b, "Before: scan B as delivered"), (ax[1], scan_b.transform(T), "After point-to-plane ICP")):
+    for c, colour, name in ((scan_a, "C0", "scan A"), (b, "C1", "scan B")):
+        trees_only = c.attrs["classification"] != 2      # the ground would hide the offset
+        a.scatter(c.x[trees_only][::3], c.y[trees_only][::3], s=0.3, c=colour, alpha=0.5, label=name)
+    a.set(title=title, aspect="equal", xlabel="x (m)")
+ax[0].set_ylabel("y (m)")
+ax[0].legend(markerscale=15, loc="upper right");""",
     md("""## Partial overlap
 
 When one scan sees things the other does not, the unmatched part drags the
@@ -293,17 +316,25 @@ print(f"CSF above PMF by more than 0.5 m in {np.mean(diff > 0.5):.1%} of cells, 
 row = int(np.nanargmax(np.nan_to_num(diff).max(axis=1)))       # the worst row of the difference
 y0 = dtm.ymin + row * dtm.resolution
 slab = (cloud.y > y0 - 0.5) & (cloud.y < y0 + 0.5)
-fig, ax = plt.subplots(1, 2, figsize=(13, 4))
-im = ax[0].imshow(diff, origin="lower", extent=(dtm.xmin, dtm.xmax, dtm.ymin, dtm.ymax),
-                  cmap="OrRd", vmin=0, vmax=6)
+from matplotlib.patches import Patch
+
+ext = (dtm.xmin, dtm.xmax, dtm.ymin, dtm.ymax)
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.2), gridspec_kw={"width_ratios": [1, 1.25]})
+ax[0].imshow(np.where(np.abs(diff) <= 0.5, 1.0, np.nan), origin="lower", extent=ext,
+             cmap=ListedColormap([CONTEXT]))                          # the cells where the two agree
+im = ax[0].imshow(np.where(np.abs(diff) > 0.5, diff, np.nan), origin="lower", extent=ext,
+                  cmap=DIVERGING, vmin=-6, vmax=6)
 ax[0].axhline(y0, color="k", lw=0.8, ls="--")
-ax[0].set(title="CSF terrain minus PMF terrain (m)", xlabel="x (m)", ylabel="y (m)")
-fig.colorbar(im, ax=ax[0], shrink=0.85)
-ax[1].scatter(cloud.x[slab], cloud.z[slab], s=0.3, c="0.8")
-for m, name, c, size in ((pmf, "PMF ground", "C0", 2.0), (csf, "CSF ground", "C3", 2.0)):
-    ax[1].scatter(cloud.x[slab & m], cloud.z[slab & m], s=size, c=c, label=name)
-ax[1].set(title=f"the marked row, y = {y0:.1f} m", xlabel="x (m)", ylabel="z (m)", ylim=(-1, 12))
-ax[1].legend(markerscale=6);""",
+ax[0].set(title="CSF terrain minus PMF terrain", xlabel="x (m)", ylabel="y (m)", aspect="equal")
+ax[0].legend(handles=[Patch(color=CONTEXT, label="within 0.5 m"),
+                      plt.Line2D([], [], color="k", lw=0.8, ls="--", label="row shown right")],
+             loc="lower left")
+fig.colorbar(im, ax=ax[0], shrink=0.85, label="difference (m)")
+ax[1].scatter(cloud.x[slab], cloud.z[slab], s=0.3, c=CONTEXT, label="all points")
+for m, name, c in ((pmf, "PMF ground", "C0"), (csf, "CSF ground", "C3")):
+    ax[1].scatter(cloud.x[slab & m], cloud.z[slab & m], s=2.0, c=c, label=name)
+ax[1].set(title=f"Side view of the row at y = {y0:.1f} m (1 m thick)", xlabel="x (m)", ylabel="z (m)", ylim=(-1, 12))
+ax[1].legend(markerscale=4, loc="upper left");""",
     md("""The diagnosis is testable: crop the cloud further in and the bad band
 should follow the new edge, which is what happens. Distance of the disagreeing
 cells from whichever boundary the cloud was cut at:"""),
@@ -334,12 +365,14 @@ print("canopy height p99:", round(float(np.percentile(cloud.attrs["height"], 99)
       "max", round(float(cloud.attrs["height"].max()), 1), "m")
 print("canopy cover above 2 m:", round(float(canopy.canopy_cover(chm.data, 2.0)), 3))""",
     """\
-fig, ax = plt.subplots(1, 3, figsize=(14, 3.8))
-for a, r, title, cmap in ((ax[0], dtm, "DTM (m)", "terrain"), (ax[1], chm, "CHM (m)", "YlGn")):
-    im = a.imshow(r.data, origin="lower", extent=(r.xmin, r.xmax, r.ymin, r.ymax), cmap=cmap)
-    a.set(title=title, xlabel="x (m)"); fig.colorbar(im, ax=a, shrink=0.85)
-ax[2].scatter(cloud.x[slab], cloud.attrs["height"][slab], s=0.3, c="C2")
-ax[2].set(title="height above ground, 2 m slice", xlabel="x (m)", ylabel="height (m)");""",
+fig, ax = plt.subplots(1, 3, figsize=(10, 3.4), gridspec_kw={"width_ratios": [1, 1, 1.15]})
+for a, r, title, label in ((ax[0], dtm, "Terrain (DTM)", "elevation (m)"),
+                           (ax[1], chm, "Canopy height (CHM)", "height above ground (m)")):
+    im = a.imshow(r.data, origin="lower", extent=(r.xmin, r.xmax, r.ymin, r.ymax))
+    a.set(title=title, xlabel="x (m)", aspect="equal"); fig.colorbar(im, ax=a, shrink=0.8, label=label)
+ax[0].set_ylabel("y (m)")
+ax[2].scatter(cloud.x[slab], cloud.attrs["height"][slab], s=0.3, c=LEAF)
+ax[2].set(title=f"Heights in the row at y = {y0:.1f} m", xlabel="x (m)", ylabel="height (m)");""",
     md("""Rasters export to an ESRI ASCII grid, or to GeoTIFF with
 `dtm.to_geotiff("dtm.tif", crs="EPSG:28352")` when `rasterio` is installed
 (`pip install sylva-rs[geotiff]`). Pass the same `bounds` on every date so a
@@ -395,16 +428,17 @@ for t in stems[:10]:
     """\
 m = labels > 0
 shuffle = np.random.default_rng(3).permutation(labels.max() + 2)   # neighbouring trees get unlike colours
-colour = shuffle[labels] % 20
-fig, ax = plt.subplots(1, 2, figsize=(13, 5))
-ax[0].scatter(cloud.x[~m][::10], cloud.y[~m][::10], s=0.2, c="0.88")
-ax[0].scatter(cloud.x[m][::4], cloud.y[m][::4], c=colour[m][::4], s=0.3, cmap="tab20")
+colour = shuffle[labels] % LABELS.N
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.8))
+ax[0].scatter(cloud.x[~m][::10], cloud.y[~m][::10], s=0.2, c=CONTEXT)
+ax[0].scatter(cloud.x[m][::4], cloud.y[m][::4], c=colour[m][::4], s=0.3, cmap=LABELS, vmin=0, vmax=LABELS.N)
 for t in stems:
     ax[0].add_patch(plt.Circle((t.x, t.y), max(t.dbh / 2, 0.2), fill=False, color="k", lw=1.0))
-    ax[0].annotate(str(t.tree_id), (t.x + 0.35, t.y + 0.35), fontsize=7)
-ax[0].set(title="tree labels and stem positions", xlabel="x (m)", ylabel="y (m)", aspect="equal")
-ax[1].scatter(cloud.x[m][::4], cloud.attrs["height"][m][::4], c=colour[m][::4], s=0.3, cmap="tab20")
-ax[1].set(title="side view", xlabel="x (m)", ylabel="height (m)", aspect="equal");""",
+    ax[0].annotate(str(t.tree_id), (t.x + 0.35, t.y + 0.35), fontsize=8,
+                   bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.7))
+ax[0].set(title="Trees from above, with stems and their ids (grey: no tree)", xlabel="x (m)", ylabel="y (m)", aspect="equal")
+ax[1].scatter(cloud.x[m][::4], cloud.attrs["height"][m][::4], c=colour[m][::4], s=0.3, cmap=LABELS, vmin=0, vmax=LABELS.N)
+ax[1].set(title="The same trees from the side", xlabel="x (m)", ylabel="height above ground (m)", aspect="equal");""",
     md("""There is no field inventory for this tile, so treat the table as a
 demonstration: detection and segmentation are scored against manually
 segmented plots (including Litchfield) in
@@ -439,19 +473,41 @@ real = [t for t in stems if not (t.dbh > 0.4 and t.height < 8)]
 print(f"every candidate:         {trees.basal_area(stems, area):5.1f} m2/ha")
 print(f"without wide and short:  {trees.basal_area(real, area):5.1f} m2/ha ({len(real)} stems)")
 print(f"  and DBH >= 10 cm:      {trees.basal_area(real, area, min_dbh=0.1):5.1f} m2/ha")""",
-    md("## Taper and crown shape"),
+    md("""## Taper and crown shape
+
+`dbh_profile` fits a circle to a thin slice at each height, using the points
+within `search_radius` of the stem (0.75 m by default). On the tallest tree
+one slice fails: at 2 m the search radius takes in a shrub beside the trunk,
+and the circle is fitted through both, 1.3 m wide. A search radius of 0.4 m,
+still well above the trunk's radius, leaves the shrub out. The widening at
+7 m is real: the stem forks there."""),
     """\
 big = max(stems, key=lambda t: t.height)
-diam = trees.dbh_profile(cloud, (big.x, big.y), heights=np.arange(0.5, 8.0, 0.5))
+heights = np.arange(0.5, 8.0, 0.5)
+diam = trees.dbh_profile(cloud, (big.x, big.y), heights=heights)
+tight = trees.dbh_profile(cloud, (big.x, big.y), heights=heights, search_radius=0.4)
 shape = trees.crown_shape(cloud[labels == big.tree_id], base_xy=(big.x, big.y))
 print(f"tree {big.tree_id}: DBH {big.dbh:.3f} m, height {big.height:.1f} m, "
       f"crown volume {shape['volume']:.0f} m3, asymmetry {shape['asymmetry']:.2f}")
-fig, ax = plt.subplots(1, 2, figsize=(9, 4))
-ax[0].plot(diam[:, 1], diam[:, 0], "o-")
-ax[0].set(xlabel="diameter (m)", ylabel="height (m)", title=f"taper of tree {big.tree_id}")
+print("diameter at 2 m:", round(float(diam[3, 1]), 2), "m with a 0.75 m search radius,",
+      round(float(tight[3, 1]), 2), "m with 0.4 m")
+
+fig, ax = plt.subplots(1, 3, figsize=(10, 4), gridspec_kw={"width_ratios": [1, 1, 0.9]})
+ax[0].plot(100 * diam[:, 1], diam[:, 0], "o-", c="C0", label="search radius 0.75 m (default)")
+ax[0].plot(100 * tight[:, 1], tight[:, 0], "s--", c="C1", ms=3.5, label="search radius 0.4 m")
+ax[0].set(xlabel="stem diameter (cm)", ylabel="height above ground (m)", title=f"Taper of tree {big.tree_id}")
+ax[0].legend(loc="center right")
+r = np.hypot(cloud.x - big.x, cloud.y - big.y)
+at2 = (np.abs(cloud.attrs["height"] - 2.0) < 0.05) & (r < 1.0)
+ax[1].scatter(cloud.x[at2] - big.x, cloud.y[at2] - big.y, s=3, c="k")
+for radius, colour in ((0.75, "C0"), (0.4, "C1")):
+    ax[1].add_patch(plt.Circle((0, 0), radius, fill=False, ec=colour, ls="--", lw=1.2))
+ax[1].set(aspect="equal", xlim=(-1, 1), ylim=(-1, 1), xlabel="x from the stem (m)", ylabel="y from the stem (m)",
+          title="The slice at 2 m, from above,\\nwith the two search radii")
 sel = labels == big.tree_id
-ax[1].scatter(cloud.x[sel], cloud.attrs["height"][sel], s=0.3, c="C2")
-ax[1].set(xlabel="x (m)", title=f"tree {big.tree_id}", aspect="equal");""",
+ax[2].scatter(cloud.x[sel], cloud.attrs["height"][sel], s=0.3, c=LEAF)
+ax[2].axhline(2.0, c="k", lw=0.8, ls="--")
+ax[2].set(xlabel="x (m)", ylabel="height above ground (m)", title=f"Tree {big.tree_id} from the side", aspect="equal");""",
 ]
 
 NOTEBOOKS["06_qsm"] = [
@@ -474,11 +530,14 @@ from sylva import filters
 d, _ = filters.knn(true_wood.xyz, wood.xyz, 1)
 print(f"{len(wood):,} wood points kept; {np.mean(d[:, 0] < 0.03):.1%} of them lie on true wood")
 
-fig, ax = plt.subplots(1, 2, figsize=(8, 5), sharey=True)
-ax[0].scatter(tree.x, tree.z, s=0.3, c=np.where(tree.attrs["classification"] == 5, "saddlebrown", "yellowgreen"))
-ax[0].set(title="all points", aspect="equal", xlabel="x (m)", ylabel="z (m)")
-ax[1].scatter(wood.x, wood.z, s=0.3, c="saddlebrown")
-ax[1].set(title="wood_points", aspect="equal", xlabel="x (m)");""",
+is_wood = tree.attrs["classification"] == 5
+fig, ax = plt.subplots(1, 2, figsize=(7, 5), sharex=True, sharey=True)
+ax[0].scatter(tree.x[~is_wood], tree.z[~is_wood], s=0.3, c=LEAF, label="leaf")
+ax[0].scatter(tree.x[is_wood], tree.z[is_wood], s=0.3, c=WOOD, label="wood")
+ax[0].set(title="All points, by true class", aspect="equal", xlabel="x (m)", ylabel="z (m)")
+ax[0].legend(markerscale=12, loc="lower left")
+ax[1].scatter(wood.x, wood.z, s=0.3, c=WOOD)
+ax[1].set(title="Points kept by wood_points", aspect="equal", xlabel="x (m)");""",
     md("## Cylinder model"),
     """\
 model = qsm.build_qsm(wood, base_xy=(0.0, 0.0))
@@ -497,12 +556,15 @@ a, b = model.start[:, [0, 2]], model.end[:, [0, 2]]
 d = b - a
 n = np.c_[-d[:, 1], d[:, 0]] / np.maximum(np.hypot(*d.T), 1e-9)[:, None] * model.column("radius")[:, None]
 order = model.column("branch_order").astype(int)
-fig, ax = plt.subplots(figsize=(5, 6))
+fig, ax = plt.subplots(figsize=(5, 5.5))
+colours = [f"C{min(o, 7)}" for o in order]
 ax.add_collection(PolyCollection(np.stack([a + n, b + n, b - n, a - n], axis=1),
-                                 facecolor=[f"C{min(o, 9)}" for o in order],
-                                 edgecolor=[f"C{min(o, 9)}" for o in order], lw=0.3))
+                                 facecolor=colours, edgecolor=colours, lw=0.3))
 ax.autoscale_view()
-ax.set(aspect="equal", xlabel="x (m)", ylabel="z (m)", title="cylinders at true width, coloured by branch order");""",
+for o in np.unique(order):
+    ax.plot([], [], c=f"C{min(o, 7)}", lw=4, label="0 (stem)" if o == 0 else str(o))
+ax.legend(title="branch order", loc="upper left", bbox_to_anchor=(1.0, 1.0))
+ax.set(aspect="equal", xlabel="x (m)", ylabel="z (m)", title="Cylinders at their true width, side view");""",
     md("""## A real tree, and why to check `measured_volume_fraction`
 
 The same steps on the tallest tree of the Litchfield tile (notebook 5). The
@@ -534,10 +596,10 @@ print(f"fitted to points: {m['measured_volume_fraction']:.0%} of the volume, "
       f"{m['measured_length_fraction']:.0%} of the length")""",
     md("""Two lessons. The DBHs agree (0.316 m against 0.319 m), because breast
 height is where the stem is best sampled. The two fractions differ widely:
-most of the volume lies in the trunk and the main limbs, which were fitted to
-points, but only about a fifth of the length was, so the finer branches come
-from the taper and pipe-model priors. The total volume is supported by the
-data here; the branch volume and length are not. The height cut keeps the
+nearly two thirds of the volume lies in the trunk and the main limbs, which
+were fitted to points, but only 4 % of the length was, so the finer branches
+come from the taper and pipe-model priors. The stem volume is supported by
+the data here; a third of the total volume, and the branch length, are not. The height cut keeps the
 grass layer out of the base fit; on this tree it changes little, but tussocks
 against a trunk can widen the base cylinder. Volumes are validated against felled
 trees in [Benchmarks](../benchmarks/qsm.md), on single-tree clouds two orders
@@ -578,10 +640,14 @@ print("PAI from voxel occupancy:", round(float(np.nansum(pad) * 0.25), 2),
       "  (the ray-traced plot value for Litchfield is 1.4, see the canopy benchmark)")
 
 hb, counts = canopy.vertical_profile(veg, bin_size=0.5)
-fig, ax = plt.subplots(1, 3, figsize=(12, 4.2), sharey=True)
-ax[0].barh(hb, counts, height=0.5, align="edge"); ax[0].set(title="points per 0.5 m", ylabel="height (m)")
-ax[1].plot(grid.vertical_profile(), grid.z_levels() - grid.origin[2]); ax[1].set(title="fraction of voxels occupied")
-ax[2].plot(pad, z); ax[2].set(title="PAD (m2 m-3)");""",
+fig, ax = plt.subplots(1, 3, figsize=(10, 3.8), sharey=True)
+ax[0].barh(hb, np.asarray(counts) / 1000, height=0.5, align="edge", color="C0")
+ax[0].set(title="Points", xlabel="points per 0.5 m layer (thousands)", ylabel="height above ground (m)")
+ax[1].plot(grid.vertical_profile(), grid.z_levels() - grid.origin[2])
+ax[1].set(title="Voxel occupancy", xlabel="fraction of 0.25 m voxels occupied")
+ax[2].plot(pad, z)
+ax[2].set(title="Plant area density", xlabel="PAD (m² m⁻³)")
+fig.suptitle("Three vertical profiles of the same tile");""",
     md("""The savanna's structure shows in all three: a dense grass and shrub
 layer below 2 m, a sparse middle, and a canopy from 8 m to 20 m. The point
 profile exaggerates the lower layers, which are metres from the scanners; the
@@ -611,7 +677,10 @@ echo_height = shots.echo_xyz()[:, 2] - synthetic.terrain_height(*shots.echo_xyz(
 zen, gap = canopy.gap_fraction_zenith(shots, echo_height, min_height=1.0, zenith_edges=np.arange(0, 95, 5.0))
 for method in ("hinge", "miller"):
     print(f"effective PAI ({method}): {canopy.lai_from_gap_fraction(zen, gap, method):.2f}")
-plt.plot(zen, gap, "o-"); plt.gca().set(xlabel="zenith (deg)", ylabel="gap fraction", ylim=(0, 1.02));""",
+fig, ax = plt.subplots()
+ax.plot(zen, gap, "o-")
+ax.set(xlabel="view zenith angle (deg)", ylabel="gap fraction", ylim=(0, 1.02), xlim=(0, 90),
+       title="Gap fraction seen by one synthetic scan");""",
     md("""Both estimators land well below the scene's 0.30, and that is the
 point of the exercise: one scan from inside a scene of discrete leaf discs
 misses most of the leaf area, and an *effective* PAI is a lower bound on the
@@ -653,16 +722,31 @@ print("zenith quartiles:", np.percentile(zen, [25, 50, 75]).round(0),
       "deg - mostly near-horizontal, because a 20 m tile is crossed by rays from the whole plot")
 print("pulses with more than one echo:", int(np.sum(shots.echo_count > 1)),
       "- a ray cloud stores one echo per ray, so the multi-echo structure is already gone")""",
+    md("""Left, the share of the pulses in each direction that end in an echo
+inside the tile; right, where the pulses start. The pulses of the scan
+position in the corner point into the tile (azimuth 180 to 270 degrees,
+clockwise from +y) and all end in it, since those going down reach the
+ground. The rest entered through the sides of the tile, and many of them
+cross it without a return."""),
     """\
 hit = shots.echo_count > 0
-fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-ax[0].scatter(az[~hit][::4], zen[~hit][::4], s=0.2, c="lightskyblue", label="no return")
-ax[0].scatter(az[hit][::4], zen[hit][::4], s=0.2, c="darkgreen", label="return")
-ax[0].set(xlabel="azimuth (deg)", ylabel="zenith (deg)", ylim=(130, 0), title="pulses by direction")
-ax[0].legend(markerscale=20, loc="lower right")
-ax[1].scatter(shots.origin[::20, 0], shots.origin[::20, 1], s=0.3, c="C1")
-ax[1].set(title="origins: the tile boundary, plus one real scan position",
-          xlabel="x (m)", ylabel="y (m)", aspect="equal");""",
+az_edges, zen_edges = np.arange(0, 361, 6), np.arange(0, 131, 3)
+fired, _, _ = np.histogram2d(az, zen, [az_edges, zen_edges])
+returned, _, _ = np.histogram2d(az[hit], zen[hit], [az_edges, zen_edges])
+fraction = np.where(fired >= 20, returned / np.maximum(fired, 1), np.nan).T     # at least 20 pulses per cell
+fig, ax = plt.subplots(1, 2, figsize=(10, 4), gridspec_kw={"width_ratios": [1.5, 1]})
+im = ax[0].imshow(fraction, origin="upper", extent=(0, 360, 130, 0), aspect="auto", vmin=0, vmax=1)
+ax[0].axhline(90, c="w", lw=0.8, ls="--")
+ax[0].text(4, 88, "horizon", c="w", fontsize=8, va="bottom")
+fig.colorbar(im, ax=ax[0], label="fraction of pulses with a return")
+ax[0].set(xlabel="azimuth (deg)", ylabel="zenith (deg)", title="Pulses by direction (blank: fewer than 20)")
+ax[1].scatter(shots.origin[::20, 0], shots.origin[::20, 1], s=0.3, c="C0")
+ax[1].set(title="Pulse origins, from above", xlabel="x (m)", ylabel="y (m)", aspect="equal")
+keys, n = np.unique(np.round(shots.origin[:, :2], 1), axis=0, return_counts=True)
+scanner = keys[n.argmax()]                    # the origin most pulses share
+ax[1].plot(*scanner, "o", ms=9, mfc="none", mec="C3", mew=1.5)
+ax[1].annotate("the one real scan\\nposition in the tile", xy=scanner, xytext=(10, 10), ha="center", fontsize=8.5, bbox=dict(fc="white", ec="none", alpha=0.8),
+               arrowprops=dict(arrowstyle="->", lw=0.8));""",
     md("""One scan position does fall inside the tile, in the corner, and keeps
 its true origin: 38 % of the pulses here are its. The rest of the interior
 scatter is not scan positions but rounding -- a ray cloud stores the vector to
@@ -747,14 +831,24 @@ state = grid.state
 names = ["unobserved", "occluded", "empty", "filled"]
 print({n: f"{np.mean(state == i):.1%}" for i, n in enumerate(names)})
 print({k: round(v, 3) for k, v in grid.occlusion_profile()["total"].items()})
-fig, ax = plt.subplots(1, 3, figsize=(13, 3.8))
-j = 15                                        # the row of voxels at y = 7.5 m
-for a, (v, title, kw) in zip(ax, [
-        (state[:, j, :], "state", dict(cmap="viridis", vmin=0, vmax=3)),
-        (np.log10(grid.num_beams[:, j, :] + 1), "log10 beams", dict(cmap="magma")),
-        (grid.num_hits[:, j, :], "echoes", dict(cmap="Greens", vmax=50))]):
-    im = a.imshow(v, origin="lower", **kw); a.set(title=title, xlabel="x voxel", ylabel="z voxel")
-    fig.colorbar(im, ax=a, shrink=0.8)""",
+from matplotlib.colors import LogNorm
+
+j = 15                                        # the row of voxels at y = 7.5 to 8 m
+ext = (grid.origin[0], grid.origin[0] + grid.voxel_size * state.shape[2],
+       grid.origin[2], grid.origin[2] + grid.voxel_size * state.shape[0])
+state_colours = ListedColormap(["white", "0.45", "#CFE3F0", LEAF])      # unobserved, occluded, empty, filled
+fig, ax = plt.subplots(1, 3, figsize=(10, 3.3), sharey=True)
+im = ax[0].imshow(state[:, j, :], origin="lower", extent=ext, cmap=state_colours, vmin=-0.5, vmax=3.5)
+cb = fig.colorbar(im, ax=ax[0], ticks=range(4), shrink=0.9)
+cb.ax.set_yticklabels(names)
+im = ax[1].imshow(grid.num_beams[:, j, :], origin="lower", extent=ext, norm=LogNorm(1, 1e4))
+fig.colorbar(im, ax=ax[1], shrink=0.9, label="pulses through the voxel")
+im = ax[2].imshow(grid.num_hits[:, j, :], origin="lower", extent=ext, vmax=50)
+fig.colorbar(im, ax=ax[2], shrink=0.9, label="echoes in the voxel", extend="max")
+for a, title in zip(ax, ("Voxel state", "Pulses", "Echoes")):
+    a.set(title=title, xlabel="x (m)")
+ax[0].set_ylabel("z (m)")
+fig.suptitle("A vertical slice of 0.5 m voxels at y = 7.5 to 8 m");""",
     md("""## Attenuation, and where the tile can support an estimate
 
 FPL and PPL agree where voxels are well sampled and diverge where they are not,
@@ -769,18 +863,22 @@ settle it."""),
     """\
 beams = np.median(grid.num_beams, axis=(1, 2))
 z = grid.z_levels() + 0.25
-fig, ax = plt.subplots(1, 3, figsize=(13, 3.8))
-ax[0].loglog(grid.attenuation_fpl[(grid.num_beams >= 200) & (grid.num_hits > 0)],
-             grid.attenuation_ppl[(grid.num_beams >= 200) & (grid.num_hits > 0)], ".", ms=1.5, alpha=0.3)
-ax[0].plot([1e-3, 40], [1e-3, 40], "k", lw=0.6)
-ax[0].set(xlabel="λ FPL (1/m)", ylabel="λ PPL (1/m)", title="the two estimators (≥ 200 beams)")
-ax[1].plot(beams, z, "C1")
-ax[1].axvline(200, color="k", ls="--", lw=0.8)
-ax[1].set(xscale="log", xlabel="beams per voxel (median)", ylabel="z (m)", title="sampling by layer")
-for mb in (20, 200):
-    ax[2].plot(grid.profile("pad_ppl", min_beams=mb), z, label=f"min_beams={mb}")
-ax[2].set(xlabel="PAD (m2 m-3)", title="the same profile, two thresholds"); ax[2].legend()
 usable = z[beams >= 200].max()
+fig, ax = plt.subplots(1, 3, figsize=(10, 3.6))
+well = (grid.num_beams >= 200) & (grid.num_hits > 0)
+ax[0].loglog(grid.attenuation_fpl[well], grid.attenuation_ppl[well], ".", ms=1.5, alpha=0.3, c="C0")
+ax[0].plot([1e-3, 40], [1e-3, 40], "k", lw=0.8, label="1:1")
+ax[0].set(xlabel="λ, FPL (m⁻¹)", ylabel="λ, PPL (m⁻¹)", title="The two estimators, per voxel\\n(voxels with ≥ 200 pulses)")
+ax[0].legend(loc="upper left")
+for a in ax[1:]:
+    a.axhspan(usable, z.max() + 0.25, color=CONTEXT, alpha=0.5, lw=0)
+ax[1].plot(beams, z, "C0")
+ax[1].axvline(200, color="k", ls="--", lw=0.8)
+ax[1].text(230, 0.5, "200", fontsize=8.5)
+ax[1].set(xscale="log", xlabel="median pulses per voxel", ylabel="z (m)", title="Sampling by layer\\n(grey: median below 200)")
+for mb, style in ((20, "-"), (200, "--")):
+    ax[2].plot(grid.profile("pad_ppl", min_beams=mb), z, style, label=f"min_beams = {mb}")
+ax[2].set(xlabel="PAD (m² m⁻³)", ylabel="z (m)", title="The PPL profile, two thresholds"); ax[2].legend(loc="upper right")
 print(f"median beams per voxel stays above 200 up to {usable:.1f} m, and falls below 20 above "
       f"{z[beams >= 20].max():.1f} m")""",
     md("""Read the profile up to that height and no further. Summed over the
@@ -791,19 +889,26 @@ inventing plant area. A 20 x 20 m cut-out cannot give a plot's plant area
 index either way: its rays were clipped at the boundary and the upper canopy is
 barely sampled. The [canopy benchmark](../benchmarks/canopy.md) has the plot
 values from whole scans, where Sylva's profiles match pylidar-tls-canopy to
-within 4 %."""),
+within 4 %.
+
+The slice below shows the same voxel by voxel: most of the dense-looking
+voxels in the upper canopy are ones that fewer than 200 pulses reached."""),
     """\
 ok = beams >= 200
 print("PAI over the well-sampled layers only:",
       round(float(np.nansum(grid.profile("pad_ppl", min_beams=200)[ok]) * grid.voxel_size), 2),
       " over every layer:",
       round(float(np.nansum(grid.profile("pad_ppl", min_beams=200)) * grid.voxel_size), 2))
-fig, ax = plt.subplots(1, 2, figsize=(11, 3.8))
-for a, (v, title) in zip(ax, [(grid.transmittance[:, j, :], "transmittance"),
-                              (grid.pad_ppl[:, j, :], "PAD (m2 m-3), same slice")]):
-    im = a.imshow(v, origin="lower", cmap="bone" if "trans" in title else "YlGn",
-                  vmin=0, vmax=1 if "trans" in title else 3)
-    a.set(title=title, xlabel="x voxel", ylabel="z voxel"); fig.colorbar(im, ax=a, shrink=0.8)""",
+pad_slice = grid.pad_ppl[:, j, :]
+fig, ax = plt.subplots(1, 2, figsize=(10, 3.8), sharey=True)
+ax[0].imshow(pad_slice, origin="lower", extent=ext, vmin=0, vmax=3)
+ax[1].imshow(np.where(grid.num_beams[:, j, :] >= 200, np.nan, 1.0), origin="lower", extent=ext,
+             cmap=ListedColormap([CONTEXT]))
+im = ax[1].imshow(np.where(grid.num_beams[:, j, :] >= 200, pad_slice, np.nan), origin="lower", extent=ext, vmin=0, vmax=3)
+fig.colorbar(im, ax=ax, shrink=0.9, label="PAD, PPL (m² m⁻³)", extend="max")
+ax[0].set(title="Every voxel", xlabel="x (m)", ylabel="z (m)")
+ax[1].set(title="Voxels with ≥ 200 pulses (grey: fewer)", xlabel="x (m)")
+fig.suptitle("Plant area density in the slice at y = 7.5 to 8 m");""",
     md("""## Checking the estimators against a known scene
 
 To see whether the numbers are right, the scene has to be known. Four
@@ -835,9 +940,15 @@ for tid, t in inc.tree_iad.items():
     print(f"tree {tid}: leaves {t['liad_de_wit']:12s} G_leaf {t['g_leaf']:.2f}   "
           f"wood {t['wiad_de_wit']:12s} G_wood {t['g_wood']:.2f}")
 t = inc.tree_iad[3]
-plt.step(np.degrees(t["bin_centres"]), t["liad"], where="mid", label="leaf")
-plt.step(np.degrees(t["bin_centres"]), t["wiad"], where="mid", label="wood")
-plt.gca().set(xlabel="inclination of the surface normal (deg)", ylabel="fraction", title="tree 3"); plt.legend();""",
+fig, ax = plt.subplots()
+ax.step(np.degrees(t["bin_centres"]), t["liad"], where="mid", c=LEAF, label="leaves")
+ax.step(np.degrees(t["bin_centres"]), t["wiad"], where="mid", c=WOOD, label="wood")
+ax.set(xlabel="inclination of the surface normal from vertical (deg)", ylabel="fraction of the surface",
+       xlim=(0, 90), title="Inclination distributions of tree 3"); ax.legend(loc="upper left");""",
+    md("""The wood is mostly stem and limbs, near-vertical surfaces whose normals
+lie close to 90 degrees from vertical, hence its peak there. The leaves spread
+over every angle, rising towards 90 degrees as a spherical distribution does,
+in proportion to the sine of the angle."""),
     md("## Wood volume, files and streaming\n\nQSM cylinders can be rasterised into the same grid; `write` produces an AMAPVox `.vox` file or a text table; and a shots file is voxelised without being loaded."),
     """\
 from sylva import qsm
@@ -985,11 +1096,12 @@ swung = plot.rotate(30)
 print(f"rotated about the grid origin instead, the tile moves "
       f"{np.linalg.norm(swung.xyz.mean(axis=0) - plot.xyz.mean(axis=0)) / 1000:,.0f} km")
 
-fig, ax = plt.subplots(figsize=(5, 5))
-ax.scatter(local.x[::40], local.y[::40], s=0.2, c="0.7", label="local")
-ax.scatter(turned.x[::40], turned.y[::40], s=0.2, c="C0", label="rotated 30 deg about the centre")
-ax.set(aspect="equal", xlabel="x (m)", ylabel="y (m)")
-ax.legend(markerscale=20, loc="upper right", fontsize=8);""",
+fig, ax = plt.subplots(figsize=(5.5, 5))
+ax.scatter(local.x[::20], local.y[::20], s=0.2, c=CONTEXT, label="local frame")
+ax.scatter(turned.x[::20], turned.y[::20], s=0.2, c="C0", label="rotated 30 deg about the centre")
+ax.plot(*centre[:2], "+", c="k", ms=10, mew=1.5)
+ax.set(aspect="equal", xlabel="x, local (m)", ylabel="y, local (m)", title="The tile rotated about its centre (+)")
+ax.legend(markerscale=15, loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2);""",
     md("""## Applying registration matrices
 
 Registration yields one matrix per scan: RiSCAN SOPs, `.DAT` files, or the
@@ -1023,15 +1135,15 @@ print("points per scan:", np.bincount(merged.attrs["scan_id"]))
 print(f"largest distance from the tile's own coordinates: {np.abs(merged.xyz - reference.xyz).max() * 1000:.2f} mm")
 
 raw = [sylva.read(f) for f in files]
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.6))
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.6))
 for i, r in enumerate(raw):
-    ax[0].scatter(r.x[::30], r.y[::30], s=0.2, c=f"C{i}", label=files[i].stem)
-ax[0].set(aspect="equal", title="each scan in its own frame", xlabel="x (m)", ylabel="y (m)")
-ax[0].legend(markerscale=20, fontsize=8)
+    ax[0].scatter(r.x[::15], r.y[::15], s=0.2, c=f"C{i}", label=files[i].stem)
+ax[0].set(aspect="equal", title="Each scan in its own scanner frame", xlabel="x, scanner (m)", ylabel="y, scanner (m)")
+fig.legend(markerscale=15, loc="outside lower center", ncol=3)
 for i in range(len(files)):
     m = merged.attrs["scan_id"] == i
-    ax[1].scatter(merged.x[m][::30], merged.y[m][::30], s=0.2, c=f"C{i}")
-ax[1].set(aspect="equal", title="after apply_transforms", xlabel="x (m)");""",
+    ax[1].scatter(merged.x[m][::15], merged.y[m][::15], s=0.2, c=f"C{i}")
+ax[1].set(aspect="equal", title="After apply_transforms, in the tile's frame", xlabel="x (m)", ylabel="y (m)");""",
     md("""The scans come back to within a millimetre of where they started. The
 remaining error is the LAZ files' 1 mm coordinate scale, applied to the
 points in their scanner frames before the matrices moved them back; with
@@ -1110,12 +1222,12 @@ print(f"the same label as the full segmentation: {np.mean(tid == direct):.1%} of
     """\
 slab = (cloud.y > 6.5) & (cloud.y < 8.5)
 differ = slab & in_tree & (tid != direct)
-fig, ax = plt.subplots(figsize=(10, 4))
-ax.scatter(cloud.x[slab], cloud.attrs["height"][slab], s=0.2, c="0.85")
-ax.scatter(cloud.x[differ], cloud.attrs["height"][differ], s=1.0, c="C3", label="label differs")
-ax.set(title="2 m slice: where the transferred tree label differs from the full segmentation",
-       xlabel="x (m)", ylabel="height (m)", aspect="equal")
-ax.legend(markerscale=8, loc="upper right");""",
+fig, ax = plt.subplots(figsize=(7, 5))
+ax.scatter(cloud.x[slab], cloud.attrs["height"][slab], s=0.2, c=CONTEXT, label="same label")
+ax.scatter(cloud.x[differ], cloud.attrs["height"][differ], s=1.5, c="C3", label="label differs")
+ax.set(title="Where the transferred tree label differs from the\\nfull segmentation (slice y = 6.5 to 8.5 m)",
+       xlabel="x (m)", ylabel="height above ground (m)", aspect="equal")
+ax.legend(markerscale=6, loc="upper right");""",
     md("""## Terrain models by interpolation
 
 `ground.make_dtm` takes the lowest ground point in each cell by default.
@@ -1145,16 +1257,21 @@ hidden under stems and shrubs."""),
 holes = interpolate.grid(ground_pts, 0.25, method="tin", bounds=(0, 0, 20, 20), max_distance=0.5)
 print(f"cells with no ground point within 0.5 m: {np.isnan(holes.data).mean():.1%}")
 ext = (lowest.xmin, lowest.xmax, lowest.ymin, lowest.ymax)
-fig, ax = plt.subplots(1, 4, figsize=(15, 3.6))
-im = ax[0].imshow(lowest.data, origin="lower", extent=ext, cmap="terrain")
-fig.colorbar(im, ax=ax[0], shrink=0.8); ax[0].set_title("lowest point per cell (m)")
-for a, m in zip(ax[1:3], ("tin", "natural")):
-    im = a.imshow(dtms[m].data - lowest.data, origin="lower", extent=ext, cmap="RdBu_r", vmin=-0.2, vmax=0.2)
-    fig.colorbar(im, ax=a, shrink=0.8); a.set_title(f"{m} minus lowest (m)")
-im = ax[3].imshow(holes.data, origin="lower", extent=ext, cmap="terrain")
-fig.colorbar(im, ax=ax[3], shrink=0.8); ax[3].set_title("TIN, max_distance 0.5 m")
-for a in ax:
-    a.set(xlabel="x (m)")""",
+fig, ax = plt.subplots(2, 2, figsize=(8.5, 7), sharex=True, sharey=True)
+lim = np.nanpercentile(np.r_[lowest.data.ravel(), holes.data.ravel()], [1, 99])
+im = ax[0, 0].imshow(lowest.data, origin="lower", extent=ext, vmin=lim[0], vmax=lim[1])
+fig.colorbar(im, ax=ax[0, 0], shrink=0.9, label="elevation (m)"); ax[0, 0].set_title("Lowest point per cell")
+im = ax[0, 1].imshow(holes.data, origin="lower", extent=ext, vmin=lim[0], vmax=lim[1])
+fig.colorbar(im, ax=ax[0, 1], shrink=0.9, label="elevation (m)")
+ax[0, 1].set_title("TIN, max_distance 0.5 m")
+for a, m in zip(ax[1], ("tin", "natural")):
+    im = a.imshow(dtms[m].data - lowest.data, origin="lower", extent=ext, cmap=DIVERGING, vmin=-0.2, vmax=0.2)
+    fig.colorbar(im, ax=a, shrink=0.9, label="difference (m)", extend="both")
+    a.set_title(f"{'TIN' if m == 'tin' else 'Natural neighbour'} minus lowest point")
+for a in ax[1]:
+    a.set_xlabel("x (m)")
+for a in ax[:, 0]:
+    a.set_ylabel("y (m)")""",
     md("""## Rasters onto points
 
 `sample_rasters` reads several rasters at every point in one call and adds
@@ -1178,10 +1295,11 @@ outside = np.isnan(interpolate.sample_raster(cloud, small, "ground").attrs["grou
 print(f"a DTM of the inner 10 x 10 m only: {outside.mean():.0%} of the points fall outside it and get NaN")
 
 slab = (cloud.y > 9) & (cloud.y < 11)
-fig, ax = plt.subplots(figsize=(10, 4))
-sc = ax.scatter(cloud.x[slab], h[slab], c=np.clip(relative[slab], 0, 1), s=0.3, cmap="viridis")
-ax.set(title="2 m slice, coloured by height relative to the CHM above", xlabel="x (m)", ylabel="height (m)", aspect="equal")
-fig.colorbar(sc, ax=ax, shrink=0.8);""",
+fig, ax = plt.subplots(figsize=(7, 5))
+sc = ax.scatter(cloud.x[slab], h[slab], c=np.clip(relative[slab], 0, 1), s=0.3)
+ax.set(title="Height of each point as a fraction of the canopy\\nheight above it (slice y = 9 to 11 m)",
+       xlabel="x (m)", ylabel="height above ground (m)", aspect="equal")
+fig.colorbar(sc, ax=ax, shrink=0.8, label="height / CHM");""",
 ]
 
 NOTEBOOKS["13_masking"] = [
@@ -1226,15 +1344,18 @@ for i, f in enumerate(subplots):
 burnt = masks.crop_polygons(cloud, subplots[[f.properties["treatment"] == "burnt" for f in subplots]])
 print("burnt subplot:", burnt)""",
     """\
-fig, ax = plt.subplots(figsize=(5.5, 5.5))
-colours = np.array(["0.85", "C1", "C0"])
+fig, ax = plt.subplots(figsize=(7, 4.6))
+colours = np.array([CONTEXT, "C0", "C1"])
 ax.scatter(cloud.x[::10], cloud.y[::10], s=0.2, c=colours[which[::10] + 1])
-for f in subplots:
+for i, f in enumerate(subplots):
     for part in f.parts:
         ax.plot(*part.exterior.T, "k", lw=0.8)
         for h in part.holes:
             ax.plot(*h.T, "k--", lw=0.8)
-ax.set(aspect="equal", xlabel="x (m)", ylabel="y (m)", title="points by subplot; the hole stays out");""",
+    ax.scatter([], [], s=20, c=f"C{i}", label=f"{f.properties['name']} ({f.properties['treatment']})")
+ax.scatter([], [], s=20, c=CONTEXT, label="outside, or in the hole")
+ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0))
+ax.set(aspect="equal", xlabel="x (m)", ylabel="y (m)", title="Points by subplot");""",
     md("""## Raster masks
 
 `raster_mask` tests the raster cell under each point against a range
@@ -1250,13 +1371,16 @@ low_veg = masks.expression(cloud, "0.3 < height < 2 & classification == 4")
 print(f"vegetation between 0.3 and 2 m: {np.mean(under_tall[low_veg]):.0%} of it under tall canopy, "
       f"{np.mean(in_gaps[low_veg]):.0%} in the gaps")
 
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.6))
-im = ax[0].imshow(chm.data, origin="lower", extent=(chm.xmin, chm.xmax, chm.ymin, chm.ymax), cmap="YlGn")
-fig.colorbar(im, ax=ax[0], shrink=0.8); ax[0].set(title="CHM (m)", xlabel="x (m)", ylabel="y (m)")
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.4), sharey=True)
+im = ax[0].imshow(chm.data, origin="lower", extent=(chm.xmin, chm.xmax, chm.ymin, chm.ymax))
+ax[0].contour(chm.data >= 10, levels=[0.5], extent=(chm.xmin, chm.xmax, chm.ymin, chm.ymax), colors="w", linewidths=0.8)
+fig.colorbar(im, ax=ax[0], shrink=0.9, label="canopy height (m)")
+ax[0].set(title="CHM, with the 10 m contour", xlabel="x (m)", ylabel="y (m)")
 m = low_veg & under_tall
 ax[1].scatter(cloud.x[low_veg & ~m][::4], cloud.y[low_veg & ~m][::4], s=0.2, c="C1", label="elsewhere")
-ax[1].scatter(cloud.x[m][::4], cloud.y[m][::4], s=0.2, c="C2", label="under canopy >= 10 m")
-ax[1].set(aspect="equal", title="vegetation 0.3-2 m", xlabel="x (m)"); ax[1].legend(markerscale=20, fontsize=8);""",
+ax[1].scatter(cloud.x[m][::4], cloud.y[m][::4], s=0.2, c="C0", label="under canopy of 10 m or more")
+ax[1].set(aspect="equal", title="Vegetation 0.3 to 2 m above ground", xlabel="x (m)")
+ax[1].legend(markerscale=15, loc="upper left", bbox_to_anchor=(1.0, 1.0));""",
     md("""## Expressions
 
 `cloud.where`, `masks.expression` and `masks.crop_expression` take a
@@ -1311,11 +1435,13 @@ lost = masks.difference(cloud, after, 0.05)
 missed = block & ~masks.near(cloud, lost, 1e-6)
 fig, ax = plt.subplots(figsize=(6, 5))
 side = (cloud.y > 14) & (cloud.y < 17)
-ax.scatter(cloud.x[side & ~block], cloud.z[side & ~block], s=0.2, c="0.8")
-ax.scatter(lost.x, lost.z, s=0.4, c="C3", label="found by difference")
-ax.scatter(cloud.x[missed], cloud.z[missed], s=0.8, c="C0", label="removed but matched to a neighbour")
-ax.set(xlim=(12, 19), ylim=(-0.5, 8), xlabel="x (m)", ylabel="z (m)", title="the removed block, side view")
-ax.legend(markerscale=10, fontsize=8);""",
+ax.scatter(cloud.x[side & ~block], cloud.z[side & ~block], s=0.2, c=CONTEXT, label="kept in both epochs")
+ax.scatter(lost.x, lost.z, s=0.4, c="C3", label="found by difference (5 cm)")
+ax.scatter(cloud.x[missed], cloud.z[missed], s=3, c="C0", label="removed, but within 5 cm of a kept point")
+ax.add_patch(plt.Rectangle((14, 0.5), 3, 5.5, fill=False, ls="--", lw=0.8, ec="k"))
+ax.set(xlim=(12, 19), ylim=(-0.5, 8), xlabel="x (m)", ylabel="z (m)",
+       title="The removed block (dashed), side view of y = 14 to 17 m")
+ax.legend(markerscale=5, loc="upper left");""",
 ]
 
 
@@ -1325,11 +1451,12 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 import sylva
 from sylva import synthetic
 
-plt.rcParams.update({"figure.dpi": 90, "figure.figsize": (7, 4), "axes.grid": False})
-tmp = Path(tempfile.mkdtemp())      # files written here are temporary"""
+tmp = Path(tempfile.mkdtemp())      # files written here are temporary
+""" + STYLE
 
 NOTEBOOKS["14_change"] = [
     md("""# 14. Change detection
@@ -1427,23 +1554,23 @@ is below its detection level of about a metre: a tree top that no pulse hit
 leaves no trace, so a height difference of a few decimetres between two scans
 is not evidence of growth, even where it happens to be right."""),
     """\
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.6))
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.4))
 ax[0].scatter(truth_1["x"], truth_1["y"], s=2000 * truth_1["dbh"] ** 2, facecolors="none", edgecolors="0.4",
               label="epoch 1 stems (size by DBH)")
-for kind, marker, colour in (("death", "x", "C3"), ("recruit", "+", "C2")):
+for kind, marker, colour in (("death", "x", "C3"), ("recruit", "+", "C0")):
     pts = np.array([[c["x"], c["y"]] for c in ep.of_kind(kind)])
-    ax[0].scatter(*pts.T, marker=marker, s=90, c=colour, label=f"true {kind}s")
+    ax[0].scatter(*pts.T, marker=marker, s=90, c=colour, linewidths=2, label=f"true {kind}s")
 removed = ep.of_kind("branch_removed")[0]
-ax[0].plot([removed["base_x"], removed["tip_x"]], [removed["base_y"], removed["tip_y"]], "C1", lw=2, label="limb removed")
-ax[0].set(xlim=(0, 30), ylim=(0, 30), aspect="equal", xlabel="x (m)", ylabel="y (m)", title="the plot and its changes")
-ax[0].legend(fontsize=7, loc="upper left", markerscale=0.6)
+ax[0].plot([removed["base_x"], removed["tip_x"]], [removed["base_y"], removed["tip_y"]], "C1", lw=2.5, label="limb removed")
+ax[0].set(xlim=(0, 30), ylim=(0, 30), aspect="equal", xlabel="x (m)", ylabel="y (m)", title="The plot and its known changes")
+ax[0].legend(loc="upper left", bbox_to_anchor=(1.0, 1.0), markerscale=0.7)
 order = np.argsort(table["true_d_dbh"].to_numpy())
 t = table.iloc[order]
-ax[1].errorbar(np.arange(len(t)), 1000 * t["d_dbh"], yerr=1000 * t["d_dbh_mdi"], fmt="o", ms=4, capsize=2,
-               label="measured, with its MDI")
+ax[1].errorbar(np.arange(len(t)), 1000 * t["d_dbh"], yerr=1000 * t["d_dbh_mdi"], fmt="o", ms=4, c="C0",
+               label="measured ± MDI")
 ax[1].scatter(np.arange(len(t)), 1000 * t["true_d_dbh"], marker="_", s=200, c="k", label="true", zorder=3)
-ax[1].set(xlabel="survivor (by true increment)", ylabel="DBH increment (mm)", title="DBH increments")
-ax[1].legend(fontsize=8);""",
+ax[1].set(xlabel="survivor, in order of true increment", ylabel="DBH increment (mm)", title="DBH increments of the survivors")
+ax[1].legend(loc="upper left");""",
     md("""## The plot summary
 
 `plot_summary` gives growth, mortality and recruitment per hectare and year,
@@ -1521,18 +1648,21 @@ dd = change.dod(chm(cloud_1), chm(cloud_2a), min_detectable=1.0)
 print(f"significant over {dd.area_changed:.0f} of {dd.area_compared:.0f} m²: "
       f"{dd.volume_gained:.0f} m³ gained, {dd.volume_lost:.0f} m³ lost")
 
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.6))
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.4), sharey=True)
 s = cloud_1[::5]
-ax[0].scatter(s.x, s.y, s=0.1, c="0.8")
+ax[0].scatter(s.x, s.y, s=0.1, c=CONTEXT)
 ax[0].scatter(cloud_1.x[far], cloud_1.y[far], s=0.2, c="C3")
+dead = np.array([[c["x"], c["y"]] for c in ep.of_kind("death")])
+ax[0].scatter(*dead.T, marker="x", c="k", s=50, label="dead stems")
 ax[0].set(aspect="equal", xlim=(0, 30), ylim=(0, 30), xlabel="x (m)", ylabel="y (m)",
-          title="epoch 1 points more than 30 cm from epoch 2")
+          title="Epoch 1 points > 30 cm from epoch 2 (red)")
+ax[0].legend(loc="lower right")
 r = dd.thresholded()
 im = ax[1].imshow(r.data, origin="lower", extent=(r.xmin, r.xmin + r.data.shape[1] * r.resolution,
                                                   r.ymin, r.ymin + r.data.shape[0] * r.resolution),
-                  cmap="RdBu", vmin=-15, vmax=15)
-fig.colorbar(im, ax=ax[1], shrink=0.8, label="CHM change (m)")
-ax[1].set(xlabel="x (m)", title="significant CHM change (|change| > 1 m)");""",
+                  cmap=DIVERGING, vmin=-15, vmax=15)
+fig.colorbar(im, ax=ax[1], shrink=0.9, label="CHM change, epoch 2 minus epoch 1 (m)")
+ax[1].set(xlabel="x (m)", title="CHM change beyond ±1 m (white: within)");""",
     md("""## Change in the voxels
 
 A voxel that holds no echoes in the later epoch has only lost its contents if
@@ -1559,18 +1689,18 @@ density only over the voxels both epochs sampled well, so that what one epoch
 did not see does not bias the comparison."""),
     """\
 lay = occ.layers
-fig, ax = plt.subplots(1, 2, figsize=(11.5, 4.4), gridspec_kw={"wspace": 0.45})
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.4), gridspec_kw={"width_ratios": [1.3, 1]})
 cols = [np.bincount(np.ravel_multi_index(((occ.centers(n)[:, 1] // 0.5).astype(int),
                                           (occ.centers(n)[:, 0] // 0.5).astype(int)), (60, 60)),
                     minlength=3600).reshape(60, 60) for n in ("lost", "gained")]
-im = ax[0].imshow(cols[1] - cols[0], origin="lower", extent=(0, 30, 0, 30), cmap="RdBu", vmin=-10, vmax=10)
+im = ax[0].imshow(cols[1] - cols[0], origin="lower", extent=(0, 30, 0, 30), cmap=DIVERGING, vmin=-10, vmax=10)
 ax[0].scatter(*dead.T, marker="x", c="k", s=60, label="dead stems")
-fig.colorbar(im, ax=ax[0], shrink=0.8, label="gained minus lost voxels per column")
-ax[0].set(xlabel="x (m)", ylabel="y (m)", title="voxel occupancy change"); ax[0].legend(fontsize=8)
+fig.colorbar(im, ax=ax[0], shrink=0.9, label="gained minus lost voxels per 0.5 m column", extend="both")
+ax[0].set(xlabel="x (m)", ylabel="y (m)", title="Voxel occupancy change"); ax[0].legend(loc="lower right")
 ax[1].plot(lay["pad_a"], lay["z"], label="epoch 1")
-ax[1].plot(lay["pad_b"], lay["z"], label="epoch 2")
-ax[1].set(xlabel="mean PAD over commonly sampled voxels (m² m⁻³)", ylabel="z (m)", title="PAD by layer")
-ax[1].legend(fontsize=8);""",
+ax[1].plot(lay["pad_b"], lay["z"], "--", label="epoch 2")
+ax[1].set(xlabel="mean PAD (m² m⁻³)", ylabel="z (m)", title="PAD by layer, over the voxels\\nboth epochs sampled")
+ax[1].legend(loc="upper right");""",
     md("""## Change in a QSM
 
 `compare_qsms` compares two cylinder models of one tree in one frame: the
@@ -1615,24 +1745,31 @@ rest of its radius came from the QSM's priors, so its volume is not counted
 as trusted change. The trusted change is the stem growth, which the taper
 increment measures to within its stated uncertainty."""),
     """\
-fig, ax = plt.subplots(1, 2, figsize=(11, 5), gridspec_kw={"width_ratios": [1, 1.2]})
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.8), gridspec_kw={"width_ratios": [1, 1.2]})
 lost_ids = set(qc.lost["id"].tolist())
 for model, colour, dx, name in ((qsm_1, "C0", 0.0, "epoch 1"), (qsm_2, "C1", 6.0, "epoch 2")):
     s, e = model.start, model.start + model.cylinders[:, 3:6] * model.column("length")[:, None]
     for i in range(len(s)):
         lost_here = model is qsm_1 and model.column("branch_id")[i] in lost_ids
-        ax[0].plot([s[i, 0] + dx, e[i, 0] + dx], [s[i, 2], e[i, 2]], c="C3" if lost_here else colour,
+        ax[0].plot([s[i, 0] + dx, e[i, 0] + dx], [s[i, 2], e[i, 2]], c="k" if lost_here else colour,
                    lw=max(0.5, 60 * model.column("radius")[i]))
     ax[0].text(base[0] + dx, s[:, 2].min() - 1.0, name, ha="center", va="center")
-ax[0].set(aspect="equal", ylim=(qsm_1.start[:, 2].min() - 1.8, None), xlabel="x (m, epoch 2 shifted by 6 m)", ylabel="z (m)", title="the two QSMs; lost limb in red")
+ax[0].plot([], [], c="k", lw=2, label="limb lost")
+ax[0].legend(loc="upper left")
+ax[0].set(aspect="equal", ylim=(qsm_1.start[:, 2].min() - 1.8, None), xlabel="x (m; epoch 2 shifted by 6 m)", ylabel="z (m)",
+          title="The two QSMs")
 tp = qc.taper
 mid = (tp["z0"] + tp["z1"]) / 2
 ok = tp["trusted"]
-ax[1].errorbar(1000 * tp["increment"][ok], mid[ok], xerr=2000 * tp["sigma"][ok], fmt="o", ms=4, capsize=2, label="trusted bins (2 sigma)")
-ax[1].plot(1000 * tp["increment"][~ok], mid[~ok], "x", c="0.5", label="not trusted")
+pooled, sigma = 1000 * qc.taper_increment, 1000 * qc.taper_sigma
+ax[1].axvspan(pooled - sigma, pooled + sigma, color="C0", alpha=0.2, lw=0, label="pooled over the trusted bins, ± 1 sigma")
+ax[1].axvline(pooled, c="C0", lw=1.5)
+ax[1].errorbar(1000 * tp["increment"][ok], mid[ok], xerr=1000 * tp["sigma"][ok], fmt="o", ms=4, c="C0",
+               ecolor=CONTEXT, elinewidth=1, label="one trusted bin, ± 1 sigma")
+ax[1].plot(1000 * tp["increment"][~ok], mid[~ok], "x", c="0.5", label="bin not trusted")
 ax[1].axvline(500 * true["d_dbh"], c="k", ls="--", lw=1, label="true")
-ax[1].set(xlabel="stem radius increment (mm)", ylabel="height above base (m)", title="taper increment")
-ax[1].legend(fontsize=8);""",
+ax[1].set(xlabel="stem radius increment (mm)", ylabel="height above base (m)", title="Taper increment, bin by bin and pooled")
+ax[1].legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2);""",
 ]
 
 
@@ -1675,21 +1812,22 @@ print(f"{flight.n_pulses:,} pulses fired; returns per pulse:",
 traj = flight.trajectory
 print("trajectory columns:", list(traj), f"({len(traj['time']):,} samples)")""",
     """\
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.6), dpi=72)
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.2), gridspec_kw={"width_ratios": [1, 1.2]})
 s = pts[::20]
-sc = ax[0].scatter(s.x, s.y, c=s.z, s=0.3, cmap="viridis")
+order = np.argsort(s.z)
+sc = ax[0].scatter(s.x[order], s.y[order], c=s.z[order], s=0.3)
 for line in np.unique(traj["line"]):
     k = traj["line"] == line
-    ax[0].plot(traj["x"][k], traj["y"][k], "k", lw=1)
+    ax[0].plot(traj["x"][k], traj["y"][k], "k", lw=1.2)
 ax[0].set(aspect="equal", xlim=(-15, 115), ylim=(-15, 115), xlabel="x (m)", ylabel="y (m)",
-          title="returns by height, and the flight lines")
-fig.colorbar(sc, ax=ax[0], shrink=0.8, label="z (m)")
+          title="Returns by height, and the flight lines (black)")
+fig.colorbar(sc, ax=ax[0], shrink=0.9, label="z (m)")
 slab = (pts.y > 48) & (pts.y < 52)
-for c, colour, name in ((2, "tab:brown", "ground"), (4, "tab:green", "leaves"), (5, "tab:olive", "wood")):
+for c, colour, name in ((2, GROUND, "ground"), (4, LEAF, "leaves"), (5, WOOD, "wood")):
     k = slab & (pts.attrs["classification"] == c)
-    ax[1].scatter(pts.x[k], pts.z[k], s=0.3, c=colour, label=name)
-ax[1].set(xlabel="x (m)", ylabel="z (m)", title="a 4 m slice, by true class")
-ax[1].legend(markerscale=15, fontsize=8);""",
+    ax[1].scatter(pts.x[k], pts.z[k], s=1 if c == 5 else 0.3, c=colour, label=name)
+ax[1].set(xlabel="x (m)", ylabel="z (m)", title="Side view of y = 48 to 52 m, by true class")
+ax[1].legend(markerscale=10, loc="upper left");""",
     md("""## Tiles and the catalogue
 
 The returns are written as four 50 m LAZ tiles. `als.catalog` reads only the
@@ -1720,14 +1858,16 @@ norm = als.normalize(ground_cat, tmp / "normalised", replace_z=True)
 h = norm.read((0, 0, 100, 100)).z
 print(norm, f"| heights {h.min():.2f} to {h.max():.2f} m")""",
     """\
-fig, ax = plt.subplots(1, 2, figsize=(10, 4), dpi=72)
+fig, ax = plt.subplots(1, 3, figsize=(10, 3.4), sharex=True, sharey=True)
 ext = lambda r: (r.xmin, r.xmin + r.data.shape[1] * r.resolution, r.ymin, r.ymin + r.data.shape[0] * r.resolution)
-im = ax[0].imshow(100 * err_tin, origin="lower", extent=ext(tin), cmap="RdBu", vmin=-15, vmax=15)
-fig.colorbar(im, ax=ax[0], shrink=0.8, label="DTM minus true terrain (cm)")
-ax[0].set(xlabel="x (m)", ylabel="y (m)", title="error of the TIN DTM")
-im = ax[1].imshow(chm.data, origin="lower", extent=ext(chm), cmap="YlGn")
-fig.colorbar(im, ax=ax[1], shrink=0.8, label="height (m)")
-ax[1].set(xlabel="x (m)", title="canopy height model, 0.5 m");""",
+for a, e, r, name in ((ax[0], err, dtm, "lowest return per cell"), (ax[1], err_tin, tin, "TIN")):
+    im = a.imshow(100 * e, origin="lower", extent=ext(r), cmap=DIVERGING, vmin=-8, vmax=8)
+    a.set(xlabel="x (m)", title=f"DTM error, {name}")
+fig.colorbar(im, ax=ax[:2], shrink=0.9, label="DTM minus true terrain (cm)", extend="both")
+ax[0].set_ylabel("y (m)")
+im = ax[2].imshow(chm.data, origin="lower", extent=ext(chm))
+fig.colorbar(im, ax=ax[2], shrink=0.9, label="canopy height (m)")
+ax[2].set(xlabel="x (m)", title="Canopy height model, 0.5 m");""",
     md("""The default DTM takes the lowest ground return in each cell, which lies
 below the terrain at the cell centre: the terrain slopes by 5 %, so the lowest
 point of a 1 m cell is about 2.5 cm below its centre, and the lowest of many
@@ -1795,20 +1935,21 @@ ratio = found.crown_area[first] / truth["crown_area"][row]
 print(f"crown area found / true crown area: median {np.median(ratio):.2f}")""",
     """\
 chm_2 = als.chm(cat_2, resolution=0.5)
-fig, ax = plt.subplots(figsize=(6.5, 6.2), dpi=72)
-ax.imshow(chm_2.data, origin="lower", extent=ext(chm_2), cmap="Greys_r")
+fig, ax = plt.subplots(figsize=(6.5, 7))
+im = ax.imshow(chm_2.data, origin="lower", extent=ext(chm_2), cmap="Greys", vmin=0, vmax=40)
+fig.colorbar(im, ax=ax, shrink=0.8, label="canopy height (m)")
 for poly in found.crowns:
     if len(poly):
-        ax.fill(*poly.T, fc="none", ec="C1", lw=0.8)
+        ax.fill(*poly.T, fc="none", ec="k", lw=0.6)
 missed = np.setdiff1d(truth["tree_id"], hit)
 k = np.searchsorted(truth["tree_id"], missed)
 extra = np.setdiff1d(np.arange(len(found)), first)
-ax.scatter(found.x[first], found.y[first], s=12, c="C2", label="first top on a true tree")
-ax.scatter(found.x[extra], found.y[extra], s=12, c="C3", label="further top (commission)")
-ax.scatter(truth["top_x"][k], truth["top_y"][k], marker="x", s=30, c="C0", label="true tree missed")
-ax.plot([], [], c="C1", label="crowns found")
-ax.set(xlim=(0, 100), ylim=(0, 100), xlabel="x (m)", ylabel="y (m)", title="crowns and tops over the CHM")
-ax.legend(fontsize=8, loc="upper right", framealpha=0.9);""",
+ax.scatter(found.x[first], found.y[first], s=16, c="C0", label="first top on a true tree")
+ax.scatter(found.x[extra], found.y[extra], s=16, c="C1", label="further top (commission)")
+ax.scatter(truth["top_x"][k], truth["top_y"][k], marker="x", s=40, c="C3", linewidths=1.8, label="true tree missed")
+ax.plot([], [], c="k", lw=0.6, label="crowns found")
+ax.set(xlim=(0, 100), ylim=(0, 100), aspect="equal", xlabel="x (m)", ylabel="y (m)", title="Crowns and tree tops found, over the CHM")
+ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=2);""",
     md("""The trees missed are, with few exceptions, overtopped: a shorter tree whose
 top lies under the crown of a taller neighbour is no local maximum in a
 canopy surface, so no method working on the surface can find it. At about
@@ -1873,18 +2014,18 @@ last return and the cells along that edge read too dense, which is why the
 example keeps to the middle."""),
     """\
 vh, vpad = vox.profile(min_beams=5, mask=middle)       # heights above the grid floor
-fig, ax = plt.subplots(1, 2, figsize=(11, 4.4))
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.4), gridspec_kw={"width_ratios": [1, 1.25]})
+ax[0].plot([0, 0.3, 0.3, 0], [5, 5, 15, 15], c=CONTEXT, lw=6, solid_joinstyle="miter", label="truth")
 ax[0].stairs(np.nan_to_num(pad), np.r_[height, height[-1] + prof.bin_size], orientation="horizontal",
-             baseline=None, label="gap profile (central 20 m)")
-ax[0].plot(vpad, vox.origin[2] + vh + 0.5, "o", ms=3, label="ray-traced voxels (central 20 m)")
-ax[0].plot([0.3, 0.3, 0], [5, 15, 15], "k--", lw=1)
-ax[0].plot([0, 0.3], [5, 5], "k--", lw=1, label="truth")
-ax[0].set(xlabel="PAD (m² m⁻³)", ylabel="height (m)", xlim=(-0.02, 0.4), title="plant area density")
-ax[0].legend(fontsize=8)
-im = ax[1].imshow(pai.data, origin="lower", extent=ext(pai), cmap="viridis", vmin=2, vmax=4)
-ax[1].plot([10, 30, 30, 10, 10], [10, 10, 30, 30, 10], "w--", lw=1)
-fig.colorbar(im, ax=ax[1], shrink=0.8, label="PAI")
-ax[1].set(xlabel="x (m)", ylabel="y (m)", title="PAI per 1 m column (true 3)");""",
+             baseline=None, color="C0", lw=1.5, label="gap profile")
+ax[0].plot(vpad, vox.origin[2] + vh + 0.5, "o", ms=3.5, c="C1", label="ray-traced voxels")
+ax[0].set(xlabel="PAD (m² m⁻³)", ylabel="height (m)", xlim=(-0.01, 0.4),
+          title="Plant area density, central 20 m")
+ax[0].legend(loc="upper right")
+im = ax[1].imshow(pai.data, origin="lower", extent=ext(pai), vmin=2, vmax=4)
+ax[1].plot([10, 30, 30, 10, 10], [10, 10, 30, 30, 10], "w--", lw=1.2)
+fig.colorbar(im, ax=ax[1], shrink=0.9, label="PAI (true 3)", extend="both")
+ax[1].set(xlabel="x (m)", ylabel="y (m)", title="PAI per 1 m column (dashed: central 20 m)");""",
 ]
 
 
@@ -1931,23 +2072,27 @@ separated from about two standard deviations apart, 0.45 m for this pulse.
 The third waveform, whose record starts at the scanner since the pulse met
 nothing, holds only noise and gives no echo."""),
     """\
-fig, ax = plt.subplots(1, 3, figsize=(12, 3.4), sharey=True)
+fig, ax = plt.subplots(1, 3, figsize=(10, 3.4), sharey=True)
+titles = ["Three targets, three echoes", "Two targets 0.3 m apart, one echo", "No target: noise only, no echo"]
 for i, a in enumerate(ax):
     w = wf3[i]
     r = w.positions()[:, 2] * -1                # range below the scanner, along the beam
-    a.plot(r, w.samples, ".", ms=3, c="0.4", label="samples")
+    a.plot(r, w.samples, ".", ms=3, c="0.5", label="samples")
     k = echoes3.waveform == i
-    bg = echoes3.stats["background"][i]
+    bg, noise = echoes3.stats["background"][i], echoes3.stats["noise"][i]
+    a.axhline(bg + 4 * noise, c="k", ls="--", lw=0.8, label="detection threshold")
     model = np.full_like(r, bg)
-    for t, amp, wid in zip(echoes3.time[k], echoes3.amplitude[k], echoes3.width[k]):
+    for j, (t, amp, wid) in enumerate(zip(echoes3.time[k], echoes3.amplitude[k], echoes3.width[k])):
         g = amp * np.exp(-0.5 * ((w.times() - t) / wid) ** 2)
-        a.plot(r, bg + g, lw=1)
+        a.plot(r, bg + g, lw=1, c="C1", label="fitted echoes" if j == 0 else None)
         model += g
-    a.plot(r, model, "k", lw=1, label="fitted sum")
-    for rt in truth3.range[truth3.waveform == i]:
-        a.axvline(rt, c="C3", ls=":", lw=1)
-    a.set(xlim=(48, 58) if i < 2 else (r[0], r[-1]), xlabel="range (m)", title=f"waveform {i}, echoes found: {k.sum()}")
-ax[0].set_ylabel("sample value"); ax[0].legend(fontsize=8);""",
+    if k.any():
+        a.plot(r, model, c="C0", lw=1.5, label="fitted sum")
+    for j, rt in enumerate(truth3.range[truth3.waveform == i]):
+        a.axvline(rt, c="C3", ls=":", lw=1.2, label="true targets" if j == 0 else None)
+    a.set(xlim=(48, 58) if i < 2 else (r[0], r[-1]), xlabel="range (m)", title=f"Waveform {i}\\n{titles[i]}")
+ax[0].set_ylabel("sample value")
+fig.legend(*ax[0].get_legend_handles_labels(), loc="outside lower center", ncol=5);""",
     md("""## An airborne survey as waveforms
 
 The targets are now the returns of a simulated airborne survey
@@ -2028,15 +2173,20 @@ for a, b in ((0, 6), (6, 10), (10, np.inf)):
     print(f"  amplitude {a:>2} to {b:<4} times the noise: {k.sum():>7,} targets in the record, {found[k].mean():6.1%} found, "
           f"median distance {1000 * np.median(miss[k & found]):5.1f} mm")""",
     """\
-fig, ax = plt.subplots(1, 2, figsize=(11, 4))
+fig, ax = plt.subplots(1, 2, figsize=(10, 3.8))
 bins = np.linspace(0, 60, 31)
-ax[0].hist([snr[found], snr[~found & inside], snr[~inside]], bins, stacked=True, color=["C0", "C3", "C1"],
-           label=["found", "missed, in the record", "beyond the record"])
-ax[0].axvline(4, c="k", ls="--", lw=1)
-ax[0].text(4.5, ax[0].get_ylim()[1] * 0.9, "threshold: 4 times the noise", fontsize=8)
-ax[0].set(xlabel="true amplitude / noise", ylabel="targets", title="which targets are found"); ax[0].legend(fontsize=8)
+counts = np.array([np.histogram(snr[k], bins)[0] for k in (found, ~found & inside, ~inside)])
+share = counts / np.maximum(counts.sum(axis=0), 1)
+bottom = np.zeros(len(bins) - 1)
+for c, colour, name in zip(share, ["C0", "C3", "0.6"], ["found", "missed, in the record", "beyond the end of the record"]):
+    ax[0].bar(bins[:-1], c, width=np.diff(bins), bottom=bottom, align="edge", color=colour, label=name)
+    bottom += c
+ax[0].axvline(4, c="k", ls="--", lw=1, label="detection threshold")
+ax[0].set(xlabel="true amplitude / noise standard deviation", ylabel="fraction of the targets", ylim=(0, 1),
+          xlim=(0, 60), title="Which targets are found, by amplitude")
+fig.legend(loc="outside lower center", ncol=4)
 ax[1].hist(1000 * miss[found], np.linspace(0, 40, 41), color="C0")
-ax[1].set(xlabel="distance from the true target (mm)", ylabel="echoes", title="position error of the echoes found");""",
+ax[1].set(xlabel="distance from the true target (mm)", ylabel="echoes", title="Position error of the echoes found");""",
     md("""Within the digitised record, the targets missed are the weak ones, below
 or near the detection threshold of four noise standard deviations; those
 found lie within millimetres of the truth. Most of the targets missed,
@@ -2070,11 +2220,11 @@ k = (z > 5) & (z < 25)
 print(f"mean PAD 5-25 m: waveform {np.nanmean(pad['waveform echoes'][k]):.4f}, "
       f"discrete {np.nanmean(pad['discrete returns'][k]):.4f} m² m⁻³")""",
     """\
-fig, ax = plt.subplots(figsize=(5, 4.5))
-for (name, p), style in zip(pad.items(), ("-", "--", ":")):
-    ax.plot(p[k], z[k], style, label=name)
-ax.set(xlabel="mean PAD (m² m⁻³)", ylabel="z (m)", title="plant area density by layer")
-ax.legend(fontsize=8);""",
+fig, ax = plt.subplots(figsize=(6, 4.5))
+for (name, p), style, width in zip(pad.items(), ("-", "-", ":"), (1.5, 3, 1.5)):
+    ax.plot(p[k], z[k], style, lw=width, label=name)
+ax.set(xlabel="mean PAD (m² m⁻³)", ylabel="z (m)", title="Plant area density by layer, 1 m voxels")
+ax.legend(loc="upper right");""",
     md("""The pulses built from the true targets reproduce the discrete-return pulses
 exactly, so the difference between the waveform and discrete profiles comes
 entirely from the echoes the decomposition missed. A pulse that loses an
@@ -2094,6 +2244,7 @@ def build(name: str, cells: list, execute: bool = True) -> None:
         import tempfile
         with tempfile.TemporaryDirectory() as work:      # files the notebooks write stay out of the repo
             (Path(work) / "data").symlink_to(HERE / "data")   # ... but data is read from the repo
+            (Path(work) / "sylva.mplstyle").symlink_to(HERE / "sylva.mplstyle")
             NotebookClient(nb, timeout=1800, kernel_name="python3", resources={"metadata": {"path": work}}).execute()
     for cell in nb.cells:
         cell.pop("id", None)
