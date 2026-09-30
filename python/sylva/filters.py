@@ -18,12 +18,13 @@ __all__ = [
 ]
 
 
-def voxel_downsample(cloud: PointCloud, voxel_size: float, method: str = "first") -> PointCloud:
+def voxel_downsample(cloud: PointCloud, voxel_size: float, method: str = "first",
+                     origin=None) -> PointCloud:
     """Thin a cloud to at most one point per cubic voxel.
 
     Evens out the density falloff with range from each scanner, which
     otherwise weights everything near the scanner. The grid starts at the
-    cloud's minimum corner.
+    cloud's minimum corner, or at ``origin``.
 
     Parameters
     ----------
@@ -35,6 +36,11 @@ def voxel_downsample(cloud: PointCloud, voxel_size: float, method: str = "first"
         ``"first"`` keeps one original point per voxel (the first in file
         order), with its attributes; ``"centroid"`` returns the mean of the
         points in each voxel and drops attributes.
+    origin
+        ``(x, y, z)`` of a corner of the voxel grid, so that different
+        clouds are thinned on one grid (``(0, 0, 0)`` for voxels at
+        multiples of ``voxel_size``, as :func:`sylva.tiles.from_scans` and
+        :func:`sylva.tiles.voxel_downsample` use); ``"first"`` only.
 
     Returns
     -------
@@ -44,8 +50,17 @@ def voxel_downsample(cloud: PointCloud, voxel_size: float, method: str = "first"
     Raises
     ------
     ValueError
-        For an unknown ``method``.
+        For an unknown ``method``, or an ``origin`` with ``"centroid"``.
     """
+    if origin is not None:
+        if method != "first":
+            raise ValueError("origin is only supported with method='first'")
+        o = tuple(float(v) for v in origin)
+        if len(o) != 3 or not np.all(np.isfinite(o)):
+            raise ValueError(f"origin must be three finite numbers, got {origin!r}")
+        if not (np.isfinite(voxel_size) and voxel_size > 0):
+            raise ValueError(f"voxel_size must be a positive number, got {voxel_size}")
+        return cloud[_core.voxel_downsample_indices_at(cloud.xyz, float(voxel_size), o)]
     if method == "first":
         return cloud[_core.voxel_downsample_indices(cloud.xyz, voxel_size)]
     if method == "centroid":

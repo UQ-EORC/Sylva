@@ -45,6 +45,7 @@ mod change_qsm_py;
 mod change_trees_py;
 mod waveform_py;
 mod fusion_py;
+mod tiles_py;
 
 fn err(e: sylva_rs::Error) -> PyErr {
     match e {
@@ -978,15 +979,15 @@ fn fit_circle_ransac<'py>(py: Python<'py>, xy: PyReadonlyArray2<f64>, threshold:
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, heights, slice_min=1.0, slice_max=5.0, slice_thickness=0.3, slice_step=0.25, reference_height=1.3, min_radius=0.015, max_radius=0.75, cluster_cell=0.06, min_cluster_points=12, max_cluster_extent=2.0, ransac_iterations=120, ransac_tolerance=0.02, max_circles_per_cluster=3, min_circle_inliers=10, min_coverage=0.12, min_arc_deg=0.0, max_circle_rmse=0.02, link_radius=0.2, link_radius_ratio=0.45, min_slices=3, max_lean_deg=25.0, link_radius_abs=0.02, prefilter=true, prefilter_k=16, prefilter_max_nz=0.6, prefilter_max_variation=0.15, seed=0, ransac_block=0, ransac_presample=false, recluster_wide=true, cluster_grid_at_slice_min=false, band_top_inclusive=false, shared_rng=false, taper_weight_power=1.0, min_total_points=0))]
+#[pyo3(signature = (xyz, heights, slice_min=1.0, slice_max=5.0, slice_thickness=0.3, slice_step=0.25, reference_height=1.3, min_radius=0.015, max_radius=0.75, cluster_cell=0.06, min_cluster_points=12, max_cluster_extent=2.0, ransac_iterations=120, ransac_tolerance=0.02, max_circles_per_cluster=3, min_circle_inliers=10, min_coverage=0.12, min_arc_deg=0.0, max_circle_rmse=0.02, link_radius=0.2, link_radius_ratio=0.45, min_slices=3, max_lean_deg=25.0, link_radius_abs=0.02, prefilter=true, prefilter_k=16, prefilter_max_nz=0.6, prefilter_max_variation=0.15, seed=0, ransac_block=0, ransac_presample=false, recluster_wide=true, cluster_grid_at_slice_min=false, band_top_inclusive=false, shared_rng=false, taper_weight_power=1.0, min_total_points=0, cluster_seeds=false))]
 #[allow(clippy::too_many_arguments)]
-fn detect_stems<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, slice_min: f64, slice_max: f64, slice_thickness: f64, slice_step: f64, reference_height: f64, min_radius: f64, max_radius: f64, cluster_cell: f64, min_cluster_points: usize, max_cluster_extent: f64, ransac_iterations: usize, ransac_tolerance: f64, max_circles_per_cluster: usize, min_circle_inliers: usize, min_coverage: f64, min_arc_deg: f64, max_circle_rmse: f64, link_radius: f64, link_radius_ratio: f64, min_slices: usize, max_lean_deg: f64, link_radius_abs: f64, prefilter: bool, prefilter_k: usize, prefilter_max_nz: f64, prefilter_max_variation: f64, seed: u64, ransac_block: usize, ransac_presample: bool, recluster_wide: bool, cluster_grid_at_slice_min: bool, band_top_inclusive: bool, shared_rng: bool, taper_weight_power: f64, min_total_points: usize) -> PyResult<Bound<'py, PyList>> {
+fn detect_stems<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, slice_min: f64, slice_max: f64, slice_thickness: f64, slice_step: f64, reference_height: f64, min_radius: f64, max_radius: f64, cluster_cell: f64, min_cluster_points: usize, max_cluster_extent: f64, ransac_iterations: usize, ransac_tolerance: f64, max_circles_per_cluster: usize, min_circle_inliers: usize, min_coverage: f64, min_arc_deg: f64, max_circle_rmse: f64, link_radius: f64, link_radius_ratio: f64, min_slices: usize, max_lean_deg: f64, link_radius_abs: f64, prefilter: bool, prefilter_k: usize, prefilter_max_nz: f64, prefilter_max_variation: f64, seed: u64, ransac_block: usize, ransac_presample: bool, recluster_wide: bool, cluster_grid_at_slice_min: bool, band_top_inclusive: bool, shared_rng: bool, taper_weight_power: f64, min_total_points: usize, cluster_seeds: bool) -> PyResult<Bound<'py, PyList>> {
     let p = xyz_from_py(xyz)?;
     let h = heights.as_array().to_vec();
     if h.len() != p.len() {
         return Err(PyValueError::new_err("heights must have one value per point"));
     }
-    let params = sylva_rs::stems::StemParams { slice_min, slice_max, slice_thickness, slice_step, reference_height, min_radius, max_radius, cluster_cell, min_cluster_points, max_cluster_extent, ransac_iterations, ransac_tolerance, max_circles_per_cluster, min_circle_inliers, min_coverage, min_arc_deg, max_circle_rmse, link_radius, link_radius_ratio, min_slices, max_lean_deg, link_radius_abs, prefilter, prefilter_k, prefilter_max_nz, prefilter_max_variation, seed, ransac_block, ransac_presample, recluster_wide, cluster_grid_at_slice_min, band_top_inclusive, shared_rng, taper_weight_power, min_total_points };
+    let params = sylva_rs::stems::StemParams { slice_min, slice_max, slice_thickness, slice_step, reference_height, min_radius, max_radius, cluster_cell, min_cluster_points, max_cluster_extent, ransac_iterations, ransac_tolerance, max_circles_per_cluster, min_circle_inliers, min_coverage, min_arc_deg, max_circle_rmse, link_radius, link_radius_ratio, min_slices, max_lean_deg, link_radius_abs, prefilter, prefilter_k, prefilter_max_nz, prefilter_max_variation, seed, ransac_block, ransac_presample, recluster_wide, cluster_grid_at_slice_min, band_top_inclusive, shared_rng, taper_weight_power, min_total_points, cluster_seeds };
     let found = py.detach(|| sylva_rs::stems::detect_stems_full(&p, &h, &params));
     let list = PyList::empty(py);
     for s in &found {
@@ -1535,6 +1536,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     change_trees_py::register(m)?;
     waveform_py::register(m)?;
     fusion_py::register(m)?;
+    tiles_py::register(m)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyProgressTask>()?;
     m.add_class::<PyCoregKdTree>()?;

@@ -36,6 +36,7 @@ nav:
       - Pulse data: guide/pulses.md
       - Ray-traced voxels: guide/voxels.md
       - Interpolation: guide/interpolation.md
+      - Plots in tiles: guide/tiles.md
       - Airborne lidar tiles: guide/als.md
       - Area-based ALS metrics: guide/als_metrics.md
       - Full waveforms: guide/waveform.md
@@ -80,6 +81,7 @@ nav:
       - masks: api/masks.md
       - ground: api/ground.md
       - interpolate: api/interpolate.md
+      - tiles: api/tiles.md
       - als: api/als.md
       - als_metrics: api/als_metrics.md
       - waveform: api/waveform.md

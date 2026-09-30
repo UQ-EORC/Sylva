@@ -269,6 +269,33 @@ or with z replaced by it (`--replace-z`, the elevation kept as
 raster per metric or a CSV table of plots; see [Area-based ALS
 metrics](als_metrics.md#command-line).
 
+### Plots in tiles: `tiles-from-scans`, `tiles-thin`, `tiles-filter`, `tiles-features`, `tiles-stems`
+
+These build and process a plot kept as square tiles, one tile at a time,
+with results identical to those on the whole cloud (see [Plots in
+tiles](tiles.md)). Ground, DTM and heights use `als-ground`, `als-dtm` and
+`als-normalize` above on the same tiles.
+
+```bash
+sylva tiles-from-scans scans/*.laz tiles/ [--tile-size 10] [--voxel 0.02] [--transforms sop.npy]
+                       [--bounds XMIN YMIN XMAX YMAX] [--format laz] [--scale 0.001] [--epsg CODE]
+sylva tiles-thin tiles/ thinned/ --voxel 0.05
+sylva tiles-filter tiles/ clean/ [--method sor|ror] [--k 8] [--std-ratio 2] [--radius 0.1]
+                   [--min-neighbors 4] [--classify]
+sylva tiles-features tiles/ features/ [--feature normals|shape] [--k 12]
+sylva tiles-stems normalised/ stems.csv [--height-attribute height] [--min-arc 0]
+```
+
+`tiles-from-scans` takes the scans in order (with `--transforms`, a `.npy`
+of one 4x4 matrix per scan) and writes tiles thinned on one global voxel
+grid, with a `scan_id` attribute. `tiles-filter` removes noise (or
+classifies it 7 with `--classify`); `--method sor` is CloudCompare's
+statistical filter with its global threshold. `tiles-features` adds
+`normal_x`, `normal_y`, `normal_z` or `planarity` and `linearity` to every
+point; `tiles-stems` writes the stems as a CSV table. Each prints the most
+points it held at once. They take `--pattern`, `--buffer` (1 m, or 2 m for
+`tiles-stems`; `tiles-thin` needs none) and `--workers`.
+
 ### TLS and ALS together: `fusion-register`, `fusion-trees`, `fusion-upscale`
 
 ```bash
