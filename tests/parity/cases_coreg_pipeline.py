@@ -24,10 +24,13 @@ from sylva.coreg.reflectors import Reflector
 from sylva.coreg.stems import StemMap
 
 TIMING = re.compile(r"\(\d+\.\d s\)|in \d+\.\d s")
+# With workers=0 the count is the machine's CPUs; results do not depend on it.
+WORKERS = re.compile(r"on \d+ workers")
 
 
 def _untimed(text):
-    return TIMING.sub("", text)
+    """A log line without what depends on the machine: timings, worker counts."""
+    return WORKERS.sub("on N workers", TIMING.sub("", text))
 
 
 def _thin(a, step=7):
