@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
 documentation = "https://docs.rs/sylva-rs"
-description = "Terrestrial laser scanning processing for forest ecology"
+description = "Terrestrial and airborne laser scanning processing for forest ecology and remote sensing research."
 
 [dependencies]
 nalgebra.workspace = true

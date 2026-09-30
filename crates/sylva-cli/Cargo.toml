@@ -9,7 +9,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
-description = "Command-line tool for terrestrial laser scanning of forests, built on sylva-rs"
+description = "Command-line tool for terrestrial and airborne laser scanning processing for forest ecology and remote sensing research, built on sylva-rs."
 
 [[bin]]
 name = "sylva"

@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "sylva-rs"
 version = "0.2.0"
-description = "Terrestrial laser scanning (TLS) processing for forest ecology and remote sensing, with a Rust core"
+description = "Terrestrial and airborne laser scanning processing for forest ecology and remote sensing research."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
