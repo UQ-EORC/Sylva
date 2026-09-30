@@ -121,7 +121,7 @@ impl Transform {
 
     /// Read a whitespace-delimited 4x4 matrix file (RIEGL `.dat` SOP/POP).
     pub fn read_matrix_file(path: impl AsRef<std::path::Path>) -> Result<Self> {
-        let text = std::fs::read_to_string(path.as_ref())?;
+        let text = std::fs::read_to_string(path.as_ref()).map_err(|e| Error::file(path.as_ref(), e.to_string()))?;
         let vals: Vec<f64> = text
             .split_whitespace()
             .map(|t| t.parse::<f64>())
