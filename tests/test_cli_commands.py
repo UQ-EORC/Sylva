@@ -302,3 +302,14 @@ def test_coreg_project_without_scans_is_an_error(tmp_path, capsys):
     (root / "project.rsp").write_text(RSP.replace("<file>s1.rxp</file>", ""))
     err = fails(capsys, "coreg", root, "--quiet")
     assert err == f"sylva: error: no scans found in {root}\n"
+
+
+def test_qsm_plot_reports_the_trees_it_skips(tmp_path, capsys):
+    from test_cli import _two_tree_plot
+
+    src = tmp_path / "plot.laz"
+    io.write(_two_tree_plot(), src)
+    run("qsm-plot", src, "--no-wood", "--min-points", 10**6)
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].startswith("0 QSMs, 2 skipped, 0.000 m3 of wood")
+    assert [line.split(":")[0] for line in out[1:]] == ["  skipped 1", "  skipped 2"]
