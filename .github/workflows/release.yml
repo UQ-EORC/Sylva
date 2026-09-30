@@ -38,7 +38,7 @@ jobs:
       - run: cargo test --release -p sylva-rs
       - run: |
           python -m venv .venv && . .venv/bin/activate
-          pip install maturin pytest numpy
+          pip install maturin pytest numpy scipy matplotlib   # what the tests import
           maturin develop --release
           pytest -q
 
