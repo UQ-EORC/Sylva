@@ -400,4 +400,95 @@ mod tests {
         assert!(matches!(v[0], Json::Float(f) if f.is_nan()));
         assert_eq!(&v[1..], &[Json::Float(f64::NEG_INFINITY), Json::Float(1000.0), Json::Int(0)]);
     }
+
+    /// `json.dumps(v, indent=2)` of Python 3.14 for the value built in the test.
+    const PYTHON: &str = r#"{
+  "s": "q\"b\\s/\n\r\t\b\f\u0001 \u00e9 \ud83d\ude00 ~",
+  "nan": NaN,
+  "inf": [
+    Infinity,
+    -Infinity
+  ],
+  "e": {},
+  "a": [],
+  "t": true,
+  "f": false,
+  "n": null,
+  "neg": -7,
+  "x": 2.5e-300
+}"#;
+
+    #[test]
+    fn writes_escapes_and_specials_as_python_does() {
+        let item = |k: &str, v: Json| (k.to_string(), v);
+        let v = Json::Object(vec![
+            item("s", Json::Str("q\"b\\s/\n\r\t\u{8}\u{c}\u{1} \u{e9} \u{1f600} ~".into())),
+            item("nan", Json::Float(f64::NAN)),
+            item("inf", Json::Array(vec![Json::Float(f64::INFINITY), Json::Float(f64::NEG_INFINITY)])),
+            item("e", Json::Object(vec![])),
+            item("a", Json::Array(vec![])),
+            item("t", Json::Bool(true)),
+            item("f", Json::Bool(false)),
+            item("n", Json::Null),
+            item("neg", Json::Int(-7)),
+            item("x", Json::Float(2.5e-300)),
+        ]);
+        assert_eq!(to_string_indented(&v, 2), PYTHON);
+        let back = parse(PYTHON).unwrap();
+        assert_eq!(to_string_indented(&back, 2), PYTHON);
+        assert_eq!(back.get("s"), v.get("s"));
+        assert_eq!(parse(r#""\/\u0041""#).unwrap(), Json::Str("/A".into()));
+    }
+
+    #[test]
+    fn truth_and_lookup_as_in_python() {
+        // bool(json.loads(text)) in Python.
+        for (text, truth) in [("\"\"", false), ("\"x\"", true), ("0", false), ("0.0", false), ("-0.5", true), ("[]", false), ("{}", false), ("[0]", true), ("{\"a\": 0}", true), ("null", false), ("false", false), ("true", true), ("3", true)] {
+            assert_eq!(parse(text).unwrap().truthy(), truth, "{text}");
+        }
+        // Python keeps the last of repeated keys.
+        let v = parse(r#"{"a": 1, "b": [2], "a": 3}"#).unwrap();
+        assert_eq!(v.get("a"), Some(&Json::Int(3)));
+        assert_eq!(v.get("c"), None);
+        assert_eq!(Json::Array(vec![]).get("a"), None);
+    }
+
+    #[test]
+    fn numbers_as_python_reads_them() {
+        assert_eq!(parse("1E+2").unwrap(), Json::Float(100.0));
+        assert_eq!(parse("-12").unwrap(), Json::Int(-12));
+        assert_eq!(parse("2.50").unwrap(), Json::Float(2.5));
+        // Beyond i64 Python keeps an int; here it becomes the nearest float.
+        assert_eq!(parse("12345678901234567890").unwrap(), Json::Float(12345678901234567890.0));
+    }
+
+    #[test]
+    fn errors_say_what_and_where() {
+        // The same byte offsets as Python's JSONDecodeError.pos for these.
+        let err = |text: &str| parse(text).unwrap_err().to_string();
+        assert_eq!(err("[1] x"), "JSON: extra data at byte 4");
+        assert_eq!(err("1.5e"), "JSON: extra data at byte 3");
+        assert_eq!(err(r#"{"a" 1}"#), "JSON: expecting ':' at byte 5");
+        assert_eq!(err("{1: 2}"), "JSON: expecting property name at byte 1");
+        assert_eq!(err("-"), "JSON: expecting value at byte 0");
+        assert_eq!(err("tru"), "JSON: expecting value at byte 0");
+        assert_eq!(err("[1 2]"), "JSON: expecting ',' or ']' at byte 3");
+        assert_eq!(err(r#"{"a": 1 "b": 2}"#), "JSON: expecting ',' or '}' at byte 8");
+        // Python reports these at the start of the string or escape instead.
+        assert!(err(r#""abc"#).starts_with("JSON: unterminated string"));
+        assert!(err("\"ab\\").starts_with("JSON: unterminated string"));
+        assert!(err(r#""\q""#).starts_with("JSON: invalid escape"));
+        assert!(err(r#""\u12""#).starts_with("JSON: bad \\u escape"));
+        assert!(err(r#"{"a": 1,}"#).starts_with("JSON: expecting property name"));
+        assert!(parse("[01]").is_err());
+        assert!(parse("\"a\u{1}b\"").is_err(), "control characters must be escaped");
+    }
+
+    #[test]
+    fn surrogate_pairs_join_and_lone_surrogates_are_replaced() {
+        assert_eq!(parse(r#""\ud83d\ude00""#).unwrap(), Json::Str("\u{1f600}".into()));
+        // Python keeps a lone surrogate; a Rust string cannot hold one.
+        assert_eq!(parse(r#""\ud83d x""#).unwrap(), Json::Str("\u{fffd} x".into()));
+        assert_eq!(parse(r#""\ud83d\u0041""#).unwrap(), Json::Str("\u{fffd}A".into()));
+    }
 }
