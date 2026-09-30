@@ -518,7 +518,8 @@ def main(argv=None):
                    help="beam exit diameter (m) and divergence (rad), instead of --laser")
     s.add_argument("--lad", default="spherical", help="analytic leaf angle distribution")
     s.add_argument("--lad-params", type=float, nargs="*", default=[],
-                   help="parameters of an ellipsoidal or beta distribution")
+                   help="parameters of an ellipsoidal (chi) or beta distribution "
+                        "(Goel and Strebel's mu nu, e.g. 2.770 1.172 for planophile)")
     s.add_argument("--inclination", action="store_true",
                    help="estimate per-tree inclination angle distributions")
     s.add_argument("--iad", help="write the per-tree inclination distributions to this CSV")

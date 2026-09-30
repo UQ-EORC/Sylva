@@ -128,7 +128,11 @@ class LeafAngleDistribution:
     mean, std
         Mean and standard deviation of the inclination (rad).
     beta_a, beta_b
-        Beta distribution fitted on t = 2θ/π (Goel and Strebel 1984).
+        Beta distribution fitted on t = 2θ/π by the method of moments, in the
+        usual order: the density is proportional to ``t^(beta_a - 1)
+        (1 - t)^(beta_b - 1)``. Goel and Strebel (1984) write the same
+        distribution with ``mu = beta_b`` and ``nu = beta_a``; see
+        :attr:`goel_strebel`.
     chi
         Campbell's (1990) ellipsoidal parameter (1 spherical, > 1 planophile).
     de_wit
@@ -143,6 +147,17 @@ class LeafAngleDistribution:
     beta_b: float
     chi: float  #: Campbell's ellipsoidal parameter (1 spherical, > 1 planophile)
     de_wit: str | None  #: nearest de Wit type
+
+    @property
+    def goel_strebel(self) -> tuple[float, float]:
+        """The beta fit as Goel and Strebel's (1984) ``(mu, nu)``: ``(beta_b, beta_a)``.
+
+        Their density on ``t = 2θ/π`` is proportional to ``(1 - t)^(mu - 1)
+        t^(nu - 1)``; pass the pair as ``lad_params`` with
+        ``lad="twoParamBeta"`` to :func:`sylva.voxels.ray_voxelize` or
+        :func:`sylva.voxels.leaf_projection`.
+        """
+        return (self.beta_b, self.beta_a)
 
     @property
     def mean_deg(self) -> float:

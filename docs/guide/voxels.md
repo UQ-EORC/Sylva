@@ -47,7 +47,8 @@ the fallback and the beam-section estimate agree within 3 % in PAI.
 Area density is `λ / G`. `G` comes from an analytic leaf angle distribution
 (`lad=`: spherical, uniform, the four [de Wit (1965)](../references.md) types,
 [Campbell's (1990)](../references.md) ellipsoidal, [Goel & Strebel's
-(1984)](../references.md) two-parameter beta) at each voxel's mean beam zenith, or with `inclination=True` from
+(1984)](../references.md) two-parameter beta, `lad_params=[mu, nu]` in their
+order, e.g. `[2.770, 1.172]` for planophile) at each voxel's mean beam zenith, or with `inclination=True` from
 inclination angle distributions estimated per tree (`tree_id` echo attribute)
 from PCA normals of the echoes and integrated over the tree's own beam
 zeniths ([Vicari et al. 2019](../references.md)); each voxel uses its

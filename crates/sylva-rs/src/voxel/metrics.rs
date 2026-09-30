@@ -24,7 +24,11 @@ pub enum Lad {
     Extremophile,
     /// Campbell's (1990) ellipsoidal distribution with axis ratio `chi`.
     Ellipsoidal(f64),
-    /// Two-parameter beta distribution (`mu`, `nu`; Goel & Strebel 1984).
+    /// Two-parameter beta distribution of Goel & Strebel (1984) on `t = 2 theta / pi`:
+    /// `f(t) ~ (1 - t)^(mu - 1) t^(nu - 1)`, so `mu > nu` leans towards horizontal
+    /// leaves. Their fits: planophile (2.770, 1.172), erectophile (1.172, 2.770),
+    /// plagiophile (3.326, 3.326), extremophile (0.433, 0.433), uniform (1, 1),
+    /// spherical (1.101, 1.930).
     TwoParamBeta(f64, f64),
 }
 
@@ -96,7 +100,7 @@ impl Lad {
                     return 0.0;
                 }
                 let ln_b = ln_gamma(mu) + ln_gamma(nu) - ln_gamma(mu + nu);
-                x.powf(mu - 1.0) * (1.0 - x).powf(nu - 1.0) / ln_b.exp() * (2.0 / PI)
+                (1.0 - x).powf(mu - 1.0) * x.powf(nu - 1.0) / ln_b.exp() * (2.0 / PI)
             }
         }
     }
@@ -144,7 +148,9 @@ fn fold_beam_angle(theta: f64) -> f64 {
 }
 
 /// Projection function `G(θ)` of a leaf angle distribution for a beam at
-/// zenith `theta` (rad). 180-step trapezoid, as AMAPVox.
+/// zenith `theta` (rad). 180-step trapezoid, as AMAPVox; for the beta
+/// distribution, the kernel at the middle of each of the 180 steps times the
+/// exact probability of the step.
 pub fn compute_g(theta: f64, lad: &Lad) -> f64 {
     if *lad == Lad::Spherical {
         return 0.5;
@@ -152,19 +158,15 @@ pub fn compute_g(theta: f64, lad: &Lad) -> f64 {
     let theta = fold_beam_angle(theta);
     let n = 180;
     let h = FRAC_PI_2 / n as f64;
-    let f = |t: f64| projection_kernel(theta, t) * lad.pdf(t);
-    if !(lad.pdf(0.0).is_finite() && lad.pdf(FRAC_PI_2).is_finite()) {
-        // A beta density with a parameter below 1 is infinite at that end (but
-        // integrable): the trapezoid would give an infinite G. Midpoints avoid
-        // the ends, and dividing by the density's own sum keeps its mass.
-        let (mut num, mut den) = (0.0, 0.0);
-        for i in 0..n {
-            let t = (i as f64 + 0.5) * h;
-            num += f(t);
-            den += lad.pdf(t);
-        }
-        return num / den;
+    if let Lad::TwoParamBeta(mu, nu) = *lad {
+        // With a parameter below 1 the density is infinite at that end (and
+        // steep near it for one a little above 1), which a trapezoid over the
+        // density misses; the probability of each step is exact whatever the shape.
+        // t = 2 theta / pi follows Beta(nu, mu) in the usual order.
+        let cdf = |i: usize| crate::fusion::upscale::inc_beta(nu, mu, i as f64 / n as f64);
+        return (0..n).map(|i| projection_kernel(theta, (i as f64 + 0.5) * h) * (cdf(i + 1) - cdf(i))).sum();
     }
+    let f = |t: f64| projection_kernel(theta, t) * lad.pdf(t);
     let mut sum = 0.5 * (f(0.0) + f(FRAC_PI_2));
     for i in 1..n {
         sum += f(i as f64 * h);
@@ -589,6 +591,11 @@ mod tests {
             assert!((total - 1.0).abs() < tol, "{} integrates to {total}", lad.name());
         }
         assert_eq!(Lad::TwoParamBeta(2.0, 3.0).pdf(-0.1), 0.0);
+        // Goel & Strebel's order: (1 - t)^(mu - 1) t^(nu - 1) / B(mu, nu), t = 2 theta / pi.
+        let t: f64 = 0.3;
+        let want = (1.0 - t) * t * t * 12.0 * 2.0 / PI; // B(2, 3) = 1 / 12
+        assert!((Lad::TwoParamBeta(2.0, 3.0).pdf(t * FRAC_PI_2) - want).abs() < 1e-9);
+        assert!((Lad::TwoParamBeta(1.0, 1.0).pdf(0.7) - 2.0 / PI).abs() < 1e-12);
     }
 
     #[test]
@@ -628,9 +635,8 @@ mod tests {
             // Beams from below see the same leaves.
             assert!((compute_g_from_histogram(PI - theta, &centres, &flat) - theta.cos()).abs() < 1e-9);
         }
-        // Goel & Strebel's (1984) beta parameters for the symmetric de Wit types
-        // (mu = nu, so the order of the two does not matter).
-        for (beta, de_wit) in [(Lad::TwoParamBeta(0.433, 0.433), Lad::Extremophile), (Lad::TwoParamBeta(3.326, 3.326), Lad::Plagiophile)] {
+        // Goel & Strebel's (1984) beta fits of the de Wit types give their G.
+        for (beta, de_wit) in [(Lad::TwoParamBeta(2.770, 1.172), Lad::Planophile), (Lad::TwoParamBeta(1.172, 2.770), Lad::Erectophile), (Lad::TwoParamBeta(3.326, 3.326), Lad::Plagiophile), (Lad::TwoParamBeta(0.433, 0.433), Lad::Extremophile), (Lad::TwoParamBeta(1.0, 1.0), Lad::Uniform), (Lad::TwoParamBeta(1.101, 1.930), Lad::Spherical)] {
             for theta in [0.1f64, 0.6, 1.0, 1.4] {
                 let (b, d) = (compute_g(theta, &beta), compute_g(theta, &de_wit));
                 assert!((b - d).abs() < 0.03, "{} at {theta}: {b} vs {d}", de_wit.name());

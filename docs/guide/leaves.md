@@ -58,7 +58,8 @@ rRMSE 26 % against 20 %), so `qsm.wood_points` keeps the passage filter;
 neighbours ([Vicari et al. 2019](../references.md)) give inclinations (angle between the leaf normal and the vertical),
 weighted by the area each point stands for so densely scanned leaves do not
 dominate. The result carries the histogram, mean, a two-parameter beta fit
-([Goel and Strebel 1984](../references.md)), [Campbell's (1990)](../references.md) ellipsoidal χ, the
+([Goel and Strebel 1984](../references.md); `goel_strebel` gives it as the
+`lad_params` of `lad="twoParamBeta"` in `sylva.voxels`), [Campbell's (1990)](../references.md) ellipsoidal χ, the
 nearest [de Wit (1965)](../references.md) type and the projection function `g(zenith)`
 ([Wilson 1960](../references.md)). `LeafAngleDistribution.from_type("planophile")` gives the analytic
 types.

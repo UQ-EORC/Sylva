@@ -58,7 +58,9 @@ pub struct LeafAngles {
     pub density: Vec<f64>,
     pub mean: f64,
     pub std: f64,
-    /// Beta distribution on `t = 2 theta / pi`: `f(t) ~ t^(a-1) (1-t)^(b-1)`.
+    /// Beta distribution on `t = 2 theta / pi`: `f(t) ~ t^(a-1) (1-t)^(b-1)`,
+    /// which is Goel & Strebel's (1984) `(mu, nu) = (beta_b, beta_a)`, the
+    /// order of [`crate::voxel::Lad::TwoParamBeta`].
     pub beta_a: f64,
     pub beta_b: f64,
     /// Campbell's ellipsoidal parameter (1 spherical, > 1 planophile).
