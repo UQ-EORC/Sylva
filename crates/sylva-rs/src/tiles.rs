@@ -17,8 +17,8 @@
 //! - [`thin`], [`sor`], [`ror`], [`features`] and [`detect_stems`] run one
 //!   tile at a time with a buffer. Neighbourhood operations are exact for any
 //!   buffer: a point whose `k` nearest neighbours (or search sphere) might
-//!   reach beyond the buffered box is evaluated again from a read widened
-//!   just enough to hold them ([`core_neighbourhoods`]). Statistical outlier
+//!   reach beyond the buffered box is searched again in the tiles its reach
+//!   meets, streamed one at a time ([`core_neighbourhoods`]). Statistical outlier
 //!   removal takes two passes, since its threshold uses the mean and standard
 //!   deviation over the whole cloud.
 //!
@@ -37,7 +37,7 @@ use std::sync::Mutex;
 
 use rayon::prelude::*;
 
-use crate::als::{self, merge_clouds, output_path, plan, read_chunk, run, workers_for, workers_for_estimates, write_like, Catalog, Chunk, ChunkData, Layout, BYTES_PER_POINT};
+use crate::als::{self, merge_clouds, output_path, plan, run, workers_for, workers_for_estimates, write_like, Catalog, Chunk, ChunkData, Layout, BYTES_PER_POINT};
 use crate::als_ops::{epsg_vlr, NOISE_CLASS};
 use crate::error::{Error, Result};
 use crate::filters;
@@ -46,7 +46,7 @@ use crate::pointcloud::Attr;
 use crate::spatial::{voxel_key, KdTree, VoxelKey};
 use crate::stems::{self, StemFit, StemParams};
 use crate::transform::Transform;
-use crate::{limits, progress, Point, PointCloud};
+use crate::{progress, Point, PointCloud};
 
 /// What a tiled run did, for checking that memory stayed bounded.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -100,24 +100,24 @@ impl Tracker {
 
 // ------------------------------------------------------------------ helpers
 
-fn boxes_meet(a: &[f64; 4], b: &[f64; 4]) -> bool {
+pub(crate) fn boxes_meet(a: &[f64; 4], b: &[f64; 4]) -> bool {
     a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]
 }
 
 /// Tiles with points whose extent meets `outer`, in catalogue order.
-fn files_in(cat: &Catalog, outer: &[f64; 4]) -> Vec<usize> {
+pub(crate) fn files_in(cat: &Catalog, outer: &[f64; 4]) -> Vec<usize> {
     (0..cat.tiles.len()).filter(|&i| cat.tiles[i].n_points > 0 && boxes_meet(&cat.tiles[i].xy(), outer)).collect()
 }
 
 /// For each side of `outer` (west, south, east, north), whether the
 /// catalogue has points beyond it.
-fn open_sides(ext: &[f64; 4], outer: &[f64; 4]) -> [bool; 4] {
+pub(crate) fn open_sides(ext: &[f64; 4], outer: &[f64; 4]) -> [bool; 4] {
     [outer[0] > ext[0], outer[1] > ext[1], outer[2] < ext[2], outer[3] < ext[3]]
 }
 
 /// Distance from `p` to the nearest side of `outer` beyond which there may
 /// be points; every point not read lies farther than this.
-fn margin(outer: &[f64; 4], open: &[bool; 4], p: &Point) -> f64 {
+pub(crate) fn margin(outer: &[f64; 4], open: &[bool; 4], p: &Point) -> f64 {
     let d = [p[0] - outer[0], p[1] - outer[1], outer[2] - p[0], outer[3] - p[1]];
     (0..4).filter(|&s| open[s]).map(|s| d[s]).fold(f64::INFINITY, f64::min)
 }
@@ -142,7 +142,7 @@ fn like_tile(chunk: &Chunk) -> usize {
 
 /// One chunk per tile with `buffer`, the workers the memory budget allows,
 /// and every output path checked before anything is written.
-fn prepare(cat: &Catalog, out_dir: Option<&Path>, format: Option<&str>, buffer: f64, workers: usize) -> Result<(Vec<Chunk>, usize)> {
+pub(crate) fn prepare(cat: &Catalog, out_dir: Option<&Path>, format: Option<&str>, buffer: f64, workers: usize) -> Result<(Vec<Chunk>, usize)> {
     let chunks = plan(cat, Layout::Tiles, buffer)?;
     let w = workers_for(&chunks, workers, BYTES_PER_POINT)?;
     if let Some(dir) = out_dir {
@@ -154,7 +154,7 @@ fn prepare(cat: &Catalog, out_dir: Option<&Path>, format: Option<&str>, buffer: 
     Ok((chunks, w))
 }
 
-fn write_tile(cat: &Catalog, out_dir: &Path, format: Option<&str>, chunk: &Chunk, cloud: &PointCloud) -> Result<Option<PathBuf>> {
+pub(crate) fn write_tile(cat: &Catalog, out_dir: &Path, format: Option<&str>, chunk: &Chunk, cloud: &PointCloud) -> Result<Option<PathBuf>> {
     if cloud.is_empty() {
         return Ok(None);
     }
@@ -196,7 +196,7 @@ fn keep_or_classify(core: PointCloud, keep: &[bool], classify: bool) -> PointClo
     }
 }
 
-fn check_buffer(buffer: f64) -> Result<()> {
+pub(crate) fn check_buffer(buffer: f64) -> Result<()> {
     if !(buffer.is_finite() && buffer >= 0.0) {
         return Err(Error::invalid(format!("buffer must be a non-negative number of metres, got {buffer}")));
     }
@@ -240,10 +240,12 @@ impl Query {
 /// The neighbourhood is first searched in the chunk as read. It is exact
 /// when it reaches no farther than the nearest side of the buffered box
 /// beyond which the catalogue has points (every point not read lies
-/// farther). The other points are searched again in a read of the chunk
-/// widened to hold each one's reach (an upper bound of its true
-/// neighbourhood), so the result never depends on the buffer; a buffer wider
-/// than the typical reach only saves the second read.
+/// farther). The other points are searched again within their reach (an
+/// upper bound of the true neighbourhood): the tiles it meets are read one
+/// at a time, each point keeping its nearest candidates over them, so the
+/// result never depends on the buffer and memory stays at one tile however
+/// far a point reaches. A buffer wider than the typical reach only saves
+/// the second read.
 pub fn core_neighbourhoods<T: Send>(cat: &Catalog, chunk: &Chunk, data: ChunkData, query: Query, tracker: &Tracker, f: impl Fn(&[Point], &[(usize, f64)]) -> T + Sync) -> Result<Vec<T>> {
     let ext = cat.xy_bounds().ok_or_else(|| Error::invalid("the catalogue has no tiles"))?;
     let core = data.core_indices();
@@ -267,30 +269,78 @@ pub fn core_neighbourhoods<T: Send>(cat: &Catalog, chunk: &Chunk, data: ChunkDat
     if redo.is_empty() {
         return Ok(first.into_iter().map(|r| match r { Ok(v) => v, Err(_) => unreachable!("all exact") }).collect());
     }
-    // Widen the box just enough for every point left, within the catalogue.
+    // The box each point left needs, within the catalogue; the tiles meeting
+    // any of them are streamed one at a time, each point keeping its nearest
+    // candidates, so memory stays at one tile however far a point reaches
+    // (an isolated return far above the canopy reaches across the plot).
+    let boxes: Vec<[f64; 4]> = redo
+        .iter()
+        .map(|&(j, reach)| {
+            let p = pts[core[j]];
+            let b = if reach.is_finite() { [p[0] - reach, p[1] - reach, p[0] + reach, p[1] + reach] } else { ext };
+            [b[0].max(ext[0]), b[1].max(ext[1]), b[2].min(ext[2]), b[3].min(ext[3])]
+        })
+        .collect();
+    let queries: Vec<Point> = redo.iter().map(|&(j, _)| pts[core[j]]).collect();
+    drop(data);
     let mut outer = chunk.outer;
-    for &(j, reach) in &redo {
-        let p = pts[core[j]];
-        let b = if reach.is_finite() { [p[0] - reach, p[1] - reach, p[0] + reach, p[1] + reach] } else { ext };
+    for b in &boxes {
         outer = [outer[0].min(b[0]), outer[1].min(b[1]), outer[2].max(b[2]), outer[3].max(b[3])];
     }
-    let outer = [outer[0].max(ext[0]), outer[1].max(ext[1]), outer[2].min(ext[2]), outer[3].min(ext[3])];
-    let outer = [outer[0].min(chunk.outer[0]), outer[1].min(chunk.outer[1]), outer[2].max(chunk.outer[2]), outer[3].max(chunk.outer[3])];
-    drop(data);
-    let files = files_in(cat, &outer);
-    let wide = Chunk { outer, est_points: als::est_points(cat, &outer, &files), files, ..chunk.clone() };
-    limits::check(wide.est_points.saturating_mul(BYTES_PER_POINT), &format!("tile {} widened for {} points whose neighbourhood reaches beyond the buffer (about {} points)", chunk.name, redo.len(), wide.est_points), "a wider buffer, or removing isolated points first")?;
-    let data = read_chunk(cat, &wide)?;
-    tracker.read(data.cloud.len());
+    // Tiles nearest the points first, so that each point's k-th candidate
+    // distance soon bounds its search and farther tiles are skipped; ties
+    // are ordered by tile and position, so the order of reading is immaterial.
+    let dist_to = |q: &Point, b: &[f64; 6]| -> f64 {
+        let d = [0, 1, 2].map(|a| (b[a] - q[a]).max(0.0).max(q[a] - b[a + 3]));
+        (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+    };
+    let mut bound: Vec<f64> = redo.iter().map(|&(_, reach)| reach).collect();
+    let mut order = files_in(cat, &outer);
+    order.sort_by(|&a, &b| {
+        let da = queries.iter().map(|q| dist_to(q, &cat.tiles[a].bounds)).fold(f64::INFINITY, f64::min);
+        let db = queries.iter().map(|q| dist_to(q, &cat.tiles[b].bounds)).fold(f64::INFINITY, f64::min);
+        da.total_cmp(&db).then(a.cmp(&b))
+    });
+    let mut found: Vec<Vec<(f64, usize, usize, Point)>> = vec![Vec::new(); redo.len()];
+    for t in order {
+        let tb = cat.tiles[t].xy();
+        let want: Vec<usize> = (0..redo.len()).filter(|&q| boxes_meet(&tb, &boxes[q]) && dist_to(&queries[q], &cat.tiles[t].bounds) <= bound[q]).collect();
+        if want.is_empty() {
+            continue;
+        }
+        let o = outer;
+        let c = crate::io::las::read_las_where(&cat.tiles[t].path, |p: &Point| p[0] >= o[0] && p[0] <= o[2] && p[1] >= o[1] && p[1] <= o[3]).map_err(|e| match e {
+            Error::File { .. } => e,
+            other => Error::file(&cat.tiles[t].path, other.to_string()),
+        })?;
+        tracker.read(c.len());
+        if c.is_empty() {
+            continue;
+        }
+        let tree = KdTree::new(&c.xyz);
+        let near: Vec<Vec<(f64, usize, usize, Point)>> = want.par_iter().map(|&q| query.find(&tree, &queries[q]).into_iter().map(|(i, d)| (d, t, i, c.xyz[i])).collect()).collect();
+        for (&q, cand) in want.iter().zip(near) {
+            let all = &mut found[q];
+            all.extend(cand);
+            all.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+            if let Query::Knn(k) = query {
+                all.truncate(k);
+                if all.len() == k {
+                    bound[q] = bound[q].min(all[k - 1].0);
+                }
+            }
+        }
+    }
     tracker.rereads.fetch_add(1, Ordering::Relaxed);
     tracker.widened.fetch_add(redo.len() as u64, Ordering::Relaxed);
-    let core2 = data.core_indices();
-    if core2.len() != core.len() {
-        return Err(Error::invalid(format!("tile {} changed while it was being read ({} points, then {})", chunk.name, core.len(), core2.len())));
-    }
-    let pts = &data.cloud.xyz;
-    let tree = KdTree::new(pts);
-    let again: Vec<T> = redo.par_iter().map(|&(j, _)| f(pts, &query.find(&tree, &pts[core2[j]]))).collect();
+    let again: Vec<T> = found
+        .par_iter()
+        .map(|cand| {
+            let local: Vec<Point> = cand.iter().map(|c| c.3).collect();
+            let nb: Vec<(usize, f64)> = cand.iter().enumerate().map(|(i, c)| (i, c.0)).collect();
+            f(&local, &nb)
+        })
+        .collect();
     let mut out = first;
     for ((j, _), v) in redo.into_iter().zip(again) {
         out[j] = Ok(v);
@@ -348,10 +398,10 @@ fn read_f64s(path: &Path) -> Result<Vec<f64>> {
 }
 
 /// A scratch directory under `out_dir`, removed when dropped.
-struct Scratch(PathBuf);
+pub(crate) struct Scratch(pub(crate) PathBuf);
 
 impl Scratch {
-    fn new(out_dir: &Path, name: &str) -> Result<Scratch> {
+    pub(crate) fn new(out_dir: &Path, name: &str) -> Result<Scratch> {
         let dir = out_dir.join(name);
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir)?;
@@ -545,7 +595,7 @@ pub fn detect_stems(cat: &Catalog, height_attr: &str, params: &StemParams, buffe
 
 const SPILL_MAGIC: [u8; 4] = *b"SYTB";
 
-fn attr_code(a: &Attr) -> u8 {
+pub(crate) fn attr_code(a: &Attr) -> u8 {
     match a {
         Attr::F64(_) => 0,
         Attr::F32(_) => 1,
@@ -559,7 +609,7 @@ fn attr_code(a: &Attr) -> u8 {
     }
 }
 
-fn put_attr(buf: &mut Vec<u8>, a: &Attr) {
+pub(crate) fn put_attr(buf: &mut Vec<u8>, a: &Attr) {
     match a {
         Attr::F64(v) => v.iter().for_each(|x| buf.extend_from_slice(&x.to_le_bytes())),
         Attr::F32(v) => v.iter().for_each(|x| buf.extend_from_slice(&x.to_le_bytes())),
@@ -573,7 +623,7 @@ fn put_attr(buf: &mut Vec<u8>, a: &Attr) {
     }
 }
 
-fn get_attr(code: u8, n: usize, r: &mut impl Read) -> Result<Attr> {
+pub(crate) fn get_attr(code: u8, n: usize, r: &mut impl Read) -> Result<Attr> {
     let size = match code {
         0 | 2 => 8,
         1 | 3 | 4 => 4,
@@ -603,7 +653,7 @@ fn get_attr(code: u8, n: usize, r: &mut impl Read) -> Result<Attr> {
 
 /// Append `cloud` as one block to a scratch file: its points at full
 /// precision and every attribute with its type.
-fn write_block(w: &mut impl Write, cloud: &PointCloud) -> Result<()> {
+pub(crate) fn write_block(w: &mut impl Write, cloud: &PointCloud) -> Result<()> {
     let mut buf = Vec::with_capacity(16 + cloud.len() * 32);
     buf.extend_from_slice(&SPILL_MAGIC);
     buf.extend_from_slice(&(cloud.len() as u64).to_le_bytes());
@@ -624,7 +674,7 @@ fn write_block(w: &mut impl Write, cloud: &PointCloud) -> Result<()> {
 }
 
 /// The next block of a scratch file, None at its end.
-fn read_block(r: &mut impl Read) -> Result<Option<PointCloud>> {
+pub(crate) fn read_block(r: &mut impl Read) -> Result<Option<PointCloud>> {
     let mut magic = [0u8; 4];
     let mut got = 0;
     while got < 4 {

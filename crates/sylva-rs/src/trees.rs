@@ -10,7 +10,7 @@ use rayon::prelude::*;
 
 use crate::cluster::{dijkstra_gravity, dijkstra_scaled, directed_knn_graph, directed_knn_graph_wood};
 use crate::error::{Error, Result};
-use crate::filters::{voxel_downsample_indices, Rng};
+use crate::filters::{voxel_downsample_indices, voxel_downsample_indices_at, Rng};
 use crate::optim::levenberg_marquardt;
 use crate::spatial::KdTree;
 use crate::Point;
@@ -203,45 +203,69 @@ pub struct SegmentParams {
     /// `height_prior`); what they claim is left unassigned. 0 disables.
     pub understorey_height: f64,
     pub understorey_band: f64,
+    /// Corner of the voxel grid of the graph; None anchors it at the
+    /// minimum of the points above `cut_above_ground`. A fixed corner puts
+    /// every part of a plot on one grid, so tiles of the plot get the graph
+    /// nodes the whole plot has (`crate::tiles_trees`).
+    pub voxel_origin: Option<Point>,
 }
 
 impl Default for SegmentParams {
     fn default() -> Self {
-        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.03, seed_height: 1.5, seed_radius: 0.25, power: 6.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, seed_ring: true, height_prior: true, height_prior_radius: 1.5, height_prior_power: 1.0, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 10.0, understorey_band: 0.5 }
+        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.03, seed_height: 1.5, seed_radius: 0.25, power: 6.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, seed_ring: true, height_prior: true, height_prior_radius: 1.5, height_prior_power: 1.0, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 10.0, understorey_band: 0.5, voxel_origin: None }
     }
+}
+
+/// The points that become graph nodes: those at or above
+/// `cut_above_ground`, thinned to the first of each `voxel_size` voxel.
+pub fn graph_nodes(points: &[Point], heights: &[f64], p: &SegmentParams) -> Vec<usize> {
+    let above: Vec<usize> = (0..points.len()).filter(|&i| heights[i] >= p.cut_above_ground).collect();
+    if p.voxel_size.is_nan() || p.voxel_size <= 0.0 {
+        return above;
+    }
+    let above_pts: Vec<Point> = above.iter().map(|&i| points[i]).collect();
+    let keep = match &p.voxel_origin {
+        Some(o) => voxel_downsample_indices_at(&above_pts, o, p.voxel_size),
+        None => voxel_downsample_indices(&above_pts, p.voxel_size),
+    };
+    keep.into_iter().map(|i| above[i]).collect()
 }
 
 /// Assign points to the nearest stem by shortest path through a kNN graph
 /// (multi-source Dijkstra from stem seeds), after raycloudtools' `rayextract
 /// trees` (Devereux et al. 2026). Unreachable points get `-1`.
 pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &SegmentParams) -> Vec<i64> {
-    let task = crate::progress::start("segmenting trees", 5);
-    let above: Vec<usize> = (0..points.len()).filter(|&i| heights[i] >= p.cut_above_ground).collect();
-    let above_pts: Vec<Point> = above.iter().map(|&i| points[i]).collect();
-    let work_idx: Vec<usize> = if p.voxel_size > 0.0 {
-        voxel_downsample_indices(&above_pts, p.voxel_size).into_iter().map(|i| above[i]).collect()
-    } else {
-        above
-    };
+    let task = crate::progress::start("segmenting trees", 3);
+    let work_idx = graph_nodes(points, heights, p);
     let work: Vec<Point> = work_idx.iter().map(|&i| points[i]).collect();
     let hw: Vec<f64> = work_idx.iter().map(|&i| heights[i]).collect();
     task.inc(1); // thinned
+    let labels_work = segment_nodes(&work, &hw, trees, p);
+    task.inc(1); // paths
+    let labels = label_points(points, heights, &work, &labels_work, trees, p);
+    task.inc(1); // labelled
+    labels
+}
+
+/// The graph part of [`segment_trees`] on its nodes (`work`, the points
+/// [`graph_nodes`] keeps, with heights `hw`): the tree id whose seeds reach
+/// each node most cheaply, -1 for nodes no seed reaches and for those the
+/// understorey claims. Nothing is thinned here.
+pub fn segment_nodes(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentParams) -> Vec<i64> {
     let wood: Option<Vec<bool>> = if p.wood_costs {
-        let (_, vals) = crate::filters::local_pca(&work, p.wood_k);
+        let (_, vals) = crate::filters::local_pca(work, p.wood_k);
         Some(vals.iter().map(|[l1, _, l3]| *l3 > 1e-14 && (l3 - l1) / l3 > p.wood_threshold).collect())
     } else {
         None
     };
-    task.inc(1); // wood costs
-    let graph = directed_knn_graph_wood(&work, p.k, p.max_edge, p.power, p.angle_penalty, wood.as_deref());
-    task.inc(1); // graph
+    let graph = directed_knn_graph_wood(work, p.k, p.max_edge, p.power, p.angle_penalty, wood.as_deref());
     let mut seeds = Vec::new();
     let mut seed_tree = Vec::new();
     let mut seed_xy = Vec::new();
     let mut seed_scale = Vec::new();
     for t in trees {
         let scale = if p.height_prior {
-            let mut hs: Vec<f64> = work.iter().zip(&hw).filter(|(q, _)| (q[0] - t.x).hypot(q[1] - t.y) <= p.height_prior_radius).map(|(_, &h)| h).collect();
+            let mut hs: Vec<f64> = work.iter().zip(hw).filter(|(q, _)| (q[0] - t.x).hypot(q[1] - t.y) <= p.height_prior_radius).map(|(_, &h)| h).collect();
             hs.sort_by(|a, b| a.partial_cmp(b).unwrap());
             let h95 = hs.get(((hs.len() as f64 * 0.95) as usize).min(hs.len().saturating_sub(1))).copied().unwrap_or(2.0);
             1.0 / h95.max(2.0).powf(p.height_prior_power)
@@ -264,7 +288,7 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
         }
     }
     if seeds.is_empty() {
-        return vec![-1; points.len()];
+        return vec![-1; work.len()];
     }
     if p.understorey_height > 0.0 {
         // Near-ground nodes away from every stem: sources labelled -1.
@@ -286,11 +310,17 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
         }
     }
     let (dist, src, _) = dijkstra_scaled(&graph, &seeds, Some(&seed_xy), p.gravity, if p.height_prior { Some(&seed_scale) } else { None });
-    task.inc(1); // paths
-    let labels_work: Vec<i64> = (0..work.len()).map(|i| if dist[i].is_finite() { seed_tree[src[i]] } else { -1 }).collect();
-    let tree = KdTree::new(&work);
+    (0..work.len()).map(|i| if dist[i].is_finite() { seed_tree[src[i]] } else { -1 }).collect()
+}
+
+/// The last step of [`segment_trees`]: each point takes the label of its
+/// nearest graph node (`work`, labelled by [`segment_nodes`]); points below
+/// `cut_above_ground`, and those below `low_height` farther than
+/// `max(low_radius, 1.5 DBH)` from their tree's stem, get -1.
+pub fn label_points(points: &[Point], heights: &[f64], work: &[Point], labels_work: &[i64], trees: &[Tree], p: &SegmentParams) -> Vec<i64> {
+    let tree = KdTree::new(work);
     let base: std::collections::HashMap<i64, (f64, f64, f64)> = trees.iter().map(|t| (t.tree_id, (t.x, t.y, p.low_radius.max(1.5 * t.dbh)))).collect();
-    let labels = points
+    points
         .par_iter()
         .zip(heights)
         .map(|(q, &h)| {
@@ -307,9 +337,7 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
             }
             l
         })
-        .collect();
-    task.inc(1); // labelled
-    labels
+        .collect()
 }
 
 /// Drop stem candidates that are really branches or secondary stems of
@@ -324,26 +352,35 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
 /// candidate's seed height) is a branch of it and is removed. Returns the
 /// surviving trees and, for every input tree, the id it was merged into.
 pub fn merge_branches(points: &[Point], heights: &[f64], trees: &[Tree], p: &SegmentParams, ground_height: f64, trunk_scale: f64, trunk_min: f64, search_radius: f64) -> (Vec<Tree>, Vec<i64>) {
-    let above: Vec<usize> = (0..points.len()).filter(|&i| heights[i] >= p.cut_above_ground).collect();
-    let above_pts: Vec<Point> = above.iter().map(|&i| points[i]).collect();
-    let work_idx: Vec<usize> = if p.voxel_size > 0.0 {
-        voxel_downsample_indices(&above_pts, p.voxel_size).into_iter().map(|i| above[i]).collect()
-    } else {
-        above
-    };
+    let parent = branch_parents(points, heights, trees, p, ground_height, trunk_scale, trunk_min, search_radius, None);
+    resolve_branches(trees, &parent)
+}
+
+/// The first half of [`merge_branches`]: for each candidate, the candidate
+/// whose trunk its seed's path to the ground runs through (the index into
+/// `trees`), if any. With `only`, candidates not flagged in it are not
+/// traced (their entry is None) but still count as trunks for the others.
+#[allow(clippy::too_many_arguments)]
+pub fn branch_parents(points: &[Point], heights: &[f64], trees: &[Tree], p: &SegmentParams, ground_height: f64, trunk_scale: f64, trunk_min: f64, search_radius: f64, only: Option<&[bool]>) -> Vec<Option<usize>> {
+    let mut parent: Vec<Option<usize>> = vec![None; trees.len()];
+    let work_idx = graph_nodes(points, heights, p);
     let work: Vec<Point> = work_idx.iter().map(|&i| points[i]).collect();
     let hw: Vec<f64> = work_idx.iter().map(|&i| heights[i]).collect();
     let graph = directed_knn_graph(&work, p.k, p.max_edge, p.power, p.angle_penalty);
     let sources: Vec<usize> = (0..work.len()).filter(|&i| hw[i] < ground_height).collect();
-    let merged_into: Vec<i64> = trees.iter().map(|t| t.tree_id).collect();
     if sources.is_empty() {
-        return (trees.to_vec(), merged_into);
+        return parent;
     }
     let (dist, _, pred) = dijkstra_gravity(&graph, &sources, None, 0.0);
+    let traced = |ci: usize| only.is_none_or(|o| o[ci]);
     // Seed node per candidate: nearest graph node to (x, y, seed_height) that is connected to ground.
     let seed_node: Vec<Option<usize>> = trees
         .iter()
-        .map(|t| {
+        .enumerate()
+        .map(|(ci, t)| {
+            if !traced(ci) {
+                return None;
+            }
             let mut best: Option<(usize, f64)> = None;
             for i in 0..work.len() {
                 if (work[i][0] - t.x).hypot(work[i][1] - t.y) > p.seed_radius || (hw[i] - p.seed_height).abs() > 0.5 || !dist[i].is_finite() {
@@ -356,7 +393,6 @@ pub fn merge_branches(points: &[Point], heights: &[f64], trees: &[Tree], p: &Seg
             best.map(|b| b.0)
         })
         .collect();
-    let mut parent: Vec<Option<usize>> = vec![None; trees.len()];
     for (ci, t) in trees.iter().enumerate() {
         let Some(mut node) = seed_node[ci] else { continue };
         // Walk the predecessor chain to the ground.
@@ -380,6 +416,13 @@ pub fn merge_branches(points: &[Point], heights: &[f64], trees: &[Tree], p: &Seg
             }
         }
     }
+    parent
+}
+
+/// The second half of [`merge_branches`]: follow the parents of
+/// [`branch_parents`] to the candidate each one belongs to, and return the
+/// survivors and, for every candidate, the id it now belongs to.
+pub fn resolve_branches(trees: &[Tree], parent: &[Option<usize>]) -> (Vec<Tree>, Vec<i64>) {
     // Resolve chains (a -> b -> c) and mutual pairs (keep the higher quality one).
     let mut target: Vec<usize> = (0..trees.len()).collect();
     for ci in 0..trees.len() {

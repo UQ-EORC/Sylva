@@ -74,6 +74,7 @@ pub mod stems;
 pub mod synthetic;
 pub mod synthetic_als;
 pub mod tiles;
+pub mod tiles_trees;
 pub mod transform;
 pub mod tree_prune;
 pub mod trees;

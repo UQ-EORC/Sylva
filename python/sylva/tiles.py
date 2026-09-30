@@ -21,7 +21,8 @@ buffer of points from its neighbours, on the engine of :mod:`sylva.als`
    :func:`planarity_linearity` and :func:`detect_stems` give, tile by tile,
    the result of their single-cloud counterparts on the whole plot. The
    neighbourhood operations are exact for any buffer: a point whose
-   neighbours might lie beyond it is evaluated again from a wider read.
+   neighbours might lie beyond it is searched again in the tiles within its
+   reach, one tile at a time.
 3. :func:`classify_ground`, :func:`dtm` and :func:`normalize` are the
    :mod:`sylva.als` operations with settings for plots.
 
@@ -48,16 +49,39 @@ from pathlib import Path
 import numpy as np
 
 from . import _core, als, progress
-from .als import Catalog, Chunk, _as_catalog, _format, _workers, _written, apply, catalog, retile, write_tiles
+from .als import (
+    Catalog,
+    Chunk,
+    _as_catalog,
+    _format,
+    _workers,
+    _written,
+    apply,
+    catalog,
+    retile,
+    write_tiles,
+)
 from .pointcloud import PointCloud
 from .raster import Raster
+from .tiles_trees import (
+    PlotRun,
+    TreeStore,
+    build_qsms,
+    classify_leaf_wood,
+    crown_metrics,
+    read_tree,
+    run_plot,
+    segment_trees,
+    split_trees,
+)
 from .trees import Tree
 
 __all__ = [
     "Catalog", "Chunk", "catalog", "apply", "retile", "write_tiles", "RunInfo", "last_run",
     "from_scans", "voxel_downsample", "statistical_outlier_removal", "radius_outlier_removal",
     "estimate_normals", "planarity_linearity", "classify_ground", "dtm", "normalize",
-    "detect_stems",
+    "detect_stems", "segment_trees", "TreeStore", "split_trees", "read_tree", "classify_leaf_wood",
+    "build_qsms", "crown_metrics", "PlotRun", "run_plot",
 ]
 
 
@@ -71,15 +95,19 @@ class RunInfo:
         Tiles processed (written, for :func:`from_scans`).
     max_points
         Most points held at once by one tile: the tile with its buffer, a
-        widened read, or for :func:`from_scans` the largest scan or tile
-        being assembled. Memory is about 256 bytes times this, per worker.
+        tile read again for points reaching beyond it, the graph nodes of a
+        tile and its buffer (:func:`segment_trees`), or for
+        :func:`from_scans` the largest scan or tile being assembled. Memory
+        is about 256 bytes times this (512 per graph node), per worker.
     points_read
         Points read over the run, buffers and second reads included.
     rereads
-        Tiles read a second time, wider, because some of their points had
-        neighbours that could lie beyond the buffer.
+        Tiles searched a second time because some of their points had
+        neighbours that could lie beyond the buffer (for
+        :func:`segment_trees`, tiles segmented again with a wider buffer).
     widened_points
-        Points evaluated from such a wider read.
+        Points evaluated from such a second search (graph nodes of the wider
+        runs, for :func:`segment_trees`).
     """
 
     chunks: int
@@ -798,3 +826,51 @@ def _add_commands(sub, fmt: dict) -> None:
                    help="longest contiguous arc a circle must cover (degrees; 130 suits merged plots)")
     common(s, buffer=2.0)
     s.set_defaults(func=stems_cmd)
+
+    def plot_cmd(a):
+        transforms = use = None
+        if a.transforms:
+            transforms = list(np.load(a.transforms))
+        if a.use:
+            use = [bool(u) for u in np.load(a.use)]
+        scans = a.scans[0] if a.riscan else a.scans
+        run = run_plot(scans, a.output, transforms=transforms, use=use, bounds=a.bounds, plot=a.plot,
+                       tile_size=a.tile_size, voxel_size=a.voxel,
+                       read_options={"shot_stride": a.shot_stride} if a.riscan else None,
+                       sor={"k": a.sor_k, "std_ratio": a.sor_std_ratio},
+                       ground={"method": a.ground}, stems={"min_arc_deg": a.min_arc},
+                       prune={"min_height": a.min_height, "min_slenderness": a.min_slenderness},
+                       buffer=a.buffer, qsm_options={"stem_radius_cap": a.stem_radius_cap},
+                       workers=a.workers)
+        print(f"{len(run.trees):,} trees, {len(run.qsms):,} QSMs -> {a.output}")
+
+    s = sub.add_parser("tiles-plot", help="the plot workflow in tiles: scans to trees, leaf / wood "
+                       "and QSMs, resuming an interrupted run", **fmt)
+    s.add_argument("scans", nargs="+", help="registered scan files in scan order, or with --riscan "
+                   "one RiSCAN project directory")
+    s.add_argument("output", help="directory of the run")
+    s.add_argument("--riscan", action="store_true",
+                   help="read the scans of a RiSCAN project with their SOPs")
+    s.add_argument("--shot-stride", type=int, default=1, help="with --riscan, read every n-th pulse")
+    s.add_argument("--transforms", help=".npy of shape (n_scans, 4, 4): registrations of the files, "
+                   "or corrections after the SOPs")
+    s.add_argument("--use", help=".npy of one flag per scan; scans flagged False are left out")
+    s.add_argument("--bounds", type=float, nargs=4, metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
+                   help="keep only the points inside this box (the plot and a margin)")
+    s.add_argument("--plot", type=float, nargs=4, metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
+                   help="the plot whose trees are wanted, on the tile grid")
+    s.add_argument("--tile-size", type=float, default=10.0, help="tile side (m)")
+    s.add_argument("--voxel", type=float, default=0.02, help="point spacing of the tiles (m)")
+    s.add_argument("--sor-k", type=int, default=6, help="SOR neighbours")
+    s.add_argument("--sor-std-ratio", type=float, default=1.0, help="SOR threshold")
+    s.add_argument("--ground", choices=["csf", "pmf"], default="csf", help="ground filter")
+    s.add_argument("--min-arc", type=float, default=130.0, help="shortest arc of a stem circle (degrees)")
+    s.add_argument("--min-height", type=float, default=2.0, help="shortest tree kept (m)")
+    s.add_argument("--min-slenderness", type=float, default=0.0,
+                   help="least height / DBH of wide stems (0 keeps every stem)")
+    s.add_argument("--buffer", type=float, default=20.0,
+                   help="segmentation buffer (m), wider than the largest crown")
+    s.add_argument("--stem-radius-cap", type=float, default=1.5,
+                   help="cap on the QSM stem radius, in stem radii from the DBH")
+    s.add_argument("--workers", type=int, default=None, help="tiles or trees at once")
+    s.set_defaults(func=plot_cmd)

@@ -114,10 +114,12 @@ look at each point's `k` nearest neighbours or at a sphere of fixed
 radius. A point's neighbourhood found in the tile and its buffer is the
 true one when it reaches no farther than the nearest edge of the buffer
 (beyond which there may be points not read). For the few points whose
-neighbourhood reaches farther, isolated points mostly, the tile is read
-again, widened just enough to hold each one's reach, which bounds its true
-neighbourhood, and they are evaluated from that. So the result never
-depends on the buffer; a buffer wider than almost every neighbourhood only
+neighbourhood reaches farther, isolated points mostly, the tiles within
+each one's reach (which bounds its true neighbourhood) are read again one at
+a time, each point keeping its nearest candidates over them, and they are
+evaluated from those. So the result never depends on the buffer, and memory
+stays at one tile even for a return far above the canopy whose neighbours
+lie across the plot; a buffer wider than almost every neighbourhood only
 saves the second reads, which `tiles.last_run()` counts.
 
 **Statistical outlier removal in two passes.** CloudCompare's SOR removes
@@ -166,6 +168,183 @@ those of `trees.detect_stems(whole, cluster_seeds=True)`. Compared with the
 default single stream, the same stems are found, their fits differing
 where RANSAC settles on another circle.
 
+## Trees
+
+`tiles.segment_trees(catalog, stems, out)` runs the segmentation sequence
+of a whole plot, `trees.merge_branches`, `trees.segment_trees`,
+`trees.tree_heights` and `trees.prune_trees`, over height-normalised tiles,
+and writes the tiles again with each point's tree id in `tree_id` (int32,
+-1 for none). Continuing the example above:
+
+```python
+trees_, seg = tiles.segment_trees(heights, found, "segmented", buffer=10.0,
+                                  merge={"voxel_size": 0.1}, prune={"min_height": 2.0},
+                                  percentile=99.0, voxel_size=0.1)
+print(len(trees_), tiles.last_run().max_points)          # 12 108292
+
+kept, _ = trees.merge_branches(whole_h, found, voxel_size=0.1, voxel_origin=(0, 0, 0))
+labels = trees.segment_trees(whole_h, kept, voxel_size=0.1, voxel_origin=(0, 0, 0))
+trees.tree_heights(whole_h, labels, kept, percentile=99.0)
+same, labels = trees.prune_trees(kept, labels, min_height=2.0)
+print([(t.tree_id, t.height) for t in same] == [(t.tree_id, t.height) for t in trees_])  # True
+```
+
+(`whole_h` is `heights.read()`.) How it works:
+
+1. **Graph nodes.** The segmentation builds its graph on the points above
+   `cut_above_ground`, thinned to the first point of each `voxel_size`
+   voxel. Tiled, the voxels are those of one grid with a corner at
+   `voxel_origin` (`(0, 0, 0)` by default), and the first point of each is
+   found tile by tile in catalogue order, as the tiled voxel thinning finds
+   it; these are the nodes the whole cloud has, given the same corner
+   (`trees.segment_trees(..., voxel_origin=(0, 0, 0))`; without it, the
+   whole-cloud grid starts at the cloud's lowest point). The nodes, a small
+   share of the points at 0.1 m, are kept in scratch files.
+2. **Branches.** Each stem is traced to the ground by the tile whose core
+   holds it, on that tile's nodes and those of its buffer; the chains
+   (a branch of a branch, mutual pairs) are then resolved over all stems at
+   once, as `merge_branches` resolves them.
+3. **Paths.** Each tile's nodes and those within `buffer` are segmented
+   with every stem that could reach them (stems up to their seed and
+   height-prior reach beyond the buffer), and the tile keeps the labels of
+   the trees whose stem it holds. A tree's labels are then those of the
+   whole plot when its competitors have their stems, seeds and crowns
+   within the buffer: a buffer wider than the largest crown. A tile whose
+   trees' nodes come within `edge_margin` (2 m) of the edge of its buffer,
+   where the plot goes on, is segmented again with a buffer twice as wide,
+   up to `max_buffer`; trees still at the edge are named in a warning and
+   flagged `crown_at_edge` in `Tree.extra`.
+4. **Points.** Every point takes the label of its nearest node, tile by
+   tile. The nearest node of a point is its own voxel's or closer, so the
+   nodes within one voxel diagonal of the tile hold it.
+5. **Trees.** Heights and point counts are gathered per tree over the
+   tiles, pruning runs on the tree list (it needs nothing else), and the
+   tiles are written with the final ids, unique over the plot.
+
+`merge` and `prune` take `True` (their defaults), `False` (skip) or a dict
+of their keywords, so the graph of `merge_branches` keeps its own settings
+(`k=10`, `power=3`, ...). The remaining keywords are those of
+`trees.segment_trees`.
+
+## One tree at a time
+
+`tiles.split_trees(segmented, "trees")` writes each tree's points, from
+every tile it touches and in the order the whole plot has them, to a
+`TreeStore`: a directory per tree, at full precision and with every
+attribute, and an index of the trees (points, bounds, tiles). One tile per
+worker is held. A tree is then read without the plot:
+
+```python
+store = tiles.split_trees(seg, "trees")
+one = store.read(store.ids[0])             # or tiles.read_tree(store, tree_id)
+print(len(store), store.n_points(store.ids[0]), store.tiles_of(store.ids[0]))
+# 12 31144 ['0_0.laz', '10_0.laz', '0_10.laz', '10_10.laz']
+```
+
+`tiles.read_tree(catalog, tree_id, bounds=...)` reads a tree from the tiles
+themselves instead, reading every tile that meets `bounds`.
+
+The per-tree steps of a plot run from the store, a few trees at a time on
+threads (Sylva's computations release the interpreter, and each is
+parallel inside), largest first, with at most `workers` trees in memory and
+fewer when that many of the largest would not fit in the budget
+(`BYTES_PER_TREE_POINT`, 1 kB, per point):
+
+| Function | Whole-plot result it reproduces | Written |
+|---|---|---|
+| `tiles.classify_leaf_wood(store, seg, out)` | `leaves.classify_leaf_wood(plot[labels == t])` for every tree of 100 points or more | `wood` (int8: 1 wood, 0 leaf, -1 none) in the tiles, and per tree in the store |
+| `tiles.build_qsms(store, trees_, **options)` | `qsm.build_plot(plot, labels, trees_, **options)`, every option (DBH anchor, `stem_radius_cap`, buttresses) | a `PlotQSMs`; each tree's result is also kept in the store |
+| `tiles.crown_metrics(store)` | `trees.crown_metrics_all(plot, labels)` | a dict per tree |
+| `store.map(fn)` | `fn(tree_id, plot[labels == tree_id])` | whatever `fn` returns |
+
+Each gives exactly the whole-plot values (the tests compare the leaf / wood
+labels, the cylinders of every model and the crown metrics bit for bit),
+since each tree's points, in the same order, are all these functions see.
+`resume=True` keeps what the store already holds, so an interrupted run
+picks up at the next tree.
+
+## The plot workflow
+
+`tiles.run_plot(scans, out, ...)` runs everything from registered scans to
+trees and QSMs, and the `sylva tiles-plot` command runs it from the shell:
+
+```python
+import numpy as np
+from sylva import tiles
+
+st = np.load("coreg_state.npz")                 # corrections from coregistration
+scans = [f"scans/{i:03d}.laz" for i in range(len(st["corr"]))]
+run = tiles.run_plot(scans, "run", transforms=list(st["corr"]), use=st["use"],
+                     bounds=(-10, -10, 110, 110), plot=(0, 0, 100, 100),
+                     voxel_size=0.02, sor={"k": 6, "std_ratio": 1.0},
+                     ground={"method": "csf", "cloth_resolution": 0.5, "rigidness": 2},
+                     stems={"min_arc_deg": 130}, prune={"min_height": 2, "min_slenderness": 10},
+                     qsm_options={"stem_radius_cap": 1.5}, workers=4)
+```
+
+```
+sylva tiles-plot scans/*.laz run --transforms corr.npy --use use.npy \
+    --bounds -10 -10 110 110 --plot 0 0 100 100 --min-slenderness 10 --workers 4
+```
+
+The stages, each in its own directory of `out` with a `.done` marker
+written when it is complete:
+
+| Stage | Output |
+|---|---|
+| `scans/` | for a RiSCAN project only (a directory or `RiscanProject`): each scan read with its SOP (`read_options`), cropped to `bounds` and thinned; `transforms` are then the corrections applied after the SOPs |
+| `tiles/` | `from_scans` with `transforms` (and scans flagged False in `use` left out), `bounds`, `tile_size`, `voxel_size` |
+| `sor/` | `statistical_outlier_removal` (`sor`; False skips it) |
+| `ground_thin/`, `ground/`, `dtm.asc` | ground classified (`ground`) on a `ground_voxel` (5 cm) thinning, and the DTM (`dtm_resolution`) |
+| `heights/` | `normalize` with that DTM |
+| `stems.pkl` | `detect_stems` on the tiles inside `plot` (`stems`) |
+| `segmented/`, `trees.pkl` | `segment_trees` (`merge`, `segment`, `prune`, `percentile`, `buffer`) |
+| `trees/` | `split_trees`, with each tree's leaf / wood and QSM as they are made |
+| `wood/` | `classify_leaf_wood` (`leaf_wood`; False skips it) |
+| `qsm_table.csv`, `qsm_models.pkl` | `build_qsms` (`qsm_options`; `qsm_files` also writes cylinders and meshes) |
+| `trees.csv` | each tree with its crown metrics and QSM volume |
+
+A second call with the same `out` takes every complete stage as it is, and
+the leaf / wood and QSM stages resume tree by tree, so an interrupted run
+(killed, out of time) continues where it stopped; the tests interrupt a run
+while it fits QSMs and check that the rerun does nothing twice and ends
+with the tables of an uninterrupted run. A stage's directory is emptied
+when it starts, so a stage cut short is done again from its beginning.
+Delete a stage's directory (and those after it) to redo it with other
+settings. The returned `PlotRun` holds the trees, the table, the models,
+the catalogue of every stage, the DTM, the store, and each stage's time and
+largest `max_points`.
+
+Memory is set by the tile size, the buffers and `workers`: each tiled stage
+holds `workers` tiles with their buffers, the segmentation `workers` tiles'
+graph nodes with a buffer of `buffer` (up to `max_buffer`), and the
+per-tree stages `workers` trees.
+
+## Voxels after the workflow
+
+Ray-traced voxels are a separate step for now (the voxel traversal is
+being made to run in blocks). They need the pulses of the registered scans
+and the DTM of the run:
+
+```python
+import numpy as np
+from sylva import voxels
+from sylva.raster import Raster
+
+dtm = Raster.from_ascii_grid("run/dtm.asc")
+grid = voxels.ray_voxelize("rays_registered.parquet", 0.5,
+                           ((0, 0, np.nanmin(dtm.data) - 1), (100, 100, np.nanmax(dtm.data) + 60)),
+                           dtm=dtm, occlusion=True, beam=(0.007, 0.00027))
+seg = run.catalogs["segmented"].read()
+samp = voxels.tree_sampling(grid, seg, seg.attrs["tree_id"])
+```
+
+`rays_registered.parquet` is the scans' pulses (`Shots`) moved by the same
+corrections as the points (origins by the matrix, directions by its
+rotation). `voxels.tree_sampling` needs the segmented points with their
+labels in one cloud; on a plot too large for that, sample the trees one at
+a time from the store.
+
 ## Memory
 
 At most `workers` tiles are in memory at a time, each with its buffer:
@@ -181,7 +360,9 @@ print(tiles.last_run())
 ```
 
 `max_points` is the most points held by one tile with its buffer (or by a
-widened read, or by `from_scans` for its largest scan or tile). For 10 m
+tile read again for far-reaching points, by `from_scans` for its largest
+scan or tile, or by `segment_trees` for a tile's graph nodes with its
+buffer). For 10 m
 tiles with a 1 m buffer a tile holds 1.44 times its own points; the tests
 check on a 60 m plot of 36 tiles that no step holds more than an eighth of
 the plot.
@@ -237,9 +418,8 @@ the full hectare is what keeps the run within the machine.
 - Stem detection in coregistration mode (`cluster_grid_at_slice_min`) grids
   each layer from its own minimum, which depends on the tile; the default
   absolute grid is needed for tiled detection to match.
-- A widened second read can be large for a point far from everything else
-  (an isolated return metres from the plot); it is refused if it would not
-  fit in the memory budget. Removing such points first (radius outlier
-  removal needs no second read with its default buffer) avoids it.
+- A point far from everything else (an isolated return tens of metres above
+  the canopy) is searched again in every tile within its reach, one tile at
+  a time: slow for many such points, but bounded in memory.
 - Scratch files of `from_scans` and of statistical outlier removal need
   disk space beside the output.

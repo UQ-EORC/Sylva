@@ -18,3 +18,12 @@ objects of [`sylva.als`](als.md), documented there.
         - dtm
         - normalize
         - detect_stems
+        - segment_trees
+        - TreeStore
+        - split_trees
+        - read_tree
+        - classify_leaf_wood
+        - build_qsms
+        - crown_metrics
+        - PlotRun
+        - run_plot
