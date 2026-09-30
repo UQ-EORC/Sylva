@@ -365,7 +365,7 @@ mod tests {
             xy.extend(clutter(&mut rng, 0.5, 40 + 10 * trial));
             let ones = vec![1.0; xy.len()];
             assert_eq!(fit_circle_refined_weighted(&xy, &ones), crate::stems::fit_circle_refined(&xy));
-            for p in [StemParams { min_radius: 0.0025, max_radius: 1.0, ransac_iterations: 120, ransac_tolerance: 0.02, ..Default::default() }, StemParams::tlsalign()] {
+            for p in [StemParams { min_radius: 0.0025, max_radius: 1.0, ransac_iterations: 120, ransac_tolerance: 0.02, ..Default::default() }, StemParams::coreg()] {
                 let a = ransac_circle_weighted(&xy, &ones, &p, &mut Rng::new(trial as u64 + 1));
                 let b = crate::stems::ransac_circle(&xy, &p, &mut Rng::new(trial as u64 + 1));
                 assert_eq!(a, b);
