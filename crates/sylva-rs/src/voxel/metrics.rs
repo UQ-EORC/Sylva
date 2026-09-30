@@ -24,7 +24,11 @@ pub enum Lad {
     Extremophile,
     /// Campbell's (1990) ellipsoidal distribution with axis ratio `chi`.
     Ellipsoidal(f64),
-    /// Two-parameter beta distribution (`mu`, `nu`; Goel & Strebel 1984).
+    /// Two-parameter beta distribution of Goel & Strebel (1984) on `t = 2 theta / pi`:
+    /// `f(t) ~ (1 - t)^(mu - 1) t^(nu - 1)`, so `mu > nu` leans towards horizontal
+    /// leaves. Their fits: planophile (2.770, 1.172), erectophile (1.172, 2.770),
+    /// plagiophile (3.326, 3.326), extremophile (0.433, 0.433), uniform (1, 1),
+    /// spherical (1.101, 1.930).
     TwoParamBeta(f64, f64),
 }
 
@@ -96,7 +100,7 @@ impl Lad {
                     return 0.0;
                 }
                 let ln_b = ln_gamma(mu) + ln_gamma(nu) - ln_gamma(mu + nu);
-                x.powf(mu - 1.0) * (1.0 - x).powf(nu - 1.0) / ln_b.exp() * (2.0 / PI)
+                (1.0 - x).powf(mu - 1.0) * x.powf(nu - 1.0) / ln_b.exp() * (2.0 / PI)
             }
         }
     }
@@ -126,13 +130,20 @@ fn ln_gamma(x: f64) -> f64 {
 
 /// Mean projection of a unit leaf at inclination `leaf` onto the plane normal
 /// to a beam at zenith `beam`, for uniform leaf azimuth.
+///
+/// Where the leaf plane can turn edge-on to the beam, the kernel is
+/// `cos b cos l (1 + 2/π (tan a - a))` with `cos a = cot b cot l`, written as
+/// `cos b cos l (1 - 2a/π) + 2/π sin b sin l sin a` (the two are equal):
+/// the first form takes `tan a` of an angle that rounds to π/2 when the
+/// leaf is vertical, which is far from the limit `2/π sin b` there (0.34
+/// instead of 0.54 for a beam at 1 rad).
 fn projection_kernel(beam: f64, leaf: f64) -> f64 {
     let cotcot = 1.0 / (beam.tan() * leaf.tan());
     if cotcot.abs() > 1.0 || cotcot.is_infinite() {
         return beam.cos() * leaf.cos();
     }
     let a = cotcot.acos();
-    beam.cos() * leaf.cos() * (1.0 + 2.0 / PI * (a.tan() - a))
+    beam.cos() * leaf.cos() * (1.0 - 2.0 * a / PI) + 2.0 / PI * beam.sin() * leaf.sin() * a.sin()
 }
 
 fn fold_beam_angle(theta: f64) -> f64 {
@@ -144,7 +155,9 @@ fn fold_beam_angle(theta: f64) -> f64 {
 }
 
 /// Projection function `G(θ)` of a leaf angle distribution for a beam at
-/// zenith `theta` (rad). 180-step trapezoid, as AMAPVox.
+/// zenith `theta` (rad). 180-step trapezoid, as AMAPVox; for the beta
+/// distribution, the kernel at the middle of each of the 180 steps times the
+/// exact probability of the step.
 pub fn compute_g(theta: f64, lad: &Lad) -> f64 {
     if *lad == Lad::Spherical {
         return 0.5;
@@ -152,6 +165,14 @@ pub fn compute_g(theta: f64, lad: &Lad) -> f64 {
     let theta = fold_beam_angle(theta);
     let n = 180;
     let h = FRAC_PI_2 / n as f64;
+    if let Lad::TwoParamBeta(mu, nu) = *lad {
+        // With a parameter below 1 the density is infinite at that end (and
+        // steep near it for one a little above 1), which a trapezoid over the
+        // density misses; the probability of each step is exact whatever the shape.
+        // t = 2 theta / pi follows Beta(nu, mu) in the usual order.
+        let cdf = |i: usize| crate::fusion::upscale::inc_beta(nu, mu, i as f64 / n as f64);
+        return (0..n).map(|i| projection_kernel(theta, (i as f64 + 0.5) * h) * (cdf(i + 1) - cdf(i))).sum();
+    }
     let f = |t: f64| projection_kernel(theta, t) * lad.pdf(t);
     let mut sum = 0.5 * (f(0.0) + f(FRAC_PI_2));
     for i in 1..n {
@@ -549,4 +570,147 @@ impl RayVoxels {
         "exploration_rate", "attenuation_fpl_biased", "attenuation_fpl_correction", "attenuation_fpl", "g_plant",
         "g_leaf", "g_wood", "wood_volume_density",
     ];
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn all_lads() -> Vec<Lad> {
+        vec![Lad::Spherical, Lad::Uniform, Lad::Planophile, Lad::Erectophile, Lad::Plagiophile, Lad::Extremophile, Lad::Ellipsoidal(0.6), Lad::Ellipsoidal(1.0), Lad::Ellipsoidal(2.5), Lad::TwoParamBeta(2.0, 3.0), Lad::TwoParamBeta(0.8, 1.4), Lad::TwoParamBeta(0.433, 0.433)]
+    }
+
+    /// Simpson's rule on `[a, b]` with `n` (even) intervals.
+    fn simpson(f: impl Fn(f64) -> f64, a: f64, b: f64, n: usize) -> f64 {
+        let h = (b - a) / n as f64;
+        let inner: f64 = (1..n).map(|i| f(a + i as f64 * h) * if i % 2 == 1 { 4.0 } else { 2.0 }).sum();
+        (f(a) + f(b) + inner) * h / 3.0
+    }
+
+    #[test]
+    fn every_distribution_is_a_density() {
+        for lad in all_lads() {
+            // Midpoints, as a beta density with a parameter below 1 is infinite at that end.
+            let n = 2_000_000;
+            let h = FRAC_PI_2 / n as f64;
+            let total: f64 = (0..n).map(|i| lad.pdf((i as f64 + 0.5) * h)).sum::<f64>() * h;
+            let tol = if matches!(lad, Lad::TwoParamBeta(m, n) if m < 1.0 || n < 1.0) { 5e-3 } else { 1e-9 };
+            assert!((total - 1.0).abs() < tol, "{} integrates to {total}", lad.name());
+        }
+        assert_eq!(Lad::TwoParamBeta(2.0, 3.0).pdf(-0.1), 0.0);
+        // Goel & Strebel's order: (1 - t)^(mu - 1) t^(nu - 1) / B(mu, nu), t = 2 theta / pi.
+        let t: f64 = 0.3;
+        let want = (1.0 - t) * t * t * 12.0 * 2.0 / PI; // B(2, 3) = 1 / 12
+        assert!((Lad::TwoParamBeta(2.0, 3.0).pdf(t * FRAC_PI_2) - want).abs() < 1e-9);
+        assert!((Lad::TwoParamBeta(1.0, 1.0).pdf(0.7) - 2.0 / PI).abs() < 1e-12);
+    }
+
+    #[test]
+    fn names_and_parameters_round_trip() {
+        for lad in all_lads() {
+            let p = match lad {
+                Lad::Ellipsoidal(chi) => vec![chi],
+                Lad::TwoParamBeta(m, n) => vec![m, n],
+                _ => vec![],
+            };
+            assert_eq!(Lad::parse(lad.name(), &p).unwrap(), lad);
+        }
+        let err = |name: &str, p: &[f64]| Lad::parse(name, p).unwrap_err().to_string();
+        assert_eq!(err("ellipsoidal", &[]), "LAD \"ellipsoidal\" needs 1 parameter(s)");
+        assert_eq!(err("twoParamBeta", &[1.0]), "LAD \"twoParamBeta\" needs 2 parameter(s)");
+        assert_eq!(err("twoParamBeta", &[1.0, 0.0]), "beta LAD parameters must be positive");
+        assert_eq!(err("conical", &[]), "unknown leaf angle distribution \"conical\"");
+    }
+
+    #[test]
+    fn projection_functions_integrate_to_one_half() {
+        // Ross (1981): the integral of G(theta) sin(theta) over the hemisphere is 1/2 for any LAD.
+        for lad in all_lads() {
+            let g0 = compute_g(0.3, &lad);
+            assert!(g0 > 0.0 && g0 < 1.0, "{}", lad.name());
+            let integral = simpson(|t| compute_g(t, &lad) * t.sin(), 0.0, FRAC_PI_2, 360);
+            assert!((integral - 0.5).abs() < 5e-3, "{}: {integral}", lad.name());
+        }
+        // A horizontal leaf presents cos(theta), a vertical one (2/pi) sin(theta).
+        let flat = [1.0, 0.0, 0.0];
+        let upright = [0.0, 0.0, 1.0];
+        let centres = [0.0, 0.8, FRAC_PI_2];
+        for theta in [0.2f64, 1.0, 1.4] {
+            assert!((compute_g_from_histogram(theta, &centres, &flat) - theta.cos()).abs() < 1e-12);
+            assert!((compute_g_from_histogram(theta, &centres, &upright) - 2.0 / PI * theta.sin()).abs() < 1e-6);
+            // Beams from below see the same leaves.
+            assert!((compute_g_from_histogram(PI - theta, &centres, &flat) - theta.cos()).abs() < 1e-9);
+        }
+        // Goel & Strebel's (1984) beta fits of the de Wit types give their G.
+        for (beta, de_wit) in [(Lad::TwoParamBeta(2.770, 1.172), Lad::Planophile), (Lad::TwoParamBeta(1.172, 2.770), Lad::Erectophile), (Lad::TwoParamBeta(3.326, 3.326), Lad::Plagiophile), (Lad::TwoParamBeta(0.433, 0.433), Lad::Extremophile), (Lad::TwoParamBeta(1.0, 1.0), Lad::Uniform), (Lad::TwoParamBeta(1.101, 1.930), Lad::Spherical)] {
+            for theta in [0.1f64, 0.6, 1.0, 1.4] {
+                let (b, d) = (compute_g(theta, &beta), compute_g(theta, &de_wit));
+                assert!((b - d).abs() < 0.03, "{} at {theta}: {b} vs {d}", de_wit.name());
+            }
+        }
+        assert_eq!(compute_g_from_histogram(0.5, &[], &[]), 0.5);
+        assert_eq!(compute_g_from_histogram(0.5, &centres, &[1.0]), 0.5);
+    }
+
+    #[test]
+    fn kernel_is_continuous_at_a_vertical_leaf() {
+        // The limit as the leaf turns vertical is (2 / pi) sin(beam), and the
+        // kernel just short of it agrees.
+        for beam in [0.05f64, 0.2, 0.6, 1.0, 1.4, FRAC_PI_2 - 1e-9] {
+            let limit = 2.0 / PI * beam.sin();
+            assert!((projection_kernel(beam, FRAC_PI_2) - limit).abs() < 1e-12, "{beam}");
+            assert!((projection_kernel(beam, FRAC_PI_2 - 1e-7) - limit).abs() < 1e-6, "{beam}");
+            // Both forms of the kernel agree away from the vertical.
+            for leaf in [0.3f64, 0.9, 1.3] {
+                let c = 1.0 / (beam.tan() * leaf.tan());
+                // (The old form loses precision as the beam nears the horizon.)
+                if c.abs() <= 1.0 && beam < 1.5 {
+                    let a = c.acos();
+                    let old = beam.cos() * leaf.cos() * (1.0 + 2.0 / PI * (a.tan() - a));
+                    assert!((projection_kernel(beam, leaf) - old).abs() < 1e-12);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ln_gamma_matches_known_values() {
+        for (x, want) in [(5.0, 24f64.ln()), (0.5, PI.sqrt().ln()), (0.25, 3.625_609_908_221_908_f64.ln()), (1.0, 0.0), (10.5, 1_133_278.388_948_785_4_f64.ln())] {
+            assert!((ln_gamma(x) - want).abs() < 1e-10, "ln_gamma({x})");
+        }
+    }
+
+    #[test]
+    fn de_wit_types_are_recognised() {
+        let centres: Vec<f64> = (0..18).map(|b| (b as f64 + 0.5) * FRAC_PI_2 / 18.0).collect();
+        for lad in [Lad::Planophile, Lad::Erectophile, Lad::Plagiophile, Lad::Extremophile, Lad::Spherical, Lad::Uniform] {
+            let hist: Vec<f64> = centres.iter().map(|&c| lad.pdf(c)).collect();
+            assert_eq!(classify_de_wit(&centres, &hist), Some(lad.name()));
+        }
+        assert_eq!(classify_de_wit(&centres, &[0.0; 18]), None);
+        assert_eq!(classify_de_wit(&centres, &[1.0; 3]), None);
+    }
+
+    #[test]
+    fn bailey_equation_inverts_beer_lambert() {
+        // With P = 1 - hits / beams over a mean path r: P = exp(-a G r).
+        let (path, beams, hits, g) = (30.0, 20.0, 5.0, 0.6);
+        let a = solve_bailey_pad(path, beams, hits, g);
+        let r = path / beams;
+        assert!(((1.0 - hits / beams) - (-a * g * r).exp()).abs() < 1e-9);
+        assert!((a - -(0.75f64).ln() / (g * r)).abs() < 1e-9);
+        assert!(solve_bailey_pad(path, beams, 0.0, g).abs() < 1e-10, "no hits");
+        assert_eq!(solve_bailey_pad(path, beams, hits, 0.0), 0.0, "no G");
+        assert_eq!(solve_bailey_pad(path, 0.5, hits, g), 0.0, "under one beam");
+        assert_eq!(solve_bailey_pad(0.0, beams, hits, g), 0.0, "no path");
+        let saturated = solve_bailey_pad(path, beams, beams, g);
+        assert!(saturated.is_finite() && saturated > 10.0 * a);
+    }
+
+    #[test]
+    fn scanners_known_to_amapvox() {
+        assert_eq!(laser_spec("vz_400i"), Some((0.007, 0.00035)));
+        assert_eq!(laser_spec("Trimble-X7"), Some((0.0026, 0.0008)));
+        assert_eq!(laser_spec("VZ-2000"), None);
+    }
 }

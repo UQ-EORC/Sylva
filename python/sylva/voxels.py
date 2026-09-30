@@ -86,7 +86,14 @@ def leaf_projection(theta, lad: str = "spherical", lad_params: Sequence[float] =
         ``ellipsoidal`` (Campbell 1990; ``lad_params=[chi]``) or
         ``twoParamBeta`` (Goel & Strebel 1984; ``[mu, nu]``).
     lad_params
-        Parameters of the ellipsoidal or beta distribution.
+        Parameters of the ellipsoidal or beta distribution. The beta
+        distribution follows Goel and Strebel: on ``t = 2θ/π`` its density is
+        proportional to ``(1 - t)^(mu - 1) t^(nu - 1)``, so their fits apply
+        as published: planophile ``[2.770, 1.172]``, erectophile
+        ``[1.172, 2.770]``, plagiophile ``[3.326, 3.326]``, extremophile
+        ``[0.433, 0.433]``, uniform ``[1, 1]`` and spherical
+        ``[1.101, 1.930]``. A fit from :func:`sylva.leaves.leaf_angle_distribution`
+        is given as :attr:`sylva.leaves.LeafAngleDistribution.goel_strebel`.
 
     Returns
     -------

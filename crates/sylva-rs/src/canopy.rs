@@ -519,3 +519,124 @@ impl PgapHistogram {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    fn shots(origin: Vec<Point>, direction: Vec<Point>, counts: &[u32], ranges: Vec<f64>) -> Shots {
+        let mut start = Vec::with_capacity(counts.len());
+        let mut s = 0;
+        for &c in counts {
+            start.push(s);
+            s += c as usize;
+        }
+        Shots { origin, direction, echo_start: start, echo_count: counts.to_vec(), echo_range: ranges, echo_attrs: BTreeMap::new() }
+    }
+
+    #[test]
+    fn voxel_grid_counts_layers_and_centres() {
+        let pts = [[0.1, 0.1, 0.1], [0.2, 0.3, 0.4], [1.5, 0.5, 0.5], [0.5, 1.5, 1.5], [9.0, 9.0, 9.0]];
+        let g = voxelize(&pts, 1.0, Some([0.0; 3]), Some([2, 2, 2])).unwrap();
+        assert_eq!((g.len(), g.is_empty()), (8, false));
+        // The point outside the given shape is dropped.
+        assert_eq!(g.counts.iter().sum::<u32>(), 4);
+        assert_eq!(g.counts[g.flat(0, 0, 0)], 2);
+        assert_eq!(g.z_levels(), [0.0, 1.0]);
+        assert_eq!(g.vertical_profile(), [0.5, 0.25]);
+        assert_eq!(g.occupied_centers(), [[0.5, 0.5, 0.5], [1.5, 0.5, 0.5], [0.5, 1.5, 1.5]]);
+        // Default origin: the minimum corner floored to the voxel; shape: up to the maximum.
+        let d = voxelize(&[[0.3, -0.7, 2.2], [1.1, 0.2, 2.9]], 0.5, None, None).unwrap();
+        assert_eq!((d.origin, d.shape), ([0.0, -1.0, 2.0], [3, 3, 2]));
+        assert_eq!(voxelize(&[], 1.0, Some([0.0; 3]), None).unwrap().shape, [1, 1, 1]);
+        assert_eq!(voxelize(&pts, 0.0, None, None).unwrap_err().to_string(), "voxel_size must be positive");
+    }
+
+    #[test]
+    fn vertical_histogram_by_brute_force() {
+        let h = [0.0, 0.49, 0.5, 1.2, 2.99, 3.0, -0.1, 7.0];
+        let (bottoms, counts) = vertical_histogram(&h, 0.5, Some(3.0));
+        assert_eq!(bottoms, [0.0, 0.5, 1.0, 1.5, 2.0, 2.5]);
+        let expect: Vec<u64> = bottoms.iter().map(|&b| h.iter().filter(|&&v| v >= b && v < b + 0.5).count() as u64).collect();
+        assert_eq!(counts, expect);
+        assert_eq!(counts.iter().sum::<u64>(), 5, "below 0 and at or above the top are left out");
+        // Without a top, the highest height sets it.
+        assert_eq!(vertical_histogram(&[0.2, 1.7], 1.0, None), (vec![0.0, 1.0], vec![1, 1]));
+    }
+
+    #[test]
+    fn lai_methods_and_cover() {
+        // A uniform gap P: hinge = -ln P cos(57.5) / 0.5; Miller = -ln P (sin^2 b - sin^2 a).
+        let p: f64 = 0.3;
+        let z = [0.0, 30.0, 57.5, 90.0];
+        let hinge = lai_from_gap_fraction(&z, &[p; 4], "hinge").unwrap();
+        assert!((hinge + p.ln() * 57.5f64.to_radians().cos() / 0.5).abs() < 1e-12);
+        let fine: Vec<f64> = (0..=900).map(|i| i as f64 * 0.1).collect();
+        let miller = lai_from_gap_fraction(&fine, &vec![p; fine.len()], "miller").unwrap();
+        assert!((miller + p.ln()).abs() < 1e-5, "{miller}");
+        assert!(lai_from_gap_fraction(&z, &[f64::NAN; 4], "hinge").unwrap().is_nan());
+        // A saturated ring counts as the floor, not as infinity.
+        let saturated = lai_from_gap_fraction(&[57.5], &[0.0], "hinge").unwrap();
+        assert!((saturated + GAP_FLOOR.ln() * 57.5f64.to_radians().cos() / 0.5).abs() < 1e-9);
+        assert_eq!(lai_from_gap_fraction(&z, &[p; 4], "ellipse").unwrap_err().to_string(), "unknown LAI method \"ellipse\"");
+        assert_eq!(canopy_cover(&[0.0, 3.0, f64::NAN, 2.0, 1.9], 2.0), 0.5);
+        assert!(canopy_cover(&[f64::NAN], 2.0).is_nan());
+    }
+
+    #[test]
+    fn gap_fraction_by_ring() {
+        // Four pulses straight up (zenith 0) and two at 45 degrees; one of each returns above 2 m.
+        let up = [0.0, 0.0, 1.0];
+        let tilted = [0.5f64.sqrt(), 0.0, 0.5f64.sqrt()];
+        let s = shots(vec![[0.0; 3]; 6], vec![up, up, up, up, tilted, tilted], &[1, 1, 0, 0, 1, 1], vec![5.0, 1.0, 5.0, 1.0]);
+        let heights = [5.0, 1.0, 3.5, 0.7];
+        let (centres, gap) = gap_fraction_zenith(&s, &heights, 2.0, &[0.0, 30.0, 60.0, 90.0]);
+        assert_eq!(centres, [15.0, 45.0, 75.0]);
+        assert_eq!(gap[..2], [0.75, 0.5]);
+        assert!(gap[2].is_nan(), "a ring without pulses");
+    }
+
+    #[test]
+    fn density_grid_traces_to_the_echo() {
+        // Two pulses along x through a row of 4 voxels, one stopped in voxel 2, one a miss.
+        let s = shots(vec![[-1.0, 0.5, 0.5]; 2], vec![[1.0, 0.0, 0.0]; 2], &[1, 0], vec![3.5]);
+        let mut g = DensityGrid::new([0.0; 3], 1.0, [4, 1, 1]);
+        g.add_shots(&s);
+        assert_eq!(g.n_rays, [2, 2, 2, 1]);
+        assert_eq!(g.n_hits, [0, 0, 1, 0]);
+        let expect = [2.0, 2.0, 1.5, 1.0];
+        for (got, want) in g.path_length.iter().zip(expect) {
+            assert!((got - want).abs() < 1e-6, "{got} {want}");
+        }
+        // 2 (n - 1) / n * hits / path: 2 * 1/2 * 1 / 1.5 in voxel 2.
+        let d = g.density(1);
+        assert!((d[2] - 2.0 / 3.0).abs() < 1e-6 && d[0].is_nan() && d[3].is_nan());
+        assert!((g.vertical_profile(1)[0] - 2.0 / 3.0).abs() < 1e-6);
+        // Fitted to the echoes: one voxel around the single echo.
+        let fitted = density_grid_from_shots(&s, 1.0).unwrap();
+        assert_eq!((fitted.origin, fitted.shape), ([2.0, 0.0, 0.0], [1, 1, 1]));
+        assert_eq!(fitted.n_hits, [1]);
+        let none = shots(vec![[0.0; 3]], vec![up()], &[0], vec![]);
+        assert_eq!(density_grid_from_shots(&none, 1.0).unwrap_err().to_string(), "no echoes");
+    }
+
+    fn up() -> Point {
+        [0.0, 0.0, 1.0]
+    }
+
+    #[test]
+    fn pgap_histograms_merge_bin_by_bin() {
+        let s = shots(vec![[0.0; 3]; 2], vec![up(), up()], &[2, 0], vec![3.0, 6.0]);
+        let mut a = PgapHistogram::new(vec![0.0, 45.0, 90.0], 4, 1.0, 10);
+        a.add(&s, &[3.0, 6.0], 0.0, None);
+        let mut b = a.clone();
+        b.merge(&a).unwrap();
+        assert_eq!(b.shots.iter().sum::<f64>(), 4.0);
+        assert_eq!(b.hits.iter().sum::<f64>(), 2.0, "two echoes of one pulse weigh 1/2 each");
+        assert!(b.hits.iter().zip(&a.hits).all(|(x, y)| *x == 2.0 * y));
+        let other = PgapHistogram::new(vec![0.0, 45.0, 90.0], 8, 1.0, 10);
+        assert_eq!(b.merge(&other).unwrap_err().to_string(), "histograms have different bins");
+    }
+}

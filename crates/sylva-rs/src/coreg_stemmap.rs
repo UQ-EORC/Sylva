@@ -153,4 +153,102 @@ mod tests {
         assert_eq!(stem_map_to_json("", &[]), "{\n  \"name\": \"\",\n  \"stems\": []\n}");
         assert!(stem_map_from_json("{\"stems\": [{\"x\": 1}]}").is_err());
     }
+
+    /// `StemMap([...], name="ScanPos001").save(path)` of the Python package, verbatim.
+    const PYTHON: &str = r#"{
+  "name": "ScanPos001",
+  "stems": [
+    {
+      "x": 1.5,
+      "y": -2.25,
+      "z": 0.1,
+      "dbh": 0.3,
+      "axis": [
+        0.0,
+        0.1,
+        0.995
+      ],
+      "reference_height": 1.3,
+      "n_slices": 5,
+      "n_points": 120,
+      "rmse": 0.005,
+      "coverage": 0.5,
+      "lean_deg": 5.7
+    },
+    {
+      "x": 10.0,
+      "y": 20.0,
+      "z": -0.5,
+      "dbh": 0.45,
+      "axis": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "reference_height": 1.3,
+      "n_slices": 0,
+      "n_points": 0,
+      "rmse": 0.0,
+      "coverage": 0.0,
+      "lean_deg": 0.0
+    }
+  ]
+}"#;
+
+    #[test]
+    fn reads_and_writes_the_python_file_byte_for_byte() {
+        let (name, stems) = stem_map_from_json(PYTHON).unwrap();
+        assert_eq!(name, "ScanPos001");
+        let mut first = StemRecord::new(1.5, -2.25, 0.1, 0.3);
+        first.axis = [0.0, 0.1, 0.995];
+        first.n_slices = 5;
+        first.n_points = 120;
+        first.rmse = 0.005;
+        first.coverage = 0.5;
+        first.lean_deg = 5.7;
+        assert_eq!(stems, vec![first, StemRecord::new(10.0, 20.0, -0.5, 0.45)]);
+        assert_eq!(stem_map_to_json(&name, &stems), PYTHON);
+    }
+
+    #[test]
+    fn optional_fields_default_and_bad_fields_are_named() {
+        // Only the position and diameter are needed; integers and booleans are numbers.
+        let (name, s) = stem_map_from_json(r#"{"stems": [{"x": 1, "y": 2, "z": 3, "dbh": true}]}"#).unwrap();
+        assert_eq!(name, "");
+        assert_eq!(s, vec![StemRecord::new(1.0, 2.0, 3.0, 1.0)]);
+        let err = |text: &str| stem_map_from_json(text).unwrap_err().to_string();
+        assert_eq!(err(r#"{"name": "a"}"#), "a stem map file needs a `stems` list");
+        assert_eq!(err(r#"{"stems": [{"x": 1, "y": 2, "z": 3}]}"#), "stem has no `dbh`");
+        assert_eq!(err(r#"{"stems": [{"x": "1", "y": 2, "z": 3, "dbh": 1}]}"#), "stem field `x` is not a number");
+        assert_eq!(err(r#"{"stems": [{"x": 1, "y": 2, "z": 3, "dbh": 1, "axis": [0, 1]}]}"#), "stem `axis` must be a list of three numbers");
+        assert_eq!(err(r#"{"stems": [{"x": 1, "y": 2, "z": 3, "dbh": 1, "axis": 1}]}"#), "stem `axis` must be a list of three numbers");
+        assert_eq!(err(r#"{"stems": [{"x": 1, "y": 2, "z": 3, "dbh": 1, "rmse": null}]}"#), "stem field `rmse` is not a number");
+    }
+
+    #[test]
+    fn files_round_trip_and_errors_name_the_file() {
+        let dir = std::env::temp_dir().join(format!("sylva-stemmap-{}", std::process::id()));
+        let path = dir.join("nested").join("stems.json");
+        let mut s = StemRecord::new(-3.0, 4.0, 101.25, 0.62);
+        s.axis = [0.05, -0.02, 0.9985];
+        s.n_slices = 9;
+        s.rmse = 0.0123;
+        write_stem_map(&path, "plot", &[s.clone()]).unwrap();
+        assert_eq!(read_stem_map(&path).unwrap(), ("plot".to_string(), vec![s]));
+        std::fs::write(&path, "{\"stems\": 3}").unwrap();
+        let e = read_stem_map(&path).unwrap_err().to_string();
+        assert_eq!(e, format!("{}: a stem map file needs a `stems` list", path.display()));
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(read_stem_map(&path).unwrap_err().to_string().starts_with(&format!("{}: ", path.display())));
+    }
+
+    #[test]
+    fn quality_follows_its_formula() {
+        assert_eq!(stem_quality(0.0, 1.0, 6.0), 1.0);
+        assert_eq!(stem_quality(0.01, 1.0, 12.0), 0.5);
+        assert_eq!(stem_quality(0.0, 0.8, 3.0), 0.4);
+        assert_eq!(stem_quality(0.0, 2.0, 6.0), 1.0, "clipped to 1");
+        assert_eq!(stem_quality(0.0, -1.0, 6.0), 0.0, "clipped to 0");
+        assert!(stem_quality(f64::NAN, 1.0, 6.0).is_nan(), "NaN is not clipped");
+    }
 }

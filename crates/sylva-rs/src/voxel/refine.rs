@@ -114,3 +114,133 @@ pub(crate) fn apply_neighbour_priors(vox: &mut RayVoxels, min_rays: f32) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::voxel::VoxelParams;
+
+    /// A grid with every `f` field but the beam-section ones, all zero.
+    fn grid(shape: [usize; 3]) -> RayVoxels {
+        let n = shape[0] * shape[1] * shape[2];
+        RayVoxels {
+            origin: [0.0; 3],
+            voxel_size: 1.0,
+            shape,
+            params: VoxelParams::default(),
+            has_leaf: false,
+            has_wood: false,
+            f: F::ALL.iter().map(|f| if *f == F::BsEntering { Vec::new() } else { vec![0.0; n] }).collect(),
+            i: vec![vec![0; n]; I::COUNT],
+            ppl_lambda: None,
+            subvoxel_counts: None,
+            ground_height: None,
+            wood_volume: None,
+            predominant_tree: None,
+            tree_iad: BTreeMap::new(),
+        }
+    }
+
+    fn set_f(v: &mut RayVoxels, field: F, values: impl Fn(usize) -> f32) {
+        for (idx, x) in v.f[field as usize].iter_mut().enumerate() {
+            *x = values(idx);
+        }
+    }
+
+    #[test]
+    fn shells_are_the_26_neighbours_by_order() {
+        let s = shells();
+        assert_eq!([s[0].len(), s[1].len(), s[2].len()], [6, 12, 8]);
+        for (order, shell) in s.iter().enumerate() {
+            assert!(shell.iter().all(|d| d.iter().map(|c| c.abs()).sum::<i64>() == order as i64 + 1));
+        }
+    }
+
+    #[test]
+    fn faces_then_edges_top_up_to_min_rays() {
+        // 3 x 3 x 3: only the centre (13) is inside the untouched border.
+        let mut v = grid([3, 3, 3]);
+        set_f(&mut v, F::NumBeamsWeighted, |_| 1.0);
+        set_f(&mut v, F::PathLength, |_| 2.0);
+        v.i[I::NumHits as usize] = vec![1; 27];
+        // Sparse counts: two face and two edge neighbours of the centre.
+        for idx in [12, 14, 9, 11] {
+            v.i[I::NumMissRays as usize][idx] = 1;
+        }
+        let before = v.clone();
+        apply_neighbour_priors(&mut v, 10.0);
+        // 1 beam, needs 9 more: all 6 faces (share 1), then 3 of the 12 edges' beams (share 1/4).
+        assert_eq!(v.get_f(F::NumBeamsWeighted, 13), 1.0 + 6.0 + 12.0 * 0.25);
+        assert_eq!(v.get_f(F::PathLength, 13), 2.0 + 6.0 * 2.0 + 12.0 * 2.0 * 0.25);
+        assert_eq!(v.get_i(I::NumHits, 13), 1 + 6 + 3);
+        // Counts are truncated per shell: two edge counts at 1/4 add nothing.
+        assert_eq!(v.get_i(I::NumMissRays, 13), 2);
+        assert!(v.f[F::BsEntering as usize].is_empty(), "switched-off groups stay empty");
+        for idx in (0..27).filter(|&i| i != 13) {
+            for f in F::ALL {
+                assert_eq!(v.get_f(f, idx), before.get_f(f, idx), "border voxel {idx} changed");
+            }
+        }
+    }
+
+    #[test]
+    fn faces_alone_when_they_suffice_and_only_observed_sparse_voxels() {
+        let mut v = grid([3, 3, 3]);
+        set_f(&mut v, F::NumBeamsWeighted, |_| 1.0);
+        v.i[I::NumHits as usize][13] = 1;
+        apply_neighbour_priors(&mut v, 4.0);
+        assert_eq!(v.get_f(F::NumBeamsWeighted, 13), 4.0); // 1 + 6 * (3 / 6)
+
+        // Crossed by enough beams: left as measured.
+        let mut v = grid([3, 3, 3]);
+        set_f(&mut v, F::NumBeamsWeighted, |i| if i == 13 { 5.0 } else { 1.0 });
+        apply_neighbour_priors(&mut v, 5.0);
+        assert_eq!(v.get_f(F::NumBeamsWeighted, 13), 5.0);
+
+        // Never observed (no beam, no hit): stays unobserved.
+        let mut v = grid([3, 3, 3]);
+        set_f(&mut v, F::NumBeamsWeighted, |i| if i == 13 { 0.0 } else { 1.0 });
+        apply_neighbour_priors(&mut v, 5.0);
+        assert_eq!(v.get_f(F::NumBeamsWeighted, 13), 0.0);
+
+        // Too thin for an interior: nothing to do.
+        let mut v = grid([2, 5, 5]);
+        set_f(&mut v, F::NumBeamsWeighted, |_| 1.0);
+        let before = v.f.clone();
+        apply_neighbour_priors(&mut v, 5.0);
+        assert_eq!(v.f, before);
+    }
+
+    #[test]
+    fn neighbours_are_read_before_any_top_up() {
+        // 4 x 3 x 3: two adjacent interior voxels, 17 and 18, both sparse.
+        let mut v = grid([4, 3, 3]);
+        set_f(&mut v, F::NumBeamsWeighted, |i| if i == 17 || i == 18 { 1.0 } else { 2.0 });
+        set_f(&mut v, F::PathLength, |i| i as f32);
+        v.i[I::NumHits as usize][17] = 1;
+        v.i[I::NumHits as usize][18] = 1;
+        apply_neighbour_priors(&mut v, 5.0);
+        // Face beams: five neighbours at 2 and the other sparse voxel at 1 = 11; share 4 / 11.
+        let share = 4.0 / 11.0;
+        assert!((v.get_f(F::NumBeamsWeighted, 17) - 5.0).abs() < 1e-6);
+        assert!((v.get_f(F::NumBeamsWeighted, 18) - 5.0).abs() < 1e-6);
+        // Face neighbours of 17 (strides 1, 4, 12) and 18, with their values before the top-up.
+        let faces = |i: f64| (i - 1.0) + (i + 1.0) + (i - 4.0) + (i + 4.0) + (i - 12.0) + (i + 12.0);
+        assert!((v.get_f(F::PathLength, 17) as f64 - (17.0 + share * faces(17.0))).abs() < 1e-4);
+        assert!((v.get_f(F::PathLength, 18) as f64 - (18.0 + share * faces(18.0))).abs() < 1e-4);
+    }
+
+    #[test]
+    fn peaks_keep_the_highest_echo_per_column() {
+        let geom = Geom::new([0.0, 0.0, 0.0], 0.5, [2, 2, 4]);
+        let mut peaks = vec![f64::MIN; 4];
+        let echoes = [[0.2, 0.2, 1.0], [0.3, 0.1, 1.6], [0.7, 0.2, 0.4], [0.9, 0.9, 1.9], [5.0, 0.2, 9.0], [-0.1, 0.2, 9.0]];
+        update_peaks(&mut peaks, &echoes, &geom);
+        // Voxel units above the floor; echoes outside the columns are ignored.
+        assert_eq!(peaks, vec![3.2, 0.8, f64::MIN, 3.8]);
+        update_peaks(&mut peaks, &[[0.2, 0.2, 0.5]], &geom);
+        assert_eq!(peaks[0], 3.2, "a lower echo does not lower the peak");
+    }
+}

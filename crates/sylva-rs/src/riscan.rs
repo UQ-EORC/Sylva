@@ -1589,4 +1589,47 @@ mod tests {
         assert!(t[0].diameter.is_nan());
         assert!(read_tiepoint_list(d.join("missing.tpl")).unwrap().is_empty());
     }
+
+    #[test]
+    fn json_reads_what_the_json_module_reads() {
+        use crate::json::{self as j, Json as J};
+        // The same documents through this parser and crate::json, which is checked against Python.
+        fn same(a: &Json, b: &J) -> bool {
+            match (a, b) {
+                (Json::Null, J::Null) => true,
+                (Json::Bool(x), J::Bool(y)) => x == y,
+                (Json::Num(x, true), J::Int(y)) => *x == *y as f64,
+                (Json::Num(x, false), J::Float(y)) => x == y || (x.is_nan() && y.is_nan()),
+                (Json::Str(x), J::Str(y)) => x == y,
+                (Json::Arr(x), J::Array(y)) => x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same(p, q)),
+                (Json::Obj(x), J::Object(y)) => x.len() == y.len() && x.iter().zip(y).all(|((k, p), (l, q))| k == l && same(p, q)),
+                _ => false,
+            }
+        }
+        let docs = [
+            r#"{"a": [1, -2.5e3, true, false, null], "b": {"c": "x\"y\\z\/\b\f\n\r\t\u00e9"}}"#,
+            r#"[NaN, Infinity, -Infinity, 0, -0.0, 1E2]"#,
+            r#""\ud83d\ude00 and \ud83d alone""#,
+            r#"{"k": 1, "k": 2}"#,
+            "  [ ]  ",
+        ];
+        for d in docs {
+            let (a, b) = (Json::parse(d).unwrap(), j::parse(d).unwrap());
+            assert!(same(&a, &b), "{d}: {a:?} vs {b:?}");
+        }
+        assert_eq!(Json::parse(r#"{"k": 1, "k": 2}"#).unwrap().get("k"), Some(&Json::Num(2.0, true)));
+        for bad in ["[1,]", "{\"a\" 1}", "{1: 2}", "[01]", "\"\\q\"", "\"\\u12G4\"", "\"ab", "[1 2]", "tru", "\"a\x01\"", "[1] x", ""] {
+            assert!(Json::parse(bad).is_none(), "{bad:?}");
+            assert!(j::parse(bad).is_err(), "{bad:?}");
+        }
+        // Python's bool(), int(), float() and str() of the decoded values.
+        let v = |t: &str| Json::parse(t).unwrap();
+        for (t, truth) in [("\"\"", false), ("\"a\"", true), ("0", false), ("0.5", true), ("[]", false), ("{\"a\": 1}", true), ("false", false), ("null", false)] {
+            assert_eq!(v(t).truthy(), truth, "{t}");
+        }
+        assert_eq!((v("true").int(), v("-3.9").int(), v("\" 12 \"").int(), v("\"1.5\"").int(), v("NaN").int(), v("[]").int()), (Some(1), Some(-3), Some(12), None, None, None));
+        assert_eq!((v("false").float(), v("\" 2.5\"").float(), v("{}").float()), (Some(0.0), Some(2.5), None));
+        let strs: Vec<String> = ["null", "true", "false", "3", "2.5", "NaN", "-Infinity", "\"ab\""].iter().map(|t| v(t).py_str()).collect();
+        assert_eq!(strs, ["None", "True", "False", "3", "2.5", "nan", "-inf", "ab"]);
+    }
 }

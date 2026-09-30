@@ -368,7 +368,7 @@ fn beta_cf(a: f64, b: f64, x: f64) -> f64 {
 }
 
 /// Regularised incomplete beta function `I_x(a, b)`.
-fn inc_beta(a: f64, b: f64, x: f64) -> f64 {
+pub(crate) fn inc_beta(a: f64, b: f64, x: f64) -> f64 {
     if x <= 0.0 {
         return 0.0;
     }

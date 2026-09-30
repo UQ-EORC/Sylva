@@ -537,4 +537,65 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!((rows[0].status, rows[0].dh_change, rows[0].id_b), ("damaged", "decrease", 2));
     }
+
+    /// A tree with no crown outline: its crown is the disc of its crown area.
+    fn bare(id: i64, x: f64, y: f64, h: f64) -> AlsTree {
+        AlsTree { id, x, y, height: h, crown_area: std::f64::consts::PI, crown: vec![] }
+    }
+
+    #[test]
+    fn released_unmeasured_and_disc_crowns() {
+        let chm = Raster::filled(20, 20, 0.0, 0.0, 1.0, 20.0);
+        let mut sig = Raster::filled(20, 20, 0.0, 0.0, 1.0, 0.2);
+        let mut cls = vec![1u8; 400];
+        // No height uncertainty anywhere near (2.5, 2.5): the change there is unmeasured.
+        for r in 0..5 {
+            for c in 0..5 {
+                sig.data[r * 20 + c] = f64::NAN;
+            }
+        }
+        // Canopy lost at (15.5, 15.5): an understorey tree found there only in the second survey.
+        cls[15 * 20 + 15] = 3;
+        // A disc of radius 1 m: its own cell and the four at 1 m, three of the five lost.
+        for (r, c) in [(10, 10), (10, 11), (11, 10)] {
+            cls[r * 20 + c] = 3;
+        }
+        let canopy = CanopyChange { chm_a: &chm, chm_b: &chm, sigma_a: &sig, sigma_b: &sig, classes: &cls };
+        let a = [bare(1, 2.5, 2.5, 20.0), bare(2, 10.5, 10.5, 20.0)];
+        let b = [bare(11, 2.6, 2.5, 20.3), bare(12, 10.5, 10.6, 20.1), bare(13, 15.5, 15.5, 8.0)];
+        let rows = tree_change(&a, &b, &canopy, None, &TreeChangeParams::default()).unwrap();
+        let st: Vec<(i64, i64, &str, &str)> = rows.iter().map(|r| (r.id_a, r.id_b, r.status, r.dh_change)).collect();
+        assert_eq!(st, vec![(1, 11, "survivor", "unmeasured"), (2, 12, "damaged", "below_detection"), (0, 13, "released", "")]);
+        assert!(rows[0].sigma.is_nan() && (rows[0].dh - 0.3).abs() < 1e-12);
+        assert!((rows[1].crown_loss - 0.6).abs() < 1e-12 && rows[1].observed == 1.0);
+        let s = summarise(&rows.iter().collect::<Vec<_>>(), Some(2.0));
+        assert_eq!((s.survivors, s.damaged, s.released, s.n_growth), (1, 1, 1, 0));
+        assert!(s.mean_growth.is_nan() && s.growth_se.is_nan());
+        assert!((s.crown_area_damaged - 0.6 * std::f64::consts::PI).abs() < 1e-12);
+        // Released trees are recruited into the canopy but are not recruits.
+        assert_eq!((s.mortality_rate, s.recruitment_rate), (0.0, 0.0));
+    }
+
+    #[test]
+    fn bad_settings_and_inputs_are_named() {
+        let err = |p: TreeChangeParams| p.check().unwrap_err().to_string();
+        let d = TreeChangeParams::default();
+        assert_eq!(err(TreeChangeParams { max_distance: 0.0, ..d }), "max_distance must be a positive number, got 0");
+        assert_eq!(err(TreeChangeParams { max_growth: f64::NAN, ..d }), "max_growth must be a positive number, got NaN");
+        assert_eq!(err(TreeChangeParams { max_drop: 1.0, ..d }), "max_drop must be in [0, 1), got 1");
+        assert_eq!(err(TreeChangeParams { height_weight: -1.0, ..d }), "height_weight must be zero or more, got -1");
+        assert_eq!(err(TreeChangeParams { damage_fraction: 1.5, ..d }), "damage_fraction must be between 0 and 1, got 1.5");
+        assert_eq!(err(TreeChangeParams { confidence: 1.0, ..d }), "confidence must be between 0 and 1, got 1");
+        let g = Raster::filled(4, 4, 0.0, 0.0, 1.0, 10.0);
+        let off = Raster::filled(4, 4, 0.5, 0.0, 1.0, 10.0);
+        let cls = vec![1u8; 16];
+        let t = [bare(1, 1.5, 1.5, 10.0)];
+        let run = |b: &Raster, s: &Raster, c: &[u8], trees: &[AlsTree]| tree_change(trees, &t, &CanopyChange { chm_a: &g, chm_b: b, sigma_a: s, sigma_b: s, classes: c }, None, &d).unwrap_err().to_string();
+        assert_eq!(run(&off, &g, &cls, &t), "chm_b is not on the grid of chm_a");
+        assert_eq!(run(&g, &off, &cls, &t), "sigma_a is not on the grid of chm_a");
+        assert_eq!(run(&g, &g, &cls[..15], &t), "15 classes for 16 cells");
+        assert_eq!(run(&g, &g, &cls, &[bare(1, f64::NAN, 1.5, 10.0)]), "tree positions and heights must be finite");
+        let e = grid_summary(&[], (0.0, 0.0, 0.0, 2, 2)).unwrap_err().to_string();
+        assert_eq!(e, "the summary grid needs a positive resolution and at least one cell");
+    }
 }

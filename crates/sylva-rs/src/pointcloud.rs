@@ -282,3 +282,123 @@ impl PointCloud {
         [c[0] / n, c[1] / n, c[2] / n]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn every_type() -> Vec<Attr> {
+        vec![
+            Attr::F64(vec![1.5, -2.0, 3.0]),
+            Attr::F32(vec![1.5, -2.0, 3.0]),
+            Attr::I64(vec![1, -2, 3]),
+            Attr::I32(vec![1, -2, 3]),
+            Attr::U32(vec![1, 2, u32::MAX]),
+            Attr::U16(vec![1, 2, 3]),
+            Attr::U8(vec![1, 2, 255]),
+            Attr::I8(vec![1, -2, -128]),
+            Attr::Bool(vec![true, false, true]),
+        ]
+    }
+
+    #[test]
+    fn attributes_of_every_type() {
+        let names: Vec<&str> = every_type().iter().map(Attr::dtype).collect();
+        assert_eq!(names, ["float64", "float32", "int64", "int32", "uint32", "uint16", "uint8", "int8", "bool"]);
+        let widened: Vec<Vec<f64>> = every_type().iter().map(Attr::to_f64).collect();
+        assert_eq!(widened[2], [1.0, -2.0, 3.0]);
+        assert_eq!(widened[4], [1.0, 2.0, u32::MAX as f64]);
+        assert_eq!(widened[7], [1.0, -2.0, -128.0]);
+        assert_eq!(widened[8], [1.0, 0.0, 1.0]);
+        for a in every_type() {
+            assert_eq!((a.len(), a.is_empty()), (3, false));
+            let t = a.take(&[2, 0]);
+            assert_eq!(t.dtype(), a.dtype());
+            assert_eq!(t.to_f64(), [a.get_f64(2), a.get_f64(0)]);
+            assert!(a.take(&[]).is_empty());
+            let mut twice = a.clone();
+            twice.extend(&a).unwrap();
+            assert_eq!(twice.len(), 6);
+            assert_eq!(twice.to_f64()[3..], a.to_f64()[..]);
+        }
+        let mut a = Attr::U8(vec![1]);
+        let e = a.extend(&Attr::I8(vec![1])).unwrap_err().to_string();
+        assert_eq!(e, "cannot concatenate uint8 with int8");
+    }
+
+    fn cloud() -> PointCloud {
+        let xyz = vec![[0.0, 0.0, 0.0], [2.0, 4.0, 6.0], [1.0, -2.0, 3.0]];
+        let mut c = PointCloud::new(xyz);
+        c.set_attr("height", vec![0.5f32, 1.5, 2.5]).unwrap();
+        c.set_attr("class", vec![2u8, 5, 5]).unwrap();
+        c
+    }
+
+    #[test]
+    fn lengths_are_checked() {
+        let mut c = cloud();
+        assert_eq!(c.set_attr("bad", vec![1.0f64]).unwrap_err().to_string(), "attribute has length 1, expected 3");
+        let mut attrs = BTreeMap::new();
+        attrs.insert("a".to_string(), Attr::F64(vec![1.0]));
+        let e = PointCloud::with_attrs(vec![[0.0; 3]; 2], attrs).unwrap_err().to_string();
+        assert_eq!(e, "attribute \"a\" has length 1, expected 2");
+        assert!(c.attr("bad").is_none() && c.attr_f64("missing").is_none());
+    }
+
+    #[test]
+    fn coordinates_heights_bounds_and_centroid() {
+        let c = cloud();
+        assert_eq!(c.x().collect::<Vec<_>>(), [0.0, 2.0, 1.0]);
+        assert_eq!(c.y().collect::<Vec<_>>(), [0.0, 4.0, -2.0]);
+        assert_eq!(c.z().collect::<Vec<_>>(), [0.0, 6.0, 3.0]);
+        assert_eq!(c.heights("height"), [0.5, 1.5, 2.5]);
+        assert_eq!(c.heights("nope"), [0.0, 6.0, 3.0], "falls back to z");
+        assert_eq!(c.bounds(), Some(([0.0, -2.0, 0.0], [2.0, 4.0, 6.0])));
+        assert_eq!(c.centroid(), [1.0, 2.0 / 3.0, 3.0]);
+        let empty = PointCloud::default();
+        assert!(empty.is_empty() && empty.bounds().is_none());
+        assert_eq!(empty.centroid(), [0.0; 3]);
+    }
+
+    #[test]
+    fn subsets_keep_attributes_in_step() {
+        let c = cloud();
+        let f = c.filter(&[true, false, true]);
+        assert_eq!(f.xyz, [c.xyz[0], c.xyz[2]]);
+        assert_eq!(f.attr_f64("height").unwrap(), [0.5, 2.5]);
+        assert_eq!(f.attr("class"), Some(&Attr::U8(vec![2, 5])));
+        assert!(c.filter(&[false; 3]).is_empty());
+    }
+
+    #[test]
+    fn transforms_move_points_not_attributes() {
+        let c = cloud();
+        let t = Transform::rotation_z(90.0).compose(&Transform::translation(1.0, 2.0, 3.0));
+        let moved = c.transformed(&t);
+        let mut in_place = c.clone();
+        in_place.transform_in_place(&t);
+        assert_eq!(moved, in_place);
+        assert_eq!(moved.attrs, c.attrs);
+        for (p, q) in c.xyz.iter().zip(&moved.xyz) {
+            assert_eq!(*q, t.apply(p));
+        }
+        // A quarter turn about z after the shift: (x, y, z) -> (-(y + 2), x + 1, z + 3).
+        let q = moved.xyz[1];
+        assert!((q[0] + 6.0).abs() < 1e-12 && (q[1] - 3.0).abs() < 1e-12 && (q[2] - 9.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn concatenate_keeps_the_common_attributes() {
+        let a = cloud();
+        let mut b = PointCloud::new(vec![[9.0, 9.0, 9.0]]);
+        b.set_attr("height", vec![7.0f32]).unwrap();
+        let c = PointCloud::concatenate(&[a.clone(), b.clone()]).unwrap();
+        assert_eq!(c.len(), 4);
+        assert_eq!(c.xyz[3], [9.0, 9.0, 9.0]);
+        assert_eq!(c.attrs.keys().collect::<Vec<_>>(), ["height"], "class is not in both");
+        assert_eq!(c.attr_f64("height").unwrap(), [0.5, 1.5, 2.5, 7.0]);
+        b.set_attr("height", vec![7.0f64]).unwrap();
+        assert_eq!(PointCloud::concatenate(&[a, b]).unwrap_err().to_string(), "cannot concatenate float32 with float64");
+        assert_eq!(PointCloud::concatenate(&[]).unwrap(), PointCloud::default());
+    }
+}

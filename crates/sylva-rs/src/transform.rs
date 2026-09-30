@@ -121,7 +121,7 @@ impl Transform {
 
     /// Read a whitespace-delimited 4x4 matrix file (RIEGL `.dat` SOP/POP).
     pub fn read_matrix_file(path: impl AsRef<std::path::Path>) -> Result<Self> {
-        let text = std::fs::read_to_string(path.as_ref())?;
+        let text = std::fs::read_to_string(path.as_ref()).map_err(|e| Error::file(path.as_ref(), e.to_string()))?;
         let vals: Vec<f64> = text
             .split_whitespace()
             .map(|t| t.parse::<f64>())
@@ -171,5 +171,28 @@ pub(crate) fn normalize(a: &Point) -> Point {
         scale(a, 1.0 / n)
     } else {
         [0.0, 0.0, 1.0]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matrix_files_round_trip_and_name_themselves_in_errors() {
+        let dir = std::env::temp_dir().join(format!("sylva-matrix-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let t = Transform::from_roll_pitch_yaw(1.0, -2.0, 30.0).compose(&Transform::translation(10.0, -5.0, 2.5));
+        let text: Vec<String> = t.to_row_major().iter().map(|v| format!("{v:.17e}")).collect();
+        let path = dir.join("sop.dat");
+        std::fs::write(&path, text.chunks(4).map(|r| r.join(" ")).collect::<Vec<_>>().join("\n")).unwrap();
+        assert_eq!(Transform::read_matrix_file(&path).unwrap().to_row_major(), t.to_row_major());
+        let prefix = |p: &std::path::Path| format!("{}: ", p.display());
+        std::fs::write(&path, "1 0 0 0 0 1 0 0 0 0 1 0").unwrap();
+        assert_eq!(Transform::read_matrix_file(&path).unwrap_err().to_string(), format!("{}expected 16 values, got 12", prefix(&path)));
+        std::fs::write(&path, "1 0 0 x").unwrap();
+        assert!(Transform::read_matrix_file(&path).unwrap_err().to_string().starts_with(&format!("{}bad matrix value", prefix(&path))));
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(Transform::read_matrix_file(&path).unwrap_err().to_string().starts_with(&prefix(&path)));
     }
 }
