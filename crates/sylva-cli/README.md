@@ -14,5 +14,7 @@ sylva shots rays.laz plot.parquet
 sylva voxel plot.parquet plot.vox --voxel 0.25 --ground-class 2
 ```
 
-See the [Sylva repository](https://github.com/UQ-EORC/Sylva) for the
-documentation. Licence: GPL-3.0-or-later.
+Documentation: <https://uq-eorc.github.io/Sylva/> (the [command line
+guide](https://uq-eorc.github.io/Sylva/guide/cli/) lists every command).
+Licence: GPL-3.0-or-later. To cite Sylva, see the
+[citation](https://github.com/UQ-EORC/Sylva#citation) in the repository.

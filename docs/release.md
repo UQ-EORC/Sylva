@@ -25,7 +25,8 @@ no API tokens are stored in the repository.
    workflow `release.yml`, environment `pypi`. The first release creates the
    project.
 2. **crates.io.** Trusted publishing can only be switched on for a crate that
-   exists, so publish the first version by hand:
+   exists, so the first version is published by hand (done for both crates:
+   version 0.1.0, which is why releases start at 0.2.0):
 
     ```bash
     cargo login                      # token from https://crates.io/settings/tokens
@@ -56,7 +57,7 @@ replaced, and the name is claimed for good. PyPI is the same in practice.
     maturin sdist -o dist && maturin build --release -o dist && twine check dist/*
     ```
 
-3. Commit, tag and push: `git tag v0.1.0 && git push origin main v0.1.0`.
+3. Commit, tag and push: `git tag v0.2.0 && git push origin main v0.2.0`.
 
 The `release` workflow then tests, checks that the tag matches both version
 numbers, builds abi3 wheels (one per platform serves every Python ≥ 3.10) for
@@ -71,6 +72,5 @@ to try a platform before tagging.
   the wheels carry no RIEGL code and build without it.
 - docs.rs builds the crate documentation automatically after each crates.io
   release.
-- While the GitHub repository is private, the links and the icon in the README
-  shown on PyPI and crates.io lead nowhere. Make the repository public before
-  the first release, or accept broken links until then.
+- The documentation is published at <https://uq-eorc.github.io/Sylva/> from
+  the `gh-pages` branch by the `docs` workflow.

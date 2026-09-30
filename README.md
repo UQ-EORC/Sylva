@@ -1,5 +1,9 @@
 # Sylva
 
+[![PyPI](https://img.shields.io/pypi/v/sylva-rs)](https://pypi.org/project/sylva-rs/)
+[![crates.io](https://img.shields.io/crates/v/sylva-rs)](https://crates.io/crates/sylva-rs)
+[![Documentation](https://img.shields.io/badge/docs-uq--eorc.github.io%2FSylva-blue)](https://uq-eorc.github.io/Sylva/)
+
 Terrestrial and airborne laser scanning processing for forest ecology and
 remote sensing. A Rust core (the `sylva-rs` crate) holds every computation and file
 format; Python gets a numpy-friendly API (`import sylva`) and a `sylva`
@@ -32,12 +36,56 @@ kept on the `r-package` branch.
 | `sylva.Shots` | pulse-centric data (origin, direction, CSR echoes) for ray-based metrics, with a compact Parquet file format that stores misses without far points and streams into the voxeliser; pulses that returned nothing rebuilt from the scan pattern or from the returns alone |
 | `sylva.synthetic` | synthetic trees, plots, scans, repeat surveys, airborne flights and waveforms with known answers, for examples and tests |
 
+## Contributing
+
+Feedback, issues, and PRs all welcome. For issues please use [GitHub issues](https://github.com/UQ-EORC/Sylva/issues) (not a personal message) so the community can benefit.
+
 ## Install
 
-A conda environment keeps the Python, the Rust toolchain and the C linker
-together, which is the easiest way to build the extension:
+Requires Python 3.10 or later. The package is on PyPI:
+[pypi.org/project/sylva-rs](https://pypi.org/project/sylva-rs/).
 
 ```bash
+pip install sylva-rs
+```
+
+The wheels carry the compiled core for Linux (x86-64 and arm64), macOS (Intel
+and Apple silicon) and Windows. The distribution is called `sylva-rs` because
+an unrelated project owns the name `sylva` on PyPI; the package you import is
+`sylva`, and the two cannot be installed in the same environment.
+
+Using a dedicated environment:
+
+```bash
+conda create -n sylva python=3.12
+conda activate sylva
+pip install sylva-rs
+```
+
+Optional extras: `pip install "sylva-rs[geotiff]"` for GeoTIFF export
+(rasterio), `"sylva-rs[examples]"` for the notebooks. Reading RIEGL `.rxp`
+files needs RIEGL's RiVLib, which is proprietary and loaded at run time; see
+the [install guide](https://uq-eorc.github.io/Sylva/install/).
+
+### Rust
+
+The core is on crates.io as [sylva-rs](https://crates.io/crates/sylva-rs), and
+the `sylva` command without Python as
+[sylva-cli](https://crates.io/crates/sylva-cli):
+
+```bash
+cargo add sylva-rs               # the library: use sylva_rs::...
+cargo install sylva-cli          # the sylva command
+```
+
+### From source
+
+For development, or to build the extension yourself. A conda environment keeps
+the Python, the Rust toolchain and the C linker together:
+
+```bash
+git clone https://github.com/UQ-EORC/Sylva.git
+cd Sylva
 conda create -n sylva -c conda-forge python=3.12 rust maturin c-compiler
 conda activate sylva
 maturin develop --release        # builds the Rust core into the environment
@@ -102,7 +150,7 @@ inc = change.tree_increments(m, cloud_2019, cloud_2024, labels_2019, labels_2024
 
 ## Documentation
 
-The documentation lives in [`docs/`](https://github.com/UQ-EORC/Sylva/blob/main/docs/index.md):
+The documentation is at [uq-eorc.github.io/Sylva](https://uq-eorc.github.io/Sylva/); its sources are in [`docs/`](https://github.com/UQ-EORC/Sylva/blob/main/docs/index.md):
 
 - Guides: [plot workflow](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/quickstart.md), [pulse data and shots files](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/pulses.md),
   [ray-traced voxels](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/voxels.md), [QSMs](https://github.com/UQ-EORC/Sylva/blob/main/docs/guide/qsm.md),
@@ -120,9 +168,29 @@ The documentation lives in [`docs/`](https://github.com/UQ-EORC/Sylva/blob/main/
 
 Build the site with `pip install -e '.[docs]' && mkdocs serve`.
 
-## Author
+## Authors
 
-Tim Devereux, The University of Queensland.
+- Tim Devereux, The University of Queensland
+
+## Citation
+
+If Sylva contributed to your work, please cite it:
+
+> Devereux, T. (2026). *Sylva: terrestrial and airborne laser scanning
+> processing for forest ecology* (version 0.2.0) [Computer software].
+> The University of Queensland. https://github.com/UQ-EORC/Sylva
+
+```bibtex
+@software{sylva,
+  author       = {Devereux, Tim},
+  title        = {Sylva: terrestrial and airborne laser scanning processing
+                  for forest ecology},
+  year         = {2026},
+  version      = {0.2.0},
+  organization = {The University of Queensland},
+  url          = {https://github.com/UQ-EORC/Sylva}
+}
+```
 
 ## Licence
 

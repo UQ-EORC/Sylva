@@ -97,5 +97,18 @@ Free software under the GNU General Public License v3.0 or later: you may
 use, study, change and share it, and anything you distribute that builds on
 it carries the same licence. See the LICENSE file in the repository.
 
-Cite it as: Devereux, T. (2026). *Sylva: terrestrial laser scanning
-processing for forest ecology*. The University of Queensland.
+Cite it as: Devereux, T. (2026). *Sylva: terrestrial and airborne laser
+scanning processing for forest ecology* (version 0.2.0) [Computer software].
+The University of Queensland. <https://github.com/UQ-EORC/Sylva>
+
+```bibtex
+@software{sylva,
+  author       = {Devereux, Tim},
+  title        = {Sylva: terrestrial and airborne laser scanning processing
+                  for forest ecology},
+  year         = {2026},
+  version      = {0.2.0},
+  organization = {The University of Queensland},
+  url          = {https://github.com/UQ-EORC/Sylva}
+}
+```

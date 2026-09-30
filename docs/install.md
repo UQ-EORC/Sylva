@@ -1,5 +1,19 @@
 # Install
 
+```bash
+pip install sylva-rs             # Python: import sylva
+cargo add sylva-rs               # Rust library: use sylva_rs::...
+cargo install sylva-cli          # the sylva command without Python
+```
+
+The wheels on PyPI carry the compiled core for Linux (x86-64 and arm64), macOS
+(Intel and Apple silicon) and Windows, and serve every Python from 3.10. The
+distribution is called `sylva-rs` because an unrelated project owns the name
+`sylva` on PyPI; the package you import is `sylva`, and the two cannot be
+installed in the same environment.
+
+## From source
+
 A conda environment carries the Python, the Rust toolchain and the C linker
 together, so the core builds with nothing installed system-wide:
 
