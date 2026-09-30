@@ -3,8 +3,9 @@
 Terrestrial and airborne laser scanning processing for forest ecology and
 remote sensing. A Rust core (the `sylva-rs` crate) holds every computation and file
 format; Python gets a numpy-friendly API (`import sylva`) and a `sylva`
-command over it. An R package on the same core, with the same functions, is
-kept on the `r-package` branch.
+command over it.
+
+NOTE: This software is still in ALPHA
 
 | Module | What it does |
 |---|---|
