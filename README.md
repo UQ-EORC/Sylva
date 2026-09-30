@@ -1,5 +1,7 @@
 # Sylva
 
+NOTE: This software is still in ALPHA development.
+
 [![PyPI](https://img.shields.io/pypi/v/sylva-rs)](https://pypi.org/project/sylva-rs/)
 [![crates.io](https://img.shields.io/crates/v/sylva-rs)](https://crates.io/crates/sylva-rs)
 [![Documentation](https://img.shields.io/badge/docs-uq--eorc.github.io%2FSylva-blue)](https://uq-eorc.github.io/Sylva/)
@@ -8,8 +10,6 @@ Terrestrial and airborne laser scanning processing for forest ecology and
 remote sensing. A Rust core (the `sylva-rs` crate) holds every computation and file
 format; Python gets a numpy-friendly API (`import sylva`) and a `sylva`
 command over it.
-
-NOTE: This software is still in ALPHA
 
 | Module | What it does |
 |---|---|
