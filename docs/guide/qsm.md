@@ -140,10 +140,28 @@ plot.write_cylinders("qsms/")                     # tree<id>.csv each
 plot.write_meshes("meshes/", contiguous=True)     # tree<id>.ply each, fused where buttressed
 ```
 
-`stems` only supplies the stem centre each model is built around; without it
-the centre comes from the tree's own points between 0.5 and 1.5 m. Trees with
-fewer than `min_points` points, and trees whose fit fails, land in
-`plot.skipped` with the reason rather than stopping the run.
+`stems` supplies the stem centre each model is built around and its DBH, which
+anchors the taper prior (`base_radius`); without it the centre comes from the
+tree's own points between 0.5 and 1.5 m. Trees with fewer than `min_points`
+points, and trees whose fit fails, land in `plot.skipped` with the reason
+rather than stopping the run.
+
+**Foliage around the bole.** Epicormic regrowth after fire sheathes a stem in
+leaves a metre wide, and the QSM fits its circles to the foliage rather than
+the bark, while the stem detector's DBH stays on the bark.
+`stem_radius_cap=1.5` sets aside every main-stem circle wider than 1.5 times
+that DBH, strong or not, so the stem follows the taper there (and counts as
+unmeasured). On 12 sheathed eucalypts at Tumbarumba it took the median QSM /
+field DBH from 2.2 to 0.98 and their volume from 105 to 36 m³, and changed 8
+clean trees by 2 %. It leaves foliage narrower than the cap, higher up the
+stem, in place.
+
+```python
+plot = qsm.build_plot(cloud, labels, stems, stem_radius_cap=1.5)
+```
+
+In such a stand, drop shrubs fitted as stems before modelling with
+`trees.prune_trees(..., min_slenderness=10)`.
 
 `buttress=True` additionally looks for a flanged base on each tree and meshes
 it, so `plot.volume(tree_id)` is the buttress mesh below its top plus the

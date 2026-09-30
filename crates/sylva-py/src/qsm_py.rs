@@ -233,7 +233,7 @@ fn qsm_params_from_py(d: &Bound<'_, PyDict>) -> PyResult<QsmParams> {
             $(p.$f = d.get_item(stringify!($f))?.ok_or_else(|| PyValueError::new_err(concat!("missing QSM setting ", stringify!($f))))?.extract()?;)*
         };
     }
-    take!(k, max_edge, bin_length, min_points, ransac_threshold, max_radius, taper_limit, max_rmse, smooth_steps, apex_radius, min_arc_deg, min_inlier_fraction, prune_points, fit_min_points, crop_length, butt_height, relative_tolerance, base_radius, allometry_tolerance, buttress_equivalent_area, buttress_max_inlier_fraction, pipe_slack, branch_min_inlier_fraction, spacing_scale, radius_power, power_above_spacing, sensor_noise, cluster_eps, centre_fit_points, radius_smooth_steps, butt_swell, butt_vertical_run, butt_max_lean_deg, chain_max_d, fourier_min_radius);
+    take!(k, max_edge, bin_length, min_points, ransac_threshold, max_radius, taper_limit, max_rmse, smooth_steps, apex_radius, min_arc_deg, min_inlier_fraction, prune_points, fit_min_points, crop_length, butt_height, relative_tolerance, base_radius, allometry_tolerance, stem_radius_cap, buttress_equivalent_area, buttress_max_inlier_fraction, pipe_slack, branch_min_inlier_fraction, spacing_scale, radius_power, power_above_spacing, sensor_noise, cluster_eps, centre_fit_points, radius_smooth_steps, butt_swell, butt_vertical_run, butt_max_lean_deg, chain_max_d, fourier_min_radius);
     Ok(p)
 }
 

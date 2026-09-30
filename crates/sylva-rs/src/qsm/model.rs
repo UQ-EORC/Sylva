@@ -345,6 +345,12 @@ pub struct QsmParams {
     pub base_radius: f64,
     /// Weak measurements further than this fraction from the prior are replaced.
     pub allometry_tolerance: f64,
+    /// With a `base_radius` (a measured DBH), anchor the taper prior on it and
+    /// set aside every main-stem circle wider than this many times it, strong
+    /// or not: foliage sheathing a bole (epicormic regrowth) fits wide,
+    /// well-supported circles, while a stem is nowhere above breast height
+    /// much wider than at it. 0 disables.
+    pub stem_radius_cap: f64,
     /// Use an equivalent-area star-polygon radius where a circle explains
     /// fewer than `buttress_max_inlier_fraction` of a section's points
     /// (buttressed or fluted stems).
@@ -400,7 +406,7 @@ pub struct QsmParams {
 
 impl Default for QsmParams {
     fn default() -> Self {
-        QsmParams { k: 15, max_edge: 1.0, bin_length: 0.1, min_points: 1, ransac_threshold: 0.02, max_radius: 1.0, taper_limit: 1.1, max_rmse: 0.03, smooth_steps: 10, apex_radius: 0.0025, min_arc_deg: 90.0, min_inlier_fraction: 0.05, prune_points: 5, fit_min_points: 50, crop_length: 0.0, butt_height: 0.6, relative_tolerance: 0.08, base_radius: 0.0, allometry_tolerance: 0.3, buttress_equivalent_area: true, buttress_max_inlier_fraction: 0.3, pipe_slack: 1.2, branch_min_inlier_fraction: 0.3, spacing_scale: 1.5, radius_power: 0.0, power_above_spacing: 0.025, sensor_noise: 0.02, cluster_eps: 0.1, centre_fit_points: 100, radius_smooth_steps: 15, butt_swell: 1.1, butt_vertical_run: 4, butt_max_lean_deg: 50.0, chain_max_d: 0.1, fourier_min_radius: 0.15 }
+        QsmParams { k: 15, max_edge: 1.0, bin_length: 0.1, min_points: 1, ransac_threshold: 0.02, max_radius: 1.0, taper_limit: 1.1, max_rmse: 0.03, smooth_steps: 10, apex_radius: 0.0025, min_arc_deg: 90.0, min_inlier_fraction: 0.05, prune_points: 5, fit_min_points: 50, crop_length: 0.0, butt_height: 0.6, relative_tolerance: 0.08, base_radius: 0.0, allometry_tolerance: 0.3, stem_radius_cap: 0.0, buttress_equivalent_area: true, buttress_max_inlier_fraction: 0.3, pipe_slack: 1.2, branch_min_inlier_fraction: 0.3, spacing_scale: 1.5, radius_power: 0.0, power_above_spacing: 0.025, sensor_noise: 0.02, cluster_eps: 0.1, centre_fit_points: 100, radius_smooth_steps: 15, butt_swell: 1.1, butt_vertical_run: 4, butt_max_lean_deg: 50.0, chain_max_d: 0.1, fourier_min_radius: 0.15 }
     }
 }
 
@@ -866,7 +872,10 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
             (arc >= 180.0 && frac >= 0.5 && sub_len[s] > 0.2 * w0).then_some(((r - p.apex_radius) / scale + p.apex_radius, n as f64))
         })
         .collect();
-    let r0 = if est.len() >= 5 {
+    let capped = p.stem_radius_cap > 0.0 && p.base_radius > 0.0;
+    let r0 = if capped {
+        p.base_radius
+    } else if est.len() >= 5 {
         est.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         let total: f64 = est.iter().map(|e| e.1).sum();
         let mut acc = 0.0;
@@ -907,6 +916,15 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
                 if frac < p.branch_min_inlier_fraction || arc <= 0.0 {
                     fits[s] = None;
                 }
+            }
+        }
+    }
+    // With a trusted DBH, main-stem circles far wider than it are not the
+    // stem (foliage around it); the stem follows the prior there.
+    if capped {
+        for s in 0..n_seg {
+            if order[s] == 0 && matches!(fits[s], Some((r, ..)) if r > p.stem_radius_cap * p.base_radius) {
+                fits[s] = None;
             }
         }
     }

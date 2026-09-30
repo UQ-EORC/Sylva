@@ -1,3 +1,4 @@
+import warnings
 from collections import Counter
 
 import numpy as np
@@ -250,9 +251,34 @@ def test_build_plot_models_every_tree(rng, tmp_path):
         qsm.build_plot(cloud, labels[:-1])
 
 
+def test_stem_radius_cap_sees_through_foliage_around_the_bole():
+    # Epicormic regrowth: leafy clumps 0.2-0.55 m out from a 0.15 m stem,
+    # up to 7 m. The QSM fits the foliage; capped at 1.5 x the field DBH it
+    # follows the stem, while the stem above keeps its own circles.
+    from conftest import make_stem
+
+    rng = np.random.default_rng(5)
+    stem = make_stem(rng, 0.0, 0.0, 0.15, 12.0, density=3000)
+    n = 60000
+    r, th, z = rng.uniform(0.2, 0.55, n), rng.uniform(0, 2 * np.pi, n), rng.uniform(0.3, 7.0, n)
+    pts = np.vstack([stem, np.column_stack([r * np.cos(th), r * np.sin(th), z])])
+    cloud = PointCloud(pts, {"height": pts[:, 2].copy()})
+    labels = np.ones(len(pts), np.int64)
+    stems = [trees.Tree(1, 0.0, 0.0, 0.30, height=12.0)]
+    true_volume = np.pi * 0.15**2 * 12.0
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        free = qsm.build_plot(cloud, labels, stems, wood=False, voxel_size=0.01)
+        capped = qsm.build_plot(cloud, labels, stems, wood=False, voxel_size=0.01, stem_radius_cap=1.5)
+    assert free.models[1].dbh > 0.35 and free.volume(1) > 1.3 * true_volume
+    assert capped.models[1].dbh == pytest.approx(0.30, abs=0.02)
+    assert capped.volume(1) == pytest.approx(true_volume, rel=0.1)
+    with pytest.raises(TypeError):
+        qsm.build_plot(cloud, labels, stems, stem_radius_kap=1.5)
+
+
 def test_a_thinned_cloud_is_fitted_at_its_own_spacing():
     """Shells and the circle band follow the spacing, or nothing gets fitted."""
-    import warnings
 
     rng = np.random.default_rng(11)
     from conftest import make_stem
