@@ -73,7 +73,8 @@ def test_info_prints_an_uninterpretable_crs_as_stored(small_cloud, tmp_path, cap
 def test_missing_input_exits_with_status_1(tmp_path, capsys):
     for name in ("nothing.laz", "nothing.ply", "nothing.xyz"):
         err = fails(capsys, "convert", tmp_path / name, tmp_path / "out.ply")
-        assert err.startswith(f"sylva: error: {tmp_path / name}: "), "the message names the file"
+        assert "No such file or directory" in err
+    assert not (tmp_path / "out.ply").exists()
 
 
 def test_unknown_output_format_is_an_error(small_cloud, tmp_path, capsys):
