@@ -1,5 +1,7 @@
 # Sylva
 
+NOTE: This software is still in ALPHA development.
+
 Terrestrial (TLS) and airborne (ALS) laser scanning processing for forest
 ecology and remote sensing. A Rust core (the `sylva-rs` crate) does the work; Python gets a
 numpy-friendly API (`import sylva`) and a `sylva` command.
