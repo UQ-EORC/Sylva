@@ -457,5 +457,58 @@ mod tests {
         let expect = |rr: f64| std::f64::consts::PI * 0.5 * rr * rr * 0.0005f64.powi(2);
         assert!((sigma[0] / expect(100.0) - 1.0).abs() < 1e-12);
         assert!((sigma[1] / expect(200.0) - 1.0).abs() < 1e-12);
+        let e = calibration_constant(&r, &a[..1], &s, &[0.5, 0.5], 0.0005, &[0.0, 0.0]).unwrap_err().to_string();
+        assert_eq!(e, "calibration: range, amplitude, width, reflectance and incidence must have the same length");
+    }
+
+    #[test]
+    fn malformed_sets_say_what_is_wrong() {
+        let err = |f: &dyn Fn(&mut Waveforms)| {
+            let mut w = two_waveforms();
+            f(&mut w);
+            w.validate().unwrap_err().to_string()
+        };
+        assert_eq!(err(&|w| w.gps_time.pop().map(drop).unwrap()), "waveforms: gps_time has 1 values for 2 waveforms");
+        assert_eq!(err(&|w| drop(w.attrs.insert("intensity".into(), Attr::U16(vec![1])))), "waveforms: attribute intensity has 1 values for 2 waveforms");
+        assert_eq!(err(&|w| w.interval[1] = 0.0), "waveforms: interval of waveform 1 must be positive, got 0");
+        assert_eq!(err(&|w| w.metres_per_ns[0] = f64::INFINITY), "waveforms: metres_per_ns of waveform 0 must be positive, got inf");
+        assert!(Waveforms::default().is_empty() && !two_waveforms().is_empty());
+        assert_eq!(Waveforms::concatenate(&[]).unwrap_err().to_string(), "no waveforms to concatenate");
+    }
+
+    #[test]
+    fn outgoing_rows_and_foreign_echoes() {
+        // Pulse 0 has an outgoing (kind 1) and a returning row; the outgoing one is skipped.
+        let mut w = two_waveforms();
+        w.pulse = vec![0, 0];
+        w.attrs.insert("kind".into(), Attr::U8(vec![1, 2]));
+        let none = Echoes::default();
+        assert!(none.is_empty());
+        let s = to_shots(&w, &none, None).unwrap();
+        assert_eq!((s.n_shots(), s.echo_count.clone()), (1, vec![0]));
+        assert_eq!(s.origin[0], w.position_at(1, 0.0), "the returning row's first sample");
+        w.attrs.insert("kind".into(), Attr::U8(vec![1, 1]));
+        assert_eq!(to_shots(&w, &none, None).unwrap().n_shots(), 0, "a pulse with only outgoing rows");
+        let stray = Echoes { waveform: vec![5], time: vec![0.0], amplitude: vec![1.0], width: vec![1.0], xyz: vec![[0.0; 3]], range: vec![f64::NAN] };
+        assert_eq!(to_shots(&w, &stray, None).unwrap_err().to_string(), "echoes refer to waveforms that are not in the set");
+        assert_eq!(to_shots(&w, &none, Some(&[[0.0; 3]])).unwrap_err().to_string(), "origin has 1 rows for 2 waveforms");
+    }
+
+    #[test]
+    fn formats_are_told_by_their_signature() {
+        let dir = std::env::temp_dir().join(format!("sylva-wf-detect-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let write = |name: &str, bytes: &[u8]| {
+            let p = dir.join(name);
+            std::fs::write(&p, bytes).unwrap();
+            p
+        };
+        assert_eq!(detect_format(write("a.bin", b"LASF\x01\x02")).unwrap(), FileFormat::Las);
+        assert_eq!(detect_format(write("a.pls", b"PulseWavesPulse\x00")).unwrap(), FileFormat::PulseWaves);
+        assert!(detect_format(write("a.sdf", b"RIEGL")).unwrap_err().to_string().contains("RIEGL SDF files can only be read with RIEGL's proprietary library"));
+        let short = write("short.las", b"LA");
+        assert_eq!(detect_format(&short).unwrap_err().to_string(), format!("{}: not a waveform file: expected LAS/LAZ with waveform data packets or PulseWaves .pls", short.display()));
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(detect_format(dir.join("gone.las")).unwrap_err().to_string().starts_with(&format!("{}: ", dir.join("gone.las").display())));
     }
 }
