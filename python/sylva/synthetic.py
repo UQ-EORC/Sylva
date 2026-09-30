@@ -136,7 +136,13 @@ def forest(trees=None, size: float = 20.0, ground_points: int = 40000, margin: f
 
 
 def scan(cloud: PointCloud, origin=(10.0, 10.0, 1.5), resolution_deg: float = 0.25,
-         max_zenith_deg: float = 130.0, max_echoes: int = 2, echo_separation: float = 0.5) -> Shots:
+         max_zenith_deg: float = 130.0, max_echoes: int = 2, echo_separation: float = 0.5, *,
+         scanner: str | None = None, min_zenith_deg: float | None = None, range_noise=None,
+         beam_divergence: float | None = None, exit_diameter: float | None = None,
+         footprint_samples: int | None = None, mixed_pixels: bool | None = None,
+         reflectance=None, target_radius: float | None = None, oriented: bool | None = None,
+         detection_threshold: float | None = None, max_range: float | None = None,
+         seed: int = 0) -> Shots:
     """A pseudo terrestrial scan of ``cloud`` from ``origin``.
 
     Pulses are fired on a regular zenith / azimuth grid. The points falling in
@@ -146,6 +152,30 @@ def scan(cloud: PointCloud, origin=(10.0, 10.0, 1.5), resolution_deg: float = 0.
     which a real scanner's point stream would not show, but which carry the
     free-space information ray tracing needs. Echo attributes are copied from
     the points, so ``classification`` and ``tree_id`` survive.
+
+    **Beam model.** Giving any of the keyword-only options below switches to
+    a scanner with a finite beam, cast into the points: each pulse leaves
+    along the centre of its angular cell as a cone of full divergence
+    ``beam_divergence`` from an aperture of ``exit_diameter``, sampled by
+    ``footprint_samples`` equal-energy sub-beams. Each point stands for a
+    small patch of surface of radius ``target_radius``: a disc facing along
+    its normal (the ``normal_x``, ``normal_y``, ``normal_z`` attributes,
+    which :func:`tree_model` and :func:`plot` provide, else a local PCA
+    where the points are planar), or a sphere; a sub-beam stops at the
+    first patch it meets. Hits closer in range than ``echo_separation``
+    form one echo: with ``mixed_pixels`` at their energy-weighted mean range
+    (energy: the sub-beam's share times the target's reflectance), which is
+    how a footprint straddling an edge puts a point in the gap between
+    foreground and background; beyond it, separate echoes (multiple returns
+    within a footprint). Echoes weaker than ``detection_threshold`` are lost,
+    and Gaussian range noise is added along the beam. Echo positions lie on
+    the pulse axis, and the echoes carry, besides the attributes of their
+    strongest point, ``reflectance`` (dB; 0 dB is a white target filling
+    the footprint), ``footprint_fraction`` (share of the sub-beams in the
+    echo) and ``range_spread`` (m, the spread of the hits' ranges within
+    the echo, before noise: large for a mixed pixel). Every pulse is kept,
+    misses included. Leaving all of them out gives the scan above,
+    unchanged.
 
     Parameters
     ----------
@@ -160,16 +190,102 @@ def scan(cloud: PointCloud, origin=(10.0, 10.0, 1.5), resolution_deg: float = 0.
     max_echoes
         Echoes per pulse.
     echo_separation
-        Minimum range (m) between echoes of one pulse.
+        Minimum range (m) between echoes of one pulse; with the beam model,
+        the range resolution of the receiver.
+    scanner
+        A scanner model from :data:`sylva.synthetic.SCANNERS` (``"vz400"``,
+        ``"vz400i"``, ``"vz2000i"``): its field of view, divergence, exit
+        diameter and ranging precision (see :func:`scanner_preset`) stand in
+        for the options not given. The angular step stays
+        ``resolution_deg``.
+    min_zenith_deg
+        Pulses start at this zenith (degrees); 0 by default, 30 for the
+        scanner models.
+    range_noise
+        Standard deviation of the range noise (m), or ``(a, b)`` for
+        ``a + b R`` at range ``R``.
+    beam_divergence
+        Full beam divergence (mrad).
+    exit_diameter
+        Beam diameter at the scanner (m).
+    footprint_samples
+        Sub-beams per pulse (sunflower pattern); 7 when the beam has a
+        size, else 1.
+    mixed_pixels
+        Merge hits within ``echo_separation`` at their mean range (True, the
+        default) or report the strongest hit's range (False).
+    reflectance
+        Reflectance of the targets: ``{classification: value}`` (other
+        classes 0.4), a number for all, or the name of a per-point
+        attribute. By default near-infrared (1550 nm) values: ground,
+        understorey and leaf 0.3, wood 0.5, other 0.4.
+    target_radius
+        Radius (m) of the surface patch each point stands for; by default
+        1.75 times the median point spacing, which closes a surface sampled
+        as :func:`tree_model` samples it (independent random points leave a
+        few holes). Objects thinner than this, such as twigs, are seen
+        thicker than they are.
+    oriented
+        Orient the patches as discs where a normal is known (True, the
+        default), which keeps silhouettes sharp; False makes every patch a
+        sphere, which widens every object by ``target_radius`` on each side.
+    detection_threshold
+        Least echo energy detected (the reflectance a target filling the
+        footprint would give); 0 by default.
+    max_range
+        Longest range (m); unlimited by default.
+    seed
+        Seed of the range noise (beam model only).
 
     Returns
     -------
     Shots
         One pulse per angular cell, misses included.
+
+    Examples
+    --------
+    >>> f = synthetic.forest()
+    >>> s = synthetic.scan(f)                                   # the point-cell scan
+    >>> s = synthetic.scan(f, scanner="vz400", range_noise=0.005)  # a finite beam
+    >>> s.echo_attrs["range_spread"]
     """
     o = tuple(float(v) for v in origin)
-    d = _core.synthetic_scan(cloud.xyz, cloud.attrs, o, float(resolution_deg),
-                             float(max_zenith_deg), int(max_echoes), float(echo_separation))
+    beam = (scanner, min_zenith_deg, range_noise, beam_divergence, exit_diameter, footprint_samples,
+            mixed_pixels, reflectance, target_radius, oriented, detection_threshold, max_range)
+    if all(v is None for v in beam):
+        d = _core.synthetic_scan(cloud.xyz, cloud.attrs, o, float(resolution_deg),
+                                 float(max_zenith_deg), int(max_echoes), float(echo_separation))
+        return Shots._from_core(d)
+    preset = scanner_preset(scanner) if scanner is not None else {}
+    pick = lambda v, key, default: float(v) if v is not None else float(preset.get(key, default))  # noqa: E731
+    if range_noise is None:
+        noise = (pick(None, "range_noise", 0.0), 0.0)
+    elif np.ndim(range_noise) == 0:
+        noise = (float(range_noise), 0.0)
+    else:
+        a, b = (float(v) for v in range_noise)
+        noise = (a, b)
+    div = pick(beam_divergence, "beam_divergence", 0.0)
+    exit_d = pick(exit_diameter, "exit_diameter", 0.0)
+    if footprint_samples is None:
+        footprint_samples = 7 if (div > 0 or exit_d > 0) else 1
+    refl_map, refl_attr, refl_const = [], None, None
+    if reflectance is None:
+        refl_map = [(2, 0.3), (3, 0.3), (4, 0.3), (5, 0.5)]
+    elif isinstance(reflectance, str):
+        refl_attr = reflectance
+    elif isinstance(reflectance, dict):
+        refl_map = [(int(k), float(v)) for k, v in reflectance.items()]
+    else:
+        refl_const = float(reflectance)
+    d = _core.synthetic_scan_beam(
+        cloud.xyz, cloud.attrs, o, float(resolution_deg), pick(min_zenith_deg, "min_zenith_deg", 0.0),
+        float(preset.get("max_zenith_deg", max_zenith_deg)), int(max_echoes), float(echo_separation),
+        noise[0], noise[1], div, exit_d, int(footprint_samples),
+        True if mixed_pixels is None else bool(mixed_pixels),
+        None if target_radius is None else float(target_radius), True if oriented is None else bool(oriented),
+        0.0 if detection_threshold is None else float(detection_threshold), refl_map, 0.4, refl_attr,
+        refl_const, float("inf") if max_range is None else float(max_range), int(seed))
     return Shots._from_core(d)
 
 
@@ -789,3 +905,10 @@ def forest_trees(forest: PointCloud, terrain_slope: float = 0.05) -> dict:
 from .synthetic_als import ALSEpochs, als_epochs  # noqa: E402
 
 __all__ += ["ALSEpochs", "als_epochs"]
+
+# Realistic trees and plots with their truth, and scanner models for scan().
+from .synthetic_model import (ARCHETYPES, LABELS, SCANNERS, Plot, SyntheticTree,  # noqa: E402
+                              archetype, plot, scanner_preset, tree_model)
+
+__all__ += ["tree_model", "SyntheticTree", "plot", "Plot", "archetype", "scanner_preset",
+            "ARCHETYPES", "LABELS", "SCANNERS"]

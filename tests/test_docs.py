@@ -14,6 +14,7 @@ MODULES += ["als_trees"]
 MODULES += ["fusion"]
 MODULES += ["change.als", "synthetic_als"]
 MODULES += ["tiles"]
+MODULES += ["synthetic_model"]
 
 
 def _public(mod):

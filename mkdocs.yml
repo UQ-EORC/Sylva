@@ -48,6 +48,7 @@ nav:
       - QSMs: guide/qsm.md
       - Leaves on a QSM: guide/leaves.md
       - Scan quality: guide/quality.md
+      - Synthetic data: guide/synthetic.md
       - Command line: guide/cli.md
       - Operational use: guide/operational.md
   - Examples:
