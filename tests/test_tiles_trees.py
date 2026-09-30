@@ -228,6 +228,11 @@ def test_qsms_per_tree_match_build_plot(plot, store):
     # Saved models are taken up again.
     again = tiles.build_qsms(store, ref_trees, resume=True, **kw)
     assert again.table() == ref.table()
+    first = next(iter(ref.models))
+    one = tiles.build_qsms(store, ref_trees, ids=[first], resume=True, **kw)
+    assert list(one.models) == [first]
+    with pytest.raises(ValueError, match="no tree"):
+        tiles.build_qsms(store, ref_trees, ids=[10_000], **kw)
 
 
 def test_crown_metrics_per_tree(plot, store):

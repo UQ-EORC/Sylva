@@ -400,6 +400,73 @@ the whole-cloud steps: tiling pays in reading and writing files, and in
 memory it scales with the tile and the workers, not with the plot, which on
 the full hectare is what keeps the run within the machine.
 
+## The whole hectare
+
+The full Tumbarumba hectare was run with `tiles.run_plot` from the 133
+registered per-scan files and their saved corrections, with the settings of
+the whole-cloud run it is compared with: 2 cm, SOR `k=6`, `std_ratio=1`, CSF
+ground on a 5 cm thinning with a 0.5 m DTM, stems with `min_arc_deg=130`,
+merge and segmentation graphs at 0.1 m, heights at the 99th percentile,
+pruning with `min_height=2`, `min_slenderness=10`, and QSMs with
+`stem_radius_cap=1.5`; tiles of 10 m over the plot and a 10 m margin
+(x, y from -10 to 110 m), trees from the tiles of the plot (0 to 100 m), a
+20 m segmentation buffer and four workers.
+
+**Tiled against whole cloud, same input.** On a 40 x 40 m block of the
+plot's height-normalised tiles (16 tiles, 41.8 million points), small
+enough to process as one cloud, `segment_trees` (20 m buffer) and the
+whole-cloud sequence with the same grid corner gave the same 62 trees,
+identical to the bit, and the same label on all 41,786,521 points; each
+tree read from the store was the whole cloud's points for it, and the QSMs
+built from the store were identical to `qsm.build_plot`'s. The block took
+194 s tiled against 58 s as one cloud: the tiled segmentation reads each
+tile's buffer, 25 tiles' worth of graph nodes per tile.
+
+**The hectare, against the earlier whole-cloud run.** That run merged the
+scans in strips with their own voxel grids, found stems with the default
+single random stream, classified ground with CSF on the whole cloud and
+cropped the plot before segmenting; the tiled run thins on one global grid,
+seeds each stem cluster on its own (`cluster_seeds`), runs CSF with a 10 m
+buffer and uses `voxel_origin=(0, 0, 0)`. Each of these moves some points
+and some stem fits, so the two runs are close but not equal:
+
+| | Whole cloud | Tiled |
+|---|---|---|
+| points after SOR | 282,079,298 of 305,345,548 | 281,336,086 of 304,487,376 |
+| stem candidates | 645 | 644 |
+| trees after pruning | 404 | 410 |
+| trees matched within 0.5 m | 345 | 345 |
+| basal area (m² ha⁻¹) | 49.25 | 47.23 |
+| wood share of tree points | 59 % | 59 % |
+| QSMs, total volume | 400 trees, 765.1 m³ | 406 trees, 788.5 m³ |
+| peak memory | about 55 GB | 7.4 GB |
+
+For the 345 matched trees the stem positions differ by 6 mm (median), DBH
+by 3.3 mm (median; 2.1 % relative, 17.5 % at the 90th percentile, where
+RANSAC settled on another circle), height by 1.6 cm (median, 0.1 %; 4.7 %
+at the 90th percentile), point counts by 3.1 % (median) and crown area by
+1 % (median). QSM volumes of the 342 matched trees modelled in both total
+703.3 m³ as one cloud and 735.1 m³ tiled (+4.5 %), with a median difference
+per tree of 8.9 %: the models are mostly taper and pipe-model priors (3 %
+of the median model's length was fitted to points in both runs), so a
+small change in a tree's DBH or points moves its volume. The unmatched
+trees (59 whole-cloud only, 65 tiled only; median DBH 0.25 and 0.23 m,
+median height 11 and 10 m) are small stems and understorey candidates near
+the pruning thresholds that one run's stem fits kept and the other's did
+not.
+
+**Memory and time.** No stage held more than 7.4 GB (the resident size of
+the process, measured every 5 s): building the tiles 6.8 GB, SOR 1.7 GB,
+ground 2.2 GB, heights 1.2 GB, stems 2.4 GB, segmentation 6.9 GB, the tree
+store 3.2 GB, leaf / wood 4.0 GB, QSMs 6.5 GB. With four workers the run
+took 1 h 41 min (tiles 270 s, SOR 1696 s, ground 803 s, heights 299 s,
+stems 307 s, segmentation 1595 s, tree store 287 s, leaf / wood 432 s,
+QSMs 336 s, table 14 s), on a machine shared with other jobs (load 13 to 26
+on 8 cores); the whole-cloud run took 29 min to the same point, starting
+from its merged cloud already on disk. The tiled
+steps read and write every tile at each stage and read buffers around each
+tile; the per-tree steps are faster tiled, since trees run in parallel.
+
 ## Limitations
 
 - Exactness is to the last bit for the kept points and the per-point values,
@@ -421,5 +488,17 @@ the full hectare is what keeps the run within the machine.
 - A point far from everything else (an isolated return tens of metres above
   the canopy) is searched again in every tile within its reach, one tile at
   a time: slow for many such points, but bounded in memory.
-- Scratch files of `from_scans` and of statistical outlier removal need
-  disk space beside the output.
+- Scratch files of `from_scans`, statistical outlier removal and
+  `segment_trees` need disk space beside the output, and a tree store holds
+  a second copy of every tree's points (full precision, about 60 bytes a
+  point with the usual attributes).
+- `segment_trees` matches the whole cloud only on the grid it uses: the
+  whole-cloud `trees.segment_trees` anchors its voxel grid at the cloud's
+  lowest point unless given `voxel_origin`. Its labels also depend on the
+  buffer being wider than the largest crown; a crown that reaches the
+  buffer's edge is read again wider, and reported when `max_buffer` is not
+  enough. Nearest-neighbour ties (the graph's neighbours, a point's nearest
+  node) can, rarely, go another way than in the whole cloud; none did on
+  the 41.8 million points of the Tumbarumba block.
+- Tiled segmentation is slower than on one cloud (three to four times on
+  Tumbarumba), since each tile reads the graph nodes of its whole buffer.

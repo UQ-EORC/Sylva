@@ -505,7 +505,8 @@ def _qsm_one(st: TreeStore, tree_id: int, stem: Tree | None, voxel_size, wood, b
 
 def build_qsms(store, stems=None, voxel_size: float = 0.01, wood: bool = True,
                buttress: bool = False, min_points: int = 2000, height_attr: str = "height",
-               resume: bool = False, workers: int | None = None, **params) -> qsm.PlotQSMs:
+               resume: bool = False, ids=None, workers: int | None = None,
+               **params) -> qsm.PlotQSMs:
     """A QSM for every tree of a store, a few trees at a time.
 
     Each tree is modelled from its own points as :func:`sylva.qsm.build_plot`
@@ -527,6 +528,8 @@ def build_qsms(store, stems=None, voxel_size: float = 0.01, wood: bool = True,
     resume
         Keep models already saved in the store (``qsm.pkl`` beside each tree)
         rather than fitting them again.
+    ids
+        Trees to model; every tree of the store if None.
     workers
         Trees at once; the number of CPUs if None, fewer if memory is short.
     **params
@@ -545,8 +548,11 @@ def build_qsms(store, stems=None, voxel_size: float = 0.01, wood: bool = True,
     def path(i):
         return st.path / f"tree_{i}" / "qsm.pkl"
 
+    wanted = st.ids if ids is None else [int(i) for i in ids]
+    for i in wanted:
+        st._entry(i)
     if resume:
-        for i in st.ids:
+        for i in wanted:
             if path(i).exists():
                 with open(path(i), "rb") as f:
                     saved[i] = pickle.load(f)
@@ -559,7 +565,7 @@ def build_qsms(store, stems=None, voxel_size: float = 0.01, wood: bool = True,
         tmp.replace(path(i))
         return d
 
-    todo = [i for i in st.ids if i not in saved]
+    todo = [i for i in wanted if i not in saved]
     done = _map_trees(todo, one, max((st.n_points(i) for i in todo), default=0), workers, "fitting QSMs")
     results = {**saved, **done}
     models, bases, skipped, points, heights = {}, {}, {}, {}, {}
