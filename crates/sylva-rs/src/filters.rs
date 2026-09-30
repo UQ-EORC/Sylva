@@ -248,6 +248,15 @@ pub fn local_pca(points: &[Point], k: usize) -> (Vec<Point>, Vec<[f64; 3]>) {
     points.par_iter().map(|p| pca_of_neighbours(points, &tree.knn(p, k))).unzip()
 }
 
+/// [`local_pca`] with neighbours at equal distances taken by index
+/// ([`KdTree::knn_by_index`]), so that a point's descriptors are the same in
+/// any cloud holding its neighbourhood in the same relative order.
+pub fn local_pca_by_index(points: &[Point], k: usize) -> (Vec<Point>, Vec<[f64; 3]>) {
+    let tree = KdTree::new(points);
+    let k = k.max(3);
+    points.par_iter().map(|p| pca_of_neighbours(points, &tree.knn_by_index(p, k))).unzip()
+}
+
 /// The PCA descriptors of one neighbourhood (`(index, distance)` pairs into
 /// `points`, as [`KdTree::knn`] gives them): the unoriented normal and the
 /// eigenvalues ascending, as [`local_pca`] computes them for each point.

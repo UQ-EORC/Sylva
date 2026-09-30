@@ -507,8 +507,20 @@ fn fit_layer(xy: &[[f64; 2]], height: f64, p: &StemParams, rng: &mut Rng) -> Vec
         }
         h
     };
+    // With `cluster_seeds`, each cluster also keeps its points in input
+    // order: the order the traversal gathers them in starts from the first
+    // cell of the whole connected component, which for a component wider
+    // than `max_cluster_extent` (re-clustered below) depends on how much of
+    // it a tile holds, and RANSAC draws its samples by position.
+    let canonical = |mut idx: Vec<usize>| {
+        if p.cluster_seeds {
+            idx.sort_unstable();
+        }
+        idx
+    };
     let mut clusters: Vec<(Vec<[f64; 2]>, u64)> = Vec::new();
     for idx in cluster(xy, p.cluster_cell) {
+        let idx = canonical(idx);
         let cluster_xy: Vec<[f64; 2]> = idx.iter().map(|&i| xy[i]).collect();
         if extent(&cluster_xy) <= p.max_cluster_extent {
             let seed = if p.cluster_seeds { cluster_seed(&cluster_xy, p.cluster_cell) } else { 0 };
@@ -521,6 +533,7 @@ fn fit_layer(xy: &[[f64; 2]], height: f64, p: &StemParams, rng: &mut Rng) -> Vec
         // Too wide to be one stem: re-cluster with a finer cell to break
         // bridges, keeping only the pieces that are stem-sized.
         for sub in cluster(&cluster_xy, p.cluster_cell * 0.5) {
+            let sub = canonical(sub);
             let c: Vec<[f64; 2]> = sub.iter().map(|&i| cluster_xy[i]).collect();
             if extent(&c) <= p.max_cluster_extent {
                 let seed = if p.cluster_seeds { cluster_seed(&c, p.cluster_cell * 0.5) } else { 0 };
@@ -735,7 +748,10 @@ pub fn detect_stems_full(points: &[Point], heights: &[f64], p: &StemParams) -> V
     let mut band: Vec<Point> = band_idx.iter().map(|&i| points[i]).collect();
     let mut band_h: Vec<f64> = band_idx.iter().map(|&i| heights[i]).collect();
     if p.prefilter && band.len() > p.prefilter_k {
-        let (normals, vals) = crate::filters::local_pca(&band, p.prefilter_k);
+        // With `cluster_seeds` (tiled detection), neighbours at equal
+        // distances are taken by index, so that a point is kept or dropped
+        // as in the whole cloud; quantised coordinates make such ties common.
+        let (normals, vals) = if p.cluster_seeds { crate::filters::local_pca_by_index(&band, p.prefilter_k) } else { crate::filters::local_pca(&band, p.prefilter_k) };
         let keep: Vec<bool> = normals
             .iter()
             .zip(&vals)

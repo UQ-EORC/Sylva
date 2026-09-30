@@ -37,7 +37,7 @@ use std::sync::Mutex;
 
 use rayon::prelude::*;
 
-use crate::als::{self, merge_clouds, output_path, plan, run, workers_for, workers_for_estimates, write_like, Catalog, Chunk, ChunkData, Layout, BYTES_PER_POINT};
+use crate::als::{merge_clouds, output_path, plan, run, workers_for, workers_for_estimates, write_like, Catalog, Chunk, ChunkData, Layout, BYTES_PER_POINT};
 use crate::als_ops::{epsg_vlr, NOISE_CLASS};
 use crate::error::{Error, Result};
 use crate::filters;
@@ -990,7 +990,7 @@ mod tests {
         let opts = LasWriteOptions { point_format: 6, scale: 0.0001, ..Default::default() };
         let written = crate::als_ops::write_tiles(cloud, dir, size, Some((0.0, 0.0)), "laz", &opts, None).unwrap();
         let cat = Catalog::open(&written.iter().map(|w| w.0.clone()).collect::<Vec<_>>());
-        let whole = als::read_region(&cat, [-1e9, -1e9, 1e9, 1e9]).unwrap();
+        let whole = crate::als::read_region(&cat, [-1e9, -1e9, 1e9, 1e9]).unwrap();
         (cat, whole)
     }
 

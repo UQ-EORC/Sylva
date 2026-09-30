@@ -40,6 +40,23 @@ impl KdTree {
             .collect()
     }
 
+    /// [`knn`](Self::knn) with ties broken by index: of the points at the
+    /// `k`-th distance, those with the lowest indices are kept, and the
+    /// neighbours come sorted by distance, then index. The search tree's own
+    /// order among equal distances depends on its layout, so two clouds that
+    /// hold the same neighbourhood in the same relative order (a tile and the
+    /// whole plot, say) get the same neighbours only this way.
+    pub fn knn_by_index(&self, p: &Point, k: usize) -> Vec<(usize, f64)> {
+        let mut nb = self.knn(p, k);
+        if let Some(&(_, dk)) = nb.last().filter(|_| nb.len() == k) {
+            // Every point at the k-th distance, however many there are.
+            nb = self.within(p, dk * (1.0 + 1e-9) + f64::MIN_POSITIVE).into_iter().filter(|&(_, d)| d <= dk).collect();
+        }
+        nb.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+        nb.truncate(k);
+        nb
+    }
+
     /// Nearest point to `p`.
     pub fn nearest(&self, p: &Point) -> Option<(usize, f64)> {
         let r = self.tree.query(p).nearest_one::<SquaredEuclidean<f64>>().execute();
@@ -121,5 +138,32 @@ pub fn max_corner(points: &[Point]) -> Point {
         [0.0; 3]
     } else {
         hi
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn knn_by_index_breaks_ties_by_index_in_any_subset() {
+        // A lattice: every point has many neighbours at exactly equal distances.
+        let pts: Vec<Point> = (0..1000).map(|i| [(i % 10) as f64, ((i / 10) % 10) as f64, (i / 100) as f64]).collect();
+        let whole = KdTree::new(&pts);
+        // A subset in the same relative order, as a tile holds a plot's points.
+        let keep: Vec<usize> = (0..pts.len()).filter(|&i| pts[i][0] < 7.0).collect();
+        let sub_pts: Vec<Point> = keep.iter().map(|&i| pts[i]).collect();
+        let sub = KdTree::new(&sub_pts);
+        for (j, &i) in keep.iter().enumerate() {
+            if pts[i][0] > 4.0 {
+                continue;
+            }
+            let a = whole.knn_by_index(&pts[i], 7);
+            let b: Vec<(usize, f64)> = sub.knn_by_index(&sub_pts[j], 7).into_iter().map(|(m, d)| (keep[m], d)).collect();
+            assert_eq!(a, b, "point {i}");
+            assert!(a.windows(2).all(|w| w[0].1 < w[1].1 || (w[0].1 == w[1].1 && w[0].0 < w[1].0)));
+        }
+        assert!(whole.knn_by_index(&pts[0], 0).is_empty());
+        assert_eq!(KdTree::new(&pts[..3]).knn_by_index(&pts[0], 7).len(), 3);
     }
 }
