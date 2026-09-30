@@ -91,6 +91,7 @@ nav:
       - trees: api/trees.md
       - canopy: api/canopy.md
       - voxels: api/voxels.md
+      - voxel_blocks: api/voxel_blocks.md
       - registration: api/registration.md
       - coords: api/coords.md
       - coreg: api/coreg.md

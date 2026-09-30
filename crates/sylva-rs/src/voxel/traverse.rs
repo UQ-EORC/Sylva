@@ -88,6 +88,57 @@ impl Geom {
     }
 }
 
+/// A box of voxels, `lo` to `lo + shape` (exclusive), that one engine
+/// accumulates: a block of a grid traced block by block. Pulses are still
+/// walked through the whole grid, so every voxel of the box receives exactly
+/// the contributions (and in the same order) that a whole-grid trace gives it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Window {
+    pub lo: [usize; 3],
+    pub shape: [usize; 3],
+}
+
+impl Window {
+    #[inline]
+    pub fn local(&self, p: [i64; 3]) -> Option<usize> {
+        let mut q = [0usize; 3];
+        for k in 0..3 {
+            let d = p[k] - self.lo[k] as i64;
+            if d < 0 || d as usize >= self.shape[k] {
+                return None;
+            }
+            q[k] = d as usize;
+        }
+        Some(q[0] + self.shape[0] * (q[1] + self.shape[1] * q[2]))
+    }
+
+    pub fn n_voxels(&self) -> usize {
+        self.shape[0] * self.shape[1] * self.shape[2]
+    }
+
+    /// Whether the segment `a`-`b` (voxel units) passes within `margin` of the box.
+    pub fn touches(&self, a: &Point, b: &Point, margin: f64) -> bool {
+        let (mut s0, mut s1) = (0.0f64, 1.0f64);
+        for k in 0..3 {
+            let (lo, hi) = (self.lo[k] as f64 - margin, (self.lo[k] + self.shape[k]) as f64 + margin);
+            let d = b[k] - a[k];
+            if d == 0.0 {
+                if a[k] < lo || a[k] > hi {
+                    return false;
+                }
+                continue;
+            }
+            let (t0, t1) = ((lo - a[k]) / d, (hi - a[k]) / d);
+            s0 = s0.max(t0.min(t1));
+            s1 = s1.min(t0.max(t1));
+            if s0 > s1 {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 /// How far short of `end` a segment stops, so that one ending exactly on a
 /// voxel face does not reach into the voxel beyond it.
 const FACE_TOLERANCE: f64 = 1e-10;
@@ -194,7 +245,7 @@ impl Accum {
 }
 
 #[derive(Clone, Copy)]
-struct Ret {
+pub(crate) struct Ret {
     pos: Point,
     range: f64,
     bound: bool,
@@ -211,6 +262,8 @@ struct PplHit {
 
 struct Tracer<'a> {
     geom: &'a Geom,
+    /// Only this box is accumulated (indices are then local to it).
+    window: Option<&'a Window>,
     acc: &'a Accum,
     params: &'a VoxelParams,
     peaks: Option<&'a [f64]>,
@@ -241,7 +294,19 @@ struct Ray {
     weight: f64,
 }
 
+/// Margin (voxels) within which a segment counts as reaching a window.
+const WINDOW_MARGIN: f64 = 1e-6;
+
 impl Tracer<'_> {
+    /// Index of a voxel in the accumulators: flat in the grid, or in the window.
+    #[inline]
+    fn index(&self, cell: [i64; 3]) -> Option<usize> {
+        match self.window {
+            None => self.geom.flat(cell),
+            Some(w) => w.local(cell),
+        }
+    }
+
     fn section(&self, origin: &Point, cell: [i64; 3]) -> f64 {
         let r = self.tan_half_div * norm(&sub(&self.geom.center(cell), origin)) + 0.5 * self.beam_diameter;
         PI * r * r
@@ -258,19 +323,26 @@ impl Tracer<'_> {
         if !(len > 0.0) {
             return;
         }
+        if self.window.is_some_and(|w| !w.touches(&vs, &ve, WINDOW_MARGIN)) {
+            return;
+        }
         let ray = Ray { vox_start: vs, vox_dir: scale(&d, 1.0 / len), beam_origin: *beam_origin, unbound, foliage: fol, weight };
         let zenith = ray.vox_dir[2].clamp(-1.0, 1.0).acos();
         let az = ray.vox_dir[0].atan2(ray.vox_dir[1]);
         let (sin_az, cos_az) = az.sin_cos();
+        // The walk is the whole-grid one; with a window it stops once it has
+        // left the box (every coordinate is monotone, so it cannot come back).
+        let mut inside = false;
         walk_grid(&vs, &ve, |cell, in_len, out_len, max_len| {
-            self.visit(&ray, pass, zenith, sin_az, cos_az, cell, in_len, out_len, max_len);
+            let Some(idx) = self.index(cell) else { return inside && self.window.is_some() };
+            inside = true;
+            self.visit(&ray, pass, zenith, sin_az, cos_az, cell, idx, in_len, out_len, max_len);
             false
         });
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn visit(&self, ray: &Ray, pass: Pass, zenith: f64, sin_az: f64, cos_az: f64, cell: [i64; 3], mut in_len: f64, out_len: f64, max_len: f64) {
-        let Some(idx) = self.geom.flat(cell) else { return };
+    fn visit(&self, ray: &Ray, pass: Pass, zenith: f64, sin_az: f64, cos_az: f64, cell: [i64; 3], idx: usize, mut in_len: f64, out_len: f64, max_len: f64) {
         let end_len = out_len.min(max_len);
         let column = cell[0] as usize + self.geom.shape[0] * cell[1] as usize;
 
@@ -445,7 +517,7 @@ impl Tracer<'_> {
                 continue;
             }
             let cell = self.geom.cell_of(&r.pos);
-            let Some(idx) = self.geom.flat(cell) else { continue };
+            let Some(idx) = self.index(cell) else { continue };
             // Full chord of the hit voxel and the free path from its entry to the echo.
             let (mut chord, mut free) = (0.0, 0.0);
             if let Some(d) = dir {
@@ -502,9 +574,23 @@ impl Tracer<'_> {
         if !self.geom.clip(&mut cs, &mut ce, 1e-10) {
             return;
         }
+        let (vs, ve) = (self.geom.to_vox(&cs), self.geom.to_vox(&ce));
+        if self.window.is_some_and(|w| !w.touches(&vs, &ve, WINDOW_MARGIN)) {
+            return;
+        }
+        // The share of the pulse still travelling depends on every voxel
+        // before this one, so a window walks (without recording) from the start.
         let mut f_in = 1.0f64;
-        walk_grid(&self.geom.to_vox(&cs), &self.geom.to_vox(&ce), |cell, in_len, out_len, _| {
-            let Some(idx) = self.geom.flat(cell) else { return false };
+        let mut inside = false;
+        walk_grid(&vs, &ve, |cell, in_len, out_len, _| {
+            if self.geom.flat(cell).is_none() {
+                return false;
+            }
+            let idx = self.index(cell);
+            if idx.is_none() && inside {
+                return true;
+            }
+            inside |= idx.is_some();
             let chord = (out_len - in_len) * self.geom.size;
             if chord <= 0.0 {
                 return false;
@@ -514,12 +600,16 @@ impl Tracer<'_> {
             for (r, &w) in rets.iter().zip(echo_w) {
                 if r.bound && self.geom.cell_of(&r.pos) == cell {
                     intercepted += w as f64;
-                    out.push(PplHit { voxel: idx, chord: chord as f32, section: (w as f64 * section) as f32 });
+                    if let Some(idx) = idx {
+                        out.push(PplHit { voxel: idx, chord: chord as f32, section: (w as f64 * section) as f32 });
+                    }
                 }
             }
-            let leaving = f_in - intercepted;
-            if leaving > 0.0 {
-                self.acc.addf(F::PplMissWl, idx, leaving * section * chord);
+            if let Some(idx) = idx {
+                let leaving = f_in - intercepted;
+                if leaving > 0.0 {
+                    self.acc.addf(F::PplMissWl, idx, leaving * section * chord);
+                }
             }
             f_in -= intercepted;
             f_in < 1e-6
@@ -560,10 +650,72 @@ fn solve_ppl(hits: Vec<PplHit>, miss: &[f32], n: usize) -> Vec<f32> {
     out
 }
 
+/// The echoes of pulse `s` as traced (a pulse without one gets a far end).
+fn pulse_rets(inputs: &VoxelInputs, s: usize, geom: &Geom, params: &VoxelParams, rets: &mut Vec<Ret>) {
+    let shots = inputs.shots;
+    let (o, d) = (shots.origin[s], shots.direction[s]);
+    let first = shots.echo_start[s];
+    rets.clear();
+    for e in first..first + shots.echo_count[s] as usize {
+        let range = shots.echo_range[e];
+        let is_ground = inputs.ground.is_some_and(|g| g[e]);
+        rets.push(Ret {
+            pos: add(&o, &scale(&d, range)),
+            range,
+            bound: !is_ground,
+            intensity: inputs.intensity.map_or(0.0, |v| v[e]),
+            foliage: if is_ground { foliage::EXCLUDED } else { inputs.foliage.map_or(foliage::PLANT, |f| f[e]) },
+        });
+    }
+    if rets.is_empty() {
+        let end = unbounded_end(&o, &d, geom, params.unbounded_range);
+        rets.push(Ret { pos: end, range: norm(&sub(&end, &o)), bound: false, intensity: 0.0, foliage: foliage::EXCLUDED });
+    }
+}
+
+/// The segment of pulse `s` that any of its walks can reach, in voxel
+/// units: from its origin to its farthest echo, or to the end of the
+/// occlusion ray beyond it. `rets` is scratch space.
+pub(crate) fn pulse_extent(inputs: &VoxelInputs, s: usize, geom: &Geom, params: &VoxelParams, rets: &mut Vec<Ret>) -> (Point, Point) {
+    pulse_rets(inputs, s, geom, params, rets);
+    let o = inputs.shots.origin[s];
+    let far = &rets[rets.len() - 1];
+    let ray_vec = sub(&far.pos, &o);
+    let ray_len = norm(&ray_vec);
+    let mut ends: Vec<Point> = rets.iter().map(|r| r.pos).collect();
+    if params.occlusion && far.bound && ray_len >= 1e-6 {
+        let mut diag = 0.0;
+        for k in 0..3 {
+            diag += (geom.shape[k] as f64 * geom.size).powi(2);
+        }
+        ends.push(add(&far.pos, &scale(&ray_vec, 2.0 * diag.sqrt() / ray_len)));
+    }
+    // Every walk lies on the line through the origin; take its span.
+    let dir = if ray_len > 0.0 { scale(&ray_vec, 1.0 / ray_len) } else { inputs.shots.direction[s] };
+    let (mut t0, mut t1) = (0.0f64, 0.0f64);
+    for p in &ends {
+        let v = sub(p, &o);
+        let t = v[0] * dir[0] + v[1] * dir[1] + v[2] * dir[2];
+        t0 = t0.min(t);
+        t1 = t1.max(t);
+    }
+    (geom.to_vox(&add(&o, &scale(&dir, t0))), geom.to_vox(&add(&o, &scale(&dir, t1))))
+}
+
+/// Reusable per-pulse buffers.
+#[derive(Default)]
+pub(crate) struct Scratch {
+    pub rets: Vec<Ret>,
+    echo_w: Vec<f32>,
+    seg_w: Vec<f32>,
+}
+
 /// Accumulators for one grid, filled by any number of [`Engine::add`] calls.
 pub(crate) struct Engine {
     pub geom: Geom,
     pub params: VoxelParams,
+    /// Only this box of the grid is accumulated.
+    window: Option<Window>,
     acc: Accum,
     hits: Vec<PplHit>,
     ppl: bool,
@@ -571,22 +723,33 @@ pub(crate) struct Engine {
 
 impl Engine {
     pub fn new(params: &VoxelParams, geom: Geom) -> Self {
-        let n = geom.shape[0] * geom.shape[1] * geom.shape[2];
+        Self::build(params, geom, None)
+    }
+
+    /// Accumulators for the voxels of `window` only; pulses are traced
+    /// through the whole of `geom` so that the box gets exactly what a
+    /// whole-grid trace would give it.
+    pub fn new_window(params: &VoxelParams, geom: Geom, window: Window) -> Self {
+        Self::build(params, geom, Some(window))
+    }
+
+    fn build(params: &VoxelParams, geom: Geom, window: Option<Window>) -> Self {
+        let n = window.map_or(geom.shape[0] * geom.shape[1] * geom.shape[2], |w| w.n_voxels());
         let ppl = params.attenuation.contains(&Attenuation::Ppl);
         let n_sub = params.subvoxel_split.pow(3);
         let acc = Accum {
             cells: std::iter::repeat_with(|| Cell { f: std::array::from_fn(|_| AtomicU64::new(0)), i: std::array::from_fn(|_| AtomicI32::new(0)) }).take(n).collect(),
             sub: std::iter::repeat_with(|| AtomicU8::new(0)).take(n * n_sub).collect(),
         };
-        Engine { geom, params: params.clone(), acc, hits: Vec::new(), ppl }
+        Engine { geom, params: params.clone(), window, acc, hits: Vec::new(), ppl }
     }
 
-    pub fn add(&mut self, inputs: &VoxelInputs, peaks: Option<&[f64]>, ground: Option<&[f64]>) {
+    fn tracer<'a>(&'a self, peaks: Option<&'a [f64]>, ground: Option<&'a [f64]>) -> Tracer<'a> {
         let params = &self.params;
-        let geom = &self.geom;
         let beam = params.beam.unwrap_or(super::BeamSpec { diameter: 0.0, divergence: 0.0 });
-        let tracer = Tracer {
-            geom,
+        Tracer {
+            geom: &self.geom,
+            window: self.window.as_ref(),
             acc: &self.acc,
             params,
             peaks,
@@ -595,12 +758,16 @@ impl Engine {
             beam_diameter: beam.diameter,
             lambda1: if params.average_leaf_area > 0.0 { 0.25 * params.average_leaf_area / params.voxel_size.powi(3) } else { 0.0 },
             ppl: self.ppl,
-        };
+        }
+    }
+
+    pub fn add(&mut self, inputs: &VoxelInputs, peaks: Option<&[f64]>, ground: Option<&[f64]>) {
+        let params = &self.params;
+        let geom = &self.geom;
+        let tracer = self.tracer(peaks, ground);
         let shots = inputs.shots;
         struct Local {
-            rets: Vec<Ret>,
-            echo_w: Vec<f32>,
-            seg_w: Vec<f32>,
+            scratch: Scratch,
             hits: Vec<PplHit>,
             done: u64,
         }
@@ -609,27 +776,11 @@ impl Engine {
             .into_par_iter()
             .with_min_len(256)
             .fold(
-                || Local { rets: Vec::new(), echo_w: Vec::new(), seg_w: Vec::new(), hits: Vec::new(), done: 0 },
+                || Local { scratch: Scratch::default(), hits: Vec::new(), done: 0 },
                 |mut l, s| {
-                    let (o, d) = (shots.origin[s], shots.direction[s]);
-                    let first = shots.echo_start[s];
-                    l.rets.clear();
-                    for e in first..first + shots.echo_count[s] as usize {
-                        let range = shots.echo_range[e];
-                        let is_ground = inputs.ground.is_some_and(|g| g[e]);
-                        l.rets.push(Ret {
-                            pos: add(&o, &scale(&d, range)),
-                            range,
-                            bound: !is_ground,
-                            intensity: inputs.intensity.map_or(0.0, |v| v[e]),
-                            foliage: if is_ground { foliage::EXCLUDED } else { inputs.foliage.map_or(foliage::PLANT, |f| f[e]) },
-                        });
-                    }
-                    if l.rets.is_empty() {
-                        let end = unbounded_end(&o, &d, geom, params.unbounded_range);
-                        l.rets.push(Ret { pos: end, range: norm(&sub(&end, &o)), bound: false, intensity: 0.0, foliage: foliage::EXCLUDED });
-                    }
-                    tracer.process(&o, &l.rets, &mut l.echo_w, &mut l.seg_w, &mut l.hits);
+                    let sc = &mut l.scratch;
+                    pulse_rets(inputs, s, geom, params, &mut sc.rets);
+                    tracer.process(&shots.origin[s], &sc.rets, &mut sc.echo_w, &mut sc.seg_w, &mut l.hits);
                     l.done += 1;
                     if l.done % 4096 == 0 {
                         task.inc(4096);
@@ -645,8 +796,29 @@ impl Engine {
         self.hits.append(&mut hits);
     }
 
+    /// Trace the pulses `pulses` of `inputs` one after another, in the order given.
+    pub fn add_sequential(&mut self, inputs: &VoxelInputs, pulses: &[u32], peaks: Option<&[f64]>, ground: Option<&[f64]>, scratch: &mut Scratch) {
+        let tracer = self.tracer(peaks, ground);
+        let mut hits = Vec::new();
+        for &s in pulses {
+            let s = s as usize;
+            pulse_rets(inputs, s, &self.geom, &self.params, &mut scratch.rets);
+            tracer.process(&inputs.shots.origin[s], &scratch.rets, &mut scratch.echo_w, &mut scratch.seg_w, &mut hits);
+        }
+        self.hits.append(&mut hits);
+    }
+
+    /// Voxels held.
+    pub fn n_cells(&self) -> usize {
+        self.acc.cells.len()
+    }
+
     pub fn finish(self) -> RayVoxels {
-        let n = self.geom.shape[0] * self.geom.shape[1] * self.geom.shape[2];
+        let (origin, shape) = match self.window {
+            None => (self.geom.origin, self.geom.shape),
+            Some(w) => (std::array::from_fn(|k| self.geom.origin[k] + w.lo[k] as f64 * self.geom.size), w.shape),
+        };
+        let n = shape[0] * shape[1] * shape[2];
         let n_sub = self.params.subvoxel_split.pow(3);
         // Unused groups stay empty (they read as 0).
         let cells = &self.acc.cells;
@@ -660,9 +832,9 @@ impl Engine {
         let i: Vec<Vec<i32>> = I::ALL.iter().map(|fld| cells.par_iter().map(|c| c.i[*fld as usize].load(Relaxed)).collect()).collect();
         let ppl_lambda = self.ppl.then(|| solve_ppl(self.hits, &f[F::PplMissWl as usize], n));
         RayVoxels {
-            origin: self.geom.origin,
+            origin,
             voxel_size: self.geom.size,
-            shape: self.geom.shape,
+            shape,
             params: self.params,
             has_leaf: false,
             has_wood: false,

@@ -65,6 +65,12 @@ fn percentile(v: &mut [f64], q: f64) -> f64 {
 /// order.
 #[allow(clippy::too_many_arguments)]
 pub fn tree_sampling(points: &[Point], labels: &[i64], origin: Point, voxel_size: f64, shape: [usize; 3], state: &[u8], beams: &[f64], min_beams: f64, above: f64) -> Vec<TreeSampling> {
+    tree_sampling_with(points, labels, origin, voxel_size, shape, state, &|i| beams[i], min_beams, above)
+}
+
+/// [`tree_sampling`] with the pulse count of voxel `i` given by `beams(i)`.
+#[allow(clippy::too_many_arguments)]
+pub fn tree_sampling_with(points: &[Point], labels: &[i64], origin: Point, voxel_size: f64, shape: [usize; 3], state: &[u8], beams: &(dyn Fn(usize) -> f64 + Sync), min_beams: f64, above: f64) -> Vec<TreeSampling> {
     let [nx, ny, nz] = shape;
     let mut by_tree: HashMap<i64, Vec<usize>> = HashMap::new();
     for (i, &l) in labels.iter().enumerate() {
@@ -124,11 +130,12 @@ pub fn tree_sampling(points: &[Point], labels: &[i64], origin: Point, voxel_size
                         match state[idx] {
                             EMPTY | FILLED => {
                                 obs += 1;
-                                quarter[q].push(beams[idx]);
-                                if beams[idx] >= min_beams {
+                                let b = beams(idx);
+                                quarter[q].push(b);
+                                if b >= min_beams {
                                     well += 1;
                                 }
-                                beam_vals.push(beams[idx]);
+                                beam_vals.push(b);
                             }
                             OCCLUDED => {
                                 occ += 1;

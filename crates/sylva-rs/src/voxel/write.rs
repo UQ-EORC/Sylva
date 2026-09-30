@@ -21,7 +21,7 @@ pub struct WriteOptions {
     pub filled_only: bool,
 }
 
-type Column<'a> = (String, Box<dyn Fn(usize) -> String + Sync + 'a>);
+pub(crate) type Column<'a> = (String, Box<dyn Fn(usize) -> String + Sync + 'a>);
 
 fn real(v: f64) -> String {
     if v.is_nan() {
@@ -34,7 +34,7 @@ fn real(v: f64) -> String {
 
 impl RayVoxels {
     /// Output columns after the voxel indices, in rayvoxel's order.
-    fn columns(&self) -> Vec<Column<'_>> {
+    pub(crate) fn columns(&self) -> Vec<Column<'_>> {
         let mut cols: Vec<Column> = Vec::new();
         macro_rules! col {
             ($name:expr, $f:expr) => {
@@ -122,7 +122,9 @@ impl RayVoxels {
         cols
     }
 
-    fn write_rows(&self, out: &mut impl Write, cols: &[Column], opts: WriteOptions, with_xyz: bool) -> Result<usize> {
+    /// Rows of the voxels `opts` keeps; `offset` is added to the printed
+    /// indices (for a part of a larger grid).
+    pub(crate) fn write_rows(&self, out: &mut impl Write, cols: &[Column], opts: WriteOptions, with_xyz: bool, offset: [usize; 3]) -> Result<usize> {
         use rayon::prelude::*;
         let keep = |i: usize| match self.state(i) {
             VoxelState::Filled => true,
@@ -138,6 +140,7 @@ impl RayVoxels {
                 .filter(|&i| keep(i))
                 .map(|i| {
                     let [a, b, c] = self.unravel(i);
+                    let [a, b, c] = [a + offset[0], b + offset[1], c + offset[2]];
                     let mut line = format!("{a} {b} {c}");
                     if with_xyz {
                         let p = self.center(i);
@@ -165,6 +168,15 @@ impl RayVoxels {
         let file = std::fs::File::create(path).map_err(|e| Error::file(path, e.to_string()))?;
         let mut out = BufWriter::new(file);
         let cols = self.columns();
+        self.vox_header(&mut out, &cols, self.origin, self.shape)?;
+        let n = self.write_rows(&mut out, &cols, opts, false, [0; 3])?;
+        out.flush()?;
+        Ok(n)
+    }
+
+    /// The `.vox` header of a grid at `origin` of `shape` voxels with this
+    /// grid's options and columns.
+    pub(crate) fn vox_header(&self, out: &mut impl Write, cols: &[Column], origin: crate::Point, shape: [usize; 3]) -> Result<()> {
         let g_desc = if self.predominant_tree.is_none() {
             format!("analytic LAD ({})", self.params.lad.name())
         } else {
@@ -181,19 +193,24 @@ impl RayVoxels {
         let s = self.voxel_size;
         writeln!(out, "VOXEL SPACE")?;
         writeln!(out, "#g_correction:{g_desc}")?;
-        writeln!(out, "#max_corner:{:.6} {:.6} {:.6}", self.origin[0] + self.shape[0] as f64 * s, self.origin[1] + self.shape[1] as f64 * s, self.origin[2] + self.shape[2] as f64 * s)?;
-        writeln!(out, "#min_corner:{} {} {}", real(self.origin[0]), real(self.origin[1]), real(self.origin[2]))?;
+        writeln!(out, "#max_corner:{:.6} {:.6} {:.6}", origin[0] + shape[0] as f64 * s, origin[1] + shape[1] as f64 * s, origin[2] + shape[2] as f64 * s)?;
+        writeln!(out, "#min_corner:{} {} {}", real(origin[0]), real(origin[1]), real(origin[2]))?;
         writeln!(out, "#res:{s:.6} {s:.6} {s:.6}")?;
-        writeln!(out, "#split:{} {} {}", self.shape[0], self.shape[1], self.shape[2])?;
+        writeln!(out, "#split:{} {} {}", shape[0], shape[1], shape[2])?;
         if self.params.subvoxel_split > 0 {
             writeln!(out, "#subvoxel_min_beams:{}", self.params.subvoxel_min_beams)?;
             writeln!(out, "#subvoxel_split:{}", self.params.subvoxel_split)?;
         }
         let names: Vec<&str> = cols.iter().map(|c| c.0.as_str()).collect();
         writeln!(out, "i j k {}", names.join(" "))?;
-        let n = self.write_rows(&mut out, &cols, opts, false)?;
-        out.flush()?;
-        Ok(n)
+        Ok(())
+    }
+
+    /// The header line of the text table.
+    pub(crate) fn text_header(&self, out: &mut impl Write, cols: &[Column]) -> Result<()> {
+        let names: Vec<&str> = cols.iter().map(|c| c.0.as_str()).collect();
+        writeln!(out, "i j k x y z {}", names.join(" "))?;
+        Ok(())
     }
 
     /// Write a space-delimited table with voxel centres. Returns the number of voxels written.
@@ -202,9 +219,8 @@ impl RayVoxels {
         let file = std::fs::File::create(path).map_err(|e| Error::file(path, e.to_string()))?;
         let mut out = BufWriter::new(file);
         let cols = self.columns();
-        let names: Vec<&str> = cols.iter().map(|c| c.0.as_str()).collect();
-        writeln!(out, "i j k x y z {}", names.join(" "))?;
-        let n = self.write_rows(&mut out, &cols, opts, true)?;
+        self.text_header(&mut out, &cols)?;
+        let n = self.write_rows(&mut out, &cols, opts, true, [0; 3])?;
         out.flush()?;
         Ok(n)
     }
