@@ -291,8 +291,8 @@ Before this, the same trees at 5 cm had one tree at **+418 %** and at 8 cm one
 at −99 %. The savanna tree above goes from 1.10 m DBH and 9.76 m³ to 0.343 m
 and 2.29 m³, against 0.338 m and 1.88 m³ at full resolution.
 
-It is still better to fit on the full-resolution points — the bias is
-smallest there — but a thinned cloud now degrades gently instead of
+It is still better to fit on the full-resolution points, where the bias is
+smallest, but a thinned cloud now degrades gently instead of
 inventing stems. `build_plot` warns when the median model was hardly fitted
 at all, and `measured_length` (with `measured_volume`) in `PlotQSMs.table`
 reports it per tree: values near 1 mean the cylinders follow the points,

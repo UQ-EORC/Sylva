@@ -38,8 +38,8 @@ centimetres a leaf is as planar as bark.
 
 `method="passage"` is the QSM's own wood filter (path passage plus local
 anisotropy, here with a second 10 cm scale). It keeps nearly all the wood and
-half the leaves with it, which is what a QSM wants — a cylinder fit suffers
-more from missing wood than from stray leaves — and the wrong trade for leaf
+half the leaves with it, which is what a QSM wants (a cylinder fit suffers
+more from missing wood than from stray leaves) and the wrong trade for leaf
 work:
 
 | 30 manually labelled tropical trees (Van den Broeck et al. 2025) | accuracy | mIoU | wood recall / precision | leaf recall / precision |
@@ -70,8 +70,8 @@ types.
 in the points: thinned to one point per cube of side `res`, a surface with
 normal *n* crosses (|nx| + |ny| + |nz|) / res² cubes per unit area, so each
 survivor stands for res² / (|nx| + |ny| + |nz|). `res` defaults to 3.5 × the
-median point spacing. This is a box count with no plateau — smaller cubes
-undercount, larger ones overcount at leaf edges — and it only sees foliage the
+median point spacing. This is a box count with no plateau (smaller cubes
+undercount, larger ones overcount at leaf edges), and it only sees foliage the
 scanner saw. With pulse data prefer a ray-traced grid,
 `LeafAreaGrid.from_voxels(grid, field)`; with a known total (litterfall,
 allometry, hemispherical photos) keep the spatial pattern and rescale:
@@ -87,9 +87,9 @@ the non-intersecting insertion of [Åkerblom et al. (2018)](../references.md).
 
 ## Leaf shape and size
 
-The blade is a `LeafShape`: a mesh in unit leaf space — `(along, across, up)`
+The blade is a `LeafShape`: a mesh in unit leaf space (`(along, across, up)`
 with the base at the origin, the tip at `along = 1` and the greatest width 1
-across — plus the length and width it is placed at. The default is the
+across), plus the length and width it is placed at. The default is the
 six-vertex outline at 8 × 4 cm; `shape.area` is the area of one leaf, as is
 `single_leaf_area(length, width)`.
 
@@ -104,7 +104,7 @@ leaves.default_leaf()                              # what is in force
 ```
 
 A custom blade takes any triangle mesh of a single leaf, so a scanned or
-modelled one — lobed, curled, or several leaflets — can be used instead. It
+modelled one (lobed, curled, or several leaflets) can be used instead. It
 is read with the base at the smallest *x*, the tip along +*x*, the blade
 across ±*y* and any curl in *z*; `along` then scales with the length and
 `across` and `up` with the width. A mesh drawn in metres keeps the size it
@@ -129,7 +129,7 @@ without occlusion (so the estimators are isolated from visibility):
 
 | | result |
 |---|---|
-| mean leaf inclination | within 0.5° of the mesh (48–59°), histogram overlap 0.95, correct de Wit type, *G* within 0.01 — and the same from the classified leaf points as from the true ones |
+| mean leaf inclination | within 0.5° of the mesh (48–59°), histogram overlap 0.95, correct de Wit type, *G* within 0.01, and the same from the classified leaf points as from the true ones |
 | point-based leaf area, true leaf points | 0.9–1.15 × the mesh area from 5 000 to 80 000 points per m² |
 | leaf / wood labels (graph-based) | accuracy 0.81–0.96; 96–99 % of leaf points found at 80–98 % precision; wood precision 0.86–0.97, wood recall 0.24–0.94 by point count (most wood *surface* in these trees is millimetre twigs inside the foliage, which end up as leaf) |
 | leaf area after classification | 0.95–1.16 × the mesh area |

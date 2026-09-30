@@ -13,7 +13,7 @@ algorithm for tree structure models. *Interface Focus*, *8*(2), 20170045.
 In Sylva: the collision-free leaf insertion that `leaves.add_leaves` does not attempt.
 
 Amanatides, J., & Woo, A. (1987). A fast voxel traversal algorithm for ray
-tracing. In *Eurographics 1987—Technical papers* (pp. 3–10). The Eurographics
+tracing. In *Eurographics 1987: Technical papers* (pp. 3–10). The Eurographics
 Association. <https://doi.org/10.2312/egtp.19871000>
 In Sylva: the voxel walk of `canopy.density_grid` and [`sylva.voxels`](api/voxels.md).
 
@@ -127,7 +127,7 @@ multiple-return pulses.
 
 Gibson, S. F. F. (1998). Constrained elastic surface nets: Generating smooth
 surfaces from binary segmented data. In *Medical Image Computing and
-Computer-Assisted Intervention — MICCAI'98* (pp. 888–898). Springer.
+Computer-Assisted Intervention: MICCAI'98* (pp. 888–898). Springer.
 <https://doi.org/10.1007/BFb0056277>
 In Sylva: the surface nets that close `qsm.buttress_mesh`.
 
@@ -293,7 +293,7 @@ Autonomous Systems*, *56*(11), 927–941.
 In Sylva: `filters.statistical_outlier_removal`.
 
 Shinozaki, K., Yoda, K., Hozumi, K., & Kira, T. (1964). A quantitative analysis
-of plant form—the pipe model theory: I. Basic analyses. *Japanese Journal of
+of plant form, the pipe model theory: I. Basic analyses. *Japanese Journal of
 Ecology*, *14*(3), 97–105. <https://doi.org/10.18960/seitai.14.3_97>
 In Sylva: the pipe model that sets unmeasured branch radii in `qsm.build_qsm`.
 
@@ -542,7 +542,7 @@ LEAF instruments, the reference for the [canopy
 benchmark](benchmarks/canopy.md): <https://github.com/armstonj/pylidar-tls-canopy>.
 
 Tian, Z., & Li, S. (2022). *Graph-based leaf–wood separation method for
-individual trees using terrestrial lidar point clouds: GBSeparation—a python
+individual trees using terrestrial lidar point clouds: GBSeparation, a python
 package* [Computer software]. Zenodo. <https://doi.org/10.5281/zenodo.6837613>
 In Sylva: the reference implementation (CC BY 4.0) that
 `leaves.classify_leaf_wood(method="gbs")` translates into Rust.

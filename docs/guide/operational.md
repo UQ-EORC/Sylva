@@ -234,7 +234,7 @@ limits.set_budget(None)                  # back to reading the system
 
 Checked so far: ray-traced voxel grids, neighbour graphs (tree segmentation
 and QSM skeletons) and the buttress raster. It is a guard against the obvious
-mistake rather than a guarantee — nothing tracks what is already held, and a
+mistake rather than a guarantee: nothing tracks what is already held, and a
 machine can still be pushed over by many smaller pieces. Where the check
 cannot be reached in time (a core routine with no way to report), the same
 message is raised as an error rather than the process dying silently.

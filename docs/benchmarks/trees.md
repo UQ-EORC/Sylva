@@ -19,8 +19,8 @@ reference coverage are ignored. raycloudtools' `rayextract trees`
 ## Scored the way the benchmark scores
 
 [Cherlet et al. (2026)](../references.md) evaluate only the trees that lie at least 90 % inside the test
-sub-plot — 128, 181, 89 and 150 of them, which is what the `in_plot_th0.90`
-folders hold — and a prediction whose best overlap is with an *edge* tree is
+sub-plot (128, 181, 89 and 150 of them, which is what the `in_plot_th0.90`
+folders hold), and a prediction whose best overlap is with an *edge* tree is
 neglected rather than counted against precision. Matching is Hungarian on the
 IoU matrix, true positive at IoU ≥ 0.5. Scoring against every labelled
 instance instead, and calling every edge-tree hit a false positive, makes the
@@ -74,7 +74,7 @@ and set the second to match whatever your inventory calls a tree.
 `seed_radius` of its stem at `seed_height`; at 0.5 m those discs overlap
 wherever stems are close, and the stronger seed takes the other's crown. Of
 the 102 Wytham trees missed before, 79 had been swallowed by a neighbour
-whose stem stood a median of **0.3 m away** — coppice stools and low forks,
+whose stem stood a median of **0.3 m away**: coppice stools and low forks,
 not distant trees. Halving `seed_radius` to 0.25 m and `merge_radius` to
 0.2 m finds 22 more trees (130 → 152), lifts mean IoU 0.83 → 0.85 and
 precision 0.88 → 0.90, and costs Litchfield nothing (135 → 136).
@@ -95,7 +95,7 @@ Other things tried, none of which helped: a denser graph (`k=20`, Wytham
 136), gravity 0.3 (140), wood costs (142), dropping the height prior (139 at
 Wytham, 61 at Ofental), a wider height-prior radius (62 at Ofental), no angle
 penalty (48 at Ofental, much worse), `max_edge` 0.5 (no change), and no
-pruning at all (142) — so the limit is not the candidate list.
+pruning at all (142), so the limit is not the candidate list.
 
 **Where the remaining loss is.** Robson and Ofental are still the hard ones,
 and for different reasons. At Ofental 41 of the 54 missed trees are absorbed
@@ -107,8 +107,8 @@ against 655 candidates, so it over-detects in the understorey as well as
 merging. Both point at the cost model rather than at detection or pruning.
 
 Of Robson's 212 spurious trees, **123 sit almost entirely (> 80 % of their
-points) on what the reference calls ground** — rainforest understorey, median
-6.2 m tall — and only 40 are fragments of a labelled tree. The same tension
+points) on what the reference calls ground** (rainforest understorey, median
+6.2 m tall), and only 40 are fragments of a labelled tree. The same tension
 as the savanna shrubs: real vegetation the benchmark does not count as a
 tree. `prune_trees(min_quality_short=0.15)` trims about a quarter of them for
 two found trees.
@@ -116,7 +116,7 @@ two found trees.
 Two ideas from other systems were implemented and measured, and both made
 things worse on this data:
 
-- **A lateral-offset prior** — raycloudtools multiplies every edge by
+- **A lateral-offset prior.** raycloudtools multiplies every edge by
   `1 + g·(horizontal offset from the seed)²`, which is how it stops a
   dominant reaching sideways into a neighbour. Sylva has it as `gravity`.
   Ofental barely moves (F1 0.667 → 0.674 at g = 1, with mean IoU falling
@@ -125,7 +125,7 @@ things worse on this data:
   normalised by canopy height; here it stacks on `length⁴`, so a 10 m-wide
   rainforest crown pays about ×31 on every edge.
 - **Edge weight as the gap between clusters rather than the distance
-  travelled** — TLS2trees' ([Wilkes et al. 2023](../references.md)) documented fix for a path that prefers a
+  travelled.** This is TLS2trees' ([Wilkes et al. 2023](../references.md)) documented fix for a path that prefers a
   suppressed tree's base. Grouping points into 0.25 m cubes and pricing each
   edge by the closest approach between two groups gives Ofental F1 0.667 →
   0.158 and Robson 0.521 → 0.150. The reason is instructive: with gap
