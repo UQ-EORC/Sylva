@@ -45,7 +45,8 @@ def _xyz(points) -> np.ndarray:
     return np.ascontiguousarray(points.xyz if isinstance(points, PointCloud) else points, dtype=float)
 
 
-def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str = "gbs", **wood_params) -> np.ndarray:
+def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str = "gbs",
+                       return_scores: bool = False, **wood_params):
     """Wood (``True``) / leaf (``False``) for every point of one tree.
 
     ``method="gbs"`` (default) is the graph-based separation of Tian and Li
@@ -71,6 +72,18 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
     ``wood_params`` are that filter's options (``threshold`` is passed as
     ``high_threshold``).
 
+    ``return_scores=True`` adds a wood confidence in [0, 1] per point, a
+    weight for :func:`sylva.qsm.build_qsm` (``weights=``) and
+    :func:`sylva.qsm.build_plot` (``wood=``). For ``"passage"`` it is 1
+    where the filter keeps the point and 0.4 times the point's anisotropy
+    (planarity + linearity) where it drops it: dropped points still count a
+    little towards a circle but are never confident wood. For ``"gbs"`` it is
+    half the label plus half the share of the shell scales (``intervals``) at
+    which the point's piece was classified wood: 1 for a piece that is
+    cylindrical or linear at every scale, 0.5 for a point that is wood only
+    by lying on a path or next to wood, 0 for a leaf. The labels are
+    unchanged.
+
     Parameters
     ----------
     cloud
@@ -80,6 +93,8 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
         the label of its nearest thinned point. 0 uses every point.
     method : {"gbs", "passage"}
         Classifier; see above.
+    return_scores
+        Also return the wood confidence per point (see above).
     **wood_params
         For ``"gbs"``: ``intervals`` (shell thicknesses, m), ``max_angle``
         (rad), ``linearity`` [0.9], ``circle_error`` [0.2, relative to the
@@ -89,8 +104,9 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
 
     Returns
     -------
-    numpy.ndarray
-        Boolean per input point, True for wood.
+    numpy.ndarray or tuple
+        Boolean per input point, True for wood; with ``return_scores``, the
+        tuple ``(labels, confidence)``, the confidence a float per point.
 
     Raises
     ------
@@ -103,11 +119,17 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
     """
     if method == "gbs":
         # Shell sizes follow the tree (the authors' two settings, switched on height).
+        if return_scores:
+            mask, confidence, _ = _core.classify_leaf_wood_gbs_scores(_xyz(cloud), float(voxel_size), **wood_params)
+            return mask, confidence
         return _core.classify_leaf_wood_gbs(_xyz(cloud), float(voxel_size), **wood_params)
     if method != "passage":
         raise ValueError("method must be 'passage' or 'gbs'")
     if "threshold" in wood_params:
         wood_params["high_threshold"] = wood_params.pop("threshold")
+    if return_scores:
+        mask, confidence, _, _ = _core.classify_leaf_wood_scores(_xyz(cloud), float(voxel_size), **wood_params)
+        return mask, confidence
     return _core.classify_leaf_wood(_xyz(cloud), float(voxel_size), **wood_params)
 
 

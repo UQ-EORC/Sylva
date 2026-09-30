@@ -233,13 +233,14 @@ fn qsm_params_from_py(d: &Bound<'_, PyDict>) -> PyResult<QsmParams> {
             $(p.$f = d.get_item(stringify!($f))?.ok_or_else(|| PyValueError::new_err(concat!("missing QSM setting ", stringify!($f))))?.extract()?;)*
         };
     }
-    take!(k, max_edge, bin_length, min_points, ransac_threshold, max_radius, taper_limit, max_rmse, smooth_steps, apex_radius, min_arc_deg, min_inlier_fraction, prune_points, fit_min_points, crop_length, butt_height, relative_tolerance, base_radius, allometry_tolerance, stem_radius_cap, buttress_equivalent_area, buttress_max_inlier_fraction, pipe_slack, branch_min_inlier_fraction, spacing_scale, radius_power, power_above_spacing, sensor_noise, cluster_eps, centre_fit_points, radius_smooth_steps, butt_swell, butt_vertical_run, butt_max_lean_deg, chain_max_d, fourier_min_radius);
+    take!(k, max_edge, bin_length, min_points, ransac_threshold, max_radius, taper_limit, max_rmse, smooth_steps, apex_radius, min_arc_deg, min_inlier_fraction, prune_points, fit_min_points, crop_length, butt_height, relative_tolerance, base_radius, allometry_tolerance, stem_radius_cap, buttress_equivalent_area, buttress_max_inlier_fraction, pipe_slack, branch_min_inlier_fraction, spacing_scale, radius_power, power_above_spacing, sensor_noise, cluster_eps, centre_fit_points, radius_smooth_steps, butt_swell, butt_vertical_run, butt_max_lean_deg, chain_max_d, fourier_min_radius, min_weight, min_mean_weight);
     Ok(p)
 }
 
 #[pyfunction]
+#[pyo3(signature = (xyz, labels, heights, stem_ids, stem_xy, stem_dbh, voxel_size, wood, buttress, min_points, params, wood_labels=None, wood_weights=None))]
 #[allow(clippy::too_many_arguments)]
-fn qsm_build_plot<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, labels: PyReadonlyArray1<i64>, heights: Option<PyReadonlyArray1<f64>>, stem_ids: Vec<i64>, stem_xy: Vec<(f64, f64)>, stem_dbh: Vec<f64>, voxel_size: f64, wood: bool, buttress: bool, min_points: f64, params: &Bound<'_, PyDict>) -> PyResult<Bound<'py, PyDict>> {
+fn qsm_build_plot<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, labels: PyReadonlyArray1<i64>, heights: Option<PyReadonlyArray1<f64>>, stem_ids: Vec<i64>, stem_xy: Vec<(f64, f64)>, stem_dbh: Vec<f64>, voxel_size: f64, wood: bool, buttress: bool, min_points: f64, params: &Bound<'_, PyDict>, wood_labels: Option<PyReadonlyArray1<bool>>, wood_weights: Option<PyReadonlyArray1<f64>>) -> PyResult<Bound<'py, PyDict>> {
     let pts = xyz_from_py(xyz)?;
     let labels = labels.as_array().to_vec();
     let h = heights.map(|h| h.as_array().to_vec());
@@ -248,7 +249,14 @@ fn qsm_build_plot<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, labels: PyRe
     }
     let stems: Vec<(i64, [f64; 2], f64)> = stem_ids.into_iter().zip(stem_xy).zip(stem_dbh).map(|((t, (x, y)), d)| (t, [x, y], d)).collect();
     let p = PlotParams { voxel_size, wood, buttress, min_points, qsm: qsm_params_from_py(params)? };
-    let r = py.detach(|| plot::build_plot(&pts, &labels, h.as_deref(), &stems, &p)).map_err(err)?;
+    let wood_labels = wood_labels.map(|w| w.as_array().to_vec());
+    let wood_weights = wood_weights.map(|w| w.as_array().to_vec());
+    let given = match (&wood_labels, &wood_weights) {
+        (Some(w), _) => Some(plot::PointWood::Labels(w)),
+        (None, Some(w)) => Some(plot::PointWood::Weights(w)),
+        (None, None) => None,
+    };
+    let r = py.detach(|| plot::build_plot_with(&pts, &labels, h.as_deref(), &stems, &p, given)).map_err(err)?;
     let share = py.detach(|| plot::median_measured_length(r.models.iter().map(|m| m.1.as_slice())));
     let d = PyDict::new(py);
     let models = PyList::empty(py);

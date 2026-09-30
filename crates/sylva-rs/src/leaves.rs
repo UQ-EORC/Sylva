@@ -176,6 +176,56 @@ pub fn classify_leaf_wood_gbs(points: &[Point], voxel_size: f64, params: &crate:
     classify_thinned(points, voxel_size, |thin| crate::qsm::wood::gbs_mask(thin, params))
 }
 
+/// [`classify_leaf_wood`] with the filter's per-point cues
+/// ([`crate::qsm::wood::WoodScores`]), each point taking its nearest thinned
+/// point's values.
+pub fn classify_leaf_wood_scores(points: &[Point], voxel_size: f64, params: &WoodParams) -> crate::qsm::wood::WoodScores {
+    let (thin, near) = thinned(points, voxel_size);
+    let s = crate::qsm::wood::wood_scores(&thin, params);
+    crate::qsm::wood::WoodScores { mask: near.iter().map(|&j| s.mask[j]).collect(), anisotropy: near.iter().map(|&j| s.anisotropy[j]).collect(), passage: near.iter().map(|&j| s.passage[j]).collect() }
+}
+
+/// [`classify_leaf_wood_gbs`] with the share of shell scales at which each
+/// point was wood ([`crate::qsm::wood::gbs_scores`]).
+pub fn classify_leaf_wood_gbs_scores(points: &[Point], voxel_size: f64, params: &crate::qsm::wood::GbsParams) -> (Vec<bool>, Vec<f64>) {
+    let (thin, near) = thinned(points, voxel_size);
+    let (mask, votes) = crate::qsm::wood::gbs_scores(&thin, params);
+    (near.iter().map(|&j| mask[j]).collect(), near.iter().map(|&j| votes[j]).collect())
+}
+
+/// Wood confidence in `[0, 1]` from the passage filter's cues: 1 where the
+/// filter keeps the point, and `DROPPED_WEIGHT` times the anisotropy where it
+/// drops it, so a dropped point still counts a little towards a circle,
+/// in proportion to how planar or linear its neighbourhood is, but is
+/// never confident wood (below 0.5).
+pub fn passage_confidence(s: &crate::qsm::wood::WoodScores) -> Vec<f64> {
+    s.mask.iter().zip(&s.anisotropy).map(|(&m, &a)| if m { 1.0 } else { DROPPED_WEIGHT * a.clamp(0.0, 1.0) }).collect()
+}
+
+/// Largest weight [`passage_confidence`] gives a point the filter drops.
+pub const DROPPED_WEIGHT: f64 = 0.4;
+
+/// Wood confidence in `[0, 1]` from the graph-based labels: half for the
+/// label, half for the share of shell scales at which the point's piece was
+/// wood. A point that is wood at every scale scores 1, one that is wood only
+/// by being on a path or next to wood 0.5, and a leaf 0.
+pub fn gbs_confidence(mask: &[bool], votes: &[f64]) -> Vec<f64> {
+    mask.iter().zip(votes).map(|(&m, &v)| (0.5 * m as u8 as f64 + 0.5 * v).clamp(0.0, 1.0)).collect()
+}
+
+/// The cloud thinned to `voxel_size` (every point if not positive) and each
+/// input point's nearest thinned point.
+fn thinned(points: &[Point], voxel_size: f64) -> (Vec<Point>, Vec<usize>) {
+    if points.is_empty() || voxel_size.is_nan() || voxel_size <= 0.0 {
+        return (points.to_vec(), (0..points.len()).collect());
+    }
+    let keep = voxel_downsample_indices(points, voxel_size);
+    let thin: Vec<Point> = keep.iter().map(|&i| points[i]).collect();
+    let tree = KdTree::new(&thin);
+    let near = points.par_iter().map(|p| tree.nearest(p).map(|(j, _)| j).unwrap_or(0)).collect();
+    (thin, near)
+}
+
 fn classify_thinned(points: &[Point], voxel_size: f64, classify: impl Fn(&[Point]) -> Vec<bool>) -> Vec<bool> {
     if points.is_empty() {
         return Vec::new();

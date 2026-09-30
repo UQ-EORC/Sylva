@@ -797,7 +797,8 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
               centre_fit_points: int = 100, radius_smooth_steps: int = 15,
               butt_swell: float = 1.1, butt_vertical_run: int = 4,
               butt_max_lean_deg: float = 50.0, chain_max_d: float = 0.1,
-              fourier_min_radius: float = 0.15) -> QSM:
+              fourier_min_radius: float = 0.15, min_weight: float = 0.0,
+              min_mean_weight: float = 0.5, weights=None) -> QSM:
     """Skeletonise then fit cylinders for a single segmented tree.
 
     Skeleton nodes (geodesic bins of ``bin_length``) are Taubin-smoothed and
@@ -896,10 +897,37 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
     fourier_min_radius
         Sections at least this wide (m) and well covered use an
         equivalent-area Fourier contour instead of a circle; 0 disables.
+    min_weight
+        With ``weights``: points with a lower weight are dropped before the
+        graph is built. 0 (default) keeps every point.
+    min_mean_weight
+        With ``weights``: a circle whose inliers have a lower mean weight is
+        not a measurement, and the section takes its radius from the priors.
+    weights
+        Wood weight per point in [0, 1], for example a wood confidence
+        (:func:`sylva.leaves.classify_leaf_wood` with ``return_scores=True``). Every point with at least
+        ``min_weight`` builds the graph and the skeleton, so connectivity is
+        that of the whole tree, but the weights decide each section's radius:
+        RANSAC scores a candidate circle by the summed weight of its inliers,
+        the circle is refitted by weighted least squares, a section needs a
+        summed weight of ``fit_min_points`` to be fitted, its inliers a summed
+        weight of ``min_points`` and a mean weight of ``min_mean_weight``,
+        and the inlier share is a share of weight. The arc and the contour of
+        a section use its confident points (weight at least 0.5), and a
+        cylinder's ``n_points`` counts its confident inliers. Unmeasured leaf
+        segments are pruned by summed weight (``prune_points``). Weights of
+        one everywhere give exactly the unweighted model. None (default) fits
+        every point alike.
 
     Returns
     -------
     QSM
+
+    Raises
+    ------
+    ValueError
+        If ``weights`` does not have one value per point, or holds a value
+        that is NaN or outside [0, 1].
 
     Notes
     -----
@@ -908,6 +936,8 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
     in twigs: about a third of the twig length is recovered, so
     ``measured_length_fraction`` is low even when volume is good.
     """
+    if weights is not None:
+        weights = _check_weights(weights, len(cloud))
     d = _core.build_qsm(cloud.xyz, None if base_xy is None else tuple(base_xy), k, max_edge,
                         bin_length, min_points, ransac_threshold, max_radius, taper_limit,
                         max_rmse, smooth_steps, apex_radius, min_arc_deg, min_inlier_fraction,
@@ -916,8 +946,23 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
                         buttress_equivalent_area, buttress_max_inlier_fraction, pipe_slack,
                         branch_min_inlier_fraction, spacing_scale, radius_power, power_above_spacing, sensor_noise,
                         cluster_eps, centre_fit_points,
-                        radius_smooth_steps, butt_swell, butt_vertical_run, butt_max_lean_deg, chain_max_d, fourier_min_radius)
+                        radius_smooth_steps, butt_swell, butt_vertical_run, butt_max_lean_deg, chain_max_d, fourier_min_radius,
+                        min_weight, min_mean_weight, weights=weights)
     return QSM(d["cylinders"])
+
+
+def _check_weights(weights, n: int, what: str = "weights") -> np.ndarray:
+    """Per-point weights as a float array, checked: one per point, in [0, 1]."""
+    w = np.asarray(weights)
+    if w.dtype.kind not in "biuf":
+        raise ValueError(f"{what} must be numbers in [0, 1]")
+    w = np.ascontiguousarray(w, dtype=float)
+    if w.ndim != 1 or len(w) != n:
+        raise ValueError(f"{what} must have one value per point ({w.size} for {n} points)")
+    bad = ~((w >= 0.0) & (w <= 1.0))
+    if bad.any():
+        raise ValueError(f"{what} must be finite and in [0, 1] (point {int(np.argmax(bad))} has {w[bad][0]})")
+    return w
 
 
 @dataclass
@@ -1062,7 +1107,7 @@ class PlotQSMs:
 
 
 def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
-               wood: bool = True, buttress: bool = False, min_points: int = 2000,
+               wood=True, buttress: bool = False, min_points: int = 2000,
                height_attr: str = "height", **params) -> PlotQSMs:
     """A QSM for every tree of a segmented plot.
 
@@ -1088,9 +1133,19 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
         of the tree's own points between 0.5 and 1.5 m.
     voxel_size
         Thin each tree to this spacing first (m); 0 keeps every point.
-    wood
-        Run :func:`wood_points` on each tree first. Turn it off for clouds
-        that are wood already.
+    wood : bool, array or str
+        Where each tree's wood comes from. True (default) runs
+        :func:`wood_points` on each tree; False fits every point (clouds that
+        are wood already). A boolean array with one value per point gives the
+        wood directly (True is wood; for instance from
+        :func:`sylva.leaves.classify_leaf_wood`): each tree is fitted on its
+        wood points. A float array of weights in [0, 1] (a wood confidence,
+        ``classify_leaf_wood(..., return_scores=True)``) fits each tree on all its points
+        with those weights (``build_qsm(weights=)``). A string names a cloud
+        attribute: integer or boolean values are labels (1 or True is wood, 0
+        and -1 are not), floating-point values are weights. A tree's wood
+        points are selected before they are thinned; with weights each point
+        kept by the thinning keeps its own weight.
     buttress
         Look for a buttress on each tree (:func:`sylva.trees.detect_buttress`)
         and mesh it, so the volume of a flanged base is not left to the
@@ -1131,6 +1186,7 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
     labels = np.asarray(labels)
     if len(labels) != len(cloud):
         raise ValueError("labels must have one value per point")
+    wood_flag, wood_labels, wood_weights = _plot_wood(cloud, wood)
     if labels.dtype.kind == "f":
         whole = np.isnan(labels) | (labels == np.trunc(labels))
         if not whole.all():
@@ -1143,7 +1199,8 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
                              None if heights is None else np.ascontiguousarray(heights, dtype=float),
                              [int(s.tree_id) for s in stems], [(float(s.x), float(s.y)) for s in stems],
                              [float(getattr(s, "dbh", np.nan)) for s in stems],
-                             float(voxel_size), bool(wood), bool(buttress), float(min_points), qsm_params)
+                             float(voxel_size), wood_flag, bool(buttress), float(min_points), qsm_params,
+                             wood_labels=wood_labels, wood_weights=wood_weights)
     out = PlotQSMs({t: QSM(c) for t, c in d["models"]}, {t: _buttress(b) for t, b in d["buttresses"]},
                    dict(d["skipped"]))
     object.__setattr__(out, "_points", dict(d["points"]))
@@ -1163,14 +1220,41 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
     return out
 
 
+def _plot_wood(cloud: PointCloud, wood):
+    """``build_plot``'s ``wood``: the filter switch, or per-point labels or weights."""
+    if isinstance(wood, (bool, np.bool_)):
+        return bool(wood), None, None
+    if isinstance(wood, str):
+        if wood not in cloud.attrs:
+            raise ValueError(f"no attribute {wood!r} on the cloud (it has {sorted(cloud.attrs)})")
+        values = np.asarray(cloud.attrs[wood])
+        what = f"attribute {wood!r}"
+    else:
+        values = np.asarray(wood)
+        what = "wood"
+    if values.ndim != 1 or len(values) != len(cloud):
+        raise ValueError(f"{what} must have one value per point ({values.size} for {len(cloud)} points)")
+    if values.dtype.kind == "b":
+        return True, np.ascontiguousarray(values), None
+    if values.dtype.kind in "iu":
+        if not np.isin(values, (-1, 0, 1)).all():
+            raise ValueError(f"{what} must hold wood labels 1 (wood), 0 or -1 (not wood)")
+        return True, np.ascontiguousarray(values == 1), None
+    if values.dtype.kind == "f":
+        return True, None, _check_weights(values, len(cloud), what)
+    raise ValueError(f"{what} must be True/False, per-point labels or per-point weights")
+
+
 def _qsm_settings(params: dict) -> dict:
     """Every :func:`build_qsm` setting, its default unless ``params`` sets it."""
     sig = inspect.signature(build_qsm)
     for k in ("cloud", "base_xy"):
         if k in params:
             raise TypeError(f"build_qsm() got multiple values for argument '{k}'")
+    if "weights" in params:
+        raise TypeError("build_plot() takes per-point weights as wood=, not weights=")
     sig.bind(None, **params)  # a TypeError for a setting build_qsm does not take
-    out = {k: p.default for k, p in sig.parameters.items() if k not in ("cloud", "base_xy")}
+    out = {k: p.default for k, p in sig.parameters.items() if k not in ("cloud", "base_xy", "weights")}
     out.update(params)
     return out
 

@@ -91,6 +91,45 @@ fn classify_leaf_wood_gbs<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxe
     Ok(py.detach(|| leaves::classify_leaf_wood_gbs(&p, voxel_size, &params)).into_pyarray(py))
 }
 
+type PassageScores<'py> = (Bound<'py, PyArray1<bool>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>);
+type GbsScores<'py> = (Bound<'py, PyArray1<bool>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>);
+
+/// [`classify_leaf_wood`] with the per-point wood confidence and cues:
+/// `(mask, confidence, anisotropy, passage share)`.
+#[pyfunction]
+#[pyo3(signature = (xyz, voxel_size=0.02, k=20, high_threshold=0.85, medium_threshold=0.75, scale_radius=0.1, graph_k=10, max_edge=1.0, base_height=0.25, target_res=0.2, min_passage=3, assign_dist=0.05, assign_scale=0.0, component_res=0.05, component_min=200, sor_k=50, sor_std=1.0, dilate_dist=0.03, passage=true))]
+#[allow(clippy::too_many_arguments)]
+fn classify_leaf_wood_scores<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, k: usize, high_threshold: f64, medium_threshold: f64, scale_radius: f64, graph_k: usize, max_edge: f64, base_height: f64, target_res: f64, min_passage: usize, assign_dist: f64, assign_scale: f64, component_res: f64, component_min: usize, sor_k: usize, sor_std: f64, dilate_dist: f64, passage: bool) -> PyResult<PassageScores<'py>> {
+    let p = xyz_from_py(xyz)?;
+    let params = qsm::wood::WoodParams { k, high_threshold, medium_threshold, scale_radius, graph_k, max_edge, base_height, target_res, min_passage, assign_dist, assign_scale, component_res, component_min, sor_k, sor_std, dilate_dist, passage };
+    let (s, conf) = py.detach(|| {
+        let s = leaves::classify_leaf_wood_scores(&p, voxel_size, &params);
+        let conf = leaves::passage_confidence(&s);
+        (s, conf)
+    });
+    Ok((s.mask.into_pyarray(py), conf.into_pyarray(py), s.anisotropy.into_pyarray(py), s.passage.into_pyarray(py)))
+}
+
+/// [`classify_leaf_wood_gbs`] with the per-point wood confidence and the
+/// share of shell scales at which each point was wood: `(mask, confidence, votes)`.
+#[pyfunction]
+#[pyo3(signature = (xyz, voxel_size=0.02, graph_k=8, max_edge=1.0, base_height=0.25, intervals=None, max_angle=None, linearity=0.9, circle_error=0.2, min_points=10))]
+#[allow(clippy::too_many_arguments)]
+fn classify_leaf_wood_gbs_scores<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, graph_k: usize, max_edge: f64, base_height: f64, intervals: Option<Vec<f64>>, max_angle: Option<f64>, linearity: f64, circle_error: f64, min_points: usize) -> PyResult<GbsScores<'py>> {
+    let p = xyz_from_py(xyz)?;
+    let base = qsm::wood::GbsParams { graph_k, max_edge, base_height, linearity, circle_error, min_points, ..Default::default() };
+    let params = lm::gbs_params_for(&p, intervals, max_angle, base);
+    if params.intervals.is_empty() || params.intervals.iter().any(|v| v.is_nan() || *v <= 0.0) {
+        return Err(PyValueError::new_err("intervals must be positive"));
+    }
+    let (mask, conf, votes) = py.detach(|| {
+        let (mask, votes) = leaves::classify_leaf_wood_gbs_scores(&p, voxel_size, &params);
+        let conf = leaves::gbs_confidence(&mask, &votes);
+        (mask, conf, votes)
+    });
+    Ok((mask.into_pyarray(py), conf.into_pyarray(py), votes.into_pyarray(py)))
+}
+
 // ------------------------------------------------------------ angles
 
 #[pyfunction]
@@ -307,6 +346,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(classify_leaf_wood, m)?,
         wrap_pyfunction!(classify_leaf_wood_gbs, m)?,
+        wrap_pyfunction!(classify_leaf_wood_scores, m)?,
+        wrap_pyfunction!(classify_leaf_wood_gbs_scores, m)?,
         wrap_pyfunction!(leaf_inclinations, m)?,
         wrap_pyfunction!(leaf_angle_distribution, m)?,
         wrap_pyfunction!(leaf_de_wit, m)?,

@@ -180,6 +180,76 @@ From the command line, on a cloud that carries a `tree_id` attribute (what
 sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/ --meshes meshes/
 ```
 
+## Wood labels and wood weights
+
+`build_plot` finds each tree's wood with `wood_points` unless told otherwise.
+`wood=` also takes the wood per point of the plot, from any classifier or
+from manual labels:
+
+```python
+from sylva import leaves, qsm
+
+# Binary labels: each tree is fitted on its wood points only.
+is_wood = leaves.classify_leaf_wood(cloud, method="gbs")
+plot = qsm.build_plot(cloud, labels, stems, wood=is_wood)
+plot = qsm.build_plot(cloud, labels, stems, wood="wood")       # attribute: 1 wood, 0 / -1 not
+
+# Weights in [0, 1]: each tree is fitted on all its points, weighted.
+_, confidence = leaves.classify_leaf_wood(cloud, method="passage", scale_radius=0.0,
+                                          return_scores=True)
+plot = qsm.build_plot(cloud, labels, stems, wood=confidence)
+model = qsm.build_qsm(cloud[labels == 7], weights=confidence[labels == 7])   # one tree
+```
+
+A classifier that drops points makes a hard decision, and a trunk it misses
+loses its measurements. With `weights=` nothing is dropped (unless it falls
+below `min_weight`): every point builds the graph and the skeleton, and the
+weight enters only where a radius is measured. RANSAC scores a candidate
+circle by the summed weight of its inliers rather than their number, the
+circle is refitted by weighted least squares, a section needs a summed
+weight of `fit_min_points` to be fitted, and a circle whose inliers have a
+mean weight below `min_mean_weight` (0.5) is not a measurement, so the
+section takes its radius from the priors. The arc and the contour of a
+section use its confident points (weight at least 0.5), and a cylinder's
+`n_points` counts its confident inliers. Weights of one everywhere give
+exactly the unweighted model.
+
+`classify_leaf_wood(..., return_scores=True)` gives a confidence to use as the
+weight. For the passage filter it is 1 where the filter keeps the point and
+0.4 times the point's anisotropy where it drops it, so dropped points count a
+little towards a circle but are never confident wood; for the graph-based
+labeller it is half the label plus half the share of the shell scales at
+which the point's piece was wood.
+
+On the destructive-harvest trees (73 of the benchmark's trees with a cloud
+at hand, the same slice DBH and settings for every input; volume bias and
+rRMSE, and per study bias / rRMSE):
+
+| QSM input | bias | rRMSE | CCC | Momo (40) | GdtM (29) | Burt (4) |
+|---|---|---|---|---|---|---|
+| **passage filter (default)** | **−3.4 %** | **22.0 %** | **0.986** | −3.2 / 22.5 % | −4.4 / 23.1 % | +1.5 / 6.7 % |
+| graph-based labels (`wood=` labels) | −6.2 % | 26.6 % | 0.980 | −7.8 / 27.2 % | −4.0 / 28.0 % | −7.3 / 8.5 % |
+| every point, unweighted (`wood=False`) | −3.9 % | 25.6 % | 0.981 | −2.3 / 20.7 % | −7.1 / 32.5 % | +3.2 / 7.5 % |
+| weighted, passage confidence | −4.3 % | 24.6 % | 0.983 | −2.2 / 19.3 % | −8.2 / 31.6 % | +2.4 / 6.6 % |
+| weighted, graph-based confidence | −6.9 % | 25.0 % | 0.982 | −5.2 / 24.2 % | −9.3 / 27.9 % | −6.2 / 7.1 % |
+| weighted, passage keep 1, dropped 0.45 if graph-based wood, else 0.1 | −4.3 % | 24.3 % | 0.983 | −1.9 / 18.6 % | −8.4 / 31.6 % | +2.3 / 6.5 % |
+| passage filter's points, weighted by the graph-based confidence (at least 0.2) | −5.8 % | 22.6 % | 0.985 | −5.6 / 22.7 % | −6.8 / 24.4 % | −1.5 / 5.3 % |
+
+The passage filter stays the default. Weighting all points helps the
+Cameroon trees (Momo, 22.5 to 18.6-19.3 % rRMSE) and costs the leafy
+Peruvian, Guyanese and Indonesian ones (GdtM, 23 to 28-32 %): the points the
+filter drops rejoin the graph and change the skeleton, which limb the stem
+follows and how long it is, and on those big trees most radii come from the
+priors rather than from circles (1-2 % of the length and about half the
+volume is measured), so the weights have little to act on. Keeping the filter's graph and
+weighting its points by the graph-based confidence changes little (22.6 %).
+Weights earn their place where foliage sheathes a well-scanned stem: on a
+0.15 m stem wrapped to 7 m in leaves (weights 0.9 bark, 0.1 foliage) the
+weighted model is within 10 % of the true volume where the unweighted one
+is over 30 % above it. Binary labels are the way to bring in a better
+classification than Sylva's, manual labels for instance; the graph-based
+labels, though more accurate as labels, drop wood the QSM needs.
+
 ## How fine does the cloud have to be?
 
 Fine enough that every geodesic shell holds points on the stem surface. With

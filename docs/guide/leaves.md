@@ -52,7 +52,9 @@ work:
 
 As the QSM input the graph-based labels are worse (destructive-harvest volume
 rRMSE 26 % against 20 %), so `qsm.wood_points` keeps the passage filter;
-`wood_points(method="gbs")` is there to try.
+`wood_points(method="gbs")` is there to try. `return_scores=True` adds a
+wood confidence per point, a weight for `qsm.build_qsm(weights=)` (see
+[Wood labels and wood weights](qsm.md#wood-labels-and-wood-weights)).
 
 **Leaf angle distribution.** Normals from a PCA over each leaf point's
 neighbours ([Vicari et al. 2019](../references.md)) give inclinations (angle between the leaf normal and the vertical),
