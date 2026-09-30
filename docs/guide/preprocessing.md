@@ -88,8 +88,7 @@ Medioni 1992) solved by Low's (2004) linearisation; see the
 ## Coregistering a survey
 
 `sylva.coreg` registers every scan position of a survey at once, with no
-targets and no starting alignment: it matches the stems each scan sees. It is
-a port of tlsalign. Where scans share RiSCAN targets, it uses them too.
+targets and no starting alignment: it matches the stems each scan sees. Where scans share RiSCAN targets, it uses them too.
 
 ```python
 from sylva import coreg, read_riscan_project, riscan

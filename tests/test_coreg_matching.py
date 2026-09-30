@@ -1,4 +1,4 @@
-# Ported from tlsalign's tests/test_matching.py.
+# Tests of stem-map matching.
 import numpy as np
 import pytest
 

@@ -21,8 +21,7 @@ The pipeline is staged, and each stage can run on its own:
    refined jointly.
 
 Every stage records its own quality, because the useful question is not "did
-it run" but "which scans can I trust". This began as a port of the author's
-tlsalign, and departs from it where tlsalign was weak: stem matches take
+it run" but "which scans can I trust". Stem matches take
 their height from the shared ground rather than from stem bases (vertical
 error dominates stem-based registration, as Tremblay & Béland 2018 and
 GlobalMatch, Wang et al. 2023, both found); edges carry the anisotropic
@@ -72,7 +71,7 @@ __all__ = [
 
 @dataclass
 class CoregConfig:
-    """Settings of the whole pipeline; the defaults began as tlsalign's."""
+    """Settings of the whole pipeline."""
 
     ground_cell_size: float = 0.5
     ground_min_coverage: float | None = 0.8
@@ -107,8 +106,7 @@ class CoregConfig:
     enough surface for ICP's fitness test, and so many targets cannot form a
     congruent pattern by coincidence. The ICP pose is kept if it stayed
     within :attr:`reflector_tolerance` of the targets', otherwise the
-    targets' own. A departure from tlsalign, which always requires ICP to
-    agree: 0 restores that."""
+    targets' own. 0 always requires ICP to agree."""
     trusted_reflector_rmse: float = 0.03
 
     min_match_inliers: int = 5
@@ -224,7 +222,7 @@ class CoregConfig:
     :func:`reading_options`): ``min_range``, ``max_range`` (m, from the scanner),
     ``min_deviation``/``max_deviation``, ``min_reflectance``/``max_reflectance``,
     ``min_amplitude``/``max_amplitude``, ``echoes``, ``library``. None bound by
-    default, as tlsalign."""
+    default."""
     min_points_per_scan: int = 1000
     """Scans with fewer points are set aside rather than processed."""
     max_points_per_scan: int | None = None
@@ -506,7 +504,7 @@ def load_transforms(path: str | Path) -> dict[str, np.ndarray]:
 
 def _config_core(cfg: CoregConfig) -> dict:
     """The settings as the core takes them: stem detection in the detector's
-    tlsalign mode, the rest field for field."""
+    coregistration mode, the rest field for field."""
     d = {f.name: getattr(cfg, f.name) for f in fields(cfg)}
     d["stems"] = _detector_kwargs(cfg.stems)
     d["matching"] = asdict(cfg.matching)
@@ -834,7 +832,7 @@ def reading_options(settings: str | Path | None = None, **bounds) -> dict:
         ``min_range``, ``max_range``, ``min_deviation``, ``max_deviation``,
         ``min_reflectance``, ``max_reflectance``, ``min_amplitude``,
         ``max_amplitude``; None leaves a bound to the file (or open).
-        Explicit bounds override the file, as in tlsalign.
+        Explicit bounds override the file.
 
     Returns
     -------
@@ -855,7 +853,7 @@ def reading_options(settings: str | Path | None = None, **bounds) -> dict:
 
 
 def _read_scan(path: Path, cfg: CoregConfig) -> tuple[np.ndarray, dict]:
-    """Points of a scan file in its own frame, filtered as tlsalign reads them.
+    """Points of a scan file in its own frame, filtered for coregistration.
 
     RiSCAN's import filter (:attr:`CoregConfig.riscan_filter`) is decided on
     the whole stream first; then the closed intervals on range (from the

@@ -712,7 +712,7 @@ fn coreg_ground_support<'py>(py: Python<'py>, observed: PyReadonlyArray2<bool>, 
     Ok(py.detach(|| coreg_ground::support_many(&o, nx, ny, [x0, y0], cell_size, q)).into_pyarray(py))
 }
 
-// ------------------------------------------------- co-registration (tlsalign)
+// ------------------------------------------------------------ co-registration
 
 fn matrix4_from_py(m: PyReadonlyArray2<f64>) -> PyResult<coreg_icp_rs::Mat4> {
     Ok(matrix_from_py(Some(m))?.expect("matrix").0)
@@ -722,7 +722,7 @@ fn matrix4_to_py<'py>(py: Python<'py>, m: &coreg_icp_rs::Mat4) -> Bound<'py, PyA
     matrix_to_py(py, &Transform(*m))
 }
 
-/// tlsalign `voxel_downsample(..., return_counts=True)`: `(points, counts)`.
+/// Voxel downsampling with per-voxel counts: `(points, counts)`.
 #[pyfunction]
 #[pyo3(signature = (xyz, voxel, centroid=true))]
 fn coreg_voxel_centroids<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel: f64, centroid: bool) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<i64>>)> {
@@ -734,7 +734,7 @@ fn coreg_voxel_centroids<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel
     Ok((xyz_to_py(py, &c), n.into_iter().map(|v| v as i64).collect::<Vec<_>>().into_pyarray(py)))
 }
 
-/// tlsalign local PCA: `(normals, planarity, valid, evals)` with ascending eigenvalues.
+/// Local PCA: `(normals, planarity, valid, evals)` with ascending eigenvalues.
 #[pyfunction]
 #[pyo3(signature = (xyz, k=20, radius=None))]
 fn coreg_local_pca<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, k: usize, radius: Option<f64>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<bool>>, Bound<'py, PyArray2<f64>>)> {
@@ -751,7 +751,7 @@ fn coreg_local_pca<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, k: usize, r
     Ok((xyz_to_py(py, &normals), planarity.into_pyarray(py), valid.into_pyarray(py), xyz_to_py(py, &evals)))
 }
 
-/// tlsalign `planar_filter`.
+/// Planarity filter: the locally planar points (or voxel centroids).
 #[pyfunction]
 #[pyo3(signature = (xyz, min_planarity=0.35, voxel=Some(0.05), k=20, radius=Some(0.15)))]
 fn coreg_planar_filter<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, min_planarity: f64, voxel: Option<f64>, k: usize, radius: Option<f64>) -> PyResult<Bound<'py, PyArray2<f64>>> {
@@ -763,7 +763,7 @@ fn coreg_planar_filter<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, min_pla
     Ok(xyz_to_py(py, &out))
 }
 
-/// tlsalign `icp()`: point-to-plane / point-to-point ICP over a voxel pyramid.
+/// Point-to-plane / point-to-point ICP over a voxel pyramid.
 #[pyfunction]
 #[pyo3(signature = (source, target, initial=None, voxel_sizes=vec![0.30, 0.15, 0.07, 0.05], max_distances=Some(vec![0.80, 0.40, 0.20, 0.12]), max_iterations=30, method="point_to_plane", robust="huber", robust_scale=0.05, trim_fraction=0.85, trim_ramp=3, min_planarity=0.25, normal_neighbours=20, translation_tolerance=1e-4, rotation_tolerance=2e-5, fitness_threshold=0.10, damping=1e-6, max_points=120_000, plateau_tolerance=0.0, plateau_patience=3, seed=0, prepared=None))]
 #[allow(clippy::too_many_arguments)]
@@ -835,7 +835,7 @@ fn coreg_plane_information<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, 
     Ok(d)
 }
 
-/// tlsalign `evaluate_registration`: `(fitness, inlier_rmse, n_inliers)`.
+/// Registration quality: `(fitness, inlier_rmse, n_inliers)`.
 #[pyfunction]
 #[pyo3(signature = (source, target, transform, threshold=0.10, max_points=200_000, voxel=Some(0.05), seed=0))]
 #[allow(clippy::too_many_arguments)]
@@ -1000,11 +1000,11 @@ fn detect_stems<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRea
     Ok(list)
 }
 
-/// Every default of tlsalign's `StemDetectionConfig`, as keyword arguments of
-/// `detect_stems` that make it follow tlsalign's detector.
+/// The detector settings used for coregistration stem maps, as keyword
+/// arguments of `detect_stems`.
 #[pyfunction]
-fn stems_tlsalign_defaults<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-    let p = sylva_rs::stems::StemParams::tlsalign();
+fn stems_coreg_defaults<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+    let p = sylva_rs::stems::StemParams::coreg();
     let d = PyDict::new(py);
     d.set_item("slice_min", p.slice_min)?;
     d.set_item("slice_max", p.slice_max)?;
@@ -1601,7 +1601,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(fit_circle, m)?,
         wrap_pyfunction!(fit_circle_ransac, m)?,
         wrap_pyfunction!(detect_stems, m)?,
-        wrap_pyfunction!(stems_tlsalign_defaults, m)?,
+        wrap_pyfunction!(stems_coreg_defaults, m)?,
         wrap_pyfunction!(dbh_profile, m)?,
         wrap_pyfunction!(segment_trees, m)?,
         wrap_pyfunction!(merge_branches, m)?,

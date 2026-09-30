@@ -131,8 +131,10 @@ impl StemMatch {
     }
 }
 
-/// `np.add.reduce` on a contiguous float64 array: numpy's pairwise summation,
-/// reproduced so sums agree with tlsalign to the bit.
+/// Pairwise summation in numpy's order (`np.add.reduce` on a contiguous
+/// float64 array: eight accumulators up to 128 values, recursive halves
+/// beyond). The order is fixed so that sums, and the decisions taken on them,
+/// are deterministic to the bit.
 pub fn numpy_sum(a: &[f64]) -> f64 {
     let n = a.len();
     if n < 8 {
@@ -165,10 +167,10 @@ pub fn numpy_sum(a: &[f64]) -> f64 {
 
 /// Least-squares yaw + 3-D translation between paired points.
 ///
-/// Written as tlsalign's `kabsch_2d_yaw` computes it (uniform weights `1/n`,
-/// numpy's summation orders, the rotation from `so3_exp([0, 0, yaw])` and
-/// `R @ mu_s` as OpenBLAS's fused dgemv gives it), so that the hypothesis
-/// search takes the same decisions.
+/// Computed in a fixed arithmetic order (uniform weights `1/n`, numpy's
+/// summation orders, the rotation from `so3_exp([0, 0, yaw])` and `R @ mu_s`
+/// as OpenBLAS's fused dgemv gives it), so that the hypothesis search takes
+/// the same decisions on every run.
 pub fn kabsch_yaw(src: &[Point], dst: &[Point]) -> Transform {
     let n = src.len().min(dst.len());
     let w = 1.0 / n.max(1) as f64;
@@ -329,7 +331,7 @@ pub fn match_stem_maps(source: &StemMap, target: &StemMap, p: &MatchParams) -> S
         dst_id,
         p,
     };
-    // As tlsalign reports them: the sizes of the top-N maps that were matched.
+    // Reported as the sizes of the top-N maps that were matched.
     let (ns, nd) = (m.src.len(), m.dst.len());
     let empty = StemMatch::empty(ns, nd);
     if m.src.len() < 2 || m.dst.len() < 2 {

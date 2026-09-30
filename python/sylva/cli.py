@@ -536,7 +536,7 @@ def main(argv=None):
     s.add_argument("--filled-only", action="store_true", help="only write voxels holding echoes")
     s.set_defaults(func=_cmd_voxel)
 
-    s = sub.add_parser("coreg", help="marker-free coregistration of scan positions (tlsalign)",
+    s = sub.add_parser("coreg", help="marker-free coregistration of scan positions",
                        **fmt)
     s.add_argument("inputs", nargs="+",
                    help="a RiSCAN / scanner .PROJ project directory, or scan files "

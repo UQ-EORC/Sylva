@@ -1,4 +1,4 @@
-# Ported from tlsalign's tests/test_icp.py.
+# Tests of coregistration ICP and registration evaluation.
 import numpy as np
 import pytest
 

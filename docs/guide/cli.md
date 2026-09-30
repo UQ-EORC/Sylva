@@ -203,7 +203,7 @@ See [Ray-traced voxels](voxels.md) for what the options do.
 
 `sylva coreg INPUT... [-o DIR] [options]`: registers the scan positions of a
 survey from the trees, with no targets or initial alignment
-(:mod:`sylva.coreg`, a port of tlsalign). `INPUT` is a RiSCAN PRO project or
+(:mod:`sylva.coreg`). `INPUT` is a RiSCAN PRO project or
 a scanner `.PROJ` directory, or a list of scan files. For a project, tilted
 scans are levelled with the scanner's attitude (or, failing that, the rotation
 of the SOP), the scanner's GNSS fixes skip pairs too far apart, and its
@@ -229,7 +229,7 @@ same tree seen from both scans, a check that needs no ground truth) and a
 | `--min-amplitude`, `--max-amplitude` | none | amplitude bounds (dB) |
 | `--riscan-export-settings FILE` | none | bounds from a RiSCAN PRO export filter settings file (`attribute, min, max` per line); explicit bounds override it |
 | `--riscan-filter` | `none` | RiSCAN PRO's RXP import filter: `current` drops echoes within 0.5 m of the scanner (a current import, 99.7 % agreement); `legacy` also drops the weak, isolated echoes the older conversion discarded (a fifth to a third of a scan) |
-| `--trust-reflectors N` | 5 | accept a reflector match of at least N targets within 3 cm even when ICP fails its fitness test (scans far apart share targets before they share surface); 0 always asks ICP to agree, as tlsalign |
+| `--trust-reflectors N` | 5 | accept a reflector match of at least N targets within 3 cm even when ICP fails its fitness test (scans far apart share targets before they share surface); 0 always asks ICP to agree |
 | `--workers` | 0 | scans and pairs processed at once; 0 picks from cores and memory |
 | `--merged PATH` | none | also write the merged, registered cloud |
 | `--voxel` | 0.02 | thinning of the merged cloud (m) |

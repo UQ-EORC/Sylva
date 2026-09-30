@@ -5,9 +5,8 @@
 //! Local geometry for scan co-registration: voxel resampling, local PCA,
 //! normals / planarity and the planarity filter.
 //!
-//! A faithful port of `tlsalign.preprocess` (`voxel_downsample`,
-//! `_local_covariance_eigh`, `estimate_normals`, `planar_filter`), including
-//! its ordering conventions, so results can be compared row for row:
+//! The ordering conventions are fixed, so results are deterministic and can
+//! be compared row for row:
 //!
 //! * voxel output is ordered by ascending packed voxel key (numpy's
 //!   `np.unique` order) for centroids, and by first member index otherwise;
@@ -102,8 +101,8 @@ fn voxel_runs(points: &[Point], voxel: f64) -> Vec<Vec<usize>> {
         .map(|p| [(p[0] / voxel).floor() as i64, (p[1] / voxel).floor() as i64, (p[2] / voxel).floor() as i64])
         .collect();
     // Subtracting the per-axis minimum does not change the lexicographic
-    // order, which is exactly the order of tlsalign's packed int64 key (and of
-    // its `np.unique(grid, axis=0)` fallback).
+    // order, which is the order of a packed int64 voxel key (and of
+    // `np.unique(grid, axis=0)`).
     let mut order: Vec<usize> = (0..points.len()).collect();
     order.par_sort_unstable_by_key(|&i| (grid[i], i));
     let mut runs: Vec<Vec<usize>> = Vec::new();
@@ -118,7 +117,7 @@ fn voxel_runs(points: &[Point], voxel: f64) -> Vec<Vec<usize>> {
     runs
 }
 
-/// `tlsalign.preprocess.voxel_downsample(..., return_counts=True)`.
+/// Voxel downsampling with the number of points in each voxel.
 ///
 /// `centroid = true`: mean of each voxel's points, ordered by ascending voxel
 /// key.  `centroid = false`: the first point (lowest original index) of each
@@ -167,7 +166,7 @@ pub struct LocalPca {
     pub valid: Vec<bool>,
 }
 
-/// Port of `tlsalign.preprocess._local_covariance_eigh`.
+/// Local covariance and its eigen-decomposition at every point.
 ///
 /// The `k = min(k, n)` nearest neighbours include the point itself.  With a
 /// `radius`, neighbours further than it are replaced by the point itself and
@@ -184,8 +183,8 @@ pub fn local_pca(points: &[Point], k: usize, radius: Option<f64>) -> LocalPca {
             let mut idx: Vec<usize> = nn.iter().map(|&(_, i)| i).collect();
             let mut valid = true;
             if let Some(r) = radius {
-                // tlsalign collapses onto idx[:, :1], the nearest neighbour
-                // (normally the point itself).
+                // Neighbours beyond the radius collapse onto idx[:, :1], the
+                // nearest neighbour (normally the point itself).
                 let first = idx.first().copied().unwrap_or(0);
                 let mut within = 0usize;
                 for (j, &(d, _)) in nn.iter().enumerate() {
@@ -267,8 +266,8 @@ pub fn normals_from_pca(pca: &LocalPca) -> (Vec<Point>, Vec<f64>) {
         .unzip()
 }
 
-/// `tlsalign.preprocess.estimate_normals(points, k, radius)` (no viewpoint
-/// flip): `(normals, planarity)`.  Normal signs are arbitrary.
+/// Normals and planarity from local PCA (no viewpoint flip):
+/// `(normals, planarity)`.  Normal signs are arbitrary.
 pub fn estimate_normals(points: &[Point], k: usize, radius: Option<f64>) -> (Vec<Point>, Vec<f64>) {
     if points.len() < 3 {
         return (vec![[0.0; 3]; points.len()], vec![0.0; points.len()]);
@@ -276,7 +275,7 @@ pub fn estimate_normals(points: &[Point], k: usize, radius: Option<f64>) -> (Vec
     normals_from_pca(&local_pca(points, k, radius))
 }
 
-/// `tlsalign.preprocess.planar_filter`: voxel centroids (when `voxel` is set
+/// Planarity filter: voxel centroids (when `voxel` is set
 /// and non-zero), returned unchanged if fewer than `k`, else the points with
 /// planarity `>= min_planarity`.
 pub fn planar_filter(points: &[Point], min_planarity: f64, voxel: Option<f64>, k: usize, radius: Option<f64>) -> Vec<Point> {

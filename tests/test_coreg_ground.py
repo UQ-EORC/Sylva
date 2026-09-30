@@ -1,8 +1,5 @@
-# Ported from tlsalign's tests/test_preprocess_ground.py.
-# Not ported, as sylva.coreg.geometry does not carry them (coreg does not use
-# them): voxel_downsample_indices, estimate_normals(viewpoint=...),
-# stem_likeness, statistical/radius outlier filters, range_filter, crop_cylinder.
-# tlsalign's normalise_heights(points, cell) is fit_ground(points, cell).normalise(points).
+# Tests of the coregistration ground model and local geometry (voxel
+# downsampling, normals, planarity filter).
 import numpy as np
 import pytest
 

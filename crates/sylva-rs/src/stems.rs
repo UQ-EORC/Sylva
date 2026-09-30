@@ -4,7 +4,7 @@
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Multi-slice stem detection.
 //!
-//! Bottom-up, after tlsalign's detector: the stem band (1–5 m above ground)
+//! Bottom-up: the stem band (1–5 m above ground)
 //! is cut into horizontal layers; each layer is clustered in 2-D and circles
 //! are fitted by RANSAC (Fischler & Bolles 1981) with an angular-coverage check; circles are linked
 //! across layers into stem chains, which must span at least `min_slices`
@@ -70,33 +70,33 @@ pub struct StemParams {
     pub prefilter_max_variation: f64,
     pub seed: u64,
     /// RANSAC adaptive stop granularity: the stop is checked before every
-    /// block of this many hypotheses (tlsalign scores 32 at a time); 0 checks
+    /// block of this many hypotheses (coregistration mode scores 32 at a time); 0 checks
     /// before every hypothesis.
     pub ransac_block: usize,
     /// Draw all `ransac_iterations` triples up front, keep only the distinct,
     /// non-collinear ones whose circle radius is in range, and count only
-    /// those as tried (tlsalign). Otherwise triples are drawn one at a time
+    /// those as tried (coregistration mode). Otherwise triples are drawn one at a time
     /// and every distinct triple counts as tried.
     pub ransac_presample: bool,
     /// Re-cluster clusters wider than `max_cluster_extent` with half the cell
-    /// and keep the stem-sized pieces; false skips them (tlsalign).
+    /// and keep the stem-sized pieces; false skips them (coregistration mode).
     pub recluster_wide: bool,
     /// Grid each layer from its own xy minimum and order clusters (and the
     /// points in them) as `scipy.ndimage.label` does: by first cell in
-    /// row-major (y, x) order, points by index (tlsalign). Otherwise an
+    /// row-major (y, x) order, points by index (coregistration mode). Otherwise an
     /// absolute `floor(p / cell)` grid in (x, y) order.
     pub cluster_grid_at_slice_min: bool,
-    /// Include points at exactly `slice_max + thickness / 2` in the band (tlsalign).
+    /// Include points at exactly `slice_max + thickness / 2` in the band (coregistration mode).
     pub band_top_inclusive: bool,
-    /// One random stream shared by all layers in order (tlsalign, sequential);
+    /// One random stream shared by all layers in order (coregistration mode, sequential);
     /// otherwise each layer gets `seed + layer` and layers run in parallel.
     pub shared_rng: bool,
     /// The DBH taper is a least-squares line whose squared residuals are
     /// weighted by `n_inliers^power`. 1.0 (the default) weights each slice by
-    /// its inlier count, as tlsalign's `np.polyfit(w=sqrt(n))` does (polyfit
-    /// weights the unsquared residuals); 0.5 was an earlier porting slip.
+    /// its inlier count, as `np.polyfit(w=sqrt(n))` does (polyfit weights the
+    /// unsquared residuals).
     pub taper_weight_power: f64,
-    /// Clouds with fewer points find no stems (tlsalign: 100).
+    /// Clouds with fewer points find no stems (coregistration mode: 100).
     pub min_total_points: usize,
 }
 
@@ -143,11 +143,12 @@ impl Default for StemParams {
 }
 
 impl StemParams {
-    /// Every default of tlsalign's `StemDetectionConfig`, with the switches
-    /// that make [`detect_stems`] follow tlsalign's `detect_stems` (up to its
-    /// random numbers: numpy's generator is not reproduced, only the order and
-    /// number of draws).
-    pub fn tlsalign() -> Self {
+    /// The detector settings used for coregistration stem maps (the
+    /// coregistration mode): 0.4 m slice spacing, radii from 2.5 to 60 cm, no
+    /// prefilter, over-wide clusters skipped, RANSAC triples presampled and
+    /// scored in blocks of 32, each layer gridded from its own minimum, and
+    /// one random stream shared by all layers in order.
+    pub fn coreg() -> Self {
         StemParams {
             slice_min: 1.0,
             slice_max: 5.0,
@@ -284,7 +285,7 @@ pub(crate) fn angular_coverage(xy: &[[f64; 2]], cx: f64, cy: f64) -> (f64, f64) 
     (occupied as f64 / BINS as f64, best as f64 * 360.0 / BINS as f64)
 }
 
-/// RANSAC circle with tlsalign's scoring (`inliers * (1 - mean_residual / tol)`)
+/// RANSAC circle scored by (`inliers * (1 - mean_residual / tol)`)
 /// and adaptive stopping. Returns `(cx, cy, r, inlier mask)`.
 pub(crate) fn ransac_circle(xy: &[[f64; 2]], p: &StemParams, rng: &mut Rng) -> Option<(f64, f64, f64, Vec<bool>)> {
     let n = xy.len();
@@ -326,7 +327,7 @@ pub(crate) fn ransac_circle(xy: &[[f64; 2]], p: &StemParams, rng: &mut Rng) -> O
     };
     let block = p.ransac_block.max(1);
     if p.ransac_presample {
-        // tlsalign: every triple is drawn first; only valid circles are candidates.
+        // Every triple is drawn first; only valid circles are candidates.
         let triples: Vec<(usize, usize, usize)> = (0..p.ransac_iterations).map(|_| (rng.below(n), rng.below(n), rng.below(n))).collect();
         let candidates: Vec<(f64, f64, f64)> = triples
             .into_iter()
@@ -431,8 +432,7 @@ fn cluster_2d(xy: &[[f64; 2]], cell: f64, min_points: usize) -> Vec<Vec<usize>> 
     clusters
 }
 
-/// Connected components (8-connectivity) as tlsalign's `_cluster_2d` finds
-/// them: the grid starts at the points' xy minimum, components come in the
+/// Connected components (8-connectivity) in a fixed order: the grid starts at the points' xy minimum, components come in the
 /// order `scipy.ndimage.label` numbers them (first cell in row-major (y, x)
 /// order) and the points of each component in index order.
 fn cluster_2d_raster(xy: &[[f64; 2]], cell: f64, min_points: usize) -> Vec<Vec<usize>> {
@@ -616,7 +616,7 @@ fn diameter_at(chain: &[CircleFit], height: f64, weight_power: f64) -> f64 {
     2.0 * nearest
 }
 
-/// A detected stem with everything tlsalign reports for it.
+/// A detected stem with everything the detector reports for it.
 #[derive(Debug, Clone)]
 pub struct StemFit {
     /// Position at `reference_height`, DBH, quality etc.; `inlier_fraction` is the coverage.
@@ -824,7 +824,7 @@ mod tests {
     #[test]
     fn both_modes_find_every_stem() {
         let (pts, h, truth) = plot();
-        for p in [StemParams { prefilter: false, ..Default::default() }, StemParams::tlsalign()] {
+        for p in [StemParams { prefilter: false, ..Default::default() }, StemParams::coreg()] {
             let found = detect_stems_full(&pts, &h, &p);
             for &(x, y, r) in &truth {
                 let s = found.iter().find(|s| (s.tree.x - x).hypot(s.tree.y - y) < 0.03).unwrap_or_else(|| panic!("missed ({x}, {y}) with {p:?}"));
@@ -836,10 +836,10 @@ mod tests {
     }
 
     #[test]
-    fn tlsalign_mode_is_deterministic() {
+    fn coreg_mode_is_deterministic() {
         let (pts, h, _) = plot();
-        let a = detect_stems(&pts, &h, &StemParams::tlsalign());
-        let b = detect_stems(&pts, &h, &StemParams::tlsalign());
+        let a = detect_stems(&pts, &h, &StemParams::coreg());
+        let b = detect_stems(&pts, &h, &StemParams::coreg());
         assert_eq!(a.len(), b.len());
         assert!(a.iter().zip(&b).all(|(s, t)| s.x == t.x && s.dbh == t.dbh));
     }

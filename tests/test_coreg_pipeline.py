@@ -1,8 +1,4 @@
-# Ported from tlsalign's tests/test_pipeline.py, plus Sylva's extras (fixed
-# scans, priors) and the checks of the old tests/test_coreg.py.
-#
-# Not ported: parallel_backend ("fork"/"thread") equivalence and the fork
-# shared-state release (Sylva has threads only, no parallel_backend).
+# Tests of the coregistration pipeline, including fixed scans and priors.
 import dataclasses
 import json
 
@@ -225,10 +221,7 @@ def test_verbose_logger_flushes(capsys):
 
 
 def test_threaded_matches_sequential_exactly(prepared, config):
-    """Threads must be an optimisation, not a change in behaviour.
-
-    Sylva's stand-in for tlsalign's fork/thread backend test.
-    """
+    """Threads must be an optimisation, not a change in behaviour."""
     sequential = coregister_prepared(prepared, dataclasses.replace(config, workers=1))
     parallel = coregister_prepared(prepared, dataclasses.replace(config, workers=4))
     assert parallel.registered == sequential.registered

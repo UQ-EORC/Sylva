@@ -1,4 +1,4 @@
-# Ported from tlsalign's tests.
+# Tests of the pose graph.
 import numpy as np
 import pytest
 
@@ -153,8 +153,8 @@ def test_fixed_nodes_hold_and_anchor_the_rest(rng):
 
 
 def test_rejects_a_wrong_edge_while_a_scan_is_unregistered(rng):
-    """tlsalign never rejected an edge while any node was unreachable, which
-    switched rejection off in exactly the surveys that register in part."""
+    """Outlier edges are rejected even while a node is unreachable, so that
+    rejection also works in surveys that register only in part."""
     poses = _chain(6, rng)
     graph = PoseGraph(7, reference=0)  # node 6: a scan nothing registered to
     _fill(graph, poses, rng)

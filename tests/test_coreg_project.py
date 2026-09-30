@@ -1,4 +1,4 @@
-# Ported from tlsalign's tests: reading a scanner .PROJ.
+# Tests of reading a scanner .PROJ.
 import json
 from pathlib import Path
 
