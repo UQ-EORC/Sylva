@@ -130,7 +130,7 @@ fn circumcircle(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Option<(f64, f64, f64)
 }
 
 /// RANSAC circle scored by the summed weight of its inliers: the weighted
-/// form of the circle RANSAC in [`crate::stems`] (tlsalign's score,
+/// form of the circle RANSAC in [`crate::stems`] (its score,
 /// `weight * (1 - weighted mean residual / tol)`, and its adaptive stop on
 /// the share of the total weight explained), with the weighted refit.
 /// Candidate triples are drawn from the confident points (weight at least
