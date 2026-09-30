@@ -203,7 +203,7 @@ def icp(
         Initial guess of the source-to-target transform. Forest scans need a
         good one, from :func:`sylva.coreg.match_stem_maps`.
     config
-        Settings; the defaults are tlsalign's.
+        Settings; the defaults suit plot-scale forest scans.
 
     Returns
     -------

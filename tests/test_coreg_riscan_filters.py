@@ -1,4 +1,4 @@
-# RiSCAN filters ported from tlsalign's tests, and the trusted reflector matches.
+# Tests of the RiSCAN filters and the trusted reflector matches.
 import numpy as np
 import pytest
 
@@ -123,7 +123,7 @@ def test_trusted_reflectors_accept_what_icp_cannot_confirm(far_pair):
     assert translation < 1e-6 and rotation < 1e-8
 
 
-def test_tlsalign_behaviour_without_trust(far_pair):
+def test_behaviour_without_trusted_reflectors(far_pair):
     a, b, _ = far_pair
     pair = coreg.register_pair(b, a, coreg.CoregConfig(trusted_reflector_matches=0), i=1, j=0)
     assert not pair.success and not pair.trusted

@@ -28,7 +28,7 @@ __all__ = ["MatchConfig", "MatchResult", "match_stem_maps"]
 
 @dataclass
 class MatchConfig:
-    """Settings of :func:`match_stem_maps`; the defaults are tlsalign's."""
+    """Settings of :func:`match_stem_maps`."""
 
     min_pair_distance: float = 2.0
     """Stem pairs closer than this (m) are ambiguous and ignored."""

@@ -5,7 +5,7 @@
 """Marker-free coregistration of scan positions in forests.
 
 Registers scans with no targets and no initial alignment, from the trees
-themselves; a port of the author's tlsalign.
+themselves.
 
 1. **Per scan** (:func:`prepare_scan`): a raster terrain model gives height
    above ground; horizontal slices through the stem band are fitted with

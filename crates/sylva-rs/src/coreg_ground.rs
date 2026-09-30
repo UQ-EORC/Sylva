@@ -2,23 +2,22 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Raster ground model for scan co-registration, a faithful port of
-//! `tlsalign.ground` (`fit_ground`, `GroundModel.height_at` / `support`).
+//! Raster ground model for scan co-registration (`fit_ground`,
+//! `GroundModel.height_at` / `support`).
 //!
 //! The estimator takes a low percentile of Z per cell, rejects deep pits
 //! (multipath echoes metres below the terrain), fills unobserved cells from the
 //! Euclidean-nearest observed cell, removes spikes with a grey opening,
 //! smooths with a box filter and finally caps the slope between neighbours.
 //!
-//! Every step reproduces the `numpy` / `scipy.ndimage` operation tlsalign
-//! uses, including scipy's `"nearest"` boundary mode (edge replication), its
+//! Every step reproduces the corresponding `numpy` / `scipy.ndimage`
+//! operation, including scipy's `"nearest"` boundary mode (edge replication), its
 //! window origin convention (`size // 2` cells on the left), the running-sum
 //! arithmetic of `uniform_filter1d`, the tie-breaking of
 //! `distance_transform_edt(return_indices=True)`, and `np.allclose`'s default
-//! relative tolerance in the slope-limit loop. Results match tlsalign to the
-//! last bit when thinning is off; the only intended difference is the random
-//! thinning above `max_points`, which uses a seeded SplitMix64 selection
-//! sample instead of numpy's `default_rng(seed).choice`.
+//! relative tolerance in the slope-limit loop, so results are deterministic
+//! to the last bit. The random thinning above `max_points` uses a seeded
+//! SplitMix64 selection sample.
 //!
 //! Grids are row-major `(ny, nx)`: index `iy * nx + ix`, `y` along rows.
 
@@ -26,7 +25,7 @@ use rayon::prelude::*;
 
 use crate::error::{Error, Result};
 
-/// Parameters of [`fit_ground`]; defaults are tlsalign's.
+/// Parameters of [`fit_ground`].
 #[derive(Debug, Clone)]
 pub struct GroundParams {
     /// DTM resolution (m).
@@ -72,9 +71,9 @@ impl Default for GroundParams {
 ///
 /// `origin` is `lo = min(xy) - cell_size` of the fitted cloud. Cell indices
 /// were assigned by truncating `(p - lo) / cell_size`, so `origin` is really
-/// the lower-left *corner* of cell `[0, 0]`; but, as in tlsalign, queries treat
-/// it as the cell *centre*, which shifts the surface by half a cell. This is
-/// kept on purpose for parity.
+/// the lower-left *corner* of cell `[0, 0]`; but queries treat it as the cell
+/// *centre*, which shifts the surface by half a cell. This convention is kept
+/// on purpose: the registration was tuned on the heights it gives.
 #[derive(Debug, Clone)]
 pub struct GroundModel {
     pub nx: usize,
@@ -89,7 +88,7 @@ pub struct GroundModel {
 }
 
 impl GroundModel {
-    /// Bilinear terrain height at one location (tlsalign `_height_at_block`).
+    /// Bilinear terrain height at one location.
     #[inline]
     pub fn height_at_point(&self, x: f64, y: f64) -> f64 {
         height_at_grid(&self.elevation, self.nx, self.ny, self.origin, self.cell_size, x, y)
@@ -107,7 +106,7 @@ impl GroundModel {
 }
 
 /// Bilinear interpolation on a `(ny, nx)` grid whose cell `[0, 0]` centre is
-/// `origin`; locations are clamped to the grid (tlsalign `_height_at_block`).
+/// `origin`; locations are clamped to the grid.
 #[inline]
 pub fn height_at_grid(e: &[f64], nx: usize, ny: usize, origin: [f64; 2], cs: f64, x: f64, y: f64) -> f64 {
     let fx = ((x - origin[0]) / cs).clamp(0.0, nx as f64 - 1.0);
@@ -138,7 +137,7 @@ pub fn height_at_many(e: &[f64], nx: usize, ny: usize, origin: [f64; 2], cs: f64
     out
 }
 
-/// Nearest-cell lookup of `observed` (tlsalign `GroundModel.support`): numpy's
+/// Nearest-cell lookup of `observed` (`GroundModel.support`): numpy's
 /// `round` (half to even), clipped to the grid.
 pub fn support_many(observed: &[bool], nx: usize, ny: usize, origin: [f64; 2], cs: f64, xy: &[[f64; 2]]) -> Vec<bool> {
     assert_eq!(observed.len(), nx * ny, "observed grid size mismatch");
@@ -179,7 +178,7 @@ pub fn slope_deg(e: &[f64], ny: usize, nx: usize, cs: f64) -> Result<f64> {
     Ok(crate::coreg::numpy_sum(&deg) / deg.len() as f64)
 }
 
-/// Fit a raster DTM to a point cloud (tlsalign `fit_ground`).
+/// Fit a raster DTM to a point cloud.
 pub fn fit_ground(points: &[[f64; 3]], p: &GroundParams) -> Result<GroundModel> {
     if points.is_empty() {
         return Err(Error::invalid("cannot fit a ground model to an empty cloud"));
@@ -344,7 +343,7 @@ fn sample_sorted(n: usize, k: usize, seed: u64) -> Vec<usize> {
     out
 }
 
-/// tlsalign `_reject_pits`: two passes marking cells more than `depth` below
+/// Pit rejection: two passes marking cells more than `depth` below
 /// the `window` median of the nearest-filled grid as unobserved (NaN).
 fn reject_pits(grid: &mut [f64], observed: &mut [bool], ny: usize, nx: usize, depth: f64, window: usize) -> Result<()> {
     for _ in 0..2 {
@@ -369,7 +368,7 @@ fn reject_pits(grid: &mut [f64], observed: &mut [bool], ny: usize, nx: usize, de
     Ok(())
 }
 
-/// tlsalign `_fill_nearest`: every cell that is not (observed and finite)
+/// Nearest fill: every cell that is not (observed and finite)
 /// takes the value of its Euclidean-nearest such cell, with scipy's
 /// `distance_transform_edt(return_indices=True)` tie-breaking.
 pub fn fill_nearest(grid: &[f64], observed: &[bool], ny: usize, nx: usize) -> Result<Vec<f64>> {
@@ -627,7 +626,7 @@ fn median_filter(src: &[f64], ny: usize, nx: usize, size: usize) -> Vec<f64> {
     out
 }
 
-/// tlsalign `_enforce_max_slope`: up to 64 rounds of
+/// Slope limit: up to 64 rounds of
 /// `min(out, minimum_filter(out, 3) + max_slope * cell)`, stopping when
 /// `np.allclose(capped, out, atol=1e-9)` (with numpy's default `rtol=1e-5`).
 fn enforce_max_slope(grid: Vec<f64>, ny: usize, nx: usize, cs: f64, max_slope: f64) -> Vec<f64> {
@@ -701,7 +700,7 @@ mod tests {
     fn coreg_ground_slope() {
         let pts = cloud(|x, _| 0.3 * x, 80_000);
         let g = fit_ground(&pts, &params()).unwrap();
-        // Interior cell centres (in tlsalign's half-cell-shifted frame) sit on
+        // Interior cell centres (in the half-cell-shifted frame) sit on
         // the plane within the cell's percentile spread.
         for iy in 4..g.ny - 4 {
             for ix in 4..g.nx - 4 {

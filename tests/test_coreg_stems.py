@@ -1,6 +1,4 @@
-# Ported from tlsalign's tests/test_stems.py.
-# tlsalign's circle-fit tests (fit_circle_algebraic, fit_circle_ransac) are not
-# ported: Sylva fits circles inside the Rust detector and exposes no such function.
+# Tests of stem detection and stem maps for coregistration.
 import numpy as np
 
 from sylva.coreg import (

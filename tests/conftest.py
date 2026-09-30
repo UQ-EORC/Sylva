@@ -72,7 +72,7 @@ def single_tree(rng):
 
 
 # --------------------------------------------------------------------------- #
-# sylva.coreg: simulated surveys, as tlsalign's test fixtures (same seeds).
+# sylva.coreg: simulated surveys with fixed seeds.
 # Built once per session; the coarse angular step keeps them quick.
 # --------------------------------------------------------------------------- #
 

@@ -1,4 +1,4 @@
-# Ported from tlsalign's tests.
+# Tests of the SE(3) transform helpers.
 import numpy as np
 import pytest
 

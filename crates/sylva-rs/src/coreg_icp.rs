@@ -4,8 +4,7 @@
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Fine registration by iterative closest point, for forest scans.
 //!
-//! A faithful port of `tlsalign.icp` (`icp`, `evaluate_registration`) and the
-//! SE(3) helpers it uses from `tlsalign.transforms`:
+//! [`icp`] and [`evaluate_registration`], with the SE(3) helpers they use:
 //!
 //! * point-to-plane (Chen & Medioni 1992) with a planarity gate on the
 //!   *target* point, or weighted Kabsch point-to-point (Besl & McKay 1992;
@@ -17,13 +16,11 @@
 //! * a damped Gauss-Newton step on the SE(3) tangent space, over a
 //!   coarse-to-fine voxel pyramid.
 //!
-//! The one deliberate difference: where tlsalign draws a random subset with
-//! numpy's `default_rng(seed).choice` (the `max_points` caps), this uses a
-//! seeded xorshift ([`crate::filters`]'s RNG) with the same structure — a
-//! fresh generator per level for the target, one shared generator for the
-//! source, and one shared by source and target in the evaluation — so the
-//! subsets differ from numpy's but are equally reproducible.  Below the caps
-//! no randomness is involved.
+//! Random subsets (the `max_points` caps) are drawn with a seeded xorshift
+//! ([`crate::filters`]'s RNG): a fresh generator per level for the target,
+//! one shared generator for the source, and one shared by source and target
+//! in the evaluation, so the subsets are reproducible.  Below the caps no
+//! randomness is involved.
 
 use nalgebra::{Matrix3, Matrix4, Matrix6, Vector3, Vector6};
 use rayon::prelude::*;
@@ -36,7 +33,7 @@ use crate::Point;
 /// 4x4 homogeneous transform (column-vector convention, `q = T [p, 1]`).
 pub type Mat4 = Matrix4<f64>;
 
-/// Tunables for [`icp`] (tlsalign's `ICPConfig`, same defaults).
+/// Tunables for [`icp`].
 #[derive(Debug, Clone)]
 pub struct IcpConfig {
     pub voxel_sizes: Vec<f64>,
@@ -151,7 +148,7 @@ pub fn skew(w: &Vector3<f64>) -> Matrix3<f64> {
     Matrix3::new(0.0, -w[2], w[1], w[2], 0.0, -w[0], -w[1], w[0], 0.0)
 }
 
-/// Rotation vector to rotation matrix (`tlsalign.transforms.so3_exp`).
+/// Rotation vector to rotation matrix (`so3_exp`).
 pub fn so3_exp(w: &Vector3<f64>) -> Matrix3<f64> {
     let theta = w.norm();
     let k = skew(w);
@@ -161,7 +158,7 @@ pub fn so3_exp(w: &Vector3<f64>) -> Matrix3<f64> {
     Matrix3::identity() + (theta.sin() / theta) * k + ((1.0 - theta.cos()) / (theta * theta)) * (k * k)
 }
 
-/// Rotation matrix to rotation vector (`tlsalign.transforms.so3_log`).
+/// Rotation matrix to rotation vector (`so3_log`).
 pub fn so3_log(r: &Matrix3<f64>) -> Vector3<f64> {
     let cos_theta = ((r.trace() - 1.0) * 0.5).clamp(-1.0, 1.0);
     let theta = cos_theta.acos();
@@ -201,7 +198,7 @@ pub fn left_jacobian(w: &Vector3<f64>) -> Matrix3<f64> {
     Matrix3::identity() + ((1.0 - theta.cos()) / t2) * k + ((theta - theta.sin()) / (t2 * theta)) * (k * k)
 }
 
-/// Twist `[w, t]` to a 4x4 transform (`tlsalign.transforms.se3_exp`).
+/// Twist `[w, t]` to a 4x4 transform (`se3_exp`).
 pub fn se3_exp(xi: &Vector6<f64>) -> Matrix4<f64> {
     let w = Vector3::new(xi[0], xi[1], xi[2]);
     let u = Vector3::new(xi[3], xi[4], xi[5]);
@@ -225,8 +222,8 @@ pub fn transform_points(t: &Matrix4<f64>, pts: &[Point]) -> Vec<Point> {
         .collect()
 }
 
-/// Weighted Kabsch without scaling (`tlsalign.transforms.kabsch`).  `None`
-/// where tlsalign raises.
+/// Weighted Kabsch without scaling.  `None` for mismatched or degenerate
+/// input.
 pub fn kabsch_weighted(src: &[Point], dst: &[Point], weights: &[f64]) -> Option<Matrix4<f64>> {
     if src.len() != dst.len() || src.len() < 3 || weights.len() != src.len() {
         return None;
@@ -452,7 +449,7 @@ struct Level {
 fn build_level(target: &[Point], voxel: f64, cfg: &IcpConfig) -> Level {
     let mut points = voxel_downsample(target, voxel);
     if points.len() > cfg.max_points {
-        // tlsalign: a fresh default_rng(cfg.seed) for every level.
+        // A fresh generator seeded with cfg.seed for every level.
         points = random_cap(points, cfg.max_points, &mut Rng::new(cfg.seed));
     }
     let (mut normals, mut planarity) = (None, None);
@@ -512,7 +509,7 @@ impl IcpTarget {
     }
 }
 
-/// Align `source` onto `target` (`tlsalign.icp.icp`).
+/// Align `source` onto `target`.
 pub fn icp(source: &[Point], target: &[Point], initial: Option<Matrix4<f64>>, cfg: &IcpConfig) -> Result<IcpResult> {
     cfg.validate()?;
     cfg.distances()?;
@@ -619,7 +616,7 @@ pub fn icp_prepared(source: &[Point], target: &IcpTarget, initial: Option<Matrix
         }
     }
 
-    // tlsalign calls evaluate_registration with its default seed (0), not cfg.seed.
+    // The final evaluation uses the default seed (0), not cfg.seed.
     let (fitness, rmse, n_pairs) = evaluate_registration(source, &target.points, &t, cfg.fitness_threshold, 200_000, Some(0.05), 0);
     Ok(IcpResult {
         transform: t,
@@ -770,7 +767,7 @@ mod tests {
             // its own centroid: exact correspondences, exact recovery.  (Only
             // point-to-point: at that scale no neighbourhood passes the
             // 3 x voxel radius, so the planarity gate rejects everything and
-            // the level stops, as in tlsalign.)
+            // the level stops.)
             if method != "point_to_point" {
                 continue;
             }

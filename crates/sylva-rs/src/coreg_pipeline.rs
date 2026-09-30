@@ -150,7 +150,7 @@ pub const GATES: [&str; 4] = ["range", "deviation", "reflectance", "amplitude"];
 pub struct CoregConfig {
     pub ground_cell_size: f64,
     pub ground_min_coverage: Option<f64>,
-    /// Stem detection, in the detector's tlsalign mode.
+    /// Stem detection, in the detector's coregistration mode.
     pub stems: StemParams,
     pub matching: MatchParams,
     pub icp: IcpConfig,
@@ -217,7 +217,7 @@ impl Default for CoregConfig {
         CoregConfig {
             ground_cell_size: 0.5,
             ground_min_coverage: Some(0.8),
-            stems: StemParams::tlsalign(),
+            stems: StemParams::coreg(),
             matching: MatchParams::default(),
             icp: IcpConfig::default(),
             icp_voxel: 0.05,
@@ -403,7 +403,7 @@ pub fn path_stem(path: &Path) -> String {
     }
 }
 
-/// Points of a scan file in its own frame, filtered as tlsalign reads them
+/// Points of a scan file in its own frame, filtered for coregistration
 /// (`_read_scan`): RiSCAN's import filter on the whole stream first, then
 /// the closed intervals on range (from the scanner), deviation, reflectance
 /// and amplitude, then the cap on the number of points.

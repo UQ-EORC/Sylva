@@ -1,4 +1,4 @@
-# Ported from tlsalign's tests.
+# Tests of reflector matching.
 import json
 
 import numpy as np

@@ -12,9 +12,9 @@ map turns registration into a small 2-D pattern-matching problem that can be
 solved with no initial guess.
 
 The detector is the Rust one behind :func:`sylva.trees.detect_stems`, run in
-its tlsalign mode (0.4 m slice spacing, no prefilter, over-wide clusters
-skipped, RANSAC (Fischler & Bolles 1981) in blocks of 32), so the stem
-maps are tlsalign's.
+its coregistration mode (0.4 m slice spacing, no prefilter, over-wide
+clusters skipped, RANSAC (Fischler & Bolles 1981) in blocks of 32), so the
+stem maps are deterministic.
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ class StemMap:
         return np.array([s.axis for s in self.stems]) if self.stems else np.zeros((0, 3))
 
     def sorted_by_quality(self) -> StemMap:
-        """Best first (numpy's default sort, as tlsalign, so ties fall the same way)."""
+        """Best first (numpy's default sort, so ties always fall the same way)."""
         order = np.argsort(-self.qualities)
         return StemMap([self.stems[i] for i in order], name=self.name, ground=self.ground)
 
@@ -162,7 +162,7 @@ class StemMap:
 
 @dataclass
 class StemDetectionConfig:
-    """Settings of :func:`detect_stems`; the defaults are tlsalign's.
+    """Settings of :func:`detect_stems`.
 
     They suit plot-scale TLS (10-30 m range, stems 5-120 cm). In dense
     understorey raise ``min_slices`` and ``min_coverage``; for buttressed
@@ -194,8 +194,8 @@ class StemDetectionConfig:
 
 
 def _detector_kwargs(cfg: StemDetectionConfig) -> dict:
-    """The Rust detector's arguments for this config, in tlsalign mode."""
-    kw = dict(_core.stems_tlsalign_defaults())
+    """The Rust detector's arguments for this config, in coregistration mode."""
+    kw = dict(_core.stems_coreg_defaults())
     kw.update(
         slice_min=cfg.slice_min_height,
         slice_max=cfg.slice_max_height,

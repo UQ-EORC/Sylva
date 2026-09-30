@@ -6,11 +6,11 @@
 
 Stem detection works on height above ground, not raw z: on sloping terrain a
 fixed elevation band cuts through the canopy on one side of a plot and the
-litter on the other. This is tlsalign's raster DTM: a low percentile of z per
+litter on the other. This is a raster DTM: a low percentile of z per
 cell, deep pits rejected, gaps filled from the nearest observed cell, a grey
 opening and smoothing, then a slope limit so a shrub or a log cannot lift the
-surface. It is deliberately not :mod:`sylva.ground`'s CSF, so that the stems
-and heights registration sees are tlsalign's.
+surface. It is deliberately not :mod:`sylva.ground`'s CSF: the registration
+was tuned on the stems and heights this model gives.
 """
 
 from __future__ import annotations
@@ -34,8 +34,8 @@ class GroundModel:
         ``(ny, nx)`` terrain height, gap-free.
     origin
         ``(x0, y0)``, taken as the centre of cell ``[0, 0]`` when sampling
-        (tlsalign's convention, a quarter-cell off its binning; kept so that
-        heights match).
+        (a convention a quarter-cell off the binning, kept because the
+        registration was tuned on the heights it gives).
     cell_size
         Grid spacing (m).
     observed
