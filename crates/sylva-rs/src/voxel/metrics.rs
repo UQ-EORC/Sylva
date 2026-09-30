@@ -153,6 +153,18 @@ pub fn compute_g(theta: f64, lad: &Lad) -> f64 {
     let n = 180;
     let h = FRAC_PI_2 / n as f64;
     let f = |t: f64| projection_kernel(theta, t) * lad.pdf(t);
+    if !(lad.pdf(0.0).is_finite() && lad.pdf(FRAC_PI_2).is_finite()) {
+        // A beta density with a parameter below 1 is infinite at that end (but
+        // integrable): the trapezoid would give an infinite G. Midpoints avoid
+        // the ends, and dividing by the density's own sum keeps its mass.
+        let (mut num, mut den) = (0.0, 0.0);
+        for i in 0..n {
+            let t = (i as f64 + 0.5) * h;
+            num += f(t);
+            den += lad.pdf(t);
+        }
+        return num / den;
+    }
     let mut sum = 0.5 * (f(0.0) + f(FRAC_PI_2));
     for i in 1..n {
         sum += f(i as f64 * h);
@@ -550,3 +562,4 @@ impl RayVoxels {
         "g_leaf", "g_wood", "wood_volume_density",
     ];
 }
+
