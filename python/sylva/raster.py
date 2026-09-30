@@ -149,7 +149,7 @@ class Raster:
             import rasterio
             from rasterio.transform import from_origin
         except ImportError as exc:
-            raise ImportError("to_geotiff requires rasterio: pip install sylva[geotiff]") from exc
+            raise ImportError("to_geotiff requires rasterio: pip install sylva-rs[geotiff]") from exc
         transform = from_origin(self.xmin, self.ymax, self.resolution, self.resolution)
         with rasterio.open(
             path, "w", driver="GTiff", height=self.data.shape[0], width=self.data.shape[1],
