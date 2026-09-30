@@ -95,3 +95,33 @@ def test_a_fitted_distribution_feeds_the_voxel_projection():
     # G of the fitted beta agrees with G of the histogram it was fitted to.
     g_beta = voxels.leaf_projection(BEAMS, "twoParamBeta", list(fit.goel_strebel))
     np.testing.assert_allclose(g_beta, fit.g(BEAMS), atol=0.01)
+
+
+def ellipsoidal_density(chi):
+    """Campbell's (1990) density, normalised here by quadrature."""
+    raw = lambda t: chi**3 * np.sin(t) / (np.cos(t) ** 2 + chi**2 * np.sin(t) ** 2) ** 2  # noqa: E731
+    total = integrate.quad(raw, 0, HALF_PI, epsabs=1e-13)[0]
+    return lambda t: raw(t) / total
+
+
+@pytest.mark.parametrize("lad, params, density", [
+    ("planophile", [], DE_WIT["planophile"]),
+    ("erectophile", [], DE_WIT["erectophile"]),
+    ("plagiophile", [], DE_WIT["plagiophile"]),
+    ("extremophile", [], DE_WIT["extremophile"]),
+    ("uniform", [], DE_WIT["uniform"]),
+    ("ellipsoidal", [0.6], ellipsoidal_density(0.6)),
+    ("ellipsoidal", [1.7], ellipsoidal_density(1.7)),
+])
+def test_analytic_distributions_match_the_integral(lad, params, density):
+    # Densities that are not zero at a vertical leaf (all but the planophile and
+    # plagiophile) need the kernel's limit there, 2/π sin θ.
+    got = voxels.leaf_projection(BEAMS, lad, params)
+    want = np.array([g_reference(b, density) for b in BEAMS])
+    np.testing.assert_allclose(got, want, atol=1e-4)
+
+
+def test_vertical_leaves_project_two_over_pi_sin_theta():
+    # Every normal horizontal: the reference integral over azimuth alone.
+    for b in BEAMS:
+        assert kernel(b, HALF_PI) == pytest.approx(2 / np.pi * np.sin(b), abs=1e-10)

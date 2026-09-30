@@ -130,13 +130,20 @@ fn ln_gamma(x: f64) -> f64 {
 
 /// Mean projection of a unit leaf at inclination `leaf` onto the plane normal
 /// to a beam at zenith `beam`, for uniform leaf azimuth.
+///
+/// Where the leaf plane can turn edge-on to the beam, the kernel is
+/// `cos b cos l (1 + 2/π (tan a - a))` with `cos a = cot b cot l`, written as
+/// `cos b cos l (1 - 2a/π) + 2/π sin b sin l sin a` (the two are equal):
+/// the first form takes `tan a` of an angle that rounds to π/2 when the
+/// leaf is vertical, which is far from the limit `2/π sin b` there (0.34
+/// instead of 0.54 for a beam at 1 rad).
 fn projection_kernel(beam: f64, leaf: f64) -> f64 {
     let cotcot = 1.0 / (beam.tan() * leaf.tan());
     if cotcot.abs() > 1.0 || cotcot.is_infinite() {
         return beam.cos() * leaf.cos();
     }
     let a = cotcot.acos();
-    beam.cos() * leaf.cos() * (1.0 + 2.0 / PI * (a.tan() - a))
+    beam.cos() * leaf.cos() * (1.0 - 2.0 * a / PI) + 2.0 / PI * beam.sin() * leaf.sin() * a.sin()
 }
 
 fn fold_beam_angle(theta: f64) -> f64 {
@@ -627,8 +634,7 @@ mod tests {
         // A horizontal leaf presents cos(theta), a vertical one (2/pi) sin(theta).
         let flat = [1.0, 0.0, 0.0];
         let upright = [0.0, 0.0, 1.0];
-        // (The kernel loses its beam dependence at exactly 90 degrees, so stay just below.)
-        let centres = [0.0, 0.8, FRAC_PI_2 - 1e-6];
+        let centres = [0.0, 0.8, FRAC_PI_2];
         for theta in [0.2f64, 1.0, 1.4] {
             assert!((compute_g_from_histogram(theta, &centres, &flat) - theta.cos()).abs() < 1e-12);
             assert!((compute_g_from_histogram(theta, &centres, &upright) - 2.0 / PI * theta.sin()).abs() < 1e-6);
@@ -644,6 +650,27 @@ mod tests {
         }
         assert_eq!(compute_g_from_histogram(0.5, &[], &[]), 0.5);
         assert_eq!(compute_g_from_histogram(0.5, &centres, &[1.0]), 0.5);
+    }
+
+    #[test]
+    fn kernel_is_continuous_at_a_vertical_leaf() {
+        // The limit as the leaf turns vertical is (2 / pi) sin(beam), and the
+        // kernel just short of it agrees.
+        for beam in [0.05f64, 0.2, 0.6, 1.0, 1.4, FRAC_PI_2 - 1e-9] {
+            let limit = 2.0 / PI * beam.sin();
+            assert!((projection_kernel(beam, FRAC_PI_2) - limit).abs() < 1e-12, "{beam}");
+            assert!((projection_kernel(beam, FRAC_PI_2 - 1e-7) - limit).abs() < 1e-6, "{beam}");
+            // Both forms of the kernel agree away from the vertical.
+            for leaf in [0.3f64, 0.9, 1.3] {
+                let c = 1.0 / (beam.tan() * leaf.tan());
+                // (The old form loses precision as the beam nears the horizon.)
+                if c.abs() <= 1.0 && beam < 1.5 {
+                    let a = c.acos();
+                    let old = beam.cos() * leaf.cos() * (1.0 + 2.0 / PI * (a.tan() - a));
+                    assert!((projection_kernel(beam, leaf) - old).abs() < 1e-12);
+                }
+            }
+        }
     }
 
     #[test]
