@@ -98,7 +98,7 @@ use, study, change and share it, and anything you distribute that builds on
 it carries the same licence. See the LICENSE file in the repository.
 
 Cite it as: Devereux, T. (2026). *Sylva: terrestrial and airborne laser
-scanning processing for forest ecology* (version 0.2.0) [Computer software].
+scanning processing for forest ecology* (version 0.2.1) [Computer software].
 The University of Queensland. <https://github.com/UQ-EORC/Sylva>
 
 ```bibtex
@@ -107,7 +107,7 @@ The University of Queensland. <https://github.com/UQ-EORC/Sylva>
   title        = {Sylva: terrestrial and airborne laser scanning processing
                   for forest ecology},
   year         = {2026},
-  version      = {0.2.0},
+  version      = {0.2.1},
   organization = {The University of Queensland},
   url          = {https://github.com/UQ-EORC/Sylva}
 }

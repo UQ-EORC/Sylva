@@ -178,7 +178,7 @@ Build the site with `pip install -e '.[docs]' && mkdocs serve`.
 If Sylva contributed to your work, please cite it:
 
 > Devereux, T. (2026). *Sylva: terrestrial and airborne laser scanning
-> processing for forest ecology* (version 0.2.0) [Computer software].
+> processing for forest ecology* (version 0.2.1) [Computer software].
 > The University of Queensland. https://github.com/UQ-EORC/Sylva
 
 ```bibtex
@@ -187,7 +187,7 @@ If Sylva contributed to your work, please cite it:
   title        = {Sylva: terrestrial and airborne laser scanning processing
                   for forest ecology},
   year         = {2026},
-  version      = {0.2.0},
+  version      = {0.2.1},
   organization = {The University of Queensland},
   url          = {https://github.com/UQ-EORC/Sylva}
 }

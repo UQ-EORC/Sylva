@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "sylva-rs"
-version = "0.2.0"
+version = "0.2.1"
 description = "Terrestrial and airborne laser scanning processing for forest ecology and remote sensing research."
 readme = "README.md"
 requires-python = ">=3.10"
