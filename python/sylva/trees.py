@@ -169,7 +169,11 @@ def detect_stems(cloud: PointCloud, height_attr: str = "height", **params) -> li
     ``max_lean_deg`` [25], ``prefilter`` [True] (keep only locally planar points
     with a near-horizontal normal, i.e. bark, before slicing; ``prefilter_k``
     [16], ``prefilter_max_nz`` [0.6], ``prefilter_max_variation`` [0.15]),
-    ``seed`` [0].
+    ``seed`` [0], ``cluster_seeds`` [False] (a random stream per cluster
+    rather than per layer, each cluster's points in input order, and the
+    prefilter's neighbours at equal distances taken by index, so that each
+    stem depends only on the points around it; :func:`sylva.tiles.detect_stems`
+    uses it, and gives the same stems as this function with it).
 
     Parameters
     ----------
@@ -349,7 +353,7 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
                   low_height: float = 0.5,
                   low_radius: float = 1.0, wood_costs: bool = False,
                   wood_k: int = 20, wood_threshold: float = 0.9, understorey_height: float = 10.0,
-                  understorey_band: float = 0.5) -> np.ndarray:
+                  understorey_band: float = 0.5, voxel_origin=None) -> np.ndarray:
     """Assign each point to a stem by least-cost path through a directed kNN
     graph (multi-source Dijkstra from stem seeds), after raycloudtools'
     ``rayextract trees`` (Devereux et al. 2026).
@@ -424,6 +428,11 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
         Litchfield from 0.73 to 0.83 and cuts the share of tree points that
         are really understorey from 17 % to 6 %; scales above about 20 start
         to take points from real trees.
+    voxel_origin
+        ``(x, y, z)`` of a corner of the graph's voxel grid; None anchors it
+        at the lowest point above ``cut_above_ground``. A fixed corner puts
+        the graph on the grid :func:`sylva.tiles.segment_trees` uses, which
+        then gives these labels tile by tile.
 
     Returns
     -------
@@ -445,7 +454,8 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
                                gravity, cut_above_ground, height_prior, height_prior_radius,
                                height_prior_power,
                                low_height, low_radius, wood_costs, wood_k, wood_threshold,
-                               understorey_height, understorey_band)
+                               understorey_height, understorey_band,
+                               None if voxel_origin is None else tuple(float(v) for v in voxel_origin))
 
 
 def merge_branches(cloud: PointCloud, trees: list[Tree], height_attr: str = "height",
@@ -477,7 +487,8 @@ def merge_branches(cloud: PointCloud, trees: list[Tree], height_attr: str = "hei
     search_radius
         Only candidates within this distance (m) are compared.
     **graph_params
-        :func:`segment_trees` graph settings (``k``, ``voxel_size``, ...).
+        :func:`segment_trees` graph settings (``k``, ``voxel_size``,
+        ``voxel_origin``, ...).
 
     Returns
     -------
@@ -487,6 +498,8 @@ def merge_branches(cloud: PointCloud, trees: list[Tree], height_attr: str = "hei
         For each input tree, the id it now belongs to (its own if kept).
     """
     h = np.ascontiguousarray(cloud.heights(height_attr))
+    if graph_params.get("voxel_origin") is not None:
+        graph_params["voxel_origin"] = tuple(float(v) for v in graph_params["voxel_origin"])
     kept, merged = _core.merge_branches(cloud.xyz, h, [t._to_core() for t in trees],
                                         ground_height=ground_height, trunk_scale=trunk_scale,
                                         trunk_min=trunk_min, search_radius=search_radius,

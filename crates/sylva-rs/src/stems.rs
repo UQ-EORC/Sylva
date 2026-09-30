@@ -98,6 +98,12 @@ pub struct StemParams {
     pub taper_weight_power: f64,
     /// Clouds with fewer points find no stems (coregistration mode: 100).
     pub min_total_points: usize,
+    /// Give every cluster its own random stream, seeded from `seed`, the
+    /// layer height and the cluster's first grid cell, instead of one stream
+    /// running through all the clusters of a layer. A stem's circles then
+    /// depend only on the points around it, so that a cloud processed in
+    /// tiles finds the same stems as the whole cloud.
+    pub cluster_seeds: bool,
 }
 
 impl Default for StemParams {
@@ -138,6 +144,7 @@ impl Default for StemParams {
             shared_rng: false,
             taper_weight_power: 1.0,
             min_total_points: 0,
+            cluster_seeds: false,
         }
     }
 }
@@ -185,6 +192,7 @@ impl StemParams {
             shared_rng: true,
             taper_weight_power: 1.0,
             min_total_points: 100,
+            cluster_seeds: false,
         }
     }
 }
@@ -489,11 +497,34 @@ fn fit_layer(xy: &[[f64; 2]], height: f64, p: &StemParams, rng: &mut Rng) -> Vec
         }
         (hi[0] - lo[0]).max(hi[1] - lo[1])
     };
-    let mut clusters: Vec<Vec<[f64; 2]>> = Vec::new();
+    // With `cluster_seeds`, each cluster's stream is seeded from the layer
+    // and the cluster's first cell at the cell size it was found with.
+    let cluster_seed = |c: &[[f64; 2]], cell: f64| -> u64 {
+        let first = c.iter().map(|q| ((q[0] / cell).floor() as i64, (q[1] / cell).floor() as i64)).min().unwrap_or((0, 0));
+        let mut h = splitmix(p.seed ^ splitmix(height.to_bits()));
+        for v in [cell.to_bits(), first.0 as u64, first.1 as u64] {
+            h = splitmix(h ^ v);
+        }
+        h
+    };
+    // With `cluster_seeds`, each cluster also keeps its points in input
+    // order: the order the traversal gathers them in starts from the first
+    // cell of the whole connected component, which for a component wider
+    // than `max_cluster_extent` (re-clustered below) depends on how much of
+    // it a tile holds, and RANSAC draws its samples by position.
+    let canonical = |mut idx: Vec<usize>| {
+        if p.cluster_seeds {
+            idx.sort_unstable();
+        }
+        idx
+    };
+    let mut clusters: Vec<(Vec<[f64; 2]>, u64)> = Vec::new();
     for idx in cluster(xy, p.cluster_cell) {
+        let idx = canonical(idx);
         let cluster_xy: Vec<[f64; 2]> = idx.iter().map(|&i| xy[i]).collect();
         if extent(&cluster_xy) <= p.max_cluster_extent {
-            clusters.push(cluster_xy);
+            let seed = if p.cluster_seeds { cluster_seed(&cluster_xy, p.cluster_cell) } else { 0 };
+            clusters.push((cluster_xy, seed));
             continue;
         }
         if !p.recluster_wide {
@@ -502,13 +533,17 @@ fn fit_layer(xy: &[[f64; 2]], height: f64, p: &StemParams, rng: &mut Rng) -> Vec
         // Too wide to be one stem: re-cluster with a finer cell to break
         // bridges, keeping only the pieces that are stem-sized.
         for sub in cluster(&cluster_xy, p.cluster_cell * 0.5) {
+            let sub = canonical(sub);
             let c: Vec<[f64; 2]> = sub.iter().map(|&i| cluster_xy[i]).collect();
             if extent(&c) <= p.max_cluster_extent {
-                clusters.push(c);
+                let seed = if p.cluster_seeds { cluster_seed(&c, p.cluster_cell * 0.5) } else { 0 };
+                clusters.push((c, seed));
             }
         }
     }
-    for cluster in clusters {
+    for (cluster, seed) in clusters {
+        let mut own = Rng::new(seed);
+        let rng: &mut Rng = if p.cluster_seeds { &mut own } else { &mut *rng };
         let mut remaining = cluster;
         for _ in 0..p.max_circles_per_cluster {
             if remaining.len() < p.min_circle_inliers {
@@ -528,6 +563,14 @@ fn fit_layer(xy: &[[f64; 2]], height: f64, p: &StemParams, rng: &mut Rng) -> Vec
         }
     }
     circles
+}
+
+/// SplitMix64 finaliser (Steele et al. 2014), to mix seeds.
+fn splitmix(x: u64) -> u64 {
+    let mut z = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
 }
 
 fn predict_next(chain: &[CircleFit], next_height: f64) -> (f64, f64) {
@@ -705,7 +748,10 @@ pub fn detect_stems_full(points: &[Point], heights: &[f64], p: &StemParams) -> V
     let mut band: Vec<Point> = band_idx.iter().map(|&i| points[i]).collect();
     let mut band_h: Vec<f64> = band_idx.iter().map(|&i| heights[i]).collect();
     if p.prefilter && band.len() > p.prefilter_k {
-        let (normals, vals) = crate::filters::local_pca(&band, p.prefilter_k);
+        // With `cluster_seeds` (tiled detection), neighbours at equal
+        // distances are taken by index, so that a point is kept or dropped
+        // as in the whole cloud; quantised coordinates make such ties common.
+        let (normals, vals) = if p.cluster_seeds { crate::filters::local_pca_by_index(&band, p.prefilter_k) } else { crate::filters::local_pca(&band, p.prefilter_k) };
         let keep: Vec<bool> = normals
             .iter()
             .zip(&vals)

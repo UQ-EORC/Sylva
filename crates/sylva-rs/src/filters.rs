@@ -66,8 +66,14 @@ pub fn voxel_downsample(cloud: &PointCloud, voxel_size: f64, centroid: bool) -> 
 
 /// Indices kept by [`voxel_downsample`] with `centroid = false`.
 pub fn voxel_downsample_indices(points: &[Point], voxel_size: f64) -> Vec<usize> {
-    let origin = min_corner(points);
-    let (_, groups) = voxel_groups(points, &origin, voxel_size);
+    voxel_downsample_indices_at(points, &min_corner(points), voxel_size)
+}
+
+/// The first point (in order) of each voxel of a grid with a corner at
+/// `origin`, as sorted indices. [`voxel_downsample_indices`] anchors the grid
+/// at the cloud's minimum corner; a fixed origin puts every cloud on one grid.
+pub fn voxel_downsample_indices_at(points: &[Point], origin: &Point, voxel_size: f64) -> Vec<usize> {
+    let (_, groups) = voxel_groups(points, origin, voxel_size);
     let mut idx: Vec<usize> = groups.iter().map(|g| g[0]).collect();
     idx.sort_unstable();
     idx
@@ -239,39 +245,60 @@ pub fn radius_outlier_removal(cloud: &PointCloud, radius: f64, min_neighbors: us
 pub fn local_pca(points: &[Point], k: usize) -> (Vec<Point>, Vec<[f64; 3]>) {
     let tree = KdTree::new(points);
     let k = k.max(3);
-    points
-        .par_iter()
-        .map(|p| {
-            let nb = tree.knn(p, k);
-            let n = nb.len() as f64;
-            let mut c = [0.0; 3];
-            for (i, _) in &nb {
-                for a in 0..3 {
-                    c[a] += points[*i][a];
-                }
+    points.par_iter().map(|p| pca_of_neighbours(points, &tree.knn(p, k))).unzip()
+}
+
+/// [`local_pca`] with neighbours at equal distances taken by index
+/// ([`KdTree::knn_by_index`]), so that a point's descriptors are the same in
+/// any cloud holding its neighbourhood in the same relative order.
+pub fn local_pca_by_index(points: &[Point], k: usize) -> (Vec<Point>, Vec<[f64; 3]>) {
+    let tree = KdTree::new(points);
+    let k = k.max(3);
+    points.par_iter().map(|p| pca_of_neighbours(points, &tree.knn_by_index(p, k))).unzip()
+}
+
+/// The PCA descriptors of one neighbourhood (`(index, distance)` pairs into
+/// `points`, as [`KdTree::knn`] gives them): the unoriented normal and the
+/// eigenvalues ascending, as [`local_pca`] computes them for each point.
+pub fn pca_of_neighbours(points: &[Point], nb: &[(usize, f64)]) -> (Point, [f64; 3]) {
+    let n = nb.len() as f64;
+    let mut c = [0.0; 3];
+    for (i, _) in nb {
+        for a in 0..3 {
+            c[a] += points[*i][a];
+        }
+    }
+    for a in 0..3 {
+        c[a] /= n;
+    }
+    let mut cov = nalgebra::Matrix3::<f64>::zeros();
+    for (i, _) in nb {
+        let d = crate::transform::sub(&points[*i], &c);
+        for a in 0..3 {
+            for b in 0..3 {
+                cov[(a, b)] += d[a] * d[b];
             }
-            for a in 0..3 {
-                c[a] /= n;
-            }
-            let mut cov = nalgebra::Matrix3::<f64>::zeros();
-            for (i, _) in &nb {
-                let d = crate::transform::sub(&points[*i], &c);
-                for a in 0..3 {
-                    for b in 0..3 {
-                        cov[(a, b)] += d[a] * d[b];
-                    }
-                }
-            }
-            let eig = cov.symmetric_eigen();
-            // Sort eigenpairs ascending.
-            let mut order = [0usize, 1, 2];
-            order.sort_by(|&i, &j| eig.eigenvalues[i].partial_cmp(&eig.eigenvalues[j]).unwrap());
-            let v = eig.eigenvectors.column(order[0]);
-            let normal = [v[0], v[1], v[2]];
-            let vals = [eig.eigenvalues[order[0]], eig.eigenvalues[order[1]], eig.eigenvalues[order[2]]];
-            (normal, vals)
-        })
-        .unzip()
+        }
+    }
+    let eig = cov.symmetric_eigen();
+    // Sort eigenpairs ascending.
+    let mut order = [0usize, 1, 2];
+    order.sort_by(|&i, &j| eig.eigenvalues[i].partial_cmp(&eig.eigenvalues[j]).unwrap());
+    let v = eig.eigenvectors.column(order[0]);
+    let normal = [v[0], v[1], v[2]];
+    let vals = [eig.eigenvalues[order[0]], eig.eigenvalues[order[1]], eig.eigenvalues[order[2]]];
+    (normal, vals)
+}
+
+/// Planarity `(l2 - l1) / l3` and linearity `(l3 - l2) / l3` from eigenvalues
+/// ascending, 0 for a degenerate neighbourhood.
+pub fn planarity_linearity_of(vals: &[f64; 3]) -> (f64, f64) {
+    let [l1, l2, l3] = *vals;
+    if l3 > 0.0 {
+        ((l2 - l1) / l3, (l3 - l2) / l3)
+    } else {
+        (0.0, 0.0)
+    }
 }
 
 /// Unoriented per-point normals from local PCA.
@@ -283,15 +310,7 @@ pub fn estimate_normals(points: &[Point], k: usize) -> Vec<Point> {
 /// as in Weinmann et al. (2015).
 pub fn planarity_linearity(points: &[Point], k: usize) -> (Vec<f64>, Vec<f64>) {
     let (_, vals) = local_pca(points, k);
-    vals.iter()
-        .map(|[l1, l2, l3]| {
-            if *l3 > 0.0 {
-                ((l2 - l1) / l3, (l3 - l2) / l3)
-            } else {
-                (0.0, 0.0)
-            }
-        })
-        .unzip()
+    vals.iter().map(planarity_linearity_of).unzip()
 }
 
 

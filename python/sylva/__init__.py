@@ -20,6 +20,7 @@ from . import als
 from . import change
 from . import waveform
 from . import fusion
+from . import tiles
 from ._core import __version__ as _core_version
 from .io import read, write
 from .pointcloud import PointCloud
@@ -54,6 +55,7 @@ __all__ = [
     "registration",
     "riscan",
     "synthetic",
+    "tiles",
     "trees",
     "voxels",
     "waveform",
