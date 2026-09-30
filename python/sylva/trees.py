@@ -169,7 +169,10 @@ def detect_stems(cloud: PointCloud, height_attr: str = "height", **params) -> li
     ``max_lean_deg`` [25], ``prefilter`` [True] (keep only locally planar points
     with a near-horizontal normal, i.e. bark, before slicing; ``prefilter_k``
     [16], ``prefilter_max_nz`` [0.6], ``prefilter_max_variation`` [0.15]),
-    ``seed`` [0].
+    ``seed`` [0], ``cluster_seeds`` [False] (a random stream per cluster
+    rather than per layer, so that each stem depends only on the points
+    around it; :func:`sylva.tiles.detect_stems` uses it, and gives the same
+    stems as this function with it).
 
     Parameters
     ----------

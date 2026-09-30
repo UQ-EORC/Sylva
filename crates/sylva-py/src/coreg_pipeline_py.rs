@@ -160,6 +160,7 @@ fn stem_params(d: &Bound<'_, PyDict>) -> PyResult<StemParams> {
         shared_rng: get(d, "shared_rng")?,
         taper_weight_power: get(d, "taper_weight_power")?,
         min_total_points: get(d, "min_total_points")?,
+        cluster_seeds: false,
     })
 }
 
