@@ -951,4 +951,38 @@ mod tests {
         pool.install(|| reproject(&mut ser, &s, &d).unwrap());
         assert_eq!(par, ser);
     }
+
+    #[test]
+    fn every_wkt1_projection_method_matches_its_epsg_definition() {
+        // Geographic points projected by the EPSG definition and by a PROJ string built
+        // from the same WKT with its AUTHORITY codes removed: Mercator 1SP and 2SP,
+        // azimuthal equal area, equidistant cylindrical, oblique stereographic (with a
+        // 7-parameter Helmert), polar stereographic by pole and by standard parallel,
+        // Lambert conformal conic 2SP, transverse Mercator and plain geographic.
+        for (code, lon, lat) in [(3395u32, 20.0, 45.0), (3994, 150.0, -30.0), (3035, 10.0, 52.0), (4087, 30.0, 10.0), (28992, 5.4, 52.1), (3413, -45.0, 75.0), (3032, 70.0, -70.0), (5041, 0.0, 85.0), (3976, 30.0, -75.0), (2154, 3.0, 46.5), (3112, 135.0, -25.0), (3006, 15.0, 60.0), (4326, 10.0, 20.0), (4283, 150.0, -30.0)] {
+            let def = crs_definitions::from_code(code as u16).unwrap();
+            let bare = Crs::parse(&to_text(&strip_authorities(&parse_wkt(def.wkt).unwrap()))).unwrap();
+            assert_eq!(bare.epsg, None);
+            let (a, _) = one(lon, lat, 0.0, "EPSG:4326", &format!("EPSG:{code}"));
+            let mut p = vec![[lon, lat, 0.0]];
+            reproject(&mut p, &Crs::from_epsg(4326).unwrap(), &bare).unwrap();
+            let tol = if bare.proj4.contains("longlat") { 1e-12 } else { 1e-6 };
+            assert!(close(a[0], p[0][0], tol) && close(a[1], p[0][1], tol) && close(a[2], p[0][2], 1e-6), "EPSG:{code}: {a:?} vs {:?} ({})", p[0], bare.proj4);
+        }
+    }
+
+    #[test]
+    fn wkt1_without_enough_to_build_a_definition() {
+        let err = |wkt: &str| wkt1_to_proj4(&parse_wkt(wkt).unwrap()).unwrap_err().to_string();
+        let geog = r#"GEOGCS["g",DATUM["d",SPHEROID["s",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]"#;
+        assert_eq!(err(r#"VERT_CS["h",VERT_DATUM["d",2005]]"#), "cannot build a PROJ definition from a WKT VERT_CS without an EPSG code");
+        assert_eq!(err(&format!(r#"PROJCS["p",{geog},PROJECTION["Hotine_Oblique_Mercator"],UNIT["metre",1]]"#)), "WKT projection \"Hotine_Oblique_Mercator\" is not supported without an EPSG code");
+        assert_eq!(err(&format!(r#"PROJCS["p",{geog},PROJECTION["Transverse_Mercator"],UNIT["metre",0]]"#)), "WKT PROJCS has an invalid linear UNIT");
+        assert_eq!(err(r#"PROJCS["p",PROJECTION["Transverse_Mercator"]]"#), "WKT PROJCS has no GEOGCS");
+        assert_eq!(err(r#"GEOGCS["g",DATUM["d",SPHEROID["s",0,298.257223563]]]"#), "WKT SPHEROID needs a semi-major axis and inverse flattening");
+        assert_eq!(err(r#"GEOGCS["g",DATUM["d"]]"#), "WKT DATUM has no SPHEROID");
+        // A sphere (inverse flattening 0) and a prime meridian off Greenwich.
+        let sphere = wkt1_to_proj4(&parse_wkt(r#"GEOGCS["g",DATUM["d",SPHEROID["s",6371000,0]],PRIMEM["p",2.5]]"#).unwrap()).unwrap();
+        assert_eq!(sphere, "+proj=longlat +a=6371000 +b=6371000 +pm=2.5 +no_defs");
+    }
 }
