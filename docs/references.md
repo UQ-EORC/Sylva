@@ -87,10 +87,15 @@ Conference on Pattern Recognition* (Vol. 3, pp. 545–548). IEEE.
 In Sylva: the `trim` of `registration.icp` and the trimmed correspondences of
 `sylva.coreg.icp`.
 
+de Liocourt, F. (1898). De l'aménagement des sapinières. *Bulletin trimestriel
+de la Société forestière de Franche-Comté et Belfort*, *4*, 396–409.
+In Sylva: the reverse-J (negative exponential) diameter distribution of
+`synthetic.plot`.
+
 de Wit, C. T. (1965). *Photosynthesis of leaf canopies* (Agricultural Research
 Reports No. 663). Pudoc. <https://edepot.wur.nl/187115>
 In Sylva: the planophile, erectophile, plagiophile and extremophile leaf angle
-distributions of `sylva.leaves` and `sylva.voxels`.
+distributions of `sylva.leaves`, `sylva.voxels` and `synthetic.tree_model`.
 
 Dai, X., Liang, X., Qi, H., Chen, J., Wang, X., Wang, X., Zhang, Q., & Zhang,
 J. (2024). Automated registration of terrestrial point clouds through ground
@@ -134,8 +139,9 @@ In Sylva: the surface nets that close `qsm.buttress_mesh`.
 Goel, N. S., & Strebel, D. E. (1984). Simple beta distribution representation of
 leaf orientation in vegetation canopies. *Agronomy Journal*, *76*(5), 800–802.
 <https://doi.org/10.2134/agronj1984.00021962007600050021x>
-In Sylva: the beta fit of the leaf inclination distribution in `sylva.leaves`
-and the two-parameter beta distribution of `sylva.voxels`.
+In Sylva: the beta fit of the leaf inclination distribution in `sylva.leaves`,
+the two-parameter beta distribution of `sylva.voxels`, and the leaf angles of
+`synthetic.tree_model`.
 
 Hofton, M. A., Minster, J. B., & Blair, J. B. (2000). Decomposition of laser
 altimeter waveforms. *IEEE Transactions on Geoscience and Remote Sensing*,
@@ -277,6 +283,12 @@ precision tree models from terrestrial laser scanner data. *Remote Sensing*,
 In Sylva: TreeQSM, the cylinder-model approach that QSMs such as
 [`sylva.qsm`](api/qsm.md) build on.
 
+Richards, F. J. (1959). A flexible growth function for empirical use.
+*Journal of Experimental Botany*, *10*(2), 290–301.
+<https://doi.org/10.1093/jxb/10.2.290>
+In Sylva: the Chapman-Richards form of the height-diameter curves of
+`synthetic.plot`.
+
 Roussel, J.-R., Auty, D., Coops, N. C., Tompalski, P., Goodbody, T. R. H.,
 Meador, A. S., Bourdon, J.-F., de Boissieu, F., & Achim, A. (2020). lidR: An R
 package for analysis of Airborne Laser Scanning (ALS) data. *Remote Sensing of
@@ -295,7 +307,8 @@ In Sylva: `filters.statistical_outlier_removal`.
 Shinozaki, K., Yoda, K., Hozumi, K., & Kira, T. (1964). A quantitative analysis
 of plant form, the pipe model theory: I. Basic analyses. *Japanese Journal of
 Ecology*, *14*(3), 97–105. <https://doi.org/10.18960/seitai.14.3_97>
-In Sylva: the pipe model that sets unmeasured branch radii in `qsm.build_qsm`.
+In Sylva: the pipe model that sets unmeasured branch radii in `qsm.build_qsm`,
+and the branch radii of `synthetic.tree_model`.
 
 Smith, D. D., Sperry, J. S., Enquist, B. J., Savage, V. M., McCulloh, K. A., &
 Bentley, L. P. (2014). Deviation from symmetrically self-similar branching in
@@ -354,6 +367,10 @@ airborne laser scanning. A cross-validation study using LAI2200 optical sensor.
 *Remote Sensing of Environment*, *198*, 254–266.
 <https://doi.org/10.1016/j.rse.2017.05.034>
 In Sylva: AMAPVox, whose voxel traversal and outputs `sylva.voxels` mirrors.
+
+Vogel, H. (1979). A better way to construct the sunflower head. *Mathematical
+Biosciences*, *44*(3–4), 179–189. <https://doi.org/10.1016/0025-5564(79)90080-4>
+In Sylva: the sub-beam pattern of the beam footprint in `synthetic.scan`.
 
 Wagner, W. (2010). Radiometric calibration of small-footprint full-waveform
 airborne laser scanner measurements: Basic physical concepts. *ISPRS Journal
