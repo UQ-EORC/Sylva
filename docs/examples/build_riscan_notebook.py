@@ -62,6 +62,7 @@ import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 import sylva
 import json
 import pickle
@@ -79,7 +80,11 @@ STRIDE = 8                          # keep every 8th pulse when reading
 RAY_EVERY = 4                       # ... and every 4th of those for the gap profile and voxels
 VOXEL = 0.02                        # point spacing of the plot cloud (m)
 
-plt.rcParams.update({{"figure.dpi": 90, "figure.figsize": (7, 4.5)}})
+plt.style.use("sylva.mplstyle")     # shared figure style; C0 to C7 are the Okabe-Ito colours
+GROUND, WOOD, LEAF, GRASS, CONTEXT = "#997A5C", "#4D2B12", "#009E73", "#E69F00", "0.8"   # the same in every notebook
+DIVERGING = "RdBu_r"                # for signed differences, centred on zero
+LABELS = ListedColormap(["#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77",
+                         "#CC6677", "#882255", "#AA4499"])   # tree ids and clusters: Paul Tol's muted set
 print("sylva", sylva.__version__, "| RiVLib:", io.find_rivlib().name)""",
     md("""## 1. The project
 
@@ -98,12 +103,12 @@ print(f"zenith {{pat['theta_start']:.0f}}-{{pat['theta_start'] + pat['theta_delt
 
 in_plot = ((origins[:, 0] >= PLOT[0] - 1) & (origins[:, 0] <= PLOT[2] + 1)
            & (origins[:, 1] >= PLOT[1] - 1) & (origins[:, 1] <= PLOT[3] + 1))
-fig, ax = plt.subplots(figsize=(5, 5))
-ax.add_patch(plt.Rectangle(PLOT[:2], PLOT[2] - PLOT[0], PLOT[3] - PLOT[1], fill=False, lw=1.5))
-ax.scatter(*origins[in_plot, :2].T, c="C0", s=18, label=f"inside ({{in_plot.sum()}})")
-ax.scatter(*origins[~in_plot, :2].T, c="C1", s=18, label=f"ring ({{(~in_plot).sum()}})")
-ax.set(aspect="equal", xlabel="x (m)", ylabel="y (m)", title="Scan positions")
-ax.legend(loc="upper right", fontsize=8);""",
+fig, ax = plt.subplots(figsize=(6.5, 5))
+ax.add_patch(plt.Rectangle(PLOT[:2], PLOT[2] - PLOT[0], PLOT[3] - PLOT[1], fill=False, lw=1.2))
+ax.scatter(*origins[in_plot, :2].T, c="C0", s=20, label=f"inside the plot ({{in_plot.sum()}})")
+ax.scatter(*origins[~in_plot, :2].T, c="C1", s=20, label=f"ring ({{(~in_plot).sum()}})")
+ax.set(aspect="equal", xlabel="x, project (m)", ylabel="y, project (m)", title="Scan positions and the core hectare")
+ax.legend(loc="upper left", bbox_to_anchor=(1.0, 1.0));""",
     md("""## 2. One pass over the scans
 
 Reading a scan takes about 20 s per 0.6 GB scan, whatever the thinning, so
@@ -240,13 +245,14 @@ del c5
 print(f"ring scans: {{np.nanmin(before[~in_plot]):+.2f}} to {{np.nanmax(before[~in_plot]):+.2f}} m before, "
       f"{{np.nanmin(after[~in_plot]):+.2f}} to {{np.nanmax(after[~in_plot]):+.2f}} m after; "
       f"inner scans {{np.nanmin(after[in_plot]):+.2f}} to {{np.nanmax(after[in_plot]):+.2f}} m")
-fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.8))
-for ax, v, title in [(axes[0], before, "as delivered"), (axes[1], after, "after sylva.coreg")]:
-    sc_ = ax.scatter(*origins[:, :2].T, c=v, cmap="RdBu_r", vmin=-3, vmax=3, s=40, edgecolor="k", lw=0.3)
+fig, axes = plt.subplots(1, 2, figsize=(10, 4.6), sharey=True)
+for ax, v, title in [(axes[0], before, "As delivered"), (axes[1], after, "After sylva.coreg")]:
+    sc_ = ax.scatter(*origins[:, :2].T, c=v, cmap=DIVERGING, vmin=-3, vmax=3, s=40, edgecolor="k", lw=0.3)
     ax.add_patch(plt.Rectangle(PLOT[:2], 100, 100, fill=False, lw=1))
-    ax.set(aspect="equal", title=title)
-fig.suptitle("Each scan's ground, height above the inner-grid DTM")
-fig.colorbar(sc_, ax=axes, label="m", shrink=0.8);""",
+    ax.set(aspect="equal", title=title, xlabel="x, project (m)")
+axes[0].set_ylabel("y, project (m)")
+fig.suptitle("Height of each scan's ground above the inner-grid DTM (white: in agreement)")
+fig.colorbar(sc_, ax=axes, label="median ground height above the DTM (m)", shrink=0.9, extend="both");""",
     md("""The corrections are applied to the cached points and pulses, so nothing
 has to be read again. With the ring left as delivered, the DTM stepped down
 by metres in wedges behind the misregistered positions, and ghost stems
@@ -309,12 +315,14 @@ print(f"{{len(plot):,}} points in the plot; terrain {{np.nanmin(dtm.data):.1f}} 
 
 X, Y = dtm.cell_centers()
 dtm_plot = np.where((X >= PLOT[0]) & (X <= PLOT[2]) & (Y >= PLOT[1]) & (Y <= PLOT[3]), dtm.data, np.nan)
-fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
-for ax, data, r, title, cmap in [(axes[0], dtm_plot, dtm, "DTM (m)", "terrain"), (axes[1], chm.data, chm, "CHM (m)", "viridis")]:
+fig, axes = plt.subplots(1, 2, figsize=(10, 4.4), sharey=True)
+for ax, data, r, title, label in [(axes[0], dtm_plot, dtm, "Terrain (DTM)", "elevation (m)"),
+                                  (axes[1], chm.data, chm, "Canopy height (CHM)", "height above ground (m)")]:
     lo_, hi_ = np.nanpercentile(data, [1, 99.5])
-    im = ax.imshow(data, origin="lower", extent=(r.xmin, r.xmax, r.ymin, r.ymax), cmap=cmap, vmin=lo_, vmax=hi_)
-    ax.set(title=title, aspect="equal", xlim=PLOT[::2], ylim=PLOT[1::2])
-    fig.colorbar(im, ax=ax, shrink=0.8)""",
+    im = ax.imshow(data, origin="lower", extent=(r.xmin, r.xmax, r.ymin, r.ymax), vmin=lo_, vmax=hi_)
+    ax.set(title=title, aspect="equal", xlim=PLOT[::2], ylim=PLOT[1::2], xlabel="x, project (m)")
+    fig.colorbar(im, ax=ax, shrink=0.9, label=label)
+axes[0].set_ylabel("y, project (m)");""",
     md("""## 5. Trees
 
 Two settings differ from the defaults, both for a plot this size:
@@ -345,25 +353,30 @@ table.to_csv(OUT / "trees.csv", index=False)
 print(f"{{len(cands)}} candidates -> {{len(stems)}} trees in {{time.time() - t0:.0f}} s; "
       f"{{table.wide_and_short.sum()}} are wider than 40 cm but lower than 8 m")
 table[["dbh", "height", "crown_area", "crown_base_height", "quality"]].describe().round(2)""",
-    """fig, axes = plt.subplots(1, 3, figsize=(13, 4))
-axes[0].scatter(table.x, table.y, s=table.dbh * 300, c=table.height, cmap="viridis", alpha=0.8)
-axes[0].set(aspect="equal", title="Stems (size DBH, colour height)", xlim=PLOT[::2], ylim=PLOT[1::2])
-axes[1].hist(table.dbh * 100, bins=np.arange(0, 80, 2.5), color="C2")
-axes[1].set(xlabel="DBH (cm)", ylabel="trees", title=f"{{len(table)}} trees, {{(table.dbh >= 0.1).sum()}} over 10 cm")
+    """fig, axes = plt.subplots(1, 3, figsize=(10, 3.6), gridspec_kw={{"width_ratios": [1.25, 1, 1]}})
+order = np.argsort(table.height.to_numpy())
+t_ = table.iloc[order]
+sc_ = axes[0].scatter(t_.x, t_.y, s=t_.dbh * 150, c=t_.height, alpha=0.8)
+fig.colorbar(sc_, ax=axes[0], shrink=0.9, label="tree height (m)")
+axes[0].set(aspect="equal", title="Stems (size by DBH)", xlim=PLOT[::2], ylim=PLOT[1::2],
+            xlabel="x, project (m)", ylabel="y, project (m)")
+axes[1].hist(table.dbh * 100, bins=np.arange(0, 80, 2.5), color="C0")
+axes[1].set(xlabel="DBH (cm)", ylabel="trees", title=f"{{len(table)}} trees, {{(table.dbh >= 0.1).sum()}} of 10 cm or more")
 w = table.wide_and_short
-axes[2].scatter(table.dbh[~w] * 100, table.height[~w], s=6, alpha=0.6)
-axes[2].scatter(table.dbh[w] * 100, table.height[w], s=10, color="C3", label="wide and short")
+axes[2].scatter(table.dbh[~w] * 100, table.height[~w], s=6, alpha=0.6, c="C0", label="trees")
+axes[2].scatter(table.dbh[w] * 100, table.height[w], s=12, c="C3", label="wide and short")
 axes[2].set(xlabel="DBH (cm)", ylabel="height (m)", title="Height against DBH")
-axes[2].legend(fontsize=8)
-fig.tight_layout()
+axes[2].legend(loc="center right")
 
 sub = np.random.default_rng(0).choice(len(plot), 2_000_000, replace=False)
 lab = labels[sub]
-cols = np.where(lab[:, None] >= 0, plt.cm.tab20(lab % 20)[:, :3], 0.85)
+shuffle = np.random.default_rng(3).permutation(lab.max() + 2)       # neighbouring trees get unlike colours
+cols = np.where(lab[:, None] >= 0, LABELS(shuffle[lab] % LABELS.N)[:, :3], 0.85)
 fig, ax = plt.subplots(figsize=(6.5, 6.5))
 order = np.argsort(plot.attrs["height"][sub])
 ax.scatter(plot.x[sub][order], plot.y[sub][order], c=cols[order], s=0.05)
-ax.set(aspect="equal", title="Segmentation, top view (grey: not a tree)");""",
+ax.set(aspect="equal", title="Trees from above, one colour each (grey: no tree)",
+       xlabel="x, project (m)", ylabel="y, project (m)");""",
     md("""## 6. Scan quality
 
 Stems between 1 and 3 m are fitted from all scans together, and each point's
@@ -382,9 +395,11 @@ sc = pd.DataFrame(q.scans)
 sc = sc[sc.n_slices >= 1]
 fig, ax = plt.subplots(figsize=(5.5, 5.5))
 o = origins[sc.scan]
-ax.quiver(o[:, 0], o[:, 1], sc.tx * 1000, sc.ty * 1000, angles="xy", scale_units="xy", scale=0.5, width=0.004)
+arrows = ax.quiver(o[:, 0], o[:, 1], sc.tx * 1000, sc.ty * 1000, angles="xy", scale_units="xy", scale=0.5, width=0.004)
+ax.quiverkey(arrows, 0.8, 1.02, 5, "5 mm", labelpos="E")
 ax.add_patch(plt.Rectangle(PLOT[:2], 100, 100, fill=False, lw=1))
-ax.set(aspect="equal", title="Horizontal offset of each scan (arrow = 1 mm per 0.5 m)");""",
+ax.set(aspect="equal", title="Horizontal offset of each scan, from the stems\\n(1 mm drawn as 2 m)",
+       xlabel="x, project (m)", ylabel="y, project (m)");""",
     md("""## 7. Wood models and leaves
 
 For the largest well-supported trees: the wood filter, a cylinder model and
@@ -392,7 +407,7 @@ its architecture. `measured_volume_fraction` is the share of the volume
 fitted to points rather than filled in by the taper and pipe-model priors,
 so read the volumes with it."""),
     """t0 = time.time()
-for f in list(OUT.glob("qsm_*")) + list(OUT.glob("tree_*.obj")):
+for f in list(OUT.glob("qsm_[0-9]*.*")) + list(OUT.glob("tree_*.obj")):
     f.unlink()                                          # models of an earlier run
 q_med = np.median([t.quality for t in stems])
 big = sorted([t for t in stems if t.quality >= q_med and t.height >= 10], key=lambda t: -t.dbh)[:4]  # largest real trees
@@ -418,19 +433,19 @@ def side_view(model, axis=0):
     a, b = model.start[:, [axis, 2]], model.end[:, [axis, 2]]
     d = b - a
     n = np.c_[-d[:, 1], d[:, 0]] / np.maximum(np.hypot(*d.T), 1e-9)[:, None] * model.column("radius")[:, None]
-    return PolyCollection(np.stack([a + n, b + n, b - n, a - n], axis=1), facecolor="saddlebrown", edgecolor="saddlebrown", lw=0.3)
+    return PolyCollection(np.stack([a + n, b + n, b - n, a - n], axis=1), facecolor=WOOD, edgecolor=WOOD, lw=0.3)
 
 
 tid = big[0].tree_id
 tree, model = models[tid]
 s = tree[np.random.default_rng(0).choice(len(tree), min(len(tree), 80_000), replace=False)]
-fig, axes = plt.subplots(1, 3, figsize=(12, 6), sharey=True)
-axes[0].scatter(s.x, s.z, s=0.1, c="0.6")
-axes[0].set_title(f"tree {{tid}}: points (x-z)")
-for ax, k, lab in [(axes[1], 0, "x-z"), (axes[2], 1, "y-z")]:
-    ax.scatter(s.xyz[:, k], s.z, s=0.1, c="0.85")
+fig, axes = plt.subplots(1, 3, figsize=(10, 5.5), sharey=True)
+axes[0].scatter(s.x, s.z, s=0.1, c="0.5")
+axes[0].set(title=f"Tree {{tid}}: points, x-z", xlabel="x, project (m)", ylabel="z (m)")
+for ax, k, lab in [(axes[1], 0, "x"), (axes[2], 1, "y")]:
+    ax.scatter(s.xyz[:, k], s.z, s=0.1, c=CONTEXT)
     ax.add_collection(side_view(model, k))
-    ax.set_title(f"QSM ({{lab}}), {{len(model)}} cylinders")
+    ax.set(title=f"QSM, {{lab}}-z ({{len(model)}} cylinders)", xlabel=f"{{lab}}, project (m)")
 for ax in axes:
     ax.set_aspect("equal")
     ax.autoscale_view()""",
@@ -464,13 +479,14 @@ rep = prof.report()
 print(f"{{rep['n_scans']}} scans, {{time.time() - t0:.0f}} s")
 print({{k: round(v, 3) if isinstance(v, float) else v for k, v in rep.items() if np.isscalar(v)}})
 
-fig, axes = plt.subplots(1, 2, figsize=(9, 4.5), sharey=True)
+fig, axes = plt.subplots(1, 2, figsize=(8, 4.2), sharey=True)
 axes[0].plot(rep["pai_hinge_profile"], rep["height"], label="hinge")
-axes[0].plot(rep["pai_linear_profile"], rep["height"], label="linear")
-axes[0].set(xlabel="cumulative PAI below height", ylabel="height (m)", ylim=(0, rep["canopy_height"] + 3))
-axes[0].legend()
+axes[0].plot(rep["pai_linear_profile"], rep["height"], "--", label="linear")
+axes[0].set(xlabel="cumulative PAI below the height", ylabel="height above ground (m)",
+            ylim=(0, rep["canopy_height"] + 3), title="Plant area index")
+axes[0].legend(loc="lower right")
 axes[1].plot(rep["pavd_hinge"], rep["height"])
-axes[1].set(xlabel="PAVD (m2 m-3)", title="hinge");""",
+axes[1].set(xlabel="PAVD (m² m⁻³)", title="Plant area volume density, hinge");""",
     md("""## 9. Ray-traced voxels, and what was seen
 
 Every pulse is traced through a 0.5 m grid over the plot. With
@@ -519,15 +535,17 @@ top = layer.height[ok].max() + 0.5
 print(f"voxel PAI from 0.5 to {{top:.1f}} m (sampled layers): {{layer.pad[ok].sum() * 0.5:.2f}}; "
       f"gap profile hinge PAI {{rep['pai_hinge']:.2f}} (clumping-corrected {{rep['pai_hinge_corrected']:.2f}})")
 
-fig, axes = plt.subplots(1, 2, figsize=(9, 4.5), sharey=True)
-axes[0].plot(layer.pad.where(ok), layer.height + 0.25, "o-", ms=3, label="sampled")
-axes[0].plot(layer.pad.where(~ok), layer.height + 0.25, "o", ms=2, color="0.7", label="too few pulses")
-axes[0].set(xlabel="PAD (m2 m-3)", ylabel="height (m)", title="Voxel plant area density")
-axes[0].legend(fontsize=8)
+fig, axes = plt.subplots(1, 2, figsize=(8, 4.2), sharey=True)
+for ax in axes:
+    ax.axhspan(top, 30.5, color=CONTEXT, alpha=0.5, lw=0)          # layers with too few pulses
+axes[0].plot(layer.pad.where(ok), layer.height + 0.25, "o-", ms=3, label="layers used")
+axes[0].plot(layer.pad.where(~ok), layer.height + 0.25, "o", ms=3, color="0.5", label="not counted")
+axes[0].set(xlabel="PAD (m² m⁻³)", ylabel="height above ground (m)", ylim=(0, 30.5), title="Voxel plant area density")
+axes[0].legend(loc="upper right")
 axes[1].semilogx(layer.median_beams.clip(lower=1), layer.height + 0.25)
-axes[1].axvline(50, color="0.6", ls="--")
-axes[1].set(xlabel="median pulses per voxel", title="Sampling")
-fig.tight_layout()""",
+axes[1].axvline(50, color="k", ls="--", lw=0.8)
+axes[1].text(55, 1.0, "50 pulses", fontsize=8.5)
+axes[1].set(xlabel="median pulses per voxel", xlim=(10, None), title="Sampling of each layer\\n(grey: median below 50)");""",
     md("""Per tree, the voxels show whether the space just above the tree was seen.
 Where it was not, the tree may continue where no scan reached, and its
 height is a lower bound. Here every tree top was seen, so the heights in the
@@ -540,10 +558,10 @@ table = table.merge(samp[["tree_id", "above_observed_fraction", "median_beams"]]
 table.to_csv(OUT / "trees.csv", index=False)
 flag = table.above_observed_fraction < 0.5
 print(f"{{flag.sum()}} of {{len(table)}} trees have less than half of the space above them observed")
-fig, ax = plt.subplots(figsize=(6, 4))
-ax.scatter(table.height, table.median_beams, s=6, alpha=0.6)
+fig, ax = plt.subplots()
+ax.scatter(table.height, table.median_beams, s=8, alpha=0.6, c="C0")
 ax.set(xlabel="tree height (m)", ylabel="median pulses per crown voxel", yscale="log",
-       title="Sampling of each crown (every 32nd pulse)");""",
+       title="Sampling of each crown (every 32nd pulse traced)");""",
     md("""## Outputs
 
 Everything lands in `OUT`:"""),

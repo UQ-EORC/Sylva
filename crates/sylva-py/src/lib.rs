@@ -30,6 +30,7 @@ mod coreg_py;
 mod voxels_py;
 mod voxel_blocks_py;
 mod synthetic_py;
+mod synthetic_model_py;
 mod qsm_py;
 use sylva_rs::{canopy, cluster, coreg, coreg_geometry, coreg_ground, coreg_icp as coreg_icp_rs, filters, ground, io, qsm, registration, trees, Point, PointCloud, Raster, Shots, Transform};
 mod coreg_pipeline_py;
@@ -1526,6 +1527,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     voxels_py::register(m)?;
     voxel_blocks_py::register(m)?;
     synthetic_py::register(m)?;
+    synthetic_model_py::register(m)?;
     qsm_py::register(m)?;
     coreg_pipeline_py::register(m)?;
     interpolate_py::register(m)?;

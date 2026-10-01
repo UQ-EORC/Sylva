@@ -1,7 +1,8 @@
 # Example notebooks
 
-One notebook per stage of a TLS workflow, and three more on change between
-epochs, airborne lidar and full waveforms. Most of them run on a real scan: a
+One notebook per stage of a TLS workflow, three more on change between
+epochs, airborne lidar and full waveforms, and one on the synthetic data the
+others check themselves against. Most of them run on a real scan: a
 20 × 20 m tile of the TERN [Litchfield Savanna
 SuperSite](https://www.tern.org.au) plot in the Northern Territory, scanned in
 2021 with a RIEGL VZ-2000i from many positions and registered into one cloud.
@@ -18,7 +19,11 @@ the tile. One scan position falls in the tile's corner and keeps its true
 origin, but the rest of the pulses start where they crossed the boundary, so
 the tile carries everything point-based while `sylva.synthetic` is kept for the
 cases where the answer has to be known: registration with a known transform,
-QSM volume against a known taper, and leaf area against a known scene.
+a QSM and leaf area against a tree's own cylinders and leaves, and leaf area
+density, leaf angles and gap fraction against a known stand. These scenes
+come from `synthetic.tree_model` and `synthetic.plot`, scanned by
+`synthetic.scan` with a beam footprint, range noise and mixed pixels
+(notebook 17).
 
 What real data shows that a synthetic scene cannot is worth reading. Two
 examples the notebooks work through: the cloth simulation filter puts the
@@ -32,7 +37,7 @@ statistical outlier filter removes 4 % of the cloud, two thirds of it below
 |---|---|---|---|
 | 1 | [Point clouds and I/O](01_pointclouds_io.ipynb) | tile | `PointCloud`, attributes, indexing, LAZ / PLY / text |
 | 2 | [Filtering](02_filtering.ipynb) | tile | subsampling, crops, outlier removal, planarity / linearity, clustering |
-| 3 | [Registration](03_registration.ipynb) | synthetic | Kabsch from targets, point-to-point and point-to-plane ICP, trimming, merging |
+| 3 | [Registration](03_registration.ipynb) | synthetic | two scans of a synthetic plot: Kabsch from targets, point-to-point and point-to-plane ICP, trimming on partial overlap, merging |
 | 4 | [Ground and height](04_ground.ipynb) | tile | CSF and PMF ground filters, DTM, height normalisation, CHM |
 | 5 | [Trees](05_trees.ipynb) | tile | stem detection and DBH, segmentation, heights, crowns, taper |
 | 6 | [QSMs](06_qsm.ipynb) | both | leaf / wood separation, cylinder models, volumes, mesh export |
@@ -46,6 +51,7 @@ statistical outlier filter removes 4 % of the cloud, two thirds of it below
 | 14 | [Change detection](14_change.ipynb) | synthetic | two epochs with known changes: alignment on stems and ground, tree matching, DBH increments and their detection limits, plot summary, C2C and M3C2, CHM differences, voxel occupancy, QSM change |
 | 15 | [Airborne lidar](15_als.ipynb) | synthetic | a simulated flight written as tiles: catalogue, ground, DTM, CHM, area-based metrics, individual trees against the known stand, pulses from the trajectory, gap profiles and ray-traced PAI against a known layer |
 | 16 | [Full waveforms](16_waveform.ipynb) | synthetic | waveforms of known targets, LAS wave packets written and read, Gaussian decomposition against the truth, echoes as pulses for ray-traced voxels |
+| 17 | [Synthetic data](17_synthetic.ipynb) | synthetic | tree archetypes and their truth (cylinders, leaves, leaf angles), a mixed stand with understorey and dead wood, a finite-beam scan and where its mixed pixels fall |
 
 The numbers the notebooks print describe this one tile and are not validation.
 Accuracy against reference plots, felled trees and independent instruments is
@@ -61,6 +67,13 @@ jupyter lab docs/examples
 They are generated from `docs/examples/build_notebooks.py`; edit that file and
 run it to regenerate and re-execute them (`python docs/examples/build_notebooks.py
 05_trees` for one).
+
+The figures share one style, `sylva.mplstyle` in the same folder, which the
+first cell of each notebook loads: fixed figure widths and font sizes, the
+colour-blind-safe Okabe-Ito palette for categories, viridis for magnitudes,
+and a diverging map centred on zero for signed differences. Ground, wood,
+leaves and grass keep the same colours in every notebook. Copy the file
+alongside a notebook to run it elsewhere.
 
 The tile is derived from TERN data, distributed here for documentation and
 teaching. Cite TERN if you use it for anything else, and see

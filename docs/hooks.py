@@ -30,6 +30,7 @@ PAGES["als_canopy"] = "als_canopy.md"
 PAGES["als_trees"] = "als_trees.md"
 PAGES["fusion"] = "fusion.md"
 PAGES["tiles"] = "tiles.md"
+PAGES["synthetic_model"] = "synthetic.md"
 
 
 def _summary(obj) -> str:
