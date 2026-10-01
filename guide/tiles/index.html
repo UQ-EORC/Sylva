@@ -1,0 +1,3773 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Terrestrial laser scanning processing for forest ecology, with a Rust core">
+      
+      
+        <meta name="author" content="Tim Devereux, The University of Queensland">
+      
+      
+      
+        <link rel="prev" href="../interpolation/">
+      
+      
+        <link rel="next" href="../als/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Plots in tiles - Sylva</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#plots-in-tiles" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Sylva" class="md-header__button md-logo" aria-label="Sylva" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Sylva
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Plots in tiles
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="indigo"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="indigo"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/UQ-EORC/Sylva" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    UQ-EORC/Sylva
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Sylva" class="md-nav__button md-logo" aria-label="Sylva" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Sylva
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/UQ-EORC/Sylva" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    UQ-EORC/Sylva
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plot workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Point clouds and files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../preprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filtering and registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../masking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Masking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../coordinates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coordinates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trees and crowns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pulses/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pulse data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ray-traced voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interpolation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interpolation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plots in tiles
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plots in tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#a-worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A worked example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-tiles-from-scans" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building tiles from scans
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-each-operation-needs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What each operation needs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trees
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-tree-at-a-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One tree at a time
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-plot-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The plot workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#voxels-after-the-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Voxels after the workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checked-on-tumbarumba" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checked on Tumbarumba
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-whole-hectare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The whole hectare
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne lidar tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Area-based ALS metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full waveforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne canopy structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fusion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TLS and ALS together
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne change
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QSMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../leaves/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Leaves on a QSM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scan quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Synthetic data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operational/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operational use
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/01_pointclouds_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    1. Point clouds and I/O
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/02_filtering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2. Filtering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/03_registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3. Registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/04_ground/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    4. Ground and height
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/05_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    5. Trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/06_qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    6. Quantitative structure models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/07_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    7. Canopy structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/08_shots/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    8. Pulses and shots files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/09_voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    9. Ray-traced voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/10_riscan_pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10. A RIEGL project, end to end
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/11_coordinates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11. Coordinates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/12_interpolation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12. Interpolation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/13_masking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    13. Masking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/14_change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    14. Change detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/15_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    15. Airborne lidar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/16_waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    16. Full waveforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/17_synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    17. Synthetic trees, plots and scans
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tree detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QSMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Canopy gap profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/pointcloud/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PointCloud, Raster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/shots/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shots, RiSCAN
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    filters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/masks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    masks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/ground/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ground
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/interpolate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    interpolate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/tiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als_metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    waveform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als (canopy)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als (trees)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    change
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/fusion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    fusion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/change_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    change (airborne)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    canopy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/voxel_blocks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    voxel_blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/coords/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    coords
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/coreg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    coreg
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qsm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/leaves/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    leaves
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/quality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/progress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    progress
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/limits/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    limits
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    synthetic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#a-worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A worked example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-tiles-from-scans" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building tiles from scans
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-each-operation-needs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What each operation needs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trees
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-tree-at-a-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One tree at a time
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-plot-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The plot workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#voxels-after-the-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Voxels after the workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checked-on-tumbarumba" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checked on Tumbarumba
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-whole-hectare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The whole hectare
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="plots-in-tiles">Plots in tiles<a class="headerlink" href="#plots-in-tiles" title="Permanent link">&para;</a></h1>
+<p>A large plot does not fit in memory with room to process it. The TERN
+Tumbarumba hectare, scanned from 138 positions, is 306 million points at
+2 cm; processed as one cloud it needed about 55 GB of a 62 GB machine, and
+merging the scans had to be split into strips by hand. <code>sylva.tiles</code> keeps
+such a plot as square LAS/LAZ tiles and processes one tile at a time, each
+with a buffer of points from its neighbours, so that memory is bounded by
+the tile size rather than the plot size. The results are those of the
+single-cloud functions on the whole plot: the same points kept, the same
+values, the same stems.</p>
+<p>The tile engine is the one of <a href="../als/">Airborne lidar tiles</a>: a catalogue
+known from the file headers, chunks with buffers, results that do not
+depend on the number of workers. <code>tiles.Catalog</code>, <code>tiles.catalog</code>,
+<code>tiles.apply</code>, <code>tiles.retile</code> and <code>tiles.write_tiles</code> are the objects of
+<code>sylva.als</code>, and the <code>als</code> functions run on terrestrial tiles unchanged.</p>
+<h2 id="a-worked-example">A worked example<a class="headerlink" href="#a-worked-example" title="Permanent link">&para;</a></h2>
+<p>Five simulated scans of a 30 m synthetic plot, tiled, cleaned, classified,
+normalised and searched for stems:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">PointCloud</span><span class="p">,</span> <span class="n">filters</span><span class="p">,</span> <span class="n">synthetic</span><span class="p">,</span> <span class="n">tiles</span><span class="p">,</span> <span class="n">trees</span>
+
+<span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">stems</span> <span class="o">=</span> <span class="p">[(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">h</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">27</span><span class="p">,</span> <span class="mi">12</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">27</span><span class="p">,</span> <span class="mi">12</span><span class="p">),</span>
+                                             <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mi">12</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">12</span><span class="p">))]</span>
+<span class="n">scene</span> <span class="o">=</span> <span class="n">synthetic</span><span class="o">.</span><span class="n">forest</span><span class="p">(</span><span class="n">stems</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">ground_points</span><span class="o">=</span><span class="mi">60_000</span><span class="p">,</span> <span class="n">margin</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>
+<span class="n">positions</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">15</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span> <span class="p">(</span><span class="mi">25</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">25</span><span class="p">),</span> <span class="p">(</span><span class="mi">25</span><span class="p">,</span> <span class="mi">25</span><span class="p">)]</span>
+<span class="n">scans</span> <span class="o">=</span> <span class="p">[</span><span class="n">synthetic</span><span class="o">.</span><span class="n">scan</span><span class="p">(</span><span class="n">scene</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="mf">1.5</span><span class="p">),</span> <span class="n">resolution_deg</span><span class="o">=</span><span class="mf">0.25</span><span class="p">)</span><span class="o">.</span><span class="n">to_pointcloud</span><span class="p">()</span>
+         <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="n">positions</span><span class="p">]</span>
+
+<span class="n">cat</span> <span class="o">=</span> <span class="n">tiles</span><span class="o">.</span><span class="n">from_scans</span><span class="p">(</span><span class="n">scans</span><span class="p">,</span> <span class="s2">"tiles"</span><span class="p">,</span> <span class="n">tile_size</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">voxel_size</span><span class="o">=</span><span class="mf">0.02</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">cat</span><span class="p">,</span> <span class="n">tiles</span><span class="o">.</span><span class="n">last_run</span><span class="p">()</span><span class="o">.</span><span class="n">max_points</span><span class="p">)</span>        <span class="c1"># Catalog(25 tiles, 402,053 points) 171824</span>
+
+<span class="n">clean</span> <span class="o">=</span> <span class="n">tiles</span><span class="o">.</span><span class="n">statistical_outlier_removal</span><span class="p">(</span><span class="n">cat</span><span class="p">,</span> <span class="s2">"sor"</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span> <span class="n">std_ratio</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<span class="n">ground</span> <span class="o">=</span> <span class="n">tiles</span><span class="o">.</span><span class="n">classify_ground</span><span class="p">(</span><span class="n">clean</span><span class="p">,</span> <span class="s2">"ground"</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">"pmf"</span><span class="p">,</span> <span class="n">buffer</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)</span>
+<span class="n">heights</span> <span class="o">=</span> <span class="n">tiles</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">ground</span><span class="p">,</span> <span class="s2">"heights"</span><span class="p">,</span> <span class="n">dtm_resolution</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">buffer</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)</span>
+<span class="n">found</span> <span class="o">=</span> <span class="n">tiles</span><span class="o">.</span><span class="n">detect_stems</span><span class="p">(</span><span class="n">heights</span><span class="p">,</span> <span class="n">buffer</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">found</span><span class="p">)</span><span class="si">}</span><span class="s2"> stems; largest DBH </span><span class="si">{</span><span class="nb">max</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">dbh</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">t</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">found</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> m"</span><span class="p">)</span>   <span class="c1"># 13 stems; 0.49 m</span>
+</code></pre></div>
+<p>Each step equals its whole-cloud counterpart, which the plot is small
+enough to check:</p>
+<div class="highlight"><pre><span></span><code><span class="n">whole</span> <span class="o">=</span> <span class="n">PointCloud</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">s</span><span class="o">.</span><span class="n">with_attrs</span><span class="p">(</span><span class="n">scan_id</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">),</span> <span class="n">i</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">uint32</span><span class="p">))</span>
+                                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">scans</span><span class="p">)])</span>
+<span class="n">thinned</span> <span class="o">=</span> <span class="n">filters</span><span class="o">.</span><span class="n">voxel_downsample</span><span class="p">(</span><span class="n">whole</span><span class="p">,</span> <span class="mf">0.02</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">thinned</span><span class="p">)</span> <span class="o">==</span> <span class="n">cat</span><span class="o">.</span><span class="n">n_points</span><span class="p">)</span>                                            <span class="c1"># True</span>
+<span class="n">kept</span> <span class="o">=</span> <span class="n">filters</span><span class="o">.</span><span class="n">statistical_outlier_removal</span><span class="p">(</span><span class="n">cat</span><span class="o">.</span><span class="n">read</span><span class="p">(),</span> <span class="n">k</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span> <span class="n">std_ratio</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">kept</span><span class="p">)</span> <span class="o">==</span> <span class="n">clean</span><span class="o">.</span><span class="n">n_points</span><span class="p">)</span>                                             <span class="c1"># True</span>
+<span class="n">same</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">detect_stems</span><span class="p">(</span><span class="n">heights</span><span class="o">.</span><span class="n">read</span><span class="p">(),</span> <span class="n">cluster_seeds</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">([(</span><span class="n">t</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">dbh</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">same</span><span class="p">]</span> <span class="o">==</span> <span class="p">[(</span><span class="n">t</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">dbh</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">found</span><span class="p">])</span>  <span class="c1"># True</span>
+</code></pre></div>
+<p>For real scans, give <code>from_scans</code> the files and their registration
+(<code>transforms</code>, one 4x4 matrix per scan such as the SOP), and <code>bounds</code> for
+the plot and its buffer; one scan is read at a time.</p>
+<h2 id="building-tiles-from-scans">Building tiles from scans<a class="headerlink" href="#building-tiles-from-scans" title="Permanent link">&para;</a></h2>
+<p><code>tiles.from_scans(scans, out, tile_size, voxel_size, transforms, origin,
+bounds)</code> takes the scans in order, as files or point clouds:</p>
+<ol>
+<li>Each scan is moved by its transform (as <code>PointCloud.transform</code> moves
+   it), cropped to <code>bounds</code> and thinned to the first point of each voxel it
+   has, on one grid for all the scans (a corner at <code>origin</code>, by default
+   <code>(0, 0, 0)</code>, so voxels lie at multiples of <code>voxel_size</code>).</li>
+<li>Those points go, tile by tile, to scratch files in the output directory
+   at full precision, with a <code>scan_id</code> attribute (the scan's position in
+   the list).</li>
+<li>Each tile is then assembled from its scratch file, keeping the first
+   point per voxel in scan order, and written as <code>&lt;xmin&gt;_&lt;ymin&gt;.laz</code>.</li>
+</ol>
+<p>The tiles are cut along voxel boundaries (the tile size must be a whole
+number of voxels), so no voxel is split between two tiles, and together the
+tiles hold exactly the points that
+<code>filters.voxel_downsample(concatenation, voxel_size, origin=origin)</code> keeps
+of all the scans concatenated in order, with all their attributes; only the
+coordinates are rounded to the tiles' <code>scale</code> (1 mm by default). In memory
+are one scan, and one tile per worker; the scratch files take about 40
+bytes per thinned point of each scan, plus its attributes, until the tiles
+are written.</p>
+<p>Tiles keep whatever attributes the points carry, <code>tree_id</code>, <code>wood</code>,
+<code>scan_id</code>, <code>height</code> or any other: the LAS dimensions by name, the rest as
+typed extra bytes, and every operation below writes them back unchanged.</p>
+<h2 id="what-each-operation-needs">What each operation needs<a class="headerlink" href="#what-each-operation-needs" title="Permanent link">&para;</a></h2>
+<p>Every operation runs one chunk per tile: the tile's own file is its core,
+the points of the other files within <code>buffer</code> metres are read around it,
+and the output tile holds the core points only.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Whole-cloud result it reproduces</th>
+<th>Buffer</th>
+<th>Exactness</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>from_scans</code></td>
+<td><code>filters.voxel_downsample</code> of the scans concatenated, <code>origin</code> given</td>
+<td>none</td>
+<td>exact</td>
+</tr>
+<tr>
+<td><code>voxel_downsample</code></td>
+<td><code>filters.voxel_downsample(cat.read(), size, origin)</code></td>
+<td>one voxel (set automatically)</td>
+<td>exact</td>
+</tr>
+<tr>
+<td><code>statistical_outlier_removal</code></td>
+<td><code>filters.statistical_outlier_removal</code></td>
+<td>any (1 m saves second reads)</td>
+<td>exact, two passes</td>
+</tr>
+<tr>
+<td><code>radius_outlier_removal</code></td>
+<td><code>filters.radius_outlier_removal</code></td>
+<td>any (the radius saves second reads)</td>
+<td>exact</td>
+</tr>
+<tr>
+<td><code>estimate_normals</code>, <code>planarity_linearity</code></td>
+<td><code>filters.estimate_normals</code>, <code>filters.planarity_linearity</code></td>
+<td>any (1 m saves second reads)</td>
+<td>exact but for distance ties (see Limitations)</td>
+</tr>
+<tr>
+<td><code>classify_ground(method="pmf")</code></td>
+<td><code>ground.classify_ground_pmf</code></td>
+<td>see below</td>
+<td>exact with the buffer below</td>
+</tr>
+<tr>
+<td><code>classify_ground(method="csf")</code></td>
+<td><code>ground.classify_ground_csf</code></td>
+<td>5 to 10 m</td>
+<td>close, not exact</td>
+</tr>
+<tr>
+<td><code>dtm</code></td>
+<td><code>ground.make_dtm</code></td>
+<td>widest gap in the ground</td>
+<td>exact away from the plot edge</td>
+</tr>
+<tr>
+<td><code>normalize</code></td>
+<td><code>ground.normalize_height</code> with <code>make_dtm</code></td>
+<td>widest gap in the ground</td>
+<td>to 1e-14 m away from the plot edge</td>
+</tr>
+<tr>
+<td><code>detect_stems</code></td>
+<td><code>trees.detect_stems(..., cluster_seeds=True)</code></td>
+<td>about 2 m</td>
+<td>exact with that buffer</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Neighbourhoods at any buffer.</strong> Outlier removal and the local features
+look at each point's <code>k</code> nearest neighbours or at a sphere of fixed
+radius. A point's neighbourhood found in the tile and its buffer is the
+true one when it reaches no farther than the nearest edge of the buffer
+(beyond which there may be points not read). For the few points whose
+neighbourhood reaches farther, isolated points mostly, the tiles within
+each one's reach (which bounds its true neighbourhood) are read again one at
+a time, each point keeping its nearest candidates over them, and they are
+evaluated from those. So the result never depends on the buffer, and memory
+stays at one tile even for a return far above the canopy whose neighbours
+lie across the plot; a buffer wider than almost every neighbourhood only
+saves the second reads, which <code>tiles.last_run()</code> counts.</p>
+<p><strong>Statistical outlier removal in two passes.</strong> CloudCompare's SOR removes
+points whose mean distance to their <code>k</code> neighbours exceeds <code>mean + std_ratio
+* std</code>, and the mean and standard deviation are those of that distance over
+the whole cloud. A tile with its buffer has its own mean and spread, so a
+filter run tile by tile (as <code>als.filter(method="sor")</code> does) keeps
+different points. The tiled version computes every point's mean distance
+first, tile by tile, into scratch files; then the global mean and standard
+deviation, summed in catalogue order exactly as the whole-cloud filter
+sums them; then applies the threshold as it writes the tiles.</p>
+<p><strong>Voxel thinning.</strong> Points are taken in catalogue order (tile by tile,
+each in file order), so a voxel that straddles two tiles keeps one point,
+from the first tile that has one, as it does in the whole cloud. Points of
+one voxel are less than a voxel apart, so a buffer of one voxel suffices.</p>
+<p><strong>Ground.</strong> The progressive morphological filter grids the points on
+cells at multiples of <code>cell_size</code> in every tile, as the whole cloud does,
+and each of its openings looks <code>2 w</code> cells away (half-width <code>w</code> = 1, 2, 4,
+... up to <code>max_window / cell_size</code>). A buffer of <code>2 * cell_size * (1 + 2 +
+4 + ... + W)</code> plus the widest gap in the ground therefore gives the
+whole-cloud classes everywhere; in practice much less does (5 m on the
+synthetic plots of the tests, 10 m on Tumbarumba with the default 10 m
+window). The cloth simulation is not exact: the cloth is one sheet, and
+its settling and its stopping test depend on all of it, so near a tile
+edge a few points can be classified differently (below 0.1 % of the points
+on the synthetic plots with a 5 m buffer). <code>dtm</code> and <code>normalize</code> take each
+cell from the tile whose core holds it; with a buffer wider than the
+widest gap in the ground they give the whole-cloud DTM cell for cell, and
+heights that differ from the whole-cloud ones by rounding only, away from
+the outer edge of the plot (where the whole-cloud grid stops at the ground
+points and the tiled one at the tiles).</p>
+<p><strong>Stems.</strong> Each tile searches its points and buffer and keeps the stems
+whose position (at the reference height) lies in its core, or nearest to
+it, so every stem is kept once. The stem detector draws RANSAC samples
+from random streams; by default one stream runs through all the clusters
+of a layer, so a stem's circles depend on every cluster before it.
+<code>detect_stems</code> here gives each cluster its own stream (<code>cluster_seeds=True</code>,
+also an option of <code>trees.detect_stems</code>), seeded from its position, so a
+stem depends only on the points around it. With a buffer wider than the
+clusters and circles of a stem at a tile edge (clusters are at most
+<code>max_cluster_extent</code>, 2 m, wide) the stems, their order and their ids are
+those of <code>trees.detect_stems(whole, cluster_seeds=True)</code>. Compared with the
+default single stream, the same stems are found, their fits differing
+where RANSAC settles on another circle.</p>
+<h2 id="trees">Trees<a class="headerlink" href="#trees" title="Permanent link">&para;</a></h2>
+<p><code>tiles.segment_trees(catalog, stems, out)</code> runs the segmentation sequence
+of a whole plot, <code>trees.merge_branches</code>, <code>trees.segment_trees</code>,
+<code>trees.tree_heights</code> and <code>trees.prune_trees</code>, over height-normalised tiles,
+and writes the tiles again with each point's tree id in <code>tree_id</code> (int32,
+-1 for none). Continuing the example above:</p>
+<div class="highlight"><pre><span></span><code><span class="n">trees_</span><span class="p">,</span> <span class="n">seg</span> <span class="o">=</span> <span class="n">tiles</span><span class="o">.</span><span class="n">segment_trees</span><span class="p">(</span><span class="n">heights</span><span class="p">,</span> <span class="n">found</span><span class="p">,</span> <span class="s2">"segmented"</span><span class="p">,</span> <span class="n">buffer</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span>
+                                  <span class="n">merge</span><span class="o">=</span><span class="p">{</span><span class="s2">"voxel_size"</span><span class="p">:</span> <span class="mf">0.1</span><span class="p">},</span> <span class="n">prune</span><span class="o">=</span><span class="p">{</span><span class="s2">"min_height"</span><span class="p">:</span> <span class="mf">2.0</span><span class="p">},</span>
+                                  <span class="n">percentile</span><span class="o">=</span><span class="mf">99.0</span><span class="p">,</span> <span class="n">voxel_size</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">trees_</span><span class="p">),</span> <span class="n">tiles</span><span class="o">.</span><span class="n">last_run</span><span class="p">()</span><span class="o">.</span><span class="n">max_points</span><span class="p">)</span>          <span class="c1"># 12 108292</span>
+
+<span class="n">kept</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">merge_branches</span><span class="p">(</span><span class="n">whole_h</span><span class="p">,</span> <span class="n">found</span><span class="p">,</span> <span class="n">voxel_size</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">voxel_origin</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+<span class="n">labels</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">segment_trees</span><span class="p">(</span><span class="n">whole_h</span><span class="p">,</span> <span class="n">kept</span><span class="p">,</span> <span class="n">voxel_size</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">voxel_origin</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+<span class="n">trees</span><span class="o">.</span><span class="n">tree_heights</span><span class="p">(</span><span class="n">whole_h</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">kept</span><span class="p">,</span> <span class="n">percentile</span><span class="o">=</span><span class="mf">99.0</span><span class="p">)</span>
+<span class="n">same</span><span class="p">,</span> <span class="n">labels</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">prune_trees</span><span class="p">(</span><span class="n">kept</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">min_height</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">([(</span><span class="n">t</span><span class="o">.</span><span class="n">tree_id</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">height</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">same</span><span class="p">]</span> <span class="o">==</span> <span class="p">[(</span><span class="n">t</span><span class="o">.</span><span class="n">tree_id</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">height</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">trees_</span><span class="p">])</span>  <span class="c1"># True</span>
+</code></pre></div>
+<p>(<code>whole_h</code> is <code>heights.read()</code>.) How it works:</p>
+<ol>
+<li><strong>Graph nodes.</strong> The segmentation builds its graph on the points above
+   <code>cut_above_ground</code>, thinned to the first point of each <code>voxel_size</code>
+   voxel. Tiled, the voxels are those of one grid with a corner at
+   <code>voxel_origin</code> (<code>(0, 0, 0)</code> by default), and the first point of each is
+   found tile by tile in catalogue order, as the tiled voxel thinning finds
+   it; these are the nodes the whole cloud has, given the same corner
+   (<code>trees.segment_trees(..., voxel_origin=(0, 0, 0))</code>; without it, the
+   whole-cloud grid starts at the cloud's lowest point). The nodes, a small
+   share of the points at 0.1 m, are kept in scratch files.</li>
+<li><strong>Branches.</strong> Each stem is traced to the ground by the tile whose core
+   holds it, on that tile's nodes and those of its buffer; the chains
+   (a branch of a branch, mutual pairs) are then resolved over all stems at
+   once, as <code>merge_branches</code> resolves them.</li>
+<li><strong>Paths.</strong> Each tile's nodes and those within <code>buffer</code> are segmented
+   with every stem that could reach them (stems up to their seed and
+   height-prior reach beyond the buffer), and the tile keeps the labels of
+   the trees whose stem it holds. A tree's labels are then those of the
+   whole plot when its competitors have their stems, seeds and crowns
+   within the buffer: a buffer wider than the largest crown. A tile whose
+   trees' nodes come within <code>edge_margin</code> (2 m) of the edge of its buffer,
+   where the plot goes on, is segmented again with a buffer twice as wide,
+   up to <code>max_buffer</code>; trees still at the edge are named in a warning and
+   flagged <code>crown_at_edge</code> in <code>Tree.extra</code>.</li>
+<li><strong>Points.</strong> Every point takes the label of its nearest node, tile by
+   tile. The nearest node of a point is its own voxel's or closer, so the
+   nodes within one voxel diagonal of the tile hold it.</li>
+<li><strong>Trees.</strong> Heights and point counts are gathered per tree over the
+   tiles, pruning runs on the tree list (it needs nothing else), and the
+   tiles are written with the final ids, unique over the plot.</li>
+</ol>
+<p><code>merge</code> and <code>prune</code> take <code>True</code> (their defaults), <code>False</code> (skip) or a dict
+of their keywords, so the graph of <code>merge_branches</code> keeps its own settings
+(<code>k=10</code>, <code>power=3</code>, ...). The remaining keywords are those of
+<code>trees.segment_trees</code>.</p>
+<h2 id="one-tree-at-a-time">One tree at a time<a class="headerlink" href="#one-tree-at-a-time" title="Permanent link">&para;</a></h2>
+<p><code>tiles.split_trees(segmented, "trees")</code> writes each tree's points, from
+every tile it touches and in the order the whole plot has them, to a
+<code>TreeStore</code>: a directory per tree, at full precision and with every
+attribute, and an index of the trees (points, bounds, tiles). One tile per
+worker is held. A tree is then read without the plot:</p>
+<div class="highlight"><pre><span></span><code><span class="n">store</span> <span class="o">=</span> <span class="n">tiles</span><span class="o">.</span><span class="n">split_trees</span><span class="p">(</span><span class="n">seg</span><span class="p">,</span> <span class="s2">"trees"</span><span class="p">)</span>
+<span class="n">one</span> <span class="o">=</span> <span class="n">store</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">store</span><span class="o">.</span><span class="n">ids</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>             <span class="c1"># or tiles.read_tree(store, tree_id)</span>
+<span class="nb">print</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">store</span><span class="p">),</span> <span class="n">store</span><span class="o">.</span><span class="n">n_points</span><span class="p">(</span><span class="n">store</span><span class="o">.</span><span class="n">ids</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">store</span><span class="o">.</span><span class="n">tiles_of</span><span class="p">(</span><span class="n">store</span><span class="o">.</span><span class="n">ids</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+<span class="c1"># 12 31144 ['0_0.laz', '10_0.laz', '0_10.laz', '10_10.laz']</span>
+</code></pre></div>
+<p><code>tiles.read_tree(catalog, tree_id, bounds=...)</code> reads a tree from the tiles
+themselves instead, reading every tile that meets <code>bounds</code>.</p>
+<p>The per-tree steps of a plot run from the store, a few trees at a time on
+threads (Sylva's computations release the interpreter, and each is
+parallel inside), largest first, with at most <code>workers</code> trees in memory and
+fewer when that many of the largest would not fit in the budget
+(<code>BYTES_PER_TREE_POINT</code>, 1 kB, per point):</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Whole-plot result it reproduces</th>
+<th>Written</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tiles.classify_leaf_wood(store, seg, out)</code></td>
+<td><code>leaves.classify_leaf_wood(plot[labels == t])</code> for every tree of 100 points or more</td>
+<td><code>wood</code> (int8: 1 wood, 0 leaf, -1 none) in the tiles, and per tree in the store</td>
+</tr>
+<tr>
+<td><code>tiles.build_qsms(store, trees_, **options)</code></td>
+<td><code>qsm.build_plot(plot, labels, trees_, **options)</code>, every option (DBH anchor, <code>stem_radius_cap</code>, buttresses)</td>
+<td>a <code>PlotQSMs</code>; each tree's result is also kept in the store</td>
+</tr>
+<tr>
+<td><code>tiles.crown_metrics(store)</code></td>
+<td><code>trees.crown_metrics_all(plot, labels)</code></td>
+<td>a dict per tree</td>
+</tr>
+<tr>
+<td><code>store.map(fn)</code></td>
+<td><code>fn(tree_id, plot[labels == tree_id])</code></td>
+<td>whatever <code>fn</code> returns</td>
+</tr>
+</tbody>
+</table>
+<p>Each gives exactly the whole-plot values (the tests compare the leaf / wood
+labels, the cylinders of every model and the crown metrics bit for bit),
+since each tree's points, in the same order, are all these functions see.
+<code>resume=True</code> keeps what the store already holds, so an interrupted run
+picks up at the next tree.</p>
+<h2 id="the-plot-workflow">The plot workflow<a class="headerlink" href="#the-plot-workflow" title="Permanent link">&para;</a></h2>
+<p><code>tiles.run_plot(scans, out, ...)</code> runs everything from registered scans to
+trees and QSMs, and the <code>sylva tiles-plot</code> command runs it from the shell:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">tiles</span>
+
+<span class="n">st</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">"coreg_state.npz"</span><span class="p">)</span>                 <span class="c1"># corrections from coregistration</span>
+<span class="n">scans</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">"scans/</span><span class="si">{</span><span class="n">i</span><span class="si">:</span><span class="s2">03d</span><span class="si">}</span><span class="s2">.laz"</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">st</span><span class="p">[</span><span class="s2">"corr"</span><span class="p">]))]</span>
+<span class="n">run</span> <span class="o">=</span> <span class="n">tiles</span><span class="o">.</span><span class="n">run_plot</span><span class="p">(</span><span class="n">scans</span><span class="p">,</span> <span class="s2">"run"</span><span class="p">,</span> <span class="n">transforms</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">st</span><span class="p">[</span><span class="s2">"corr"</span><span class="p">]),</span> <span class="n">use</span><span class="o">=</span><span class="n">st</span><span class="p">[</span><span class="s2">"use"</span><span class="p">],</span>
+                     <span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">10</span><span class="p">,</span> <span class="o">-</span><span class="mi">10</span><span class="p">,</span> <span class="mi">110</span><span class="p">,</span> <span class="mi">110</span><span class="p">),</span> <span class="n">plot</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span>
+                     <span class="n">voxel_size</span><span class="o">=</span><span class="mf">0.02</span><span class="p">,</span> <span class="n">sor</span><span class="o">=</span><span class="p">{</span><span class="s2">"k"</span><span class="p">:</span> <span class="mi">6</span><span class="p">,</span> <span class="s2">"std_ratio"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">},</span>
+                     <span class="n">ground</span><span class="o">=</span><span class="p">{</span><span class="s2">"method"</span><span class="p">:</span> <span class="s2">"csf"</span><span class="p">,</span> <span class="s2">"cloth_resolution"</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span> <span class="s2">"rigidness"</span><span class="p">:</span> <span class="mi">2</span><span class="p">},</span>
+                     <span class="n">stems</span><span class="o">=</span><span class="p">{</span><span class="s2">"min_arc_deg"</span><span class="p">:</span> <span class="mi">130</span><span class="p">},</span> <span class="n">prune</span><span class="o">=</span><span class="p">{</span><span class="s2">"min_height"</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">"min_slenderness"</span><span class="p">:</span> <span class="mi">10</span><span class="p">},</span>
+                     <span class="n">qsm_options</span><span class="o">=</span><span class="p">{</span><span class="s2">"stem_radius_cap"</span><span class="p">:</span> <span class="mf">1.5</span><span class="p">},</span> <span class="n">workers</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>sylva tiles-plot scans/*.laz run --transforms corr.npy --use use.npy \
+    --bounds -10 -10 110 110 --plot 0 0 100 100 --min-slenderness 10 --workers 4
+</code></pre></div>
+<p>The stages, each in its own directory of <code>out</code> with a <code>.done</code> marker
+written when it is complete:</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scans/</code></td>
+<td>for a RiSCAN project only (a directory or <code>RiscanProject</code>): each scan read with its SOP (<code>read_options</code>), cropped to <code>bounds</code> and thinned; <code>transforms</code> are then the corrections applied after the SOPs</td>
+</tr>
+<tr>
+<td><code>tiles/</code></td>
+<td><code>from_scans</code> with <code>transforms</code> (and scans flagged False in <code>use</code> left out), <code>bounds</code>, <code>tile_size</code>, <code>voxel_size</code></td>
+</tr>
+<tr>
+<td><code>sor/</code></td>
+<td><code>statistical_outlier_removal</code> (<code>sor</code>; False skips it)</td>
+</tr>
+<tr>
+<td><code>ground_thin/</code>, <code>ground/</code>, <code>dtm.npz</code>, <code>dtm.asc</code></td>
+<td>ground classified (<code>ground</code>) on a <code>ground_voxel</code> (5 cm) thinning, and the DTM (<code>dtm_resolution</code>): at full precision in <code>dtm.npz</code>, which the heights are taken from, and as an ASCII grid for other software</td>
+</tr>
+<tr>
+<td><code>heights/</code></td>
+<td><code>normalize</code> with that DTM</td>
+</tr>
+<tr>
+<td><code>stems.pkl</code></td>
+<td><code>detect_stems</code> on the tiles inside <code>plot</code> (<code>stems</code>)</td>
+</tr>
+<tr>
+<td><code>segmented/</code>, <code>trees.pkl</code></td>
+<td><code>segment_trees</code> (<code>merge</code>, <code>segment</code>, <code>prune</code>, <code>percentile</code>, <code>buffer</code>)</td>
+</tr>
+<tr>
+<td><code>trees/</code></td>
+<td><code>split_trees</code>, with each tree's leaf / wood and QSM as they are made</td>
+</tr>
+<tr>
+<td><code>wood/</code></td>
+<td><code>classify_leaf_wood</code> (<code>leaf_wood</code>; False skips it)</td>
+</tr>
+<tr>
+<td><code>qsm_table.csv</code>, <code>qsm_models.pkl</code></td>
+<td><code>build_qsms</code> (<code>qsm_options</code>; <code>qsm_files</code> also writes cylinders and meshes)</td>
+</tr>
+<tr>
+<td><code>trees.csv</code></td>
+<td>each tree with its crown metrics and QSM volume</td>
+</tr>
+</tbody>
+</table>
+<p>A second call with the same <code>out</code> takes every complete stage as it is, and
+the leaf / wood and QSM stages resume tree by tree, so an interrupted run
+(killed, out of time) continues where it stopped; the tests interrupt a run
+while it fits QSMs and check that the rerun does nothing twice and ends
+with the tables of an uninterrupted run. A stage's directory is emptied
+when it starts, so a stage cut short is done again from its beginning.
+Delete a stage's directory (and those after it) to redo it with other
+settings. The returned <code>PlotRun</code> holds the trees, the table, the models,
+the catalogue of every stage, the DTM, the store, and each stage's time and
+largest <code>max_points</code>.</p>
+<p>Memory is set by the tile size, the buffers and <code>workers</code>: each tiled stage
+holds <code>workers</code> tiles with their buffers, the segmentation <code>workers</code> tiles'
+graph nodes with a buffer of <code>buffer</code> (up to <code>max_buffer</code>), and the
+per-tree stages <code>workers</code> trees.</p>
+<h2 id="voxels-after-the-workflow">Voxels after the workflow<a class="headerlink" href="#voxels-after-the-workflow" title="Permanent link">&para;</a></h2>
+<p>Ray-traced voxels are a separate step for now (the voxel traversal is
+being made to run in blocks). They need the pulses of the registered scans
+and the DTM of the run:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">voxels</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sylva.raster</span><span class="w"> </span><span class="kn">import</span> <span class="n">Raster</span>
+
+<span class="n">dtm</span> <span class="o">=</span> <span class="n">Raster</span><span class="o">.</span><span class="n">from_ascii_grid</span><span class="p">(</span><span class="s2">"run/dtm.asc"</span><span class="p">)</span>
+<span class="n">grid</span> <span class="o">=</span> <span class="n">voxels</span><span class="o">.</span><span class="n">ray_voxelize</span><span class="p">(</span><span class="s2">"rays_registered.parquet"</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span>
+                           <span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nanmin</span><span class="p">(</span><span class="n">dtm</span><span class="o">.</span><span class="n">data</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nanmax</span><span class="p">(</span><span class="n">dtm</span><span class="o">.</span><span class="n">data</span><span class="p">)</span> <span class="o">+</span> <span class="mi">60</span><span class="p">)),</span>
+                           <span class="n">dtm</span><span class="o">=</span><span class="n">dtm</span><span class="p">,</span> <span class="n">occlusion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">beam</span><span class="o">=</span><span class="p">(</span><span class="mf">0.007</span><span class="p">,</span> <span class="mf">0.00027</span><span class="p">))</span>
+<span class="n">seg</span> <span class="o">=</span> <span class="n">run</span><span class="o">.</span><span class="n">catalogs</span><span class="p">[</span><span class="s2">"segmented"</span><span class="p">]</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+<span class="n">samp</span> <span class="o">=</span> <span class="n">voxels</span><span class="o">.</span><span class="n">tree_sampling</span><span class="p">(</span><span class="n">grid</span><span class="p">,</span> <span class="n">seg</span><span class="p">,</span> <span class="n">seg</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">"tree_id"</span><span class="p">])</span>
+</code></pre></div>
+<p><code>rays_registered.parquet</code> is the scans' pulses (<code>Shots</code>) moved by the same
+corrections as the points (origins by the matrix, directions by its
+rotation). <code>voxels.tree_sampling</code> needs the segmented points with their
+labels in one cloud; on a plot too large for that, sample the trees one at
+a time from the store.</p>
+<h2 id="memory">Memory<a class="headerlink" href="#memory" title="Permanent link">&para;</a></h2>
+<p>At most <code>workers</code> tiles are in memory at a time, each with its buffer:
+about 256 bytes per point, the same budget as for airborne tiles (see
+<a href="../../api/limits/"><code>sylva.limits</code></a>), and fewer workers are used when that
+many would not fit. <code>tiles.last_run()</code> returns what the last operation
+held:</p>
+<div class="highlight"><pre><span></span><code><span class="n">tiles</span><span class="o">.</span><span class="n">statistical_outlier_removal</span><span class="p">(</span><span class="n">cat</span><span class="p">,</span> <span class="s2">"sor"</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span> <span class="n">std_ratio</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">tiles</span><span class="o">.</span><span class="n">last_run</span><span class="p">())</span>
+<span class="c1"># RunInfo(chunks=25, max_points=..., points_read=..., rereads=..., widened_points=...)</span>
+</code></pre></div>
+<p><code>max_points</code> is the most points held by one tile with its buffer (or by a
+tile read again for far-reaching points, by <code>from_scans</code> for its largest
+scan or tile, or by <code>segment_trees</code> for a tile's graph nodes with its
+buffer). For 10 m
+tiles with a 1 m buffer a tile holds 1.44 times its own points; the tests
+check on a 60 m plot of 36 tiles that no step holds more than an eighth of
+the plot.</p>
+<h2 id="checked-on-tumbarumba">Checked on Tumbarumba<a class="headerlink" href="#checked-on-tumbarumba" title="Permanent link">&para;</a></h2>
+<p>A 30 x 30 m corner of the Tumbarumba plot (TUMBA_2022) was tiled from the
+per-scan files and processed tile by tile and as one cloud:</p>
+<p>133 registered scans (the per-scan files, 2 cm thinned, with their
+registration), cropped to the corner and thinned to 2 cm on one global
+grid, in 10 m tiles: 19.6 million points in 15 tiles. The whole-cloud
+reference is the tiles read back as one cloud.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Tiled against whole cloud</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>from_scans</code> (24.4 M points in, 19.6 M kept)</td>
+<td>the same points as <code>voxel_downsample</code> of the concatenated scans; coordinates within the 0.1 mm quantisation</td>
+</tr>
+<tr>
+<td>SOR, <code>k=6</code>, <code>std_ratio=1</code> (1 m buffer; 84 points re-evaluated from a wider read)</td>
+<td>the same 17,889,417 points kept</td>
+</tr>
+<tr>
+<td>ROR, 5 cm, 4 neighbours</td>
+<td>the same 17,601,527 points kept</td>
+</tr>
+<tr>
+<td><code>voxel_downsample</code>, 5 cm</td>
+<td>the same 6,723,984 points</td>
+</tr>
+<tr>
+<td>normals, <code>k=12</code> (0.5 m buffer)</td>
+<td>identical for all but 4,545 points (0.02 %): 3,714 differ by rounding (below 1e-15) and 831 have another neighbour at a tie of the 12th distance (see Limitations)</td>
+</tr>
+<tr>
+<td>PMF ground (10 m buffer), on the 5 cm cloud</td>
+<td>identical classes</td>
+</tr>
+<tr>
+<td>CSF ground (10 m buffer)</td>
+<td>8,868 of 6.7 M points (0.13 %) classified differently</td>
+</tr>
+<tr>
+<td>DTM, 0.5 m (5 m buffer)</td>
+<td>identical cells, except in the outermost two rows of cells at the plot edge</td>
+</tr>
+<tr>
+<td>heights (5 m buffer)</td>
+<td>within 1e-14 m away from the plot edge (2 m)</td>
+</tr>
+<tr>
+<td>stems (<code>min_arc_deg=130</code>, 2, 5 and 10 m buffers)</td>
+<td>the same 18 stems, positions, DBH and ids</td>
+</tr>
+</tbody>
+</table>
+<p>Memory, as the peak resident size of the process: the whole-cloud steps on
+the 19.6 M points peaked at 3.2 GB (and 4.5 GB to hold and thin the
+concatenated scans); tiled with one worker, every step stayed under 1.0 GB
+(<code>max_points</code> at most 5.6 M, a tile with its buffer), and building the tiles
+peaked at 2.0 GB with eight workers, set by the largest scan. With eight
+workers the tiled steps peaked at 4.3 GB and ran in 100 s against 37 s for
+the whole-cloud steps: tiling pays in reading and writing files, and in
+memory it scales with the tile and the workers, not with the plot, which on
+the full hectare is what keeps the run within the machine.</p>
+<h2 id="the-whole-hectare">The whole hectare<a class="headerlink" href="#the-whole-hectare" title="Permanent link">&para;</a></h2>
+<p>The full Tumbarumba hectare (TUMBA_2022) was run tile by tile and as one
+cloud from the same input, so that tiling is the only difference: the
+SOR-filtered tiles of a <code>run_plot</code> run (133 registered scans, 2 cm, SOR
+<code>k=6</code>, <code>std_ratio=1</code>; 281,336,086 points over x, y from -10 to 110 m, in
+10 m tiles). From there both sides used settings under which tiling is
+exact: PMF ground on a 5 cm thinning (20 m buffer tiled) and a 0.5 m DTM;
+stems with <code>min_arc_deg=130</code> and <code>cluster_seeds=True</code>; merge and
+segmentation graphs at 0.1 m with <code>voxel_origin=(0, 0, 0)</code>; heights at the
+99th percentile; pruning with <code>min_height=2</code>, <code>min_slenderness=10</code>;
+leaf / wood per tree; QSMs with <code>stem_radius_cap=1.5</code>. Trees were taken
+from the tiles of the plot (0 to 100 m). The tiled side is
+<code>tiles.run_plot</code> with four workers; the whole-cloud side read every tile
+into one array and ran <code>ground.classify_ground_pmf</code>, <code>ground.make_dtm</code>,
+<code>ground.normalize_height</code>, <code>trees.detect_stems</code>, <code>trees.merge_branches</code>,
+<code>trees.segment_trees</code>, <code>trees.tree_heights</code>, <code>trees.prune_trees</code>,
+<code>leaves.classify_leaf_wood</code> per tree, <code>trees.crown_metrics_all</code> and
+<code>qsm.build_plot</code> in memory.</p>
+<table>
+<thead>
+<tr>
+<th>Compared</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ground classes (5 cm points)</td>
+<td>identical for all 88,475,559</td>
+</tr>
+<tr>
+<td>DTM</td>
+<td>identical inside the plot; 836 of 58,081 cells differ, all in the outer rows of the margin (at most 0.093 m), where the whole-cloud grid stops at the ground points and the tiled one at the tiles</td>
+</tr>
+<tr>
+<td>heights, <code>tree_id</code>, <code>wood</code></td>
+<td>identical for all 223,141,837 points of the plot</td>
+</tr>
+<tr>
+<td>stems</td>
+<td>the same 653, with the same ids, positions, DBH and layers</td>
+</tr>
+<tr>
+<td>trees</td>
+<td>the same 418, with the same heights, point counts and crown metrics</td>
+</tr>
+<tr>
+<td>basal area</td>
+<td>51.7611 m² ha⁻¹ on both</td>
+</tr>
+<tr>
+<td>QSMs</td>
+<td>the same 417 models, cylinder for cylinder, and the same skipped trees; 802.3 m³ on both</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Peak memory</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tiled</td>
+<td>7.8 GB</td>
+<td>about 64 min: ground 963 s, heights 256 s, stems 289 s, segmentation 1365 s, tree store 271 s, leaf / wood 405 s, QSMs 278 s, table 13 s</td>
+</tr>
+<tr>
+<td>one cloud</td>
+<td>26.8 GB</td>
+<td>about 32 min: reading 110 s, ground 182 s, heights 92 s, stems 50 s, segmentation 368 s, leaf / wood 468 s, QSMs 659 s</td>
+</tr>
+</tbody>
+</table>
+<p>Peak memory is the resident size of the process. The single cloud held
+only coordinates and heights; with the attributes and the pulses of a full
+workflow, the earlier whole-cloud run needed about 55 GB. Building the
+tiles (270 s) and SOR (1696 s) are shared by both sides and not counted.
+The tiled steps read and write every tile at each stage and read the
+buffers around each tile, so ground, heights, stems and segmentation are
+four to six times slower; leaf / wood and QSMs are faster tiled, since
+trees run in parallel.</p>
+<p>Two settings of the earlier workflow are not exact under tiling, and were
+replaced for this comparison: the cloth simulation filter (a single sheet
+whose settling depends on all of it; with a 10 m buffer it moved 0.13 % of
+the points of a 30 m block) and the default stem seeding (one random stream
+per layer, so each stem depends on every cluster before it in the layer).
+Two faults found by this comparison were fixed: <code>run_plot</code> now takes the
+heights from the DTM at full precision (<code>dtm.npz</code>) rather than from its
+ASCII grid, whose rounding moved heights by up to 4e-5 m and with them a
+few stems; and with <code>cluster_seeds</code>, the stem detector keeps each cluster's
+points in input order and takes neighbours at equal distances by index in
+its prefilter, so that ties between quantised coordinates resolve as in
+the whole cloud whatever the tile holds.</p>
+<h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Exactness is to the last bit for the kept points and the per-point values,
+  with two caveats. The nearest-neighbour search orders neighbours at equal
+  distances by the layout of its search tree, which differs between a tile
+  and the whole cloud. Quantised coordinates make such ties common: where
+  one falls at the <code>k</code>-th distance, a feature can be computed from another
+  neighbour, and where it falls earlier, the covariance is summed in
+  another order (a difference below 1e-15). Normals and planarity are
+  affected (0.02 % of the Tumbarumba points); outlier removal is not, as it
+  uses only the distances. Coordinates are quantised to the tiles' scale,
+  so the whole cloud to compare with is the tiles read back (<code>cat.read()</code>),
+  not the scans before tiling.</li>
+<li>The cloth simulation filter is close to, but not exactly, the whole-cloud
+  classification.</li>
+<li>Stem detection in coregistration mode (<code>cluster_grid_at_slice_min</code>) grids
+  each layer from its own minimum, which depends on the tile; the default
+  absolute grid is needed for tiled detection to match.</li>
+<li>A point far from everything else (an isolated return tens of metres above
+  the canopy) is searched again in every tile within its reach, one tile at
+  a time: slow for many such points, but bounded in memory.</li>
+<li>Scratch files of <code>from_scans</code>, statistical outlier removal and
+  <code>segment_trees</code> need disk space beside the output, and a tree store holds
+  a second copy of every tree's points (full precision, about 60 bytes a
+  point with the usual attributes).</li>
+<li><code>segment_trees</code> matches the whole cloud only on the grid it uses: the
+  whole-cloud <code>trees.segment_trees</code> anchors its voxel grid at the cloud's
+  lowest point unless given <code>voxel_origin</code>. Its labels also depend on the
+  buffer being wider than the largest crown; a crown that reaches the
+  buffer's edge is read again wider, and reported when <code>max_buffer</code> is not
+  enough. Nearest-neighbour ties in the graph (a node's neighbours, a
+  point's nearest node) could in principle go another way than in the
+  whole cloud; none did on the 223 million points of the Tumbarumba plot.</li>
+<li>Tiled segmentation is slower than on one cloud (about four times on
+  Tumbarumba), since each tile reads the graph nodes of its whole buffer.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      &copy; 2026 Tim Devereux, The University of Queensland &middot; GPL-3.0-or-later
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

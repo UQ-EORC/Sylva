@@ -1,0 +1,3498 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Terrestrial laser scanning processing for forest ecology, with a Rust core">
+      
+      
+        <meta name="author" content="Tim Devereux, The University of Queensland">
+      
+      
+      
+        <link rel="prev" href="../change_als/">
+      
+      
+        <link rel="next" href="../leaves/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>QSMs - Sylva</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#quantitative-structure-models" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Sylva" class="md-header__button md-logo" aria-label="Sylva" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Sylva
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              QSMs
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="indigo"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="indigo"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/UQ-EORC/Sylva" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    UQ-EORC/Sylva
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Sylva" class="md-nav__button md-logo" aria-label="Sylva" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Sylva
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/UQ-EORC/Sylva" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    UQ-EORC/Sylva
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plot workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Point clouds and files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../preprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filtering and registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../masking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Masking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../coordinates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coordinates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trees and crowns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pulses/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pulse data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ray-traced voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interpolation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interpolation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plots in tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne lidar tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Area-based ALS metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full waveforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne canopy structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fusion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TLS and ALS together
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne change
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QSMs
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QSMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#meshes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Meshes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tree-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tree metrics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-whole-plot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A whole plot
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wood-labels-and-wood-weights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wood labels and wood weights
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-fine-does-the-cloud-have-to-be" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How fine does the cloud have to be?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#buttresses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Buttresses
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../leaves/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Leaves on a QSM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scan quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Synthetic data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operational/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operational use
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/01_pointclouds_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    1. Point clouds and I/O
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/02_filtering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2. Filtering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/03_registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3. Registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/04_ground/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    4. Ground and height
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/05_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    5. Trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/06_qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    6. Quantitative structure models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/07_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    7. Canopy structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/08_shots/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    8. Pulses and shots files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/09_voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    9. Ray-traced voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/10_riscan_pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10. A RIEGL project, end to end
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/11_coordinates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11. Coordinates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/12_interpolation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12. Interpolation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/13_masking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    13. Masking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/14_change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    14. Change detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/15_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    15. Airborne lidar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/16_waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    16. Full waveforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/17_synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    17. Synthetic trees, plots and scans
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tree detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QSMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Canopy gap profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/pointcloud/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PointCloud, Raster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/shots/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shots, RiSCAN
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    filters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/masks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    masks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/ground/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ground
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/interpolate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    interpolate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/tiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als_metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    waveform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als (canopy)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als (trees)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    change
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/fusion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    fusion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/change_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    change (airborne)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    canopy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/voxel_blocks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    voxel_blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/coords/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    coords
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/coreg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    coreg
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qsm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/leaves/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    leaves
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/quality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/progress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    progress
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/limits/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    limits
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    synthetic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#meshes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Meshes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tree-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tree metrics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-whole-plot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A whole plot
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wood-labels-and-wood-weights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wood labels and wood weights
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-fine-does-the-cloud-have-to-be" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How fine does the cloud have to be?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#buttresses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Buttresses
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="quantitative-structure-models">Quantitative structure models<a class="headerlink" href="#quantitative-structure-models" title="Permanent link">&para;</a></h1>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">qsm</span>
+<span class="n">tree</span> <span class="o">=</span> <span class="n">cloud</span><span class="p">[</span><span class="n">labels</span> <span class="o">==</span> <span class="mi">7</span><span class="p">]</span>                       <span class="c1"># one segmented tree</span>
+<span class="n">wood</span> <span class="o">=</span> <span class="n">qsm</span><span class="o">.</span><span class="n">wood_points</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>                    <span class="c1"># leaf/wood separation (anisotropy + path passage), thin to 2 cm</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">qsm</span><span class="o">.</span><span class="n">build_qsm</span><span class="p">(</span><span class="n">wood</span><span class="p">,</span> <span class="n">base_xy</span><span class="o">=</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">y</span><span class="p">),</span> <span class="n">max_radius</span><span class="o">=</span><span class="mf">0.6</span> <span class="o">*</span> <span class="n">t</span><span class="o">.</span><span class="n">dbh</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>                          <span class="c1"># volume, length, branch orders, DBH</span>
+<span class="n">model</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s2">"tree7.csv"</span><span class="p">)</span>                       <span class="c1"># cylinder table</span>
+<span class="n">model</span><span class="o">.</span><span class="n">to_obj</span><span class="p">(</span><span class="s2">"tree7.obj"</span><span class="p">)</span>                       <span class="c1"># 3-D mesh (Blender / MeshLab / CloudCompare)</span>
+<span class="n">model</span><span class="o">.</span><span class="n">to_ply</span><span class="p">(</span><span class="s2">"tree7.ply"</span><span class="p">)</span>                       <span class="c1"># binary mesh, faces coloured by branch order</span>
+</code></pre></div>
+<p><code>wood_points</code> uses topology as well as local anisotropy, the path-frequency
+cue of <a href="../../references/">Vicari et al. (2019)</a>: shortest paths from the base over a kNN graph are traced to one
+target per 20 cm cell and every point that three or more of them run
+through is wood, so a sparsely scanned trunk -- neither planar nor linear
+at the neighbourhood scale, and dropped by the old filter -- is kept
+because every path to the crown crosses it. High-anisotropy points then
+survive in connected components that touch passage wood or are large,
+medium-likelihood points after outlier removal and only next to wood
+found already, and the result is dilated by 3 cm. On the harvest cohort
+this took the volume rRMSE from 23.9 to 22.3 % (r² 0.969 → 0.978). The
+medium step is what recovers bark on big occluded stems (DBH rRMSE 12 %
+against 17 % without it) but on small leafy crowns it pulls foliage in
+around the stem; pass <code>medium_threshold=1.0</code> to skip it for saplings.</p>
+<p>In the cylinder stage, points are binned into 10 cm geodesic
+shells from the base and clustered within each shell, the level-set skeleton
+of <a href="../../references/">Verroust and Lazarus (2000)</a> and <a href="../../references/">Xu et al. (2007)</a>; cluster centres
+(circle-fitted where the section is dense) are chained greedily, each node
+linking to the nearest unplaced centre of a higher shell and stragglers to
+their nearest placed centre, then Taubin-smoothed (<a href="../../references/">Taubin 1995</a>) with the ends pinned. A
+trunk that starts by wandering through buttress arms is cut at the first run
+of near-vertical cylinders and replaced by a straight stump. Axes are chosen
+by subtree top height, then reassigned by subtree volume once radii exist.
+Each node's radius is a RANSAC circle in the plane perpendicular to the
+skeleton, refitted in a radius-relative band; thick sections seen all round
+take the equivalent-area radius of a Fourier contour instead, and fluted
+sections a circle cannot explain take that contour's area. On the stem a
+quadratic in subtree length through the accepted circles (or the tree
+allometry) replaces weak fits and fills gaps, non-increasing; everything
+unmeasured, branches included, comes from a pipe model (<a href="../../references/">Shinozaki et al.
+1964</a>), tapering
+linearly with subtree length on straight runs and sharing the parent's
+cross-section by subtree length at every fork. At forks the children's
+summed cross-section is also held to at most <code>pipe_slack</code> times the parent's
+(Leonardo's rule, as in raycloudtools; <a href="../../references/">Devereux et al. 2026</a>).</p>
+<p>Accuracy against felled trees and against raycloudtools is on the
+<a href="../../benchmarks/qsm/">QSM benchmark</a> page.</p>
+<h2 id="meshes">Meshes<a class="headerlink" href="#meshes" title="Permanent link">&para;</a></h2>
+<p><code>QSM.mesh</code>, <code>to_obj</code> and <code>to_ply</code> build one closed tube per cylinder, so a
+branch of 50 cylinders is 50 tubes with 100 caps inside it. With
+<code>contiguous=True</code> each branch is one continuous tube instead: consecutive
+cylinders share a ring, the ring frame is carried along the branch so the
+facets do not twist, and a shared ring takes the mean of the two radii.</p>
+<div class="highlight"><pre><span></span><code><span class="n">model</span><span class="o">.</span><span class="n">to_ply</span><span class="p">(</span><span class="s2">"tree.ply"</span><span class="p">,</span> <span class="n">contiguous</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p>The mesh is about half the size, and because nothing is double-covered it
+encloses the volume the cylinders describe (within a few per cent, from the
+averaged radii at the joints), which the per-cylinder mesh does not. Each
+branch is still its own closed surface pushed into its parent, not welded to
+it: welding them into a single solid would need a boolean union, which Sylva
+does not do.</p>
+<h2 id="tree-metrics">Tree metrics<a class="headerlink" href="#tree-metrics" title="Permanent link">&para;</a></h2>
+<p><code>QSM.metrics()</code> reads the tree's architecture off the cylinders:</p>
+<div class="highlight"><pre><span></span><code><span class="n">m</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">metrics</span><span class="p">()</span>
+<span class="n">m</span><span class="p">[</span><span class="s2">"height"</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">"dbh"</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">"stem_volume"</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">"branch_volume"</span><span class="p">]</span>
+<span class="n">m</span><span class="p">[</span><span class="s2">"n_branches_by_order"</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">"length_by_order"</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">"volume_by_order"</span><span class="p">]</span>
+<span class="n">m</span><span class="p">[</span><span class="s2">"crown_base_height"</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">"crown"</span><span class="p">][</span><span class="s2">"projected_area"</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">"crown"</span><span class="p">][</span><span class="s2">"volume"</span><span class="p">]</span>
+<span class="n">m</span><span class="p">[</span><span class="s2">"lean"</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">"sweep"</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">"path_fraction"</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">"median_insertion_angle"</span><span class="p">]</span>
+<span class="n">m</span><span class="p">[</span><span class="s2">"taper_heights"</span><span class="p">],</span> <span class="n">m</span><span class="p">[</span><span class="s2">"taper_radii"</span><span class="p">]</span>                <span class="c1"># the stem profile</span>
+<span class="n">m</span><span class="p">[</span><span class="s2">"measured_volume_fraction"</span><span class="p">]</span>                       <span class="c1"># fitted to points vs filled in</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">branches</span><span class="p">()</span>                                <span class="c1"># one row per branch</span>
+<span class="n">b</span><span class="p">[</span><span class="s2">"order"</span><span class="p">],</span> <span class="n">b</span><span class="p">[</span><span class="s2">"length"</span><span class="p">],</span> <span class="n">b</span><span class="p">[</span><span class="s2">"base_radius"</span><span class="p">],</span> <span class="n">b</span><span class="p">[</span><span class="s2">"insertion_angle"</span><span class="p">],</span> <span class="n">b</span><span class="p">[</span><span class="s2">"zenith"</span><span class="p">]</span>
+</code></pre></div>
+<ul>
+<li>A branch is one <code>branch_id</code> chain. Its insertion angle is measured
+  between its direction over the 0.5 m past its first cylinder and the
+  parent's direction over 0.5 m either side of the junction. The first
+  cylinder only joins the branch to its parent's axis, and at a fork the
+  parent cylinder leans towards the branch. Its zenith is that of the chord
+  from base to tip.</li>
+<li>The crown base is the lowest first-order branch at least
+  <code>crown_branch_length</code> (1 m) long. The crown outline is drawn from points
+  along every branch cylinder above it.</li>
+<li><code>trees.crown_shape()</code> gives the same shape from any points (a tree's
+  segmented points, say): projected area, stacked slice-hull volume and
+  surface, and the crown's offset from the stem.</li>
+<li><code>path_fraction</code> is the mean base-to-tip path length over the longest one
+  (<a href="../../references/">Smith et al. 2014</a>): 1 for a single stem or a perfectly symmetric
+  tree, lower as the branching grows lopsided.</li>
+<li><code>measured_volume_fraction</code> is the share of the volume in cylinders whose
+  radius was fitted to points; the rest comes from the taper and pipe-model
+  priors. It is a quality flag for the model itself.</li>
+</ul>
+<p>Against the 20 synthetic trees with exact wood meshes (simulated leaf-off
+scans, eight positions):</p>
+<table>
+<thead>
+<tr>
+<th>metric</th>
+<th>median error</th>
+<th>rRMSE</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>height</td>
+<td>−2.1 %</td>
+<td>3.2 %</td>
+</tr>
+<tr>
+<td>DBH (15 trees with a circular section at 1.3 m)</td>
+<td>−1.1 %</td>
+<td>1.5 %</td>
+</tr>
+<tr>
+<td>crown projected area</td>
+<td>−3.2 %</td>
+<td>6.0 %</td>
+</tr>
+<tr>
+<td>crown volume</td>
+<td>−10.5 %</td>
+<td>14 %</td>
+</tr>
+<tr>
+<td>branch-segment zenith (length-weighted median)</td>
+<td>−0.2° bias</td>
+<td>3.2° MAE</td>
+</tr>
+</tbody>
+</table>
+<p>The crown volume is low for the same reason the wood volume is. The
+QSMs recover only about a third of the length of twigs under 1 cm, and
+those twigs mark the crown's outer edge.</p>
+<h2 id="a-whole-plot">A whole plot<a class="headerlink" href="#a-whole-plot" title="Permanent link">&para;</a></h2>
+<p><code>build_plot</code> is the loop around <code>build_qsm</code>: it takes a segmented cloud and
+models every tree, thinning, filtering wood, catching the trees that cannot
+be fitted and reporting progress as it goes.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">ground</span><span class="p">,</span> <span class="n">qsm</span><span class="p">,</span> <span class="n">trees</span>
+
+<span class="n">cloud</span> <span class="o">=</span> <span class="n">ground</span><span class="o">.</span><span class="n">normalize_height</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">dtm</span><span class="p">)</span>
+<span class="n">stems</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">detect_stems</span><span class="p">(</span><span class="n">cloud</span><span class="p">)</span>
+<span class="n">labels</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">segment_trees</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">stems</span><span class="p">)</span>
+<span class="n">stems</span><span class="p">,</span> <span class="n">labels</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">prune_trees</span><span class="p">(</span><span class="n">stems</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span>
+
+<span class="n">plot</span> <span class="o">=</span> <span class="n">qsm</span><span class="o">.</span><span class="n">build_plot</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">stems</span><span class="p">)</span>       <span class="c1"># {tree_id: QSM}, and why any were skipped</span>
+<span class="nb">print</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">plot</span><span class="p">),</span> <span class="n">plot</span><span class="o">.</span><span class="n">total_volume</span><span class="p">,</span> <span class="n">plot</span><span class="o">.</span><span class="n">skipped</span><span class="p">)</span>
+<span class="n">plot</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s2">"trees.csv"</span><span class="p">)</span>                          <span class="c1"># a row per tree</span>
+<span class="n">plot</span><span class="o">.</span><span class="n">write_cylinders</span><span class="p">(</span><span class="s2">"qsms/"</span><span class="p">)</span>                     <span class="c1"># tree&lt;id&gt;.csv each</span>
+<span class="n">plot</span><span class="o">.</span><span class="n">write_meshes</span><span class="p">(</span><span class="s2">"meshes/"</span><span class="p">,</span> <span class="n">contiguous</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>     <span class="c1"># tree&lt;id&gt;.ply each, fused where buttressed</span>
+</code></pre></div>
+<p><code>stems</code> supplies the stem centre each model is built around and its DBH, which
+anchors the taper prior (<code>base_radius</code>); without it the centre comes from the
+tree's own points between 0.5 and 1.5 m. Trees with fewer than <code>min_points</code>
+points, and trees whose fit fails, land in <code>plot.skipped</code> with the reason
+rather than stopping the run.</p>
+<p><strong>Foliage around the bole.</strong> Epicormic regrowth after fire sheathes a stem in
+leaves a metre wide, and the QSM fits its circles to the foliage rather than
+the bark, while the stem detector's DBH stays on the bark.
+<code>stem_radius_cap=1.5</code> sets aside every main-stem circle wider than 1.5 times
+that DBH, strong or not, so the stem follows the taper there (and counts as
+unmeasured). On 12 sheathed eucalypts at Tumbarumba it took the median QSM /
+field DBH from 2.2 to 0.98 and their volume from 105 to 36 m³, and changed 8
+clean trees by 2 %. It leaves foliage narrower than the cap, higher up the
+stem, in place.</p>
+<div class="highlight"><pre><span></span><code><span class="n">plot</span> <span class="o">=</span> <span class="n">qsm</span><span class="o">.</span><span class="n">build_plot</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">stems</span><span class="p">,</span> <span class="n">stem_radius_cap</span><span class="o">=</span><span class="mf">1.5</span><span class="p">)</span>
+</code></pre></div>
+<p>In such a stand, drop shrubs fitted as stems before modelling with
+<code>trees.prune_trees(..., min_slenderness=10)</code>.</p>
+<p><code>buttress=True</code> additionally looks for a flanged base on each tree and meshes
+it, so <code>plot.volume(tree_id)</code> is the buttress mesh below its top plus the
+cylinders above it (see below). It costs a slice-rasterising pass per tree.</p>
+<p><code>write_meshes</code> gives one surface per tree: a tree with a buttress is written
+fused, so the flanged base and the cylinders above it are one file (named
+objects <code>buttress</code> and <code>wood</code> in OBJ), and every other tree is its cylinder
+mesh. <code>fmt="obj"</code> for text and named parts, the default <code>"ply"</code> for binary
+with face colours.</p>
+<p>From the command line, on a cloud that carries a <code>tree_id</code> attribute (what
+<code>sylva trees --segment</code> writes):</p>
+<div class="highlight"><pre><span></span><code>sylva<span class="w"> </span>qsm-plot<span class="w"> </span>plot_trees.laz<span class="w"> </span>trees.csv<span class="w"> </span>--cylinders<span class="w"> </span>qsms/<span class="w"> </span>--meshes<span class="w"> </span>meshes/
+</code></pre></div>
+<h2 id="wood-labels-and-wood-weights">Wood labels and wood weights<a class="headerlink" href="#wood-labels-and-wood-weights" title="Permanent link">&para;</a></h2>
+<p><code>build_plot</code> finds each tree's wood with <code>wood_points</code> unless told otherwise.
+<code>wood=</code> also takes the wood per point of the plot, from any classifier or
+from manual labels:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">leaves</span><span class="p">,</span> <span class="n">qsm</span>
+
+<span class="c1"># Binary labels: each tree is fitted on its wood points only.</span>
+<span class="n">is_wood</span> <span class="o">=</span> <span class="n">leaves</span><span class="o">.</span><span class="n">classify_leaf_wood</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">"gbs"</span><span class="p">)</span>
+<span class="n">plot</span> <span class="o">=</span> <span class="n">qsm</span><span class="o">.</span><span class="n">build_plot</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">stems</span><span class="p">,</span> <span class="n">wood</span><span class="o">=</span><span class="n">is_wood</span><span class="p">)</span>
+<span class="n">plot</span> <span class="o">=</span> <span class="n">qsm</span><span class="o">.</span><span class="n">build_plot</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">stems</span><span class="p">,</span> <span class="n">wood</span><span class="o">=</span><span class="s2">"wood"</span><span class="p">)</span>       <span class="c1"># attribute: 1 wood, 0 / -1 not</span>
+
+<span class="c1"># Weights in [0, 1]: each tree is fitted on all its points, weighted.</span>
+<span class="n">_</span><span class="p">,</span> <span class="n">confidence</span> <span class="o">=</span> <span class="n">leaves</span><span class="o">.</span><span class="n">classify_leaf_wood</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">"passage"</span><span class="p">,</span> <span class="n">scale_radius</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+                                          <span class="n">return_scores</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">plot</span> <span class="o">=</span> <span class="n">qsm</span><span class="o">.</span><span class="n">build_plot</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">stems</span><span class="p">,</span> <span class="n">wood</span><span class="o">=</span><span class="n">confidence</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">qsm</span><span class="o">.</span><span class="n">build_qsm</span><span class="p">(</span><span class="n">cloud</span><span class="p">[</span><span class="n">labels</span> <span class="o">==</span> <span class="mi">7</span><span class="p">],</span> <span class="n">weights</span><span class="o">=</span><span class="n">confidence</span><span class="p">[</span><span class="n">labels</span> <span class="o">==</span> <span class="mi">7</span><span class="p">])</span>   <span class="c1"># one tree</span>
+</code></pre></div>
+<p>A classifier that drops points makes a hard decision, and a trunk it misses
+loses its measurements. With <code>weights=</code> nothing is dropped (unless it falls
+below <code>min_weight</code>): every point builds the graph and the skeleton, and the
+weight enters only where a radius is measured. RANSAC scores a candidate
+circle by the summed weight of its inliers rather than their number, the
+circle is refitted by weighted least squares, a section needs a summed
+weight of <code>fit_min_points</code> to be fitted, and a circle whose inliers have a
+mean weight below <code>min_mean_weight</code> (0.5) is not a measurement, so the
+section takes its radius from the priors. The arc and the contour of a
+section use its confident points (weight at least 0.5), and a cylinder's
+<code>n_points</code> counts its confident inliers. Weights of one everywhere give
+exactly the unweighted model.</p>
+<p><code>classify_leaf_wood(..., return_scores=True)</code> gives a confidence to use as the
+weight. For the passage filter it is 1 where the filter keeps the point and
+0.4 times the point's anisotropy where it drops it, so dropped points count a
+little towards a circle but are never confident wood; for the graph-based
+labeller it is half the label plus half the share of the shell scales at
+which the point's piece was wood.</p>
+<p>On the destructive-harvest trees (73 of the benchmark's trees with a cloud
+at hand, the same slice DBH and settings for every input; volume bias and
+rRMSE, and per study bias / rRMSE):</p>
+<table>
+<thead>
+<tr>
+<th>QSM input</th>
+<th>bias</th>
+<th>rRMSE</th>
+<th>CCC</th>
+<th>Momo (40)</th>
+<th>GdtM (29)</th>
+<th>Burt (4)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>passage filter (default)</strong></td>
+<td><strong>−3.4 %</strong></td>
+<td><strong>22.0 %</strong></td>
+<td><strong>0.986</strong></td>
+<td>−3.2 / 22.5 %</td>
+<td>−4.4 / 23.1 %</td>
+<td>+1.5 / 6.7 %</td>
+</tr>
+<tr>
+<td>graph-based labels (<code>wood=</code> labels)</td>
+<td>−6.2 %</td>
+<td>26.6 %</td>
+<td>0.980</td>
+<td>−7.8 / 27.2 %</td>
+<td>−4.0 / 28.0 %</td>
+<td>−7.3 / 8.5 %</td>
+</tr>
+<tr>
+<td>every point, unweighted (<code>wood=False</code>)</td>
+<td>−3.9 %</td>
+<td>25.6 %</td>
+<td>0.981</td>
+<td>−2.3 / 20.7 %</td>
+<td>−7.1 / 32.5 %</td>
+<td>+3.2 / 7.5 %</td>
+</tr>
+<tr>
+<td>weighted, passage confidence</td>
+<td>−4.3 %</td>
+<td>24.6 %</td>
+<td>0.983</td>
+<td>−2.2 / 19.3 %</td>
+<td>−8.2 / 31.6 %</td>
+<td>+2.4 / 6.6 %</td>
+</tr>
+<tr>
+<td>weighted, graph-based confidence</td>
+<td>−6.9 %</td>
+<td>25.0 %</td>
+<td>0.982</td>
+<td>−5.2 / 24.2 %</td>
+<td>−9.3 / 27.9 %</td>
+<td>−6.2 / 7.1 %</td>
+</tr>
+<tr>
+<td>weighted, passage keep 1, dropped 0.45 if graph-based wood, else 0.1</td>
+<td>−4.3 %</td>
+<td>24.3 %</td>
+<td>0.983</td>
+<td>−1.9 / 18.6 %</td>
+<td>−8.4 / 31.6 %</td>
+<td>+2.3 / 6.5 %</td>
+</tr>
+<tr>
+<td>passage filter's points, weighted by the graph-based confidence (at least 0.2)</td>
+<td>−5.8 %</td>
+<td>22.6 %</td>
+<td>0.985</td>
+<td>−5.6 / 22.7 %</td>
+<td>−6.8 / 24.4 %</td>
+<td>−1.5 / 5.3 %</td>
+</tr>
+</tbody>
+</table>
+<p>The passage filter stays the default. Weighting all points helps the
+Cameroon trees (Momo, 22.5 to 18.6-19.3 % rRMSE) and costs the leafy
+Peruvian, Guyanese and Indonesian ones (GdtM, 23 to 28-32 %): the points the
+filter drops rejoin the graph and change the skeleton, which limb the stem
+follows and how long it is, and on those big trees most radii come from the
+priors rather than from circles (1-2 % of the length and about half the
+volume is measured), so the weights have little to act on. Keeping the filter's graph and
+weighting its points by the graph-based confidence changes little (22.6 %).
+Weights earn their place where foliage sheathes a well-scanned stem: on a
+0.15 m stem wrapped to 7 m in leaves (weights 0.9 bark, 0.1 foliage) the
+weighted model is within 10 % of the true volume where the unweighted one
+is over 30 % above it. Binary labels are the way to bring in a better
+classification than Sylva's, manual labels for instance; the graph-based
+labels, though more accurate as labels, drop wood the QSM needs.</p>
+<h2 id="how-fine-does-the-cloud-have-to-be">How fine does the cloud have to be?<a class="headerlink" href="#how-fine-does-the-cloud-have-to-be" title="Permanent link">&para;</a></h2>
+<p>Fine enough that every geodesic shell holds points on the stem surface. With
+roughly 1 cm spacing the default 0.1 m shells do; a cloud thinned to 3-5 cm
+leaves most of them with too few points, and those cylinders take their
+radius from the taper and pipe-model priors instead of the data. That is not
+a small error: on a 21 m savanna tree whose stem the points put at 0.17 m
+radius,</p>
+<table>
+<thead>
+<tr>
+<th>cloud</th>
+<th>DBH</th>
+<th>volume</th>
+<th>of the model fitted to points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>full resolution (~1 cm)</td>
+<td>0.34 m</td>
+<td>1.92 m³</td>
+<td>most</td>
+</tr>
+<tr>
+<td>thinned to 5 cm</td>
+<td>1.10 m</td>
+<td>9.76 m³</td>
+<td>0.8 % of its length</td>
+</tr>
+</tbody>
+</table>
+<p>and over that plot the total came to 96 m³ against 36 m³ for the same trees
+at full resolution. Widening the shells does not rescue it: <code>bin_length=0.3</code>
+fixes that tree but merges the saplings, and the plot total goes up again.</p>
+<p>Sylva now sets those from the cloud rather than assuming: the circle band,
+the shell length and <code>fit_min_points</code> are scaled to the median spacing
+(<code>spacing_scale</code>, 0 to switch it off), and past 2.5 cm spacing the radius
+comes from a power mean of the distances to the section axis instead of a
+circle fit (<code>radius_power</code>, after raycloudtools' <code>rayextract trees</code>;
+<a href="../../references/">Devereux et al. 2026</a>). That is a different failure
+mode on purpose: a low power mean is dominated by the near points, so a
+section that caught foliage reads slightly small rather than wildly large,
+and nothing has to lie inside a band for it to work at all.</p>
+<p>Against the exact volumes of 8 synthetic trees, as the same cloud is thinned:</p>
+<table>
+<thead>
+<tr>
+<th>spacing</th>
+<th>median volume error</th>
+<th>IQR</th>
+<th>worst tree</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>~1 cm</td>
+<td>−5.6 %</td>
+<td>−7..+1</td>
+<td>+8.0 %</td>
+</tr>
+<tr>
+<td>2 cm</td>
+<td>−3.7 %</td>
+<td>−6..0</td>
+<td>−6.8 %</td>
+</tr>
+<tr>
+<td>5 cm</td>
+<td>+9.5 %</td>
+<td>+4..+14</td>
+<td>+21.1 %</td>
+</tr>
+<tr>
+<td>8 cm</td>
+<td>+0.2 %</td>
+<td>−4..+4</td>
+<td>+14.5 %</td>
+</tr>
+</tbody>
+</table>
+<p>Before this, the same trees at 5 cm had one tree at <strong>+418 %</strong> and at 8 cm one
+at −99 %. The savanna tree above goes from 1.10 m DBH and 9.76 m³ to 0.343 m
+and 2.29 m³, against 0.338 m and 1.88 m³ at full resolution.</p>
+<p>It is still better to fit on the full-resolution points, where the bias is
+smallest, but a thinned cloud now degrades gently instead of
+inventing stems. <code>build_plot</code> warns when the median model was hardly fitted
+at all, and <code>measured_length</code> (with <code>measured_volume</code>) in <code>PlotQSMs.table</code>
+reports it per tree: values near 1 mean the cylinders follow the points,
+values near 0 mean they follow the priors.</p>
+<h2 id="buttresses">Buttresses<a class="headerlink" href="#buttresses" title="Permanent link">&para;</a></h2>
+<p>A cylinder cannot follow a buttressed base. At 1.3 m a large tropical tree can
+be a star of flanges that a circle explains only a fraction of, so the QSM
+either misses the flanges or spans the gaps between them. Sylva finds
+buttresses, then rebuilds them as a closed mesh:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">qsm</span><span class="p">,</span> <span class="n">trees</span>
+
+<span class="n">b</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">detect_buttress</span><span class="p">(</span><span class="n">tree</span><span class="p">)</span>                 <span class="c1"># tree: one tree's points with "height"</span>
+<span class="k">if</span> <span class="n">b</span><span class="p">[</span><span class="s2">"buttressed"</span><span class="p">]:</span>
+    <span class="n">base</span> <span class="o">=</span> <span class="n">qsm</span><span class="o">.</span><span class="n">buttress_mesh</span><span class="p">(</span><span class="n">tree</span><span class="p">,</span> <span class="n">b</span><span class="p">[</span><span class="s2">"centre"</span><span class="p">],</span> <span class="n">top</span><span class="o">=</span><span class="n">b</span><span class="p">[</span><span class="s2">"top"</span><span class="p">])</span>
+    <span class="n">volume</span> <span class="o">=</span> <span class="n">base</span><span class="o">.</span><span class="n">total_volume</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>           <span class="c1"># mesh below the top + QSM above it</span>
+    <span class="n">base</span><span class="o">.</span><span class="n">fuse</span><span class="p">(</span><span class="n">model</span><span class="p">)</span><span class="o">.</span><span class="n">to_ply</span><span class="p">(</span><span class="s2">"tree.ply"</span><span class="p">)</span>         <span class="c1"># both as one mesh of the whole tree</span>
+</code></pre></div>
+<p><strong>Detection</strong> (<code>trees.detect_buttress</code>) uses only bark-like points: locally
+planar, with a near-horizontal normal. Flanges and round bark are both
+vertical surfaces, while grass, shrubs and resprouts clumped around a stem are
+not. Two signals then decide:</p>
+<ul>
+<li>how much of the base a circle explains, compared with the round stem higher
+  up;</li>
+<li>how many ridges there are: angles around the stem where protrusions persist
+  through the lowest metre. Neighbouring flanges are split where persistence
+  dips between them.</li>
+</ul>
+<p>The top is the lowest height from which a circle explains the stem again.</p>
+<p>On 97 harvest trees labelled by eye (Cameroon, Peru, Guyana, Indonesia and
+Wytham), it finds 28 of 29 buttressed trees with no false alarms, whether the
+points come at 1 or 2 cm. On the 40 largest trees of the Litchfield savanna,
+which have no buttresses, it calls 2 buttressed. Both are dense shrub clumps
+pressed against the stem.</p>
+<p><strong>Meshing</strong> (<code>qsm.buttress_mesh</code>) rebuilds the base volumetrically, so any
+shape works:</p>
+<ul>
+<li>Thin slices are rasterised, and a morphological closing plus a flood fill
+  gives the solid cross-section.</li>
+<li>Slices are built from the top down. Each section contains the one above,
+  and the part of a slice kept is the part connected to it. The core then
+  carries down where near the ground only the outsides of the flanges were
+  seen.</li>
+<li>A section may widen by no more than <code>max_flare</code> metres per metre of drop
+  (default 1.0, that is 45°). Flanges flare well within that. Without it, a
+  single scan line lying on the ground and ringing the stem encloses
+  everything inside it when the outline is filled, and the base comes out
+  wearing a slab: on one tropical tree that was 6.6 m² of ground at the foot
+  of a 3.2 m² base, 13 % of the buttress volume.</li>
+<li>Where an outline stays open, the seen bark is kept, thickened to the closing
+  radius, plus a circle where the points form a good arc.</li>
+</ul>
+<p>The stacked sections become a watertight surface (surface nets, <a href="../../references/">Gibson
+1998</a>), closed where
+the solid meets the ground and the edge of its raster. A few edges are shared
+by four faces where two voxels touch only corner to corner, which some tools
+call non-manifold; the surface is still closed, and the volume it encloses
+agrees with the reported one. The volume itself is the sum of the slice areas.</p>
+<p><strong>Fusing</strong> (<code>Buttress.fuse</code>) puts the base and the cylinders in one mesh of the
+whole stem. The buttress replaces the wood below its top: <code>QSM.above(top_z)</code>
+cuts the model at that plane, cutting through any cylinder that crosses it, and
+the two surfaces meet there, so nothing is counted twice and the volume is the
+one <code>total_volume</code> reports:</p>
+<div class="highlight"><pre><span></span><code><span class="n">fused</span> <span class="o">=</span> <span class="n">base</span><span class="o">.</span><span class="n">fuse</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">contiguous</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">fused</span><span class="o">.</span><span class="n">volume</span><span class="p">,</span> <span class="n">fused</span><span class="o">.</span><span class="n">buttress_volume</span><span class="p">,</span> <span class="n">fused</span><span class="o">.</span><span class="n">wood_volume</span>
+<span class="n">fused</span><span class="o">.</span><span class="n">to_obj</span><span class="p">(</span><span class="s2">"tree.obj"</span><span class="p">)</span>        <span class="c1"># objects "buttress" and "wood"</span>
+<span class="n">fused</span><span class="o">.</span><span class="n">to_ply</span><span class="p">(</span><span class="s2">"tree.ply"</span><span class="p">)</span>        <span class="c1"># one mesh, the base in bark brown</span>
+</code></pre></div>
+<p>The two parts stay watertight and separately labelled (<code>fused.part</code> per face)
+rather than being welded into a single shell: a boolean union of a flanged base
+and a few thousand tubes is not something a triangle mesh survives cleanly, and
+the seam at the top plane is where the two volumes already meet.</p>
+<p>On the 15 Cameroon harvest trees it detects as buttressed, the QSM alone has a
+−10.1 % volume bias against the felled volume. With the buttress mesh below
+the top, the bias is +2.3 % (RMSE 18.1 % and 17.7 %). Whether the published
+felled volumes include the stump below the cut is not recorded, so treat this
+as indicative. That run predates the flare limit, which on three of those
+trees moves the buttress volume by −1.1 to −5.5 % (so the combined figure by
+under a percent); it is worth re-running.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      &copy; 2026 Tim Devereux, The University of Queensland &middot; GPL-3.0-or-later
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

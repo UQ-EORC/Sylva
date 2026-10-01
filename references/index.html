@@ -1,0 +1,3463 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Terrestrial laser scanning processing for forest ecology, with a Rust core">
+      
+      
+        <meta name="author" content="Tim Devereux, The University of Queensland">
+      
+      
+      
+        <link rel="prev" href="../release/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>References - Sylva</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#references" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Sylva" class="md-header__button md-logo" aria-label="Sylva" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Sylva
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              References
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="indigo"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="indigo"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/UQ-EORC/Sylva" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    UQ-EORC/Sylva
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Sylva" class="md-nav__button md-logo" aria-label="Sylva" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Sylva
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/UQ-EORC/Sylva" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    UQ-EORC/Sylva
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plot workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Point clouds and files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/preprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filtering and registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/masking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Masking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/coordinates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coordinates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trees and crowns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/pulses/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pulse data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ray-traced voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/interpolation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interpolation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/tiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plots in tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne lidar tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/als_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Area-based ALS metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full waveforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/als_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne canopy structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/als_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/fusion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TLS and ALS together
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/change_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne change
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QSMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/leaves/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Leaves on a QSM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/quality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scan quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Synthetic data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/operational/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operational use
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/01_pointclouds_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    1. Point clouds and I/O
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/02_filtering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2. Filtering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/03_registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3. Registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/04_ground/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    4. Ground and height
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/05_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    5. Trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/06_qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    6. Quantitative structure models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/07_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    7. Canopy structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/08_shots/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    8. Pulses and shots files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/09_voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    9. Ray-traced voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/10_riscan_pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10. A RIEGL project, end to end
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/11_coordinates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11. Coordinates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/12_interpolation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12. Interpolation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/13_masking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    13. Masking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/14_change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    14. Change detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/15_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    15. Airborne lidar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/16_waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    16. Full waveforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/17_synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    17. Synthetic trees, plots and scans
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tree detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QSMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Canopy gap profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/pointcloud/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PointCloud, Raster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/shots/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shots, RiSCAN
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    filters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/masks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    masks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/ground/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ground
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/interpolate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    interpolate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/tiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/als_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als_metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    waveform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/als_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als (canopy)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/als_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    als (trees)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    change
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/fusion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    fusion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/change_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    change (airborne)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    canopy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/voxel_blocks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    voxel_blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/coords/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    coords
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/coreg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    coreg
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qsm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/leaves/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    leaves
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/quality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/progress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    progress
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/limits/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    limits
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    synthetic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Methods
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Formats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#software" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Software
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Methods
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Formats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#software" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Software
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h1>
+<p>The methods Sylva implements, the datasets it is validated against, and the
+software it interoperates with. Cite the original work when you publish
+results, not just Sylva. Each entry says where in Sylva it is used.</p>
+<h2 id="methods">Methods<a class="headerlink" href="#methods" title="Permanent link">&para;</a></h2>
+<p>Åkerblom, M., Raumonen, P., Casella, E., Disney, M. I., Danson, F. M., Gaulton,
+R., Schofield, L. A., &amp; Kaasalainen, M. (2018). Non-intersecting leaf insertion
+algorithm for tree structure models. <em>Interface Focus</em>, <em>8</em>(2), 20170045.
+<a href="https://doi.org/10.1098/rsfs.2017.0045">https://doi.org/10.1098/rsfs.2017.0045</a>
+In Sylva: the collision-free leaf insertion that <code>leaves.add_leaves</code> does not attempt.</p>
+<p>Amanatides, J., &amp; Woo, A. (1987). A fast voxel traversal algorithm for ray
+tracing. In <em>Eurographics 1987: Technical papers</em> (pp. 3–10). The Eurographics
+Association. <a href="https://doi.org/10.2312/egtp.19871000">https://doi.org/10.2312/egtp.19871000</a>
+In Sylva: the voxel walk of <code>canopy.density_grid</code> and <a href="../api/voxels/"><code>sylva.voxels</code></a>.</p>
+<p>Andrew, A. M. (1979). Another efficient algorithm for convex hulls in two
+dimensions. <em>Information Processing Letters</em>, <em>9</em>(5), 216–219.
+<a href="https://doi.org/10.1016/0020-0190(79)90072-3">https://doi.org/10.1016/0020-0190(79)90072-3</a>
+In Sylva: the monotone-chain convex hull behind <code>trees.convex_hull_area</code>,
+<code>crown_metrics</code> and <code>crown_shape</code>.</p>
+<p>Armston, J., Disney, M., Lewis, P., Scarth, P., Phinn, S., Lucas, R., Bunting,
+P., &amp; Goodwin, N. (2013). Direct retrieval of canopy gap probability using
+airborne waveform lidar. <em>Remote Sensing of Environment</em>, <em>134</em>, 24–38.
+<a href="https://doi.org/10.1016/j.rse.2013.02.021">https://doi.org/10.1016/j.rse.2013.02.021</a>
+In Sylva: the 1/n weighting of the echoes of a pulse in <code>canopy.GapProfile</code>.</p>
+<p>Bailey, B. N., &amp; Mahaffee, W. F. (2017). Rapid, high-resolution measurement of
+leaf area and leaf orientation using terrestrial LiDAR scanning data.
+<em>Measurement Science and Technology</em>, <em>28</em>(6), 064006.
+<a href="https://doi.org/10.1088/1361-6501/aa5cfd">https://doi.org/10.1088/1361-6501/aa5cfd</a>
+In Sylva: the <code>bailey</code> attenuation estimator and triangle-facet <em>G</em> in
+<a href="../api/voxels/"><code>sylva.voxels</code></a>.</p>
+<p>Baskerville, G. L. (1972). Use of logarithmic regression in the estimation of
+plant biomass. <em>Canadian Journal of Forest Research</em>, <em>2</em>(1), 49–53.
+<a href="https://doi.org/10.1139/x72-009">https://doi.org/10.1139/x72-009</a>
+In Sylva: the back-transformation <code>exp(σ²/2)</code> of log-log models in
+<code>fusion.fit_model</code> and <code>fusion.upscale</code>.</p>
+<p>Beaton, A. E., &amp; Tukey, J. W. (1974). The fitting of power series, meaning
+polynomials, illustrated on band-spectroscopic data. <em>Technometrics</em>, <em>16</em>(2),
+147–185. <a href="https://doi.org/10.1080/00401706.1974.10489171">https://doi.org/10.1080/00401706.1974.10489171</a>
+In Sylva: the Tukey biweight option (<code>robust="tukey"</code>) of <code>sylva.coreg.icp</code>.</p>
+<p>Besl, P. J., &amp; McKay, N. D. (1992). A method for registration of 3-D shapes.
+<em>IEEE Transactions on Pattern Analysis and Machine Intelligence</em>, <em>14</em>(2),
+239–256. <a href="https://doi.org/10.1109/34.121791">https://doi.org/10.1109/34.121791</a>
+In Sylva: iterative closest point, <code>registration.icp</code> (<code>method="point"</code>) and
+<code>sylva.coreg.icp</code>.</p>
+<p>Bouvier, M., Durrieu, S., Fournier, R. A., &amp; Renaud, J.-P. (2015). Generalizing
+predictive models of forest inventory attributes using an area-based approach
+with airborne LiDAR data. <em>Remote Sensing of Environment</em>, <em>156</em>, 322–334.
+<a href="https://doi.org/10.1016/j.rse.2014.10.004">https://doi.org/10.1016/j.rse.2014.10.004</a>
+Used by: the gap-fraction profile of lidR's <code>LAD()</code>, which
+<a href="../guide/als_canopy/"><code>als.gap_profile</code></a> reproduces with <code>weighting="all"</code>.</p>
+<p>Calders, K., Armston, J., Newnham, G., Herold, M., &amp; Goodwin, N. (2014).
+Implications of sensor configuration and topography on vertical plant profiles
+derived from terrestrial LiDAR. <em>Agricultural and Forest Meteorology</em>, <em>194</em>,
+104–117. <a href="https://doi.org/10.1016/j.agrformet.2014.03.022">https://doi.org/10.1016/j.agrformet.2014.03.022</a>
+In Sylva: the robust ground plane of <code>canopy.fit_ground_plane</code>.</p>
+<p>Campbell, G. S. (1990). Derivation of an angle density function for canopies
+with ellipsoidal leaf angle distributions. <em>Agricultural and Forest
+Meteorology</em>, <em>49</em>(3), 173–176.
+<a href="https://doi.org/10.1016/0168-1923(90)90030-A">https://doi.org/10.1016/0168-1923(90)90030-A</a>
+In Sylva: the ellipsoidal χ and its projection function in
+<a href="../api/leaves/"><code>sylva.leaves</code></a> and the <code>ellipsoidal</code> leaf angle
+distribution of <a href="../api/voxels/"><code>sylva.voxels</code></a>.</p>
+<p>Chen, Y., &amp; Medioni, G. (1992). Object modelling by registration of multiple
+range images. <em>Image and Vision Computing</em>, <em>10</em>(3), 145–155.
+<a href="https://doi.org/10.1016/0262-8856(92)90066-C">https://doi.org/10.1016/0262-8856(92)90066-C</a>
+In Sylva: point-to-plane ICP, <code>registration.icp</code> (<code>method="plane"</code>) and
+<code>sylva.coreg.icp</code>.</p>
+<p>Chetverikov, D., Svirko, D., Stepanov, D., &amp; Krsek, P. (2002). The trimmed
+iterative closest point algorithm. In <em>Proceedings of the 16th International
+Conference on Pattern Recognition</em> (Vol. 3, pp. 545–548). IEEE.
+<a href="https://doi.org/10.1109/ICPR.2002.1047997">https://doi.org/10.1109/ICPR.2002.1047997</a>
+In Sylva: the <code>trim</code> of <code>registration.icp</code> and the trimmed correspondences of
+<code>sylva.coreg.icp</code>.</p>
+<p>de Liocourt, F. (1898). De l'aménagement des sapinières. <em>Bulletin trimestriel
+de la Société forestière de Franche-Comté et Belfort</em>, <em>4</em>, 396–409.
+In Sylva: the reverse-J (negative exponential) diameter distribution of
+<code>synthetic.plot</code>.</p>
+<p>de Wit, C. T. (1965). <em>Photosynthesis of leaf canopies</em> (Agricultural Research
+Reports No. 663). Pudoc. <a href="https://edepot.wur.nl/187115">https://edepot.wur.nl/187115</a>
+In Sylva: the planophile, erectophile, plagiophile and extremophile leaf angle
+distributions of <code>sylva.leaves</code>, <code>sylva.voxels</code> and <code>synthetic.tree_model</code>.</p>
+<p>Dai, X., Liang, X., Qi, H., Chen, J., Wang, X., Wang, X., Zhang, Q., &amp; Zhang,
+J. (2024). Automated registration of terrestrial point clouds through ground
+overlapping searching in forests. <em>IEEE Transactions on Geoscience and Remote
+Sensing</em>, <em>62</em>, 1–13. <a href="https://doi.org/10.1109/TGRS.2024.3471792">https://doi.org/10.1109/TGRS.2024.3471792</a>
+In Sylva: registering levelled forest scans on their shared ground: the height of a
+<code>sylva.coreg</code> stem match is taken from the terrain the two scans share.</p>
+<p>Devereux, T., Lowe, T., Rivory, J., Bohn Reckziegel, R., Calders, K., Aryal,
+R. R., Eaton, G., Cooper, Z., Levick, S., Phinn, S., &amp; Woodgate, W. (2026).
+RayExtract: A fast, scalable method for tree volume reconstruction from
+terrestrial laser scanning. <em>Remote Sensing of Environment</em>, <em>334</em>, 115162.
+<a href="https://doi.org/10.1016/j.rse.2025.115162">https://doi.org/10.1016/j.rse.2025.115162</a>
+In Sylva: raycloudtools' <code>rayextract trees</code>: the least-cost-path segmentation that
+<code>trees.segment_trees</code> and <code>trees.merge_branches</code> follow, and the power-mean
+section radius and Leonardo's rule at forks in <a href="../api/qsm/"><code>sylva.qsm</code></a>; also
+the raycloudtools baseline of the <a href="../benchmarks/trees/">tree</a> and
+<a href="../benchmarks/qsm/">QSM</a> benchmarks.</p>
+<p>Fischler, M. A., &amp; Bolles, R. C. (1981). Random sample consensus: A paradigm
+for model fitting with applications to image analysis and automated
+cartography. <em>Communications of the ACM</em>, <em>24</em>(6), 381–395.
+<a href="https://doi.org/10.1145/358669.358692">https://doi.org/10.1145/358669.358692</a>
+In Sylva: RANSAC circle fits in <code>trees.detect_stems</code>, <code>trees.fit_circle_ransac</code>,
+<code>trees.dbh_profile</code>, <code>trees.detect_buttress</code>, <code>quality.stem_noise</code> and the
+stem maps of <code>sylva.coreg</code>.</p>
+<p>Gatziolis, D., &amp; McGaughey, R. J. (2019). Reconstructing aircraft trajectories
+from multi-return airborne laser-scanning data. <em>Remote Sensing</em>, <em>11</em>(19),
+2258. <a href="https://doi.org/10.3390/rs11192258">https://doi.org/10.3390/rs11192258</a>
+Used by: the trajectory estimate of
+<a href="../guide/als_canopy/"><code>als.estimate_trajectory</code></a>, from the lines of
+multiple-return pulses.</p>
+<p>Gibson, S. F. F. (1998). Constrained elastic surface nets: Generating smooth
+surfaces from binary segmented data. In <em>Medical Image Computing and
+Computer-Assisted Intervention: MICCAI'98</em> (pp. 888–898). Springer.
+<a href="https://doi.org/10.1007/BFb0056277">https://doi.org/10.1007/BFb0056277</a>
+In Sylva: the surface nets that close <code>qsm.buttress_mesh</code>.</p>
+<p>Goel, N. S., &amp; Strebel, D. E. (1984). Simple beta distribution representation of
+leaf orientation in vegetation canopies. <em>Agronomy Journal</em>, <em>76</em>(5), 800–802.
+<a href="https://doi.org/10.2134/agronj1984.00021962007600050021x">https://doi.org/10.2134/agronj1984.00021962007600050021x</a>
+In Sylva: the beta fit of the leaf inclination distribution in <code>sylva.leaves</code>,
+the two-parameter beta distribution of <code>sylva.voxels</code>, and the leaf angles of
+<code>synthetic.tree_model</code>.</p>
+<p>Hofton, M. A., Minster, J. B., &amp; Blair, J. B. (2000). Decomposition of laser
+altimeter waveforms. <em>IEEE Transactions on Geoscience and Remote Sensing</em>,
+<em>38</em>(4), 1989–1996. <a href="https://doi.org/10.1109/36.851780">https://doi.org/10.1109/36.851780</a>
+In Sylva: the inflection-point initial estimates of <code>waveform.decompose</code>
+(<code>peaks="inflection"</code>).</p>
+<p>Hosoi, F., &amp; Omasa, K. (2006). Voxel-based 3-D modeling of individual trees for
+estimating leaf area density using high-resolution portable scanning lidar.
+<em>IEEE Transactions on Geoscience and Remote Sensing</em>, <em>44</em>(12), 3610–3618.
+<a href="https://doi.org/10.1109/TGRS.2006.881743">https://doi.org/10.1109/TGRS.2006.881743</a>
+In Sylva: the contact-frequency PAD profile <code>canopy.pad_profile_voxel</code>.</p>
+<p>Huber, P. J. (1964). Robust estimation of a location parameter. <em>The Annals of
+Mathematical Statistics</em>, <em>35</em>(1), 73–101.
+<a href="https://doi.org/10.1214/aoms/1177703732">https://doi.org/10.1214/aoms/1177703732</a>
+In Sylva: the Huber weights of <code>quality.stem_noise</code>, <code>sylva.coreg.icp</code>, the
+coregistration pose graph and <code>coreg.refine_joint</code>.</p>
+<p>Jupp, D. L. B., Culvenor, D. S., Lovell, J. L., Newnham, G. J., Strahler, A. H.,
+&amp; Woodcock, C. E. (2009). Estimating forest LAI profiles and structural
+parameters using a ground-based laser called 'Echidna®'. <em>Tree Physiology</em>,
+<em>29</em>(2), 171–181. <a href="https://doi.org/10.1093/treephys/tpn022">https://doi.org/10.1093/treephys/tpn022</a>
+In Sylva: the gap-probability profile, and the hinge, linear and weighted PAI
+estimators of <code>canopy.GapProfile</code>.</p>
+<p>Kabsch, W. (1976). A solution for the best rotation to relate two sets of
+vectors. <em>Acta Crystallographica Section A</em>, <em>32</em>(5), 922–923.
+<a href="https://doi.org/10.1107/S0567739476001873">https://doi.org/10.1107/S0567739476001873</a>
+In Sylva: <code>registration.kabsch</code> and the point-to-point step of <code>sylva.coreg.icp</code>.</p>
+<p>Kåsa, I. (1976). A circle fitting procedure and its error analysis. <em>IEEE
+Transactions on Instrumentation and Measurement</em>, <em>IM-25</em>(1), 8–14.
+<a href="https://doi.org/10.1109/TIM.1976.6312298">https://doi.org/10.1109/TIM.1976.6312298</a>
+In Sylva: the algebraic circle fit that starts <code>trees.fit_circle</code>, the stem detector
+and <code>quality.stem_noise</code>.</p>
+<p>Kuhn, H. W. (1955). The Hungarian method for the assignment problem. <em>Naval
+Research Logistics Quarterly</em>, <em>2</em>(1–2), 83–97.
+<a href="https://doi.org/10.1002/nav.3800020109">https://doi.org/10.1002/nav.3800020109</a>
+In Sylva: the optimal assignment of trees in <code>change.match_trees</code> and
+<code>fusion.link_trees</code>.</p>
+<p>Lang, A. R. G., &amp; Xiang, Y. (1986). Estimation of leaf area index from
+transmission of direct sunlight in discontinuous canopies. <em>Agricultural and
+Forest Meteorology</em>, <em>37</em>(3), 229–243.
+<a href="https://doi.org/10.1016/0168-1923(86)90033-X">https://doi.org/10.1016/0168-1923(86)90033-X</a>
+In Sylva: the clumping index <code>GapProfile.clumping</code>.</p>
+<p>Levenberg, K. (1944). A method for the solution of certain non-linear problems
+in least squares. <em>Quarterly of Applied Mathematics</em>, <em>2</em>(2), 164–168.
+<a href="https://doi.org/10.1090/qam/10666">https://doi.org/10.1090/qam/10666</a>
+In Sylva: the pose-graph solver of <code>sylva.coreg</code> and the circle and cylinder fits.</p>
+<p>Low, K.-L. (2004). <em>Linear least-squares optimization for point-to-plane ICP
+surface registration</em> (Technical Report TR04-004). Department of Computer
+Science, University of North Carolina at Chapel Hill.
+<a href="https://www.comp.nus.edu.sg/~lowkl/publications/lowk_point-to-plane_icp_techrep.pdf">https://www.comp.nus.edu.sg/~lowkl/publications/lowk_point-to-plane_icp_techrep.pdf</a>
+In Sylva: the linearised point-to-plane step of <code>registration.icp</code>.</p>
+<p>Lowe, T., Moghadam, P., Edwards, E., &amp; Williams, J. (2021). Canopy density
+estimation in perennial horticulture crops using 3D spinning lidar SLAM.
+<em>Journal of Field Robotics</em>, <em>38</em>(4), 598–618.
+<a href="https://doi.org/10.1002/rob.22006">https://doi.org/10.1002/rob.22006</a>
+In Sylva: the ray-traced density of <code>canopy.density_grid</code> (raycloudtools'
+<code>DensityGrid</code>) and the formulation behind <a href="../api/voxels/"><code>sylva.voxels</code></a>.</p>
+<p>Liu, H., Zhang, X., Xu, Y., &amp; Chen, X. (2020). Efficient coarse registration
+of pairwise TLS point clouds using ortho projected feature images. <em>ISPRS
+International Journal of Geo-Information</em>, <em>9</em>(4), 255.
+<a href="https://doi.org/10.3390/ijgi9040255">https://doi.org/10.3390/ijgi9040255</a>
+In Sylva: the vertical offset of levelled scans from the height difference of their
+overlap once aligned horizontally, as <code>sylva.coreg</code> sets a stem match's height.</p>
+<p>Lu, F., &amp; Milios, E. (1997). Globally consistent range scan alignment for
+environment mapping. <em>Autonomous Robots</em>, <em>4</em>(4), 333–349.
+<a href="https://doi.org/10.1023/A:1008854305733">https://doi.org/10.1023/A:1008854305733</a>
+In Sylva: the pose graph of <code>sylva.coreg</code>.</p>
+<p>MacArthur, R. H., &amp; Horn, H. S. (1969). Foliage profile by vertical
+measurements. <em>Ecology</em>, <em>50</em>(5), 802–804. <a href="https://doi.org/10.2307/1933693">https://doi.org/10.2307/1933693</a>
+Used by: the layer-by-layer inversion of gap fraction into plant area
+density in <a href="../guide/als_canopy/"><code>als.gap_profile</code></a>.</p>
+<p>Marquardt, D. W. (1963). An algorithm for least-squares estimation of
+nonlinear parameters. <em>Journal of the Society for Industrial and Applied
+Mathematics</em>, <em>11</em>(2), 431–441. <a href="https://doi.org/10.1137/0111030">https://doi.org/10.1137/0111030</a>
+In Sylva: with Levenberg (1944), the pose-graph solver, the circle and cylinder
+fits and the Gaussian fits of <code>waveform.decompose</code>.</p>
+<p>Maurer, C. R., Jr., Qi, R., &amp; Raghavan, V. (2003). A linear time algorithm for
+computing exact Euclidean distance transforms of binary images in arbitrary
+dimensions. <em>IEEE Transactions on Pattern Analysis and Machine Intelligence</em>,
+<em>25</em>(2), 265–270. <a href="https://doi.org/10.1109/TPAMI.2003.1177156">https://doi.org/10.1109/TPAMI.2003.1177156</a>
+In Sylva: nearest-cell gap filling of the coregistration terrain model, through SciPy's
+implementation (see Software).</p>
+<p>Miller, J. B. (1967). A formula for average foliage density. <em>Australian Journal
+of Botany</em>, <em>15</em>(1), 141–144. <a href="https://doi.org/10.1071/BT9670141">https://doi.org/10.1071/BT9670141</a>
+In Sylva: <code>method="miller"</code> in <code>canopy.lai_from_gap_fraction</code>.</p>
+<p>Munkres, J. (1957). Algorithms for the assignment and transportation problems.
+<em>Journal of the Society for Industrial and Applied Mathematics</em>, <em>5</em>(1),
+32–38. <a href="https://doi.org/10.1137/0105003">https://doi.org/10.1137/0105003</a>
+In Sylva: with Kuhn (1955), the assignment of <code>change.match_trees</code> and
+<code>fusion.link_trees</code>.</p>
+<p>Næsset, E. (2002). Predicting forest stand characteristics with airborne
+scanning laser using a practical two-stage procedure and field data. <em>Remote
+Sensing of Environment</em>, <em>80</em>(1), 88–99.
+<a href="https://doi.org/10.1016/S0034-4257(01)00290-5">https://doi.org/10.1016/S0034-4257(01)00290-5</a>
+In Sylva: the area-based approach of <code>fusion.upscale</code>, plot values regressed
+on ALS metrics and predicted over a grid.</p>
+<p>Olofsson, K., Holmgren, J., &amp; Olsson, H. (2014). Tree stem and height
+measurements using terrestrial laser scanning and the RANSAC algorithm.
+<em>Remote Sensing</em>, <em>6</em>(5), 4323–4344. <a href="https://doi.org/10.3390/rs6054323">https://doi.org/10.3390/rs6054323</a>
+In Sylva: an earlier stem detector that fits RANSAC circles in height slices and links
+them into stems, the approach <code>trees.detect_stems</code> shares.</p>
+<p>Pimont, F., Allard, D., Soma, M., &amp; Dupuy, J.-L. (2018). Estimators and
+confidence intervals for plant area density at voxel scale with T-LiDAR.
+<em>Remote Sensing of Environment</em>, <em>215</em>, 343–370.
+<a href="https://doi.org/10.1016/j.rse.2018.06.024">https://doi.org/10.1016/j.rse.2018.06.024</a>
+In Sylva: the FPL and PPL attenuation estimators and their bias correction in
+<code>sylva.voxels</code>.</p>
+<p>Pimont, F., Soma, M., &amp; Dupuy, J.-L. (2019). Accounting for wood, foliage
+properties, and laser effective footprint in estimations of leaf area density
+from multiview-LiDAR data. <em>Remote Sensing</em>, <em>11</em>(13), 1580.
+<a href="https://doi.org/10.3390/rs11131580">https://doi.org/10.3390/rs11131580</a>
+In Sylva: the beam-section weighted FPL estimator and the finite-leaf-size free path in
+<code>sylva.voxels</code>.</p>
+<p>Raumonen, P., Kaasalainen, M., Åkerblom, M., Kaasalainen, S., Kaartinen, H.,
+Vastaranta, M., Holopainen, M., Disney, M., &amp; Lewis, P. (2013). Fast automatic
+precision tree models from terrestrial laser scanner data. <em>Remote Sensing</em>,
+<em>5</em>(2), 491–520. <a href="https://doi.org/10.3390/rs5020491">https://doi.org/10.3390/rs5020491</a>
+In Sylva: TreeQSM, the cylinder-model approach that QSMs such as
+<a href="../api/qsm/"><code>sylva.qsm</code></a> build on.</p>
+<p>Richards, F. J. (1959). A flexible growth function for empirical use.
+<em>Journal of Experimental Botany</em>, <em>10</em>(2), 290–301.
+<a href="https://doi.org/10.1093/jxb/10.2.290">https://doi.org/10.1093/jxb/10.2.290</a>
+In Sylva: the Chapman-Richards form of the height-diameter curves of
+<code>synthetic.plot</code>.</p>
+<p>Roussel, J.-R., Auty, D., Coops, N. C., Tompalski, P., Goodbody, T. R. H.,
+Meador, A. S., Bourdon, J.-F., de Boissieu, F., &amp; Achim, A. (2020). lidR: An R
+package for analysis of Airborne Laser Scanning (ALS) data. <em>Remote Sensing of
+Environment</em>, <em>251</em>, 112061. <a href="https://doi.org/10.1016/j.rse.2020.112061">https://doi.org/10.1016/j.rse.2020.112061</a>
+In Sylva: the catalogue of tiles processed in buffered chunks that
+<a href="../api/als/"><code>sylva.als</code></a> follows, and the reference its DTMs and CHMs were
+checked against; the definitions of the area-based metrics of
+<a href="../api/als_metrics/"><code>sylva.als_metrics</code></a> (<code>stdmetrics</code>, <code>entropy</code>).</p>
+<p>Rusu, R. B., Marton, Z. C., Blodow, N., Dolha, M., &amp; Beetz, M. (2008). Towards
+3D point cloud based object maps for household environments. <em>Robotics and
+Autonomous Systems</em>, <em>56</em>(11), 927–941.
+<a href="https://doi.org/10.1016/j.robot.2008.08.005">https://doi.org/10.1016/j.robot.2008.08.005</a>
+In Sylva: <code>filters.statistical_outlier_removal</code>.</p>
+<p>Shinozaki, K., Yoda, K., Hozumi, K., &amp; Kira, T. (1964). A quantitative analysis
+of plant form, the pipe model theory: I. Basic analyses. <em>Japanese Journal of
+Ecology</em>, <em>14</em>(3), 97–105. <a href="https://doi.org/10.18960/seitai.14.3_97">https://doi.org/10.18960/seitai.14.3_97</a>
+In Sylva: the pipe model that sets unmeasured branch radii in <code>qsm.build_qsm</code>,
+and the branch radii of <code>synthetic.tree_model</code>.</p>
+<p>Smith, D. D., Sperry, J. S., Enquist, B. J., Savage, V. M., McCulloh, K. A., &amp;
+Bentley, L. P. (2014). Deviation from symmetrically self-similar branching in
+trees predicts altered hydraulics, mechanics, light interception and metabolic
+scaling. <em>New Phytologist</em>, <em>201</em>(1), 217–229.
+<a href="https://doi.org/10.1111/nph.12487">https://doi.org/10.1111/nph.12487</a>
+In Sylva: <code>path_fraction</code> in <code>QSM.metrics</code>.</p>
+<p>Taubin, G. (1995). A signal processing approach to fair surface design. In
+<em>Proceedings of the 22nd Annual Conference on Computer Graphics and Interactive
+Techniques (SIGGRAPH '95)</em> (pp. 351–358). ACM.
+<a href="https://doi.org/10.1145/218380.218473">https://doi.org/10.1145/218380.218473</a>
+In Sylva: smoothing of QSM skeleton nodes and radii, and of buttress meshes.</p>
+<p>Tian, Z., &amp; Li, S. (2022). Graph-based leaf–wood separation method for
+individual trees using terrestrial lidar point clouds. <em>IEEE Transactions on
+Geoscience and Remote Sensing</em>, <em>60</em>, 1–11.
+<a href="https://doi.org/10.1109/TGRS.2022.3218603">https://doi.org/10.1109/TGRS.2022.3218603</a>
+In Sylva: the default <code>leaves.classify_leaf_wood</code> labeller (GBSeparation),
+translated from the authors' code (see Software).</p>
+<p>Tremblay, J.-F., &amp; Béland, M. (2018). Towards operational marker-free
+registration of terrestrial lidar data in forests. <em>ISPRS Journal of
+Photogrammetry and Remote Sensing</em>, <em>146</em>, 430–435.
+<a href="https://doi.org/10.1016/j.isprsjprs.2018.10.011">https://doi.org/10.1016/j.isprsjprs.2018.10.011</a>
+In Sylva: vertical error dominates stem-based registration, traced to the terrain
+under the stems; why <code>sylva.coreg</code> takes height from the shared ground.</p>
+<p>Umeyama, S. (1991). Least-squares estimation of transformation parameters
+between two point patterns. <em>IEEE Transactions on Pattern Analysis and Machine
+Intelligence</em>, <em>13</em>(4), 376–380. <a href="https://doi.org/10.1109/34.88573">https://doi.org/10.1109/34.88573</a>
+In Sylva: the reflection-safe rotation of <code>registration.kabsch</code> and <code>sylva.coreg</code>.</p>
+<p>Verroust, A., &amp; Lazarus, F. (2000). Extracting skeletal curves from 3D
+scattered data. <em>The Visual Computer</em>, <em>16</em>(1), 15–25.
+<a href="https://doi.org/10.1007/PL00007210">https://doi.org/10.1007/PL00007210</a>
+In Sylva: the geodesic level-set skeleton of <code>qsm.build_qsm</code>.</p>
+<p>Vicari, M. B., Disney, M., Wilkes, P., Burt, A., Calders, K., &amp; Woodgate, W.
+(2019). Leaf and wood classification framework for terrestrial LiDAR point
+clouds. <em>Methods in Ecology and Evolution</em>, <em>10</em>(5), 680–694.
+<a href="https://doi.org/10.1111/2041-210X.13144">https://doi.org/10.1111/2041-210X.13144</a>
+In Sylva: the path-frequency cue of <code>qsm.wood_points</code>.</p>
+<p>Vicari, M. B., Pisek, J., &amp; Disney, M. (2019). New estimates of leaf angle
+distribution from terrestrial LiDAR: Comparison with measured and modelled
+estimates from nine broadleaf tree species. <em>Agricultural and Forest
+Meteorology</em>, <em>264</em>, 322–333.
+<a href="https://doi.org/10.1016/j.agrformet.2018.10.021">https://doi.org/10.1016/j.agrformet.2018.10.021</a>
+In Sylva: leaf angle distributions from point normals, in <code>sylva.leaves</code> and the
+<code>inclination=True</code> path of <code>sylva.voxels</code>.</p>
+<p>Vincent, G., Antin, C., Laurans, M., Heurtebize, J., Durrieu, S., Lavalley, C.,
+&amp; Dauzat, J. (2017). Mapping plant area index of tropical evergreen forest by
+airborne laser scanning. A cross-validation study using LAI2200 optical sensor.
+<em>Remote Sensing of Environment</em>, <em>198</em>, 254–266.
+<a href="https://doi.org/10.1016/j.rse.2017.05.034">https://doi.org/10.1016/j.rse.2017.05.034</a>
+In Sylva: AMAPVox, whose voxel traversal and outputs <code>sylva.voxels</code> mirrors.</p>
+<p>Vogel, H. (1979). A better way to construct the sunflower head. <em>Mathematical
+Biosciences</em>, <em>44</em>(3–4), 179–189. <a href="https://doi.org/10.1016/0025-5564(79)90080-4">https://doi.org/10.1016/0025-5564(79)90080-4</a>
+In Sylva: the sub-beam pattern of the beam footprint in <code>synthetic.scan</code>.</p>
+<p>Wagner, W. (2010). Radiometric calibration of small-footprint full-waveform
+airborne laser scanner measurements: Basic physical concepts. <em>ISPRS Journal
+of Photogrammetry and Remote Sensing</em>, <em>65</em>(6), 505–513.
+<a href="https://doi.org/10.1016/j.isprsjprs.2010.06.007">https://doi.org/10.1016/j.isprsjprs.2010.06.007</a>
+In Sylva: the Lambertian reference targets of <code>waveform.calibration_constant</code>.</p>
+<p>Wagner, W., Ullrich, A., Ducic, V., Melzer, T., &amp; Studnicka, N. (2006).
+Gaussian decomposition and calibration of a novel small-footprint
+full-waveform digitising airborne laser scanner. <em>ISPRS Journal of
+Photogrammetry and Remote Sensing</em>, <em>60</em>(2), 100–112.
+<a href="https://doi.org/10.1016/j.isprsjprs.2005.12.001">https://doi.org/10.1016/j.isprsjprs.2005.12.001</a>
+In Sylva: the Gaussian decomposition of <a href="../api/waveform/"><code>sylva.waveform</code></a>, its
+backscatter cross-section, and the pulse-target convolution of
+<code>synthetic.waveforms</code>.</p>
+<p>Wang, X., Yang, Z., Cheng, X., Stoter, J., Xu, W., Wu, Z., &amp; Nan, L. (2023).
+GlobalMatch: Registration of forest terrestrial point clouds by global
+matching of relative stem positions. <em>ISPRS Journal of Photogrammetry and
+Remote Sensing</em>, <em>197</em>, 71–86. <a href="https://doi.org/10.1016/j.isprsjprs.2023.01.013">https://doi.org/10.1016/j.isprsjprs.2023.01.013</a>
+In Sylva: the 4-degree-of-freedom stem registration of levelled scans, and the
+sensitivity of stem heights to the terrain model, behind <code>sylva.coreg</code>'s
+terrain-based height.</p>
+<p>Weinmann, M., Jutzi, B., Hinz, S., &amp; Mallet, C. (2015). Semantic point cloud
+interpretation based on optimal neighborhoods, relevant features and efficient
+classifiers. <em>ISPRS Journal of Photogrammetry and Remote Sensing</em>, <em>105</em>,
+286–304. <a href="https://doi.org/10.1016/j.isprsjprs.2015.01.016">https://doi.org/10.1016/j.isprsjprs.2015.01.016</a>
+In Sylva: the eigenvalue planarity and linearity of <code>filters.planarity_linearity</code>.</p>
+<p>Wilkes, P., Disney, M., Armston, J., Bartholomeus, H., Bentley, L., Brede, B.,
+Burt, A., Calders, K., Chavana-Bryant, C., Clewley, D., Duncanson, L., Forbes,
+B., Krisanski, S., Malhi, Y., Moffat, D., Origo, N., Shenkin, A., &amp; Yang, W.
+(2023). TLS2trees: A scalable tree segmentation pipeline for TLS data.
+<em>Methods in Ecology and Evolution</em>, <em>14</em>(12), 3083–3099.
+<a href="https://doi.org/10.1111/2041-210X.14233">https://doi.org/10.1111/2041-210X.14233</a>
+In Sylva: the cluster-gap edge weighting tried and rejected in the
+<a href="../benchmarks/trees/">tree benchmark</a>.</p>
+<p>Wilson, J. W. (1960). Inclined point quadrats. <em>New Phytologist</em>, <em>59</em>(1),
+1–7. <a href="https://doi.org/10.1111/j.1469-8137.1960.tb06195.x">https://doi.org/10.1111/j.1469-8137.1960.tb06195.x</a>
+In Sylva: the leaf projection function <em>G</em> (<code>LeafAngleDistribution.g</code>).</p>
+<p>Wilson, J. W. (1963). Estimation of foliage denseness and foliage angle by
+inclined point quadrats. <em>Australian Journal of Botany</em>, <em>11</em>(1), 95–105.
+<a href="https://doi.org/10.1071/BT9630095">https://doi.org/10.1071/BT9630095</a>
+In Sylva: the hinge angle (57.5°) used by <code>canopy.lai_from_gap_fraction</code> and
+<code>GapProfile</code>.</p>
+<p>Xu, H., Gossett, N., &amp; Chen, B. (2007). Knowledge and heuristic-based modeling
+of laser-scanned trees. <em>ACM Transactions on Graphics</em>, <em>26</em>(4), 19.
+<a href="https://doi.org/10.1145/1289603.1289610">https://doi.org/10.1145/1289603.1289610</a>
+In Sylva: the geodesic-shell clustering behind <code>qsm.build_qsm</code>.</p>
+<p>Zhang, K., Chen, S.-C., Whitman, D., Shyu, M.-L., Yan, J., &amp; Zhang, C. (2003). A
+progressive morphological filter for removing nonground measurements from
+airborne LIDAR data. <em>IEEE Transactions on Geoscience and Remote Sensing</em>,
+<em>41</em>(4), 872–882. <a href="https://doi.org/10.1109/TGRS.2003.810682">https://doi.org/10.1109/TGRS.2003.810682</a>
+In Sylva: <code>ground.classify_ground_pmf</code>.</p>
+<p>Zhang, W., Qi, J., Wan, P., Wang, H., Xie, D., Wang, X., &amp; Yan, G. (2016). An
+easy-to-use airborne LiDAR data filtering method based on cloth simulation.
+<em>Remote Sensing</em>, <em>8</em>(6), 501. <a href="https://doi.org/10.3390/rs8060501">https://doi.org/10.3390/rs8060501</a>
+In Sylva: <code>ground.classify_ground_csf</code>.</p>
+<h2 id="validation-data">Validation data<a class="headerlink" href="#validation-data" title="Permanent link">&para;</a></h2>
+<p>Burt, A., Boni Vicari, M., da Costa, A. C. L., Coughlin, I., Meir, P., Rowland,
+L., &amp; Disney, M. (2021). New insights into large tropical tree mass and
+structure from direct harvest and terrestrial lidar. <em>Royal Society Open
+Science</em>, <em>8</em>(2), 201458. <a href="https://doi.org/10.1098/rsos.201458">https://doi.org/10.1098/rsos.201458</a>
+In Sylva: felled tropical trees in the <a href="../benchmarks/qsm/">QSM benchmark</a>.</p>
+<p>Calders, K., Newnham, G., Burt, A., Murphy, S., Raumonen, P., Herold, M.,
+Culvenor, D., Avitabile, V., Disney, M., Armston, J., &amp; Kaasalainen, M. (2015).
+Nondestructive estimates of above-ground biomass using terrestrial laser
+scanning. <em>Methods in Ecology and Evolution</em>, <em>6</em>(2), 198–208.
+<a href="https://doi.org/10.1111/2041-210X.12301">https://doi.org/10.1111/2041-210X.12301</a>
+In Sylva: destructively harvested trees in the QSM benchmark.</p>
+<p>Calders, K., Verbeeck, H., Burt, A., Origo, N., Nightingale, J., Malhi, Y.,
+Wilkes, P., Raumonen, P., Bunce, R., &amp; Disney, M. (2022). <em>Terrestrial
+laser scanning data Wytham Woods: Individual trees and quantitative structure
+models (QSMs)</em> [Data set]. Zenodo. <a href="https://doi.org/10.5281/zenodo.7307956">https://doi.org/10.5281/zenodo.7307956</a></p>
+<p>Cherlet, W., Dayal, K., Chen, S., Cooper, Z., Disney, M., Hanzl, A., Levick, S.,
+Nightingale, J., Origo, N., Senf, C., Soenens, L., Terryn, L., Van den Broeck,
+W. A. J., &amp; Calders, K. (2025). <em>TLS forest instance segmentation benchmark:
+2983 manually segmented trees from four plots</em> [Data set]. Zenodo.
+<a href="https://doi.org/10.5281/zenodo.16875688">https://doi.org/10.5281/zenodo.16875688</a>
+In Sylva: the four plots of the <a href="../benchmarks/trees/">tree detection benchmark</a>.</p>
+<p>Cherlet, W., Dayal, K., Chen, S., Cooper, Z., Disney, M., Hanzl, A., Levick, S.,
+Nightingale, J., Origo, N., Senf, C., Soenens, L., Terryn, L., Van den Broeck,
+W. A. J., &amp; Calders, K. (2026). Benchmarking tree instance segmentation of
+terrestrial laser scanning point clouds. <em>ISPRS Journal of Photogrammetry and
+Remote Sensing</em>, <em>231</em>, 230–247. <a href="https://doi.org/10.1016/j.isprsjprs.2025.10.033">https://doi.org/10.1016/j.isprsjprs.2025.10.033</a>
+In Sylva: the evaluation protocol and published baselines of the
+<a href="../benchmarks/trees/">tree detection benchmark</a>.</p>
+<p>Demol, M., Gielen, B., &amp; Verbeeck, H. (2021). <em>QSMs, point cloud and harvest
+data from a destructive forest biomass experiment in Belgium using terrestrial
+laser scanning</em> [Data set]. Zenodo. <a href="https://doi.org/10.5281/zenodo.4557401">https://doi.org/10.5281/zenodo.4557401</a></p>
+<p>Gonzalez de Tanago, J., Lau, A., Bartholomeus, H., Herold, M., Avitabile, V.,
+Raumonen, P., Martius, C., Goodman, R. C., Disney, M., Manuri, S., Burt, A., &amp;
+Calders, K. (2018). Estimation of above-ground biomass of large tropical trees
+with terrestrial LiDAR. <em>Methods in Ecology and Evolution</em>, <em>9</em>(2), 223–234.
+<a href="https://doi.org/10.1111/2041-210X.12904">https://doi.org/10.1111/2041-210X.12904</a>
+In Sylva: felled tropical trees in the QSM benchmark.</p>
+<p>Hackenberg, J. (2021). <em>Hackenberg et al 2021</em> [Data set]. Zenodo.
+<a href="https://doi.org/10.5281/zenodo.5131717">https://doi.org/10.5281/zenodo.5131717</a>
+In Sylva: SimpleForest clouds, QSMs and reference table.</p>
+<p>Momo Takoudjou, S., Ploton, P., Sonké, B., Hackenberg, J., Griffon, S., de
+Coligny, F., Kamdem, N. G., Libalah, M., Mofack, G. I., Le Moguédec, G.,
+Pélissier, R., &amp; Barbier, N. (2018). Using terrestrial laser scanning data to
+estimate large tropical trees biomass and calibrate allometric models: A
+comparison with traditional destructive approach. <em>Methods in Ecology and
+Evolution</em>, <em>9</em>(4), 905–916. <a href="https://doi.org/10.1111/2041-210X.12933">https://doi.org/10.1111/2041-210X.12933</a>
+In Sylva: felled tropical trees in the QSM benchmark.</p>
+<p>Owen, H. J. F., Grieve, S., &amp; Lines, E. R. (2024). <em>Plot-level semantically
+labelled terrestrial laser scanning point clouds</em> [Data set]. Zenodo.
+<a href="https://doi.org/10.5281/zenodo.13268500">https://doi.org/10.5281/zenodo.13268500</a>
+In Sylva: plot-scale leaf/wood labels (CC BY-NC 4.0).</p>
+<p>Van den Broeck, W. A. J., Terryn, L., Chen, S., Cherlet, W., Cooper, Z. T., &amp;
+Calders, K. (2025). Pointwise deep learning for leaf-wood segmentation of
+tropical tree point clouds from terrestrial laser scanning. <em>ISPRS Journal of
+Photogrammetry and Remote Sensing</em>, <em>227</em>, 366–382.
+<a href="https://doi.org/10.1016/j.isprsjprs.2025.06.023">https://doi.org/10.1016/j.isprsjprs.2025.06.023</a>
+In Sylva: the manually labelled trees of the leaf/wood benchmark; data set at
+<a href="https://doi.org/10.5281/zenodo.13759407">https://doi.org/10.5281/zenodo.13759407</a>.</p>
+<p>Wielgosz, M., Puliti, S., &amp; Astrup, R. (2026). <em>SegmentAnyTreeV2: Scaling
+transformer-based tree instance segmentation across sensors, platforms, and
+forests</em> (arXiv:2606.08206) [Preprint]. arXiv.
+<a href="https://doi.org/10.48550/arXiv.2606.08206">https://doi.org/10.48550/arXiv.2606.08206</a>
+In Sylva: published F1 on the four benchmark plots, quoted in the
+<a href="../benchmarks/trees/">tree benchmark</a>.</p>
+<p>The canopy benchmark also uses TERN AusCover / Ecosystem Surveillance plot
+scans and hemispherical photography, which are not deposited per plot; see
+<a href="https://www.tern.org.au">https://www.tern.org.au</a> for access and citation.</p>
+<h2 id="formats">Formats<a class="headerlink" href="#formats" title="Permanent link">&para;</a></h2>
+<p>American Society for Photogrammetry and Remote Sensing. (2019). <em>LAS
+specification 1.4 – R15</em>. <a href="https://github.com/ASPRSorg/LAS">https://github.com/ASPRSorg/LAS</a>
+In Sylva: <code>.las</code> and <code>.laz</code> reading and writing, including typed extra bytes, in
+<a href="../api/io/"><code>sylva.io</code></a>, and the waveform data packets of
+<a href="../api/waveform/"><code>sylva.waveform</code></a>.</p>
+<p>Isenburg, M. (2013). LASzip: Lossless compression of LiDAR data.
+<em>Photogrammetric Engineering &amp; Remote Sensing</em>, <em>79</em>(2), 209–217.
+<a href="https://doi.org/10.14358/PERS.79.2.209">https://doi.org/10.14358/PERS.79.2.209</a>
+In Sylva: <code>.laz</code> compression, through the <code>las</code> and <code>laz</code> crates.</p>
+<p>Isenburg, M. (2012). <em>PulseWaves: An open, vendor-neutral, stand-alone,
+LAS-compatible full waveform LiDAR standard</em> (version 0.3) and its reference
+library. rapidlasso. <a href="https://github.com/PulseWaves/PulseWaves">https://github.com/PulseWaves/PulseWaves</a>
+In Sylva: the <code>.pls</code> / <code>.wvs</code> reader and writer of <a href="../api/waveform/"><code>sylva.waveform</code></a>;
+its sample files are used in the tests.</p>
+<h2 id="software">Software<a class="headerlink" href="#software" title="Permanent link">&para;</a></h2>
+<p>Lowe, T. D., &amp; Stepanas, K. (2021). RayCloudTools: A concise interface for
+analysis and manipulation of ray clouds. <em>IEEE Access</em>, <em>9</em>, 79712–79724.
+<a href="https://doi.org/10.1109/ACCESS.2021.3084954">https://doi.org/10.1109/ACCESS.2021.3084954</a>
+In Sylva: ray clouds, which Sylva reads and writes, and <code>rayextract trees</code>, which it
+follows and is benchmarked against:
+<a href="https://github.com/csiro-robotics/raycloudtools">https://github.com/csiro-robotics/raycloudtools</a>.</p>
+<p>AMAPVox (UMR AMAP): voxelisation of lidar data, the reference implementation
+of the attenuation estimators: <a href="https://github.com/umr-amap/AMAPVox">https://github.com/umr-amap/AMAPVox</a>.
+<a href="../api/voxels/"><code>sylva.voxels</code></a> is a port of rayvoxel, J. Rivory's unpublished
+reimplementation of AMAPVox on raycloudtools; see <code>THIRD_PARTY_NOTICES.md</code>. Its
+estimators are documented in Vincent, G., Pimont, F., &amp; Verley, P. (2021). <em>A
+note on PAD/LAD estimators implemented in AMAPVox 1.7</em>. DataSuds.
+<a href="https://doi.org/10.23708/1AJNMP">https://doi.org/10.23708/1AJNMP</a></p>
+<p>pylidar-tls-canopy (J. Armston): Jupp gap-probability profiles from RIEGL and
+LEAF instruments, the reference for the <a href="../benchmarks/canopy/">canopy
+benchmark</a>: <a href="https://github.com/armstonj/pylidar-tls-canopy">https://github.com/armstonj/pylidar-tls-canopy</a>.</p>
+<p>Tian, Z., &amp; Li, S. (2022). <em>Graph-based leaf–wood separation method for
+individual trees using terrestrial lidar point clouds: GBSeparation, a python
+package</em> [Computer software]. Zenodo. <a href="https://doi.org/10.5281/zenodo.6837613">https://doi.org/10.5281/zenodo.6837613</a>
+In Sylva: the reference implementation (CC BY 4.0) that
+<code>leaves.classify_leaf_wood(method="gbs")</code> translates into Rust.</p>
+<p>arbor (J.-R. Roussel, r-lidar): tree segmentation and QSMs for point clouds;
+the idea of seeding the trunk surface rather than its axis in
+<code>trees.segment_trees</code> (<code>seed_ring</code>) came from it:
+<a href="https://github.com/r-lidar/arbor">https://github.com/r-lidar/arbor</a>.</p>
+<p>Virtanen, P., Gommers, R., Oliphant, T. E., Haberland, M., Reddy, T.,
+Cournapeau, D., Burovski, E., Peterson, P., Weckesser, W., Bright, J., van der
+Walt, S. J., Brett, M., Wilson, J., Millman, K. J., Mayorov, N., Nelson, A. R.
+J., Jones, E., Kern, R., Larson, E., … SciPy 1.0 Contributors. (2020). SciPy
+1.0: Fundamental algorithms for scientific computing in Python. <em>Nature
+Methods</em>, <em>17</em>(3), 261–272. <a href="https://doi.org/10.1038/s41592-019-0686-2">https://doi.org/10.1038/s41592-019-0686-2</a>
+In Sylva: <code>scipy.ndimage</code>'s feature transform, which the coregistration terrain model
+transcribes (BSD-3-Clause; see <code>THIRD_PARTY_NOTICES.md</code>).</p>
+<p>Segfix: a GUI for correcting instance segmentation of tree point clouds; it
+opens the <code>tree_id</code> column Sylva writes and saves it back in place:
+<a href="https://github.com/tim-devereux/segfix">https://github.com/tim-devereux/segfix</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      &copy; 2026 Tim Devereux, The University of Queensland &middot; GPL-3.0-or-later
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
