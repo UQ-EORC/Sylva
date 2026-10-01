@@ -10,11 +10,13 @@ so the documentation does not have to execute them.
 
 Most notebooks run on the real TLS tile in ``data/`` (20 x 20 m of the TERN
 Litchfield savanna plot, see ``make_litch_subset.py``). Where a known answer
-is needed -- registration with a known transform, QSM volume against a known
-taper, leaf area against a known scene -- they use a ``sylva.synthetic``
-scene instead, and say so.
-Notebooks 14 to 16 (change detection, airborne lidar and full waveforms) run
-entirely on synthetic scenes, whose truth every result is checked against.
+is needed -- registration with a known transform, a QSM against a tree's own
+cylinders, leaf area and leaf angles against a known stand -- they use
+``synthetic.tree_model`` or ``synthetic.plot`` scanned by ``synthetic.scan``
+with a finite beam instead, and say so.
+Notebooks 14 to 17 (change detection, airborne lidar, full waveforms and the
+synthetic data itself) run entirely on synthetic scenes, whose truth every
+result is checked against.
 """
 
 from __future__ import annotations
@@ -41,7 +43,8 @@ plt.style.use("sylva.mplstyle")     # shared figure style; C0 to C7 are the Okab
 GROUND, WOOD, LEAF, GRASS, CONTEXT = "#997A5C", "#4D2B12", "#009E73", "#E69F00", "0.8"   # the same in every notebook
 DIVERGING = "RdBu_r"                # for signed differences, centred on zero
 LABELS = ListedColormap(["#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77",
-                         "#CC6677", "#882255", "#AA4499"])   # tree ids and clusters: Paul Tol's muted set"""
+                         "#CC6677", "#882255", "#AA4499"])   # tree ids and clusters: Paul Tol's muted set
+"""
 
 SETUP = """\
 from pathlib import Path
@@ -232,54 +235,86 @@ NOTEBOOKS["03_registration"] = [
 Aligning scans: `kabsch` for known correspondences (reflector targets), `icp`
 for clouds, and `merge_scans` to bring everything into one frame."""),
     SETUP + "\nfrom sylva import filters, registration as reg",
-    md("Two 'scans' of the same plot: the second is a different subsample, moved by a known rigid transform that registration should undo."),
+    md("""Two scans of one synthetic plot (`synthetic.plot`: 20 broadleaf and
+eucalypt trees on rough, sloping ground with shrubs, grass, logs and stumps),
+each from its own position with the model of a RIEGL VZ-400, 5 mm of range
+noise and mixed pixels. Each scan sees its own side of every stem and crown,
+so the two clouds overlap only in part, as real scans do. The second is
+then moved by a known rigid transform, which registration should undo."""),
     """\
-plot = synthetic.forest()
-scan_a = filters.random_subsample(plot, fraction=0.3, seed=1)
+p = synthetic.plot(size=20, density=500, archetypes={"broadleaf": 1, "eucalypt": 1}, seed=1)
+scans = []
+for k, (x, y) in enumerate([(6, 8), (14, 12)]):
+    shots = synthetic.scan(p.points, origin=(x, y, 1.5 + p.ground_height(x, y)), resolution_deg=0.08,
+                           scanner="vz400", range_noise=0.005, seed=k)
+    scans.append(filters.voxel_downsample(shots.to_pointcloud(), 0.05))
 truth = reg.translation(0.6, -0.4, 0.15) @ reg.rotation_z(6.0)
-scan_b = filters.random_subsample(plot, fraction=0.3, seed=2).transform(np.linalg.inv(truth))""",
-    md("## Targets: Kabsch\n\nWith matched points (here the four stem bases) the transform is closed-form."),
-    """\
-targets_a = np.array([[x, y, synthetic.terrain_height(x, y)] for x, y, *_ in synthetic.DEFAULT_TREES])
-targets_b = (np.linalg.inv(truth) @ np.c_[targets_a, np.ones(4)].T).T[:, :3]
-coarse = reg.kabsch(targets_b, targets_a)
-print("error vs truth:", np.abs(coarse - truth).max())""",
-    md("## Clouds: ICP\n\nICP refines a starting guess (identity here) as long as it lies within `max_correspondence_distance`. Point-to-plane converges in fewer iterations on surfaces such as ground and stems."),
-    """\
-def report(name, T, info):
-    err = np.linalg.norm((T @ np.linalg.inv(truth))[:3, 3])
-    print(f"{name:16s} rmse {info['rmse']:.4f} m  iterations {info['iterations']:3d}  translation error {err * 1000:.1f} mm")
+scan_a, scan_b = scans[0], scans[1].transform(np.linalg.inv(truth))
+d, _ = filters.knn(scans[0].xyz, scans[1].xyz, 1)
+print(f"scan A: {len(scan_a):,} points, scan B: {len(scan_b):,} points (5 cm); "
+      f"{np.mean(d[:, 0] < 0.1):.0%} of scan B lies within 10 cm of scan A")""",
+    md("""## Targets: Kabsch
 
-report("point-to-point", *reg.icp(scan_b, scan_a, max_correspondence_distance=1.0))
-T, info = reg.icp(scan_b, scan_a, max_correspondence_distance=1.0, method="plane")
-report("point-to-plane", T, info)""",
+With matched points the transform is closed-form. Here the targets are
+reflectors on the four largest stems at breast height, each located in each
+scan with 1 cm of error."""),
     """\
-fig, ax = plt.subplots(1, 2, figsize=(10, 4.4), sharex=True, sharey=True)
-for a, b, title in ((ax[0], scan_b, "Before: scan B as delivered"), (ax[1], scan_b.transform(T), "After point-to-plane ICP")):
-    for c, colour, name in ((scan_a, "C0", "scan A"), (b, "C1", "scan B")):
-        trees_only = c.attrs["classification"] != 2      # the ground would hide the offset
-        a.scatter(c.x[trees_only][::3], c.y[trees_only][::3], s=0.3, c=colour, alpha=0.5, label=name)
-    a.set(title=title, aspect="equal", xlabel="x (m)")
-ax[0].set_ylabel("y (m)")
-ax[0].legend(markerscale=15, loc="upper right");""",
+big = np.argsort(p.trees["dbh"])[-4:]
+targets_a = np.c_[p.trees["x_bh"][big], p.trees["y_bh"][big], p.trees["z"][big] + 1.3]
+rng = np.random.default_rng(0)
+targets_b = (np.linalg.inv(truth) @ np.c_[targets_a, np.ones(4)].T).T[:, :3] + rng.normal(0, 0.01, (4, 3))
+coarse = reg.kabsch(targets_b, targets_a)
+
+
+def report(name, T, info=None):
+    err = np.linalg.norm((T @ np.linalg.inv(truth))[:3, 3])
+    fit = f"rmse {info['rmse']:.4f} m  iterations {info['iterations']:3d}  " if info else ""
+    print(f"{name:28s} {fit}translation error {err * 1000:5.1f} mm")
+
+
+report("targets", coarse)""",
+    md("""## Clouds: ICP
+
+ICP refines a starting guess as long as it lies within
+`max_correspondence_distance`. From no guess at all (the identity), it gets
+within centimetres; point-to-plane converges in fewer iterations, on
+surfaces such as ground and stems. From the targets, with a tighter search
+distance, it improves on them."""),
+    """\
+report("point-to-point, identity", *reg.icp(scan_b, scan_a, max_correspondence_distance=1.0))
+report("point-to-plane, identity", *reg.icp(scan_b, scan_a, max_correspondence_distance=1.0, method="plane"))
+report("point-to-plane, targets", *reg.icp(scan_b, scan_a, init=coarse, max_correspondence_distance=0.3, method="plane"))""",
     md("""## Partial overlap
 
-When one scan sees things the other does not, the unmatched part drags the
-solution. `trim` keeps only the closest fraction of correspondences each
-iteration. Trimming throws information away, so start it from a coarse
-alignment (targets, or an untrimmed run): from far off, the closest pairs are
-all on the ground and the solution can slide along it."""),
+What one scan sees and the other does not (the far side of a stem, a crown
+seen only from below) drags the solution: those points are paired with
+whatever lies nearest, which is the wrong surface. `trim` keeps only the
+closest fraction of correspondences each iteration. Trimming throws
+information away, so start it from a coarse alignment (targets, or an
+untrimmed run): from far off, the closest pairs are all on the ground and
+the solution can slide along it."""),
     """\
-rng = np.random.default_rng(0)
-extra = sylva.PointCloud(rng.uniform([22, 0, 0], [30, 20, 8], (20000, 3)))      # only scan B sees this
-scan_b2 = sylva.PointCloud.concatenate([scan_b.without(*scan_b.attrs), extra.transform(np.linalg.inv(truth))])
-start = reg.translation(0.05, -0.04, 0.02) @ coarse                              # targets, a few cm off
-report("all pairs", *reg.icp(scan_b2, scan_a, init=start, max_correspondence_distance=3.0))
-report("trim 0.7", *reg.icp(scan_b2, scan_a, init=start, max_correspondence_distance=3.0, trim=0.7))""",
+T, info = reg.icp(scan_b, scan_a, init=coarse, max_correspondence_distance=0.3, method="plane", trim=0.7)
+report("point-to-plane, trim 0.7", T, info)""",
+    """\
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.6), sharex=True, sharey=True)
+for a, b, title in ((ax[0], scan_b, "Before: scan B as delivered"), (ax[1], scan_b.transform(T), "After trimmed ICP")):
+    for c, colour, name in ((scan_a, "C0", "scan A"), (b, "C1", "scan B")):
+        band = (c.z > p.ground_height(c.x, c.y) + 1.0) & (c.z < p.ground_height(c.x, c.y) + 1.6)   # stems at breast height
+        a.scatter(c.x[band], c.y[band], s=0.5, c=colour, label=name)
+    a.set(title=title, aspect="equal", xlabel="x (m)", xlim=(0, 20), ylim=(0, 20))
+ax[0].set_ylabel("y (m)")
+ax[1].legend(markerscale=10, loc="upper left", bbox_to_anchor=(1.0, 1.0))
+fig.suptitle("Points 1 to 1.6 m above the ground, from above: stems and shrubs");""",
+    md("""No untrimmed run gets much below a centimetre, wherever it starts:
+a fifth of scan B has no counterpart in scan A, and those points pull the
+solution towards the wrong surfaces. Trimmed and started from the targets,
+ICP comes within a millimetre of the true transform, well inside the 5 mm
+range noise."""),
     md("## Merging\n\n`merge_scans` applies one transform per scan and records where each point came from."),
     """\
 merged = reg.merge_scans([scan_a, scan_b], [np.eye(4), T])
-print(merged, np.bincount(merged.attrs["scan_id"]))""",
+print(merged.without(*[a for a in merged.attrs if a != "scan_id"]), np.bincount(merged.attrs["scan_id"]))""",
 ]
 
 NOTEBOOKS["04_ground"] = [
@@ -514,57 +549,145 @@ NOTEBOOKS["06_qsm"] = [
     md("""# 6. Quantitative structure models
 
 From the points of one tree to a connected set of cylinders with volumes and
-branch orders. This one starts on a synthetic tree, whose stem volume follows
-from its taper, so the model can be checked against a known answer; a real
-tree from the Litchfield tile follows."""),
-    SETUP + "\nfrom sylva import qsm\n\ntree = synthetic.tree(dbh=0.35, height=14.0, seed=4)\nprint(tree)",
+branch orders. This one starts on a synthetic tree whose every cylinder and
+leaf is known, scanned as a terrestrial scanner would scan it, so the model can
+be checked against the exact answer; a real tree from the Litchfield tile
+follows."""),
+    SETUP + """
+from sylva import filters, leaves, qsm
+
+truth = synthetic.tree_model("broadleaf", dbh=0.35, height=14.0, seed=4)
+print(f"truth: DBH {truth.dbh:.3f} m, height {truth.height:.1f} m, wood volume {truth.qsm.total_volume:.3f} m3 "
+      f"(stem {truth.qsm.stem_volume:.3f} m3), leaf area {truth.leaf_area:.0f} m2 in {len(truth.leaves['area']):,} leaves")""",
+    md("""`synthetic.tree_model` grows a tree from an archetype (here a broadleaf
+tree whose stem forks at 80 % of its height) with pipe-model branch radii and
+leaves of known size and angle; its wood is a table of cylinders, `truth.qsm`.
+The tree is scanned from three positions 8 m away with the model of a RIEGL
+VZ-400 (0.35 mrad beam, 7 mm exit diameter) at 0.04 degrees, with 5 mm of
+range noise and mixed pixels, so the echoes carry the errors of a real scan.
+They keep the true class of the surface they came from. The
+[synthetic data guide](../guide/synthetic.md) describes the models."""),
+    """\
+parts = []
+for k, (x, y) in enumerate([(8, 0), (-4, 7), (-4, -7)]):
+    shots = synthetic.scan(truth.points, origin=(x, y, 1.5), resolution_deg=0.04, scanner="vz400",
+                           range_noise=0.005, seed=k)
+    parts.append(shots.to_pointcloud())
+tree = filters.voxel_downsample(sylva.PointCloud.concatenate(parts), 0.01)
+print(tree.without(*[a for a in tree.attrs if a not in ("classification", "range_spread")]))
+print(f"mixed pixels (hits spread over more than 5 cm in range): {np.mean(tree.attrs['range_spread'] > 0.05):.1%} of the echoes")""",
     md("""## Leaf / wood separation
 
 `wood_points` combines local anisotropy with a topological cue: points that many
-shortest paths from the base to the crown pass through are wood. The synthetic
-tree knows which points are wood, so the filter can be checked."""),
+shortest paths from the base to the crown pass through are wood. The echoes
+know which surface they came from, so the filter can be checked both ways:
+how many of the points it keeps are wood, and how many of the wood echoes it
+keeps."""),
     """\
 wood = qsm.wood_points(tree, voxel_size=0.02)
-true_wood = tree[tree.attrs["classification"] == 5]
-from sylva import filters
-d, _ = filters.knn(true_wood.xyz, wood.xyz, 1)
-print(f"{len(wood):,} wood points kept; {np.mean(d[:, 0] < 0.03):.1%} of them lie on true wood")
-
 is_wood = tree.attrs["classification"] == 5
-fig, ax = plt.subplots(1, 2, figsize=(7, 5), sharex=True, sharey=True)
-ax[0].scatter(tree.x[~is_wood], tree.z[~is_wood], s=0.3, c=LEAF, label="leaf")
-ax[0].scatter(tree.x[is_wood], tree.z[is_wood], s=0.3, c=WOOD, label="wood")
-ax[0].set(title="All points, by true class", aspect="equal", xlabel="x (m)", ylabel="z (m)")
-ax[0].legend(markerscale=12, loc="lower left")
-ax[1].scatter(wood.x, wood.z, s=0.3, c=WOOD)
-ax[1].set(title="Points kept by wood_points", aspect="equal", xlabel="x (m)");""",
-    md("## Cylinder model"),
+true_wood = tree[is_wood]
+d, _ = filters.knn(true_wood.xyz, wood.xyz, 1)
+back, _ = filters.knn(wood.xyz, true_wood.xyz, 1)
+print(f"{len(wood):,} wood points kept: {np.mean(d[:, 0] < 0.02):.1%} of them on wood echoes; "
+      f"{np.mean(back[:, 0] < 0.02):.1%} of the wood echoes kept")
+
+on = d[:, 0] < 0.02                          # kept points that lie on wood echoes
+fig, ax = plt.subplots(1, 2, figsize=(7.5, 5), sharex=True, sharey=True)
+for a, xz, wood_mask in ((ax[0], tree, is_wood), (ax[1], wood, on)):
+    slab = np.abs(xz.y - truth.base[1]) < 0.3           # a 60 cm slice through the stem
+    a.scatter(xz.x[slab & wood_mask], xz.z[slab & wood_mask], s=0.3, c=WOOD, label="wood")
+    a.scatter(xz.x[slab & ~wood_mask], xz.z[slab & ~wood_mask], s=0.3, c=LEAF, label="leaf")
+    a.set(aspect="equal", xlabel="x (m)")
+ax[0].set(title="All echoes, by true class", ylabel="z (m)")
+ax[1].set(title="Points kept by wood_points,\\nby true class")
+fig.suptitle("A 60 cm slice through the stem")
+ax[1].legend(markerscale=12, loc="upper left", bbox_to_anchor=(1.0, 1.0));""",
+    md("""`wood_points` keeps nearly every wood echo, but most of what it keeps
+are leaf echoes close to the twigs: this tree's planophile leaves sit along
+its terminal branches, and from a few metres away a twig with its leaves
+looks like a thicker branch.
+
+## Cylinder model
+
+The model is fitted to the points `wood_points` kept, and, to separate the
+two sources of error, also to the true wood echoes; both are compared with
+the tree's own cylinders, order by order."""),
     """\
-model = qsm.build_qsm(wood, base_xy=(0.0, 0.0))
-for k, v in model.summary().items():
-    print(f"{k:18s} {v:.4f}" if isinstance(v, float) else f"{k:18s} {v}")""",
-    md("The stem of the synthetic tree tapers from 1.05 to 0.25 times the breast-height radius over 90 % of the height, so its volume is known:"),
-    """\
-r0, r1, L = 0.35 / 2 * 1.05, 0.35 / 2 * 0.25, 14.0 * 0.9
-true_stem = np.pi * L / 3 * (r0**2 + r0 * r1 + r1**2)
-print(f"stem volume: model {model.stem_volume:.3f} m3, truth {true_stem:.3f} m3;  DBH: model {model.dbh:.3f} m, truth 0.35 m")""",
+import pandas as pd
+
+model = qsm.build_qsm(wood, base_xy=tuple(truth.base[:2]))
+
+
+def volume_by_order(m):
+    v = np.pi * m.column("radius") ** 2 * m.column("length")
+    order = np.minimum(m.column("branch_order").astype(int), 3)
+    return np.bincount(order, weights=v, minlength=4)
+
+
+on_wood = qsm.build_qsm(true_wood, base_xy=tuple(truth.base[:2]))
+rows = {"QSM, wood_points": volume_by_order(model), "QSM, true wood echoes": volume_by_order(on_wood),
+        "truth": volume_by_order(truth.qsm)}
+table = pd.DataFrame(1000 * np.array(list(rows.values())), index=list(rows),
+                     columns=["stem", "order 1", "order 2", "order 3 and up"])
+table["total"] = table.sum(axis=1)
+print(f"DBH: model {model.dbh:.3f} m, truth {truth.dbh:.3f} m; "
+      f"fitted to points: {model.metrics()['measured_volume_fraction']:.0%} of the volume")
+table.round(0).astype(int).rename_axis("wood volume (L)")""",
+    md("""The stem comes within 6 to 10 % of the truth either way, and the DBH
+within 4 mm; even on the true wood echoes the model is a little too wide,
+since the beam footprint and mixed pixels widen what a scan sees. The
+first-order branches show where the larger error comes from: fitted to the
+true wood echoes they are 12 % over, fitted to the points `wood_points` kept
+60 % over, because the leaf echoes along the twigs make the branches look
+thicker. The finer orders come out close to the truth, in part because the
+model's taper and pipe-model priors fill in what the scans did not resolve.
+Side by side:"""),
     """\
 from matplotlib.collections import PolyCollection
 
-# Each cylinder drawn at its true width: the outline of its side view.
-a, b = model.start[:, [0, 2]], model.end[:, [0, 2]]
-d = b - a
-n = np.c_[-d[:, 1], d[:, 0]] / np.maximum(np.hypot(*d.T), 1e-9)[:, None] * model.column("radius")[:, None]
-order = model.column("branch_order").astype(int)
-fig, ax = plt.subplots(figsize=(5, 5.5))
-colours = [f"C{min(o, 7)}" for o in order]
-ax.add_collection(PolyCollection(np.stack([a + n, b + n, b - n, a - n], axis=1),
-                                 facecolor=colours, edgecolor=colours, lw=0.3))
-ax.autoscale_view()
-for o in np.unique(order):
-    ax.plot([], [], c=f"C{min(o, 7)}", lw=4, label="0 (stem)" if o == 0 else str(o))
-ax.legend(title="branch order", loc="upper left", bbox_to_anchor=(1.0, 1.0))
-ax.set(aspect="equal", xlabel="x (m)", ylabel="z (m)", title="Cylinders at their true width, side view");""",
+
+ORDER_COLOURS = ["C0", "C1", "C2", "C4"]
+
+
+def side_view(m, ax):
+    # Each cylinder drawn at its true width: the outline of its side view, coloured by order.
+    a, b = m.start[:, [0, 2]], m.end[:, [0, 2]]
+    d = b - a
+    n = np.c_[-d[:, 1], d[:, 0]] / np.maximum(np.hypot(*d.T), 1e-9)[:, None] * m.column("radius")[:, None]
+    colours = [ORDER_COLOURS[min(o, 3)] for o in m.column("branch_order").astype(int)]
+    ax.add_collection(PolyCollection(np.stack([a + n, b + n, b - n, a - n], axis=1),
+                                     facecolor=colours, edgecolor=colours, lw=0.3))
+    ax.autoscale_view()
+
+
+fig, ax = plt.subplots(1, 2, figsize=(7.5, 5.5), sharex=True, sharey=True)
+for a, m, title in ((ax[0], truth.qsm, "The tree's own cylinders"), (ax[1], model, "The model, from the scans")):
+    side_view(m, a)
+    a.set(aspect="equal", xlabel="x (m)", title=f"{title}\\n{len(m):,} cylinders")
+ax[0].set_ylabel("z (m)")
+for o, name in enumerate(("0 (stem)", "1", "2", "3 and up")):
+    ax[1].plot([], [], c=ORDER_COLOURS[o], lw=4, label=name)
+ax[1].legend(title="branch order", loc="upper left", bbox_to_anchor=(1.0, 1.0));""",
+    md("""## Leaf area and leaf angles
+
+The leaf echoes give the leaf area the scans saw, voxel by voxel
+(`leaves.leaf_area_density`), and the leaf angle distribution from their
+local normals (`leaves.leaf_angle_distribution`); both have an exact answer
+here."""),
+    """\
+foliage = tree[tree.attrs["classification"] == 4]
+area = leaves.leaf_area_density(foliage, voxel_size=0.25)
+angles = leaves.leaf_angle_distribution(foliage)
+print(f"leaf area: {area.total_area:.0f} m2 seen, {truth.leaf_area:.0f} m2 true ({area.total_area / truth.leaf_area:.0%})")
+print(f"mean leaf angle: {angles.mean_deg:.0f} deg measured ({angles.de_wit}), "
+      f"{truth.leaf_angles().mean_deg:.0f} deg true (planophile)")""",
+    md("""The scans see about four fifths of the leaf area: leaves inside the
+crown are hidden behind others from all three positions. The leaf angles
+come out much steeper than the truth and close to a uniform distribution:
+normals estimated from a few noisy echoes on a 10 cm leaf, some of them
+mixed with the leaf behind, scatter in every direction. Both numbers are
+the kind of check a real scan never offers."""),
     md("""## A real tree, and why to check `measured_volume_fraction`
 
 The same steps on the tallest tree of the Litchfield tile (notebook 5). The
@@ -664,28 +787,44 @@ Gap fraction inverts the fraction of pulses that got through at each zenith
 angle, so it needs pulses with their scanner origins. The tile's pulse file
 cannot serve here: its rays were clipped at the tile boundary, so their origins
 sit on the tile edge rather than at a scanner (notebook 8). This part uses a
-synthetic scene instead, where the leaf area is known -- see
+synthetic plot instead, where the leaf area is known -- see
 [Pulse data](../guide/pulses.md) and the [canopy
 benchmark](../benchmarks/canopy.md) for whole plots read from RIEGL `.rxp`,
-where Sylva's profiles match pylidar-tls-canopy to within 4 %."""),
+where Sylva's profiles match pylidar-tls-canopy to within 4 %.
+
+The plot (`synthetic.plot`) is 50 m square, so that pulses at 57.5 degrees
+reach the top of the canopy before they leave it: 125 broadleaf and
+eucalypt trees with shrubs, grass and dead wood, scanned once from its centre
+with the model of a RIEGL VZ-400, which sees from 30 degrees zenith down.
+The truth is the trees' leaf area, from the leaves the generator placed."""),
     """\
-scene = synthetic.forest()
-shots = synthetic.scan(scene, origin=(10.0, 10.0, 1.5), resolution_deg=0.25)
+p = synthetic.plot(size=50, density=500, archetypes={"broadleaf": 1, "eucalypt": 1}, seed=1)
+x, y = 25.0, 25.0
+shots = synthetic.scan(p.points, origin=(x, y, 1.5 + p.ground_height(x, y)), resolution_deg=0.1,
+                       scanner="vz400", range_noise=0.005, seed=0)
 print(shots, f"- {np.mean(shots.echo_count == 0):.0%} of pulses returned nothing")
-print(f"true leaf area index of the scene: {synthetic.leaf_area(scene) / 20**2:.2f} (plus bark)")
-echo_height = shots.echo_xyz()[:, 2] - synthetic.terrain_height(*shots.echo_xyz()[:, :2].T)
-zen, gap = canopy.gap_fraction_zenith(shots, echo_height, min_height=1.0, zenith_edges=np.arange(0, 95, 5.0))
-for method in ("hinge", "miller"):
-    print(f"effective PAI ({method}): {canopy.lai_from_gap_fraction(zen, gap, method):.2f}")
+print(f"true leaf area index of the trees: {p.trees['leaf_area'].sum() / 50**2:.2f} (plus bark and understorey)")
+echoes = shots.echo_xyz()
+echo_height = echoes[:, 2] - p.ground_height(echoes[:, 0], echoes[:, 1])
+zen, gap = canopy.gap_fraction_zenith(shots, echo_height, min_height=1.0, zenith_edges=np.arange(30, 95, 5.0))
+print(f"effective PAI (hinge, 57.5 deg): {canopy.lai_from_gap_fraction(zen, gap, 'hinge'):.2f}")
 fig, ax = plt.subplots()
 ax.plot(zen, gap, "o-")
-ax.set(xlabel="view zenith angle (deg)", ylabel="gap fraction", ylim=(0, 1.02), xlim=(0, 90),
+ax.axvline(57.5, c="k", ls="--", lw=0.8)
+ax.text(58.5, 0.92, "hinge angle", fontsize=8.5)
+ax.axvspan(0, 30, color=CONTEXT, alpha=0.5, lw=0)
+ax.text(15, 0.5, "not scanned", ha="center", fontsize=8.5)
+ax.set(xlabel="view zenith angle (deg)", ylabel="gap fraction (pulses above 1 m)", ylim=(0, 1.02), xlim=(0, 90),
        title="Gap fraction seen by one synthetic scan");""",
-    md("""Both estimators land well below the scene's 0.30, and that is the
-point of the exercise: one scan from inside a scene of discrete leaf discs
-misses most of the leaf area, and an *effective* PAI is a lower bound on the
-real one. Several positions, or the ray-traced voxels of notebook 9, recover
-more of it."""),
+    md("""The effective PAI lands at about half the trees' leaf area index, and
+that is the point of the exercise: the leaves are clumped into crowns,
+which lets more pulses through than the same leaf area spread evenly, so an
+*effective* PAI is a lower bound on the real one. A clumping correction, or
+the ray-traced voxels of notebook 9, recover more of it. Miller's integral
+is not used here: it needs every zenith ring from 0 to 90 degrees, and the
+scanner sees none above 30. The rise beyond 70 degrees is the edge of the
+plot: pulses that close to horizontal leave it before they reach the
+canopy."""),
 ]
 
 NOTEBOOKS["08_shots"] = [
@@ -911,51 +1050,91 @@ ax[1].set(title="Voxels with ≥ 200 pulses (grey: fewer)", xlabel="x (m)")
 fig.suptitle("Plant area density in the slice at y = 7.5 to 8 m");""",
     md("""## Checking the estimators against a known scene
 
-To see whether the numbers are right, the scene has to be known. Four
-synthetic scans of a scene with a known leaf area: the estimate should be the
-right size, and low, because the pseudo-scanner sees each leaf disc through
-only a few points."""),
+To see whether the numbers are right, the scene has to be known. A synthetic
+plot (`synthetic.plot`, 20 m square: 20 broadleaf and eucalypt trees with
+shrubs, grass and dead wood on rough ground) is scanned from five positions
+with the model of a RIEGL VZ-400, its beam footprint, 5 mm of range noise
+and mixed pixels. The echoes keep their true class, so the leaf area density
+can be estimated from the leaf echoes alone and compared with the leaf area
+the generator placed."""),
     """\
-scene = synthetic.forest()
-positions = [(3, 3), (17, 3), (3, 17), (17, 17), (10, 10)]
+p = synthetic.plot(size=20, density=500, archetypes={"broadleaf": 1, "eucalypt": 1}, seed=1)
+positions = [(4, 4), (16, 4), (4, 16), (16, 16), (10, 10)]
 sim = Shots.concatenate([
-    synthetic.scan(scene, origin=(x, y, synthetic.terrain_height(x, y) + 1.5), resolution_deg=0.2)
-    for x, y in positions])
-sim_grid = voxels.ray_voxelize(sim, 0.5, ((0, 0, -0.5), (20, 20, 16.5)), ground_class=2,
-                               leaf_classes=[4], wood_classes=[5], attenuation=["fpl", "ppl"])
+    synthetic.scan(p.points, origin=(x, y, p.ground_height(x, y) + 1.5), resolution_deg=0.1,
+                   scanner="vz400", range_noise=0.005, seed=k)
+    for k, (x, y) in enumerate(positions)])
+box = ((0, 0, float(p.points.z.min()) - 0.5), (20, 20, float(p.points.z.min()) + 29.5))
+sim_grid = voxels.ray_voxelize(sim, 0.5, box, ground_class=2, leaf_classes=[4], wood_classes=[5],
+                               attenuation=["fpl", "ppl"])
 pai = float(np.nansum(sim_grid.profile("pad_ppl", min_beams=20)) * 0.5)
 lai = float(np.nansum(sim_grid.profile("lad_ppl", min_beams=20)) * 0.5)
-print(f"PAI {pai:.2f}  LAI {lai:.2f}  true LAI of the scene {synthetic.leaf_area(scene) / 20**2:.2f}")""",
+print(sim)
+print(f"PAI {pai:.2f}  LAI {lai:.2f}  true LAI of the trees {p.trees['leaf_area'].sum() / 20**2:.2f}")""",
+    md("""The leaf area index comes out within about a tenth of the truth: with
+five positions and the misses traced, the voxels see most of the crowns.
+The PAI is higher, as it should be: it also counts the wood, the shrubs and
+the grass, which the truth here leaves out."""),
     md("""## Leaf angles
 
 With `inclination=True`, normals of the echoes give an inclination angle
 distribution per tree, and G is integrated over it and over the tree's beam
-zeniths instead of assuming a spherical distribution. The synthetic leaves are
-randomly oriented discs, so the result should be close to spherical with
-G ≈ 0.5."""),
+zeniths instead of assuming a spherical distribution. The synthetic leaves
+have known orientations: the broadleaf trees' are planophile (mostly
+horizontal blades, a mean inclination of 27 degrees), the eucalypts'
+erectophile (hanging leaves, 63 degrees)."""),
     """\
-inc = voxels.ray_voxelize(sim, 0.5, ((0, 0, -0.5), (20, 20, 16.5)), ground_class=2,
-                          leaf_classes=[4], wood_classes=[5], inclination=True)
+import pandas as pd
+
+inc = voxels.ray_voxelize(sim, 0.5, box, ground_class=2, leaf_classes=[4], wood_classes=[5], inclination=True)
+leaf_tree = np.asarray(p.leaves["tree"])
+leaf_inc = np.degrees(np.arccos(np.abs(np.asarray(p.leaves["normal"])[:, 2])))
+leaf_w = np.asarray(p.leaves["area"])
+rows = []
 for tid, t in inc.tree_iad.items():
-    print(f"tree {tid}: leaves {t['liad_de_wit']:12s} G_leaf {t['g_leaf']:.2f}   "
-          f"wood {t['wiad_de_wit']:12s} G_wood {t['g_wood']:.2f}")
-t = inc.tree_iad[3]
-fig, ax = plt.subplots()
-ax.step(np.degrees(t["bin_centres"]), t["liad"], where="mid", c=LEAF, label="leaves")
-ax.step(np.degrees(t["bin_centres"]), t["wiad"], where="mid", c=WOOD, label="wood")
-ax.set(xlabel="inclination of the surface normal from vertical (deg)", ylabel="fraction of the surface",
-       xlim=(0, 90), title="Inclination distributions of tree 3"); ax.legend(loc="upper left");""",
-    md("""The wood is mostly stem and limbs, near-vertical surfaces whose normals
-lie close to 90 degrees from vertical, hence its peak there. The leaves spread
-over every angle, rising towards 90 degrees as a spherical distribution does,
-in proportion to the sine of the angle."""),
-    md("## Wood volume, files and streaming\n\nQSM cylinders can be rasterised into the same grid; `write` produces an AMAPVox `.vox` file or a text table; and a shots file is voxelised without being loaded."),
+    if tid == 0:
+        continue
+    k = leaf_tree == tid
+    centres = np.degrees(t["bin_centres"])
+    rows.append({"tree": tid, "archetype": p.trees["archetype"][tid - 1],
+                 "mean, true (deg)": np.average(leaf_inc[k], weights=leaf_w[k]),
+                 "mean, estimated (deg)": np.sum(centres * t["liad"]) / np.sum(t["liad"]),
+                 "estimated type": t["liad_de_wit"], "G_leaf": t["g_leaf"]})
+rows = pd.DataFrame(rows)
+summary = rows.groupby("archetype").agg(trees=("tree", "size"), true_mean=("mean, true (deg)", "mean"),
+                                        estimated_mean=("mean, estimated (deg)", "mean"),
+                                        estimated_range=("mean, estimated (deg)", lambda v: f"{v.min():.0f} to {v.max():.0f}"),
+                                        G_leaf=("G_leaf", "mean"))
+summary.round(2)""",
     """\
-from sylva import qsm
-tree3 = scene[scene.attrs["tree_id"] == 3]
-model = qsm.build_qsm(tree3[tree3.attrs["classification"] == 5], base_xy=(8.0, 15.0))
+fig, ax = plt.subplots(1, 2, figsize=(10, 3.6), sharey=True)
+for a, kind in zip(ax, ("broadleaf", "eucalypt")):
+    tid = int(rows.tree[rows.archetype == kind].iloc[0])
+    t = inc.tree_iad[tid]
+    edges = np.linspace(0, 90, len(t["bin_centres"]) + 1)
+    k = leaf_tree == tid
+    true_hist = np.histogram(leaf_inc[k], edges, weights=leaf_w[k])[0]
+    a.stairs(true_hist / true_hist.sum(), edges, color="k", lw=1.5, label="true leaves")
+    a.stairs(t["liad"] / np.sum(t["liad"]), edges, color=LEAF, lw=2, label="estimated, leaf echoes")
+    a.stairs(t["wiad"] / np.sum(t["wiad"]), edges, color=WOOD, lw=1.5, ls="--", label="estimated, wood echoes")
+    a.set(xlabel="inclination of the surface normal from vertical (deg)", xlim=(0, 90), title=f"Tree {tid}, {kind}")
+ax[0].set_ylabel("fraction of the surface")
+ax[1].legend(loc="upper left");""",
+    md("""The estimates tell the two kinds of tree apart, but both are pulled
+towards the middle: the broadleaf leaves come out steeper than they are,
+the eucalypt leaves flatter. The normals are fitted to a few noisy echoes on
+each leaf, and their scatter flattens any distribution towards a uniform
+one. The wood is mostly stem and limbs, near-vertical surfaces whose normals
+lie close to 90 degrees from vertical, hence its peak there."""),
+    md("## Wood volume, files and streaming\n\nQSM cylinders can be rasterised into the same grid; `write` produces an AMAPVox `.vox` file or a text table; and a shots file is voxelised without being loaded. The cylinders here are the largest tree's own, from the generator."),
+    """\
+tid = int(p.trees["tree_id"][np.argmax(p.trees["dbh"])])
+model = p.qsm(tid)
 sim_grid.add_wood_volume(model)
-print(f"wood volume in the grid {sim_grid.wood_volume.sum():.3f} m3 of {model.total_volume:.3f} m3 in the QSM")
+reach = np.r_[model.start[:, :2], model.end[:, :2]]
+print(f"wood volume in the grid {sim_grid.wood_volume.sum():.3f} m3 of the {model.total_volume:.3f} m3 in tree {tid}'s "
+      f"cylinders; the rest lies beyond the grid, as the crown reaches from x = {reach[:, 0].min():.1f} to "
+      f"{reach[:, 0].max():.1f} m and y = {reach[:, 1].min():.1f} to {reach[:, 1].max():.1f} m")
 
 n = grid.write("tile.vox")
 print(n, "voxels written to tile.vox")
@@ -2236,10 +2415,147 @@ be chosen and its effect measured."""),
 ]
 
 
+NOTEBOOKS["17_synthetic"] = [
+    md("""# 17. Synthetic trees, plots and scans
+
+`sylva.synthetic` makes point clouds whose right answer is known, so that a
+method can be checked against the truth rather than against another method.
+Notebooks 3, 6, 7 and 9 use the realistic generators shown here:
+`tree_model` grows a tree from an archetype with its cylinders, leaves and
+leaf angles as the truth; `plot` makes a mixed stand on rough ground with
+understorey and dead wood and a truth table; and `scan` with a finite beam
+scans either one with range noise, a beam footprint, mixed pixels and
+multiple returns. The [guide](../guide/synthetic.md) describes the models
+and the checks behind them."""),
+    SYNTH_SETUP + "\nimport pandas as pd\nfrom sylva import filters",
+    md("""## Five archetypes
+
+Each archetype sets the architecture (where the crown starts, how the stem
+forks, how branches bend), the crown shape and the leaves: their size and
+their angle distribution. Every tree here has a DBH of 30 cm and a target
+height of 16 m, except the shrub: 4 m, with 3 cm stems."""),
+    """\
+names = ["broadleaf", "conifer", "eucalypt", "savanna", "shrub"]
+models = {n: synthetic.tree_model(n, dbh=0.03 if n == "shrub" else 0.3, height=4.0 if n == "shrub" else 16.0,
+                                  seed=2) for n in names}
+pd.DataFrame.from_dict({n: {"DBH (cm)": 100 * t.dbh, "height (m)": t.height, "crown base (m)": t.crown_base,
+                  "wood volume (L)": 1000 * t.qsm.total_volume, "stem share of the wood": t.qsm.stem_volume / t.qsm.total_volume,
+                  "leaf area (m2)": t.leaf_area, "leaves": len(t.leaves["area"]),
+                  "mean leaf angle (deg)": t.leaf_angles().mean_deg}
+              for n, t in models.items()}, orient="index").round(2)""",
+    """\
+fig, ax = plt.subplots(1, 5, figsize=(10, 3.8), sharey=True, gridspec_kw={"width_ratios": [1, 0.8, 1, 1.3, 0.5]})
+for a, (name, t) in zip(ax, models.items()):
+    c = t.points[::4]
+    wood = c.attrs["classification"] == 5
+    a.scatter(c.x[wood] - t.base[0], c.z[wood], s=0.1, c=WOOD)
+    a.scatter(c.x[~wood] - t.base[0], c.z[~wood], s=0.1, c=LEAF)
+    a.set(aspect="equal", title=name, xlabel="x (m)")
+ax[0].set_ylabel("z (m)")
+fig.suptitle("The archetypes from the side: wood (brown) and leaves (green)");""",
+    md("""The truth of a tree is complete: `t.qsm` is its wood as a table of
+cylinders (the points lie on them), `t.leaves` lists every leaf with its
+centre, normal and area, and `t.leaf_angles()` gives the leaf angle
+distribution and its G function. The leaf angles below are each archetype's
+default: planophile (mostly horizontal) blades for the broadleaf and the
+savanna tree, erectophile (hanging) leaves for the eucalypt, and spherical
+for the conifer's shoots and the shrub."""),
+    """\
+fig, ax = plt.subplots(1, 2, figsize=(10, 3.6))
+edges = np.linspace(0, 90, 19)
+for i, (name, t) in enumerate(models.items()):
+    inc = np.degrees(np.arccos(np.abs(t.leaves["normal"][:, 2])))
+    h = np.histogram(inc, edges, weights=t.leaves["area"])[0]
+    ax[0].stairs(h / h.sum(), edges, color=f"C{i}", lw=1.5, label=name)
+    order = t.volume_by_order()
+    ax[1].bar(np.array(list(order)) + 0.16 * (i - 2), 1000 * np.array(list(order.values())), width=0.16,
+              color=f"C{i}", label=name)
+ax[0].set(xlabel="leaf inclination (deg)", ylabel="fraction of the leaf area", xlim=(0, 90), title="Leaf angles")
+ax[1].set(xlabel="branch order (0: stem)", ylabel="wood volume (L)", yscale="log", xticks=range(4),
+          title="Wood volume by branch order")
+ax[1].legend(loc="upper right");""",
+    md("""## A stand
+
+`plot` draws stem diameters from a distribution (here a Weibull), gives
+each tree an archetype by weight and a height from the archetype's
+height-diameter curve, places the stems without overlap, and adds terrain
+with a slope and micro-relief, shrubs, grass, fallen logs and stumps. Every
+point carries a `label`; the trees come with a truth table."""),
+    """\
+p = synthetic.plot(size=30, density=600, archetypes={"broadleaf": 1, "eucalypt": 1, "conifer": 1},
+                   slope=0.15, roughness=0.08, seed=1)
+print(f"{len(p.points):,} points; {p.stem_density:.0f} stems/ha, basal area {p.basal_area:.1f} m2/ha, "
+      f"leaf area index of the trees {p.trees['leaf_area'].sum() / 30**2:.2f}")
+pd.DataFrame(p.trees)[["tree_id", "archetype", "dbh", "height", "crown_base", "wood_volume", "leaf_area"]].head(6).round(2)""",
+    """\
+LABEL_COLOURS = {1: ("ground", GROUND), 2: ("stem", WOOD), 3: ("branch", "#9C6B3C"), 4: ("leaf", LEAF),
+                 5: ("understorey", GRASS), 6: ("dead wood", "k")}
+label = p.points.attrs["label"]
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.4), gridspec_kw={"width_ratios": [1, 1.4]})
+s = p.points[::10]
+s = s[s.attrs["label"] != 1]                  # the ground, which the side view shows
+order = np.argsort(s.z)
+colours = np.array([LABEL_COLOURS[v][1] for v in range(1, 7)], dtype=object)[s.attrs["label"][order] - 1]
+ax[0].scatter(s.x[order], s.y[order], c=list(colours), s=0.2)
+ax[0].set(aspect="equal", xlabel="x (m)", ylabel="y (m)", title="From above, without the ground", xlim=(0, 30), ylim=(0, 30))
+slab = np.abs(p.points.y - 15) < 1.0
+for v, (name, colour) in LABEL_COLOURS.items():
+    k = slab & (label == v)
+    ax[1].scatter(p.points.x[k], p.points.z[k], s=0.3 if v != 6 else 1.0, c=colour, label=name)
+ax[1].set(aspect="equal", xlabel="x (m)", ylabel="z (m)", title="A 2 m slice at y = 14 to 16 m")
+ax[1].legend(markerscale=10, loc="upper left", bbox_to_anchor=(1.0, 1.0));""",
+    md("""## A scan with a finite beam
+
+Any beam option switches `scan` from taking the nearest point in each
+angular cell to casting a beam: a cone of the scanner's divergence from its
+exit aperture, sampled by sub-beams, with each point standing for a small
+patch of surface. Hits closer in range than the receiver's resolution
+merge into one echo at their energy-weighted mean range, which is how a
+footprint straddling a stem's edge puts a point in the gap behind it: a
+mixed pixel. Range noise is added along the beam. Here the stand is scanned
+from its centre with the model of a RIEGL VZ-400."""),
+    """\
+x0, y0 = 15.0, 15.0
+origin = (x0, y0, p.ground_height(x0, y0) + 1.5)
+shots = synthetic.scan(p.points, origin=origin, resolution_deg=0.06, scanner="vz400", range_noise=0.005, seed=1)
+echoes = shots.to_pointcloud()
+spread = echoes.attrs["range_spread"]
+print(shots)
+print(f"echoes per pulse: {dict(enumerate(np.bincount(shots.echo_count).tolist()))}; "
+      f"mixed pixels (hits spread over more than 5 cm in range): {np.mean(spread > 0.05):.1%} of the echoes")""",
+    """\
+mixed = spread > 0.05
+label = echoes.attrs["label"]
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.2), gridspec_kw={"width_ratios": [1.6, 1]})
+slab = np.abs(echoes.y - y0) < 1.0
+hb = ax[0].hexbin(echoes.x[slab], echoes.z[slab], C=mixed[slab], reduce_C_function=np.mean, gridsize=(60, 48),
+                  mincnt=5, vmin=0, vmax=0.5, extent=(0, 30, -1, 24))
+fig.colorbar(hb, ax=ax[0], shrink=0.9, label="share of mixed pixels", extend="max")
+ax[0].plot(*origin[::2], "k^", ms=7)
+ax[0].annotate("scanner", origin[::2], xytext=(0, 9), textcoords="offset points", ha="center", fontsize=8.5)
+ax[0].set(aspect="equal", xlabel="x (m)", ylabel="z (m)", xlim=(0, 30), ylim=(-1, 24),
+          title="Mixed pixels (spread > 5 cm) in a 2 m slice\\nthrough the scanner")
+names = {v: n for v, (n, _) in LABEL_COLOURS.items()}
+kinds = [v for v in names if np.any(label == v)]
+ax[1].barh([names[v] for v in kinds], [100 * mixed[label == v].mean() for v in kinds],
+           color=[LABEL_COLOURS[v][1] for v in kinds])
+ax[1].invert_yaxis()
+ax[1].set(xlabel="mixed pixels (% of the echoes)", title="By the surface hit");""",
+    md("""Mixed pixels gather where surfaces lie within the receiver's range
+resolution of each other: in the foliage, where a footprint falls on a leaf
+and the leaves just behind it, in the grass and shrubs, and on the ground
+far from the scanner, where the footprint grazes it and spreads along it in
+range. A stem seen
+against the distant background gives two separate returns at its edge
+instead, which is why stems and the ground come out cleanest. Every echo
+keeps the attributes of its strongest target (`classification`, `label`,
+`tree_id`), so each of these errors can be traced back to its cause."""),
+]
+
 def build(name: str, cells: list, execute: bool = True) -> None:
     nb = nbformat.v4.new_notebook()
     nb.metadata["kernelspec"] = {"display_name": "Python 3", "language": "python", "name": "python3"}
-    nb.cells = [nbformat.v4.new_markdown_cell(c) if isinstance(c, md) else nbformat.v4.new_code_cell(c) for c in cells]
+    nb.cells = [nbformat.v4.new_markdown_cell(c) if isinstance(c, md) else nbformat.v4.new_code_cell(c.rstrip()) for c in cells]
     if execute:
         import tempfile
         with tempfile.TemporaryDirectory() as work:      # files the notebooks write stay out of the repo

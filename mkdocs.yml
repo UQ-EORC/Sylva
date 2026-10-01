@@ -69,6 +69,7 @@ nav:
       - 14. Change detection: examples/14_change.ipynb
       - 15. Airborne lidar: examples/15_als.ipynb
       - 16. Full waveforms: examples/16_waveform.ipynb
+      - 17. Synthetic data: examples/17_synthetic.ipynb
   - Benchmarks:
       - Tree detection: benchmarks/trees.md
       - QSMs: benchmarks/qsm.md
