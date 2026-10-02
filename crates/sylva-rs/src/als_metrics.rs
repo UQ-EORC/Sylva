@@ -19,7 +19,8 @@
 //! - `zentropy`: lidR's `entropy(z, by)`, the Shannon index of the heights
 //!   in bins of `by` m from 0 to `ceiling(zmax / by) * by`, divided by that
 //!   of a uniform distribution over the same bins, `-sum(p ln p) / ln(k)`.
-//!   NaN when `zmax < 2 by` or a height is negative. As in lidR the bins are
+//!   NaN when `zmax < 2 by` or a height is negative (see
+//!   [`MetricParams::clamp_negative`]). As in lidR the bins are
 //!   half-open `[a, b)`, so a return exactly at the top edge is not counted.
 //! - `pzabovezmean`, `pzabove<t>`: percentage of returns above the mean and
 //!   above `t` m.
@@ -78,11 +79,15 @@ pub struct MetricParams {
     pub min_height: Option<f64>,
     /// Leave out returns classified as noise (7 or 18).
     pub drop_noise: bool,
+    /// Set heights below 0 to 0 (before `min_height` is applied), as lidR
+    /// users do with `Z[Z < 0] <- 0`. Ground returns a few centimetres
+    /// below the DTM are in nearly every cell, and make `zentropy` NaN.
+    pub clamp_negative: bool,
 }
 
 impl Default for MetricParams {
     fn default() -> Self {
-        MetricParams { threshold: 2.0, entropy_bin: 1.0, cover_break: 2.0, min_height: None, drop_noise: true }
+        MetricParams { threshold: 2.0, entropy_bin: 1.0, cover_break: 2.0, min_height: None, drop_noise: true, clamp_negative: false }
     }
 }
 
@@ -354,13 +359,23 @@ impl HeightSource {
 
 const NO_GROUND: &str = "no chunk has 3 ground points (classification 2); classify ground first (als.classify_ground), or give a DTM";
 
-/// Heights of every point of a chunk; None when it has too little ground
-/// for [`Heights::Auto`].
-fn heights_for(cat: &Catalog, chunk: &Chunk, cloud: &PointCloud, src: &HeightSource) -> Result<Option<Vec<f64>>> {
-    match src {
-        HeightSource::Heights(h) => chunk_heights(cat, chunk, cloud, h),
-        HeightSource::Attribute(name) => cloud.attr(name).map(|a| Some(a.to_f64())).ok_or_else(|| Error::invalid(format!("the tiles have no {name:?} attribute"))),
+/// Heights of every point of a chunk (clamped at 0 with
+/// `params.clamp_negative`); None when it has too little ground for
+/// [`Heights::Auto`].
+fn heights_for(cat: &Catalog, chunk: &Chunk, cloud: &PointCloud, src: &HeightSource, params: &MetricParams) -> Result<Option<Vec<f64>>> {
+    let h = match src {
+        HeightSource::Heights(h) => chunk_heights(cat, chunk, cloud, h)?,
+        HeightSource::Attribute(name) => Some(cloud.attr(name).map(|a| a.to_f64()).ok_or_else(|| Error::invalid(format!("the tiles have no {name:?} attribute")))?),
+    };
+    Ok(h.map(|h| clamped(h, params)))
+}
+
+/// `h` with negative heights set to 0 when `params.clamp_negative`.
+fn clamped(mut h: Vec<f64>, params: &MetricParams) -> Vec<f64> {
+    if params.clamp_negative {
+        h.iter_mut().filter(|v| **v < 0.0).for_each(|v| *v = 0.0);
     }
+    h
 }
 
 /// Indices of the points the metrics use: finite height, at least
@@ -418,8 +433,9 @@ pub fn cloud_metrics(cloud: &PointCloud, heights: &[f64], params: &MetricParams)
         return Err(Error::invalid(format!("{} heights for {} points", heights.len(), cloud.len())));
     }
     let avail = Available::of(cloud);
-    let cols = Columns::new(cloud, heights);
-    let mut r = cols.returns(&kept(cloud, heights, params));
+    let heights = clamped(heights.to_vec(), params);
+    let cols = Columns::new(cloud, &heights);
+    let mut r = cols.returns(&kept(cloud, &heights, params));
     Ok((metric_names(avail, params), compute(&mut r, avail, params)))
 }
 
@@ -459,7 +475,7 @@ pub struct ChunkCells {
 /// core grown by 1.25 cells (and inside its buffered box). None when the
 /// heights cannot be had (too little ground for [`Heights::Auto`]).
 pub fn chunk_cells(cat: &Catalog, chunk: &Chunk, cloud: &PointCloud, grid: &Raster, heights: &HeightSource, params: &MetricParams) -> Result<Option<ChunkCells>> {
-    let Some(h) = heights_for(cat, chunk, cloud, heights)? else { return Ok(None) };
+    let Some(h) = heights_for(cat, chunk, cloud, heights, params)? else { return Ok(None) };
     let res = grid.resolution;
     let (core, outer) = (chunk.core, chunk.outer);
     let pad = 1.25 * res;
@@ -667,7 +683,7 @@ pub fn plot_points<T: Send>(cat: &Catalog, plots: &[Plot], heights: &HeightSourc
     let w = workers_for(&chunks, workers, BYTES_PER_POINT)?;
     let parts = run(cat, &chunks, w, "ALS plots", |chunk, data| {
         let cloud = &data.cloud;
-        let Some(h) = heights_for(cat, chunk, cloud, heights)? else { return Ok(None) };
+        let Some(h) = heights_for(cat, chunk, cloud, heights, params)? else { return Ok(None) };
         let mut by_x = kept(cloud, &h, params);
         by_x.sort_unstable_by(|&a, &b| cloud.xyz[a][0].total_cmp(&cloud.xyz[b][0]).then(a.cmp(&b)));
         let cols = Columns::new(cloud, &h);
@@ -826,6 +842,27 @@ mod tests {
         assert!(entropy(&[0.1, 1.9], 1.0).is_nan());
         assert!(entropy(&[-0.1, 5.0], 1.0).is_nan());
         assert!(entropy(&[], 1.0).is_nan());
+    }
+
+    #[test]
+    fn negative_heights_can_be_clamped() {
+        // Ground returns just under the DTM make zentropy NaN unless clamped.
+        let cloud = PointCloud::new(vec![[0.0; 3]; 5]);
+        let h = [-0.03, -0.01, 0.0, 6.5, 12.2];
+        let get = |p: &MetricParams, name: &str| {
+            let (names, v) = cloud_metrics(&cloud, &h, p).unwrap();
+            v[names.iter().position(|n| n == name).unwrap()]
+        };
+        let lidr = MetricParams::default();
+        let clamp = MetricParams { clamp_negative: true, ..Default::default() };
+        assert!(get(&lidr, "zentropy").is_nan());
+        let mut z = [0.0, 0.0, 0.0, 6.5, 12.2];
+        z.sort_by(f64::total_cmp);
+        assert_eq!(get(&clamp, "zentropy"), entropy(&z, 1.0));
+        assert_eq!(get(&clamp, "n"), 5.0);
+        assert_eq!(get(&clamp, "zq5"), 0.0);
+        // min_height=0 drops them instead.
+        assert_eq!(get(&MetricParams { min_height: Some(0.0), ..Default::default() }, "n"), 3.0);
     }
 
     #[test]

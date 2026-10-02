@@ -63,8 +63,7 @@ conda activate sylva
 pip install sylva-rs
 ```
 
-Optional extras: `pip install "sylva-rs[geotiff]"` for GeoTIFF export
-(rasterio), `"sylva-rs[examples]"` for the notebooks. Reading RIEGL `.rxp`
+Optional extras: `pip install "sylva-rs[examples]"` for the notebooks. Reading RIEGL `.rxp`
 files needs RIEGL's RiVLib, which is proprietary and loaded at run time; see
 the [install guide](https://uq-eorc.github.io/Sylva/install/).
 

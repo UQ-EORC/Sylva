@@ -323,7 +323,7 @@ def _cmd_als_chm(args):
     cat = als.catalog(args.input, pattern=args.pattern)
     dtm = None if args.normalized else (Raster.from_ascii_grid(args.dtm) if args.dtm else "auto")
     chm = als.chm(cat, resolution=args.resolution, dtm=dtm, dtm_resolution=args.dtm_resolution,
-                  min_height=args.min_height, **_als_run(args))
+                  min_height=args.min_height, drop_noise=not args.keep_noise, **_als_run(args))
     _write_raster(chm, args.output)
     print(f"CHM {chm.shape} at {args.resolution} m, max {np.nanmax(chm.data):.1f} m -> "
           f"{args.output}")
@@ -425,7 +425,7 @@ def main(argv=None):
                    help="cloth simulation or progressive morphological filter")
     s.add_argument("--resolution", type=float, default=0.5,
                    help="cloth / filter cell and DTM resolution (m)")
-    s.add_argument("--dtm", help="also write the DTM (.tif needs rasterio, else .asc)")
+    s.add_argument("--dtm", help="also write the DTM (.tif, else .asc)")
     s.set_defaults(func=_cmd_ground)
 
     s = sub.add_parser("trees", help="detect stems and DBH from a height-normalised cloud", **fmt)
@@ -445,7 +445,7 @@ def main(argv=None):
     s = sub.add_parser("chm", help="canopy height model from a height-normalised cloud", **fmt)
     s.add_argument("input", help="cloud with a height attribute")
     s.add_argument("output", nargs="?", default=None,
-                   help=".tif (needs rasterio) or .asc (default: <input>_chm.asc beside the input)")
+                   help=".tif or .asc (default: <input>_chm.asc beside the input)")
     s.add_argument("--resolution", type=float, default=0.5, help="cell size (m)")
     s.set_defaults(func=_cmd_chm)
 
@@ -601,7 +601,7 @@ def main(argv=None):
 
     s = sub.add_parser("als-dtm", help="DTM of a directory of ground-classified ALS tiles", **fmt)
     s.add_argument("input", help="directory of LAS/LAZ tiles with ground classified")
-    s.add_argument("output", help=".asc, or .tif (needs rasterio)")
+    s.add_argument("output", help=".asc, or .tif")
     s.add_argument("--resolution", type=float, default=1.0, help="cell size (m)")
     s.add_argument("--method", choices=["lowest", "tin", "natural", "idw"], default="lowest",
                    help="lowest ground point per cell, or an interpolation at cell centres")
@@ -610,7 +610,7 @@ def main(argv=None):
 
     s = sub.add_parser("als-chm", help="canopy height model of a directory of ALS tiles", **fmt)
     s.add_argument("input", help="directory of LAS/LAZ tiles with ground classified")
-    s.add_argument("output", help=".asc, or .tif (needs rasterio)")
+    s.add_argument("output", help=".asc, or .tif")
     s.add_argument("--resolution", type=float, default=0.5, help="cell size (m)")
     s.add_argument("--dtm-resolution", type=float, default=1.0,
                    help="cell size of the DTM made on the fly from the ground points (m)")
@@ -619,6 +619,8 @@ def main(argv=None):
                    help="the tiles are already normalised (z is height)")
     s.add_argument("--min-height", type=float, default=0.0,
                    help="cells with nothing this high are 0 (m)")
+    s.add_argument("--keep-noise", action="store_true",
+                   help="keep points classified as noise (7, 18)")
     _als_common(s)
     s.set_defaults(func=_cmd_als_chm)
 

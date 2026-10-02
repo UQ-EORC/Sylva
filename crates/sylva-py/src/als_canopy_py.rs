@@ -178,7 +178,7 @@ fn als_pulses<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: Option<&B
 
 // ---------------------------------------------------------------- profiles
 
-fn profile_params(resolution: f64, min_height: f64, bin_size: f64, max_height: Option<f64>, weighting: &str, lad: &str, lad_params: Vec<f64>, g: Option<f64>, angles: &str, trajectory: Option<&Bound<'_, PyDict>>, max_gap: Option<f64>, time_offset: f64, max_zenith: f64, anchor: &str) -> PyResult<ProfileParams> {
+fn profile_params(resolution: f64, min_height: f64, bin_size: f64, max_height: Option<f64>, top_quantile: f64, drop_noise: bool, weighting: &str, lad: &str, lad_params: Vec<f64>, g: Option<f64>, angles: &str, trajectory: Option<&Bound<'_, PyDict>>, max_gap: Option<f64>, time_offset: f64, max_zenith: f64, anchor: &str) -> PyResult<ProfileParams> {
     let projection = match g {
         Some(v) => Projection::Constant(v),
         None => Projection::Lad(voxel::Lad::parse(lad, &lad_params).map_err(err)?),
@@ -195,7 +195,7 @@ fn profile_params(resolution: f64, min_height: f64, bin_size: f64, max_height: O
         "return" => false,
         other => return Err(PyValueError::new_err(format!("anchor must be 'ground' or 'return', got {other:?}"))),
     };
-    Ok(ProfileParams { resolution, min_height, bin_size, max_height, weighting: ReturnWeight::parse(weighting).map_err(err)?, projection, angles, max_zenith, anchor_ground })
+    Ok(ProfileParams { resolution, min_height, bin_size, max_height, top_quantile, drop_noise, weighting: ReturnWeight::parse(weighting).map_err(err)?, projection, angles, max_zenith, anchor_ground })
 }
 
 fn grid_to_py<'py>(py: Python<'py>, g: &ProfileGrid) -> PyResult<Bound<'py, PyDict>> {
@@ -220,22 +220,22 @@ fn grid_from_py(weight: PyReadonlyArray3<f64>, weight_k: PyReadonlyArray3<f64>, 
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, attrs, heights, bounds, resolution, min_height, bin_size, max_height, weighting, lad, lad_params, g, angles, trajectory, max_gap, time_offset, max_zenith, anchor))]
-fn als_profile_cloud<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>, heights: PyReadonlyArray1<f64>, bounds: Option<(f64, f64, f64, f64)>, resolution: f64, min_height: f64, bin_size: f64, max_height: Option<f64>, weighting: &str, lad: &str, lad_params: Vec<f64>, g: Option<f64>, angles: &str, trajectory: Option<&Bound<'_, PyDict>>, max_gap: Option<f64>, time_offset: f64, max_zenith: f64, anchor: &str) -> PyResult<Bound<'py, PyDict>> {
+#[pyo3(signature = (xyz, attrs, heights, bounds, resolution, min_height, bin_size, max_height, top_quantile, drop_noise, weighting, lad, lad_params, g, angles, trajectory, max_gap, time_offset, max_zenith, anchor))]
+fn als_profile_cloud<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>, heights: PyReadonlyArray1<f64>, bounds: Option<(f64, f64, f64, f64)>, resolution: f64, min_height: f64, bin_size: f64, max_height: Option<f64>, top_quantile: f64, drop_noise: bool, weighting: &str, lad: &str, lad_params: Vec<f64>, g: Option<f64>, angles: &str, trajectory: Option<&Bound<'_, PyDict>>, max_gap: Option<f64>, time_offset: f64, max_zenith: f64, anchor: &str) -> PyResult<Bound<'py, PyDict>> {
     let c = cloud_from_py(xyz, attrs)?;
     let h = heights.as_array().to_vec();
-    let p = profile_params(resolution, min_height, bin_size, max_height, weighting, lad, lad_params, g, angles, trajectory, max_gap, time_offset, max_zenith, anchor)?;
+    let p = profile_params(resolution, min_height, bin_size, max_height, top_quantile, drop_noise, weighting, lad, lad_params, g, angles, trajectory, max_gap, time_offset, max_zenith, anchor)?;
     let b = bounds.map(|b| [b.0, b.1, b.2, b.3]);
     let grid = py.detach(|| ac::profile_cloud(&c, &h, &p, b)).map_err(err)?;
     grid_to_py(py, &grid)
 }
 
 #[pyfunction]
-#[pyo3(signature = (catalog, mode, dtm, dtm_resolution, resolution, min_height, bin_size, max_height, weighting, lad, lad_params, g, angles, trajectory, max_gap, time_offset, max_zenith, anchor, chunk_size, buffer, workers))]
-fn als_profile_catalog<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, mode: &str, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, dtm_resolution: f64, resolution: f64, min_height: f64, bin_size: f64, max_height: Option<f64>, weighting: &str, lad: &str, lad_params: Vec<f64>, g: Option<f64>, angles: &str, trajectory: Option<&Bound<'_, PyDict>>, max_gap: Option<f64>, time_offset: f64, max_zenith: f64, anchor: &str, chunk_size: Option<f64>, buffer: f64, workers: usize) -> PyResult<Bound<'py, PyDict>> {
+#[pyo3(signature = (catalog, mode, dtm, dtm_resolution, resolution, min_height, bin_size, max_height, top_quantile, drop_noise, weighting, lad, lad_params, g, angles, trajectory, max_gap, time_offset, max_zenith, anchor, chunk_size, buffer, workers))]
+fn als_profile_catalog<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, mode: &str, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, dtm_resolution: f64, resolution: f64, min_height: f64, bin_size: f64, max_height: Option<f64>, top_quantile: f64, drop_noise: bool, weighting: &str, lad: &str, lad_params: Vec<f64>, g: Option<f64>, angles: &str, trajectory: Option<&Bound<'_, PyDict>>, max_gap: Option<f64>, time_offset: f64, max_zenith: f64, anchor: &str, chunk_size: Option<f64>, buffer: f64, workers: usize) -> PyResult<Bound<'py, PyDict>> {
     let c = catalog_from_py(catalog)?;
     let h = heights(mode, dtm, dtm_resolution)?;
-    let p = profile_params(resolution, min_height, bin_size, max_height, weighting, lad, lad_params, g, angles, trajectory, max_gap, time_offset, max_zenith, anchor)?;
+    let p = profile_params(resolution, min_height, bin_size, max_height, top_quantile, drop_noise, weighting, lad, lad_params, g, angles, trajectory, max_gap, time_offset, max_zenith, anchor)?;
     let opts = run_options(chunk_size, buffer, workers);
     let grid = py.detach(|| ac::profile_catalog(&c, &h, &p, &opts)).map_err(err)?;
     grid_to_py(py, &grid)

@@ -151,7 +151,8 @@ pub fn read_tile(path: &Path) -> Result<Tile> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Issue {
     /// `missing`, `unreadable`, `empty`, `mixed_crs`, `no_crs`,
-    /// `mixed_point_format`, `mixed_scale`, `overlap` or `gap`.
+    /// `mixed_point_format`, `mixed_scale`, `overlap`, `unindexed_overlap`
+    /// or `gap`.
     pub kind: String,
     pub message: String,
 }
@@ -184,7 +185,7 @@ pub fn in_core(b: &[f64; 4], x: f64, y: f64) -> bool {
 
 /// Is `(x, y)` in the closed box?
 #[inline]
-fn in_box(b: &[f64; 4], x: f64, y: f64) -> bool {
+pub fn in_box(b: &[f64; 4], x: f64, y: f64) -> bool {
     x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]
 }
 
@@ -433,6 +434,10 @@ impl Catalog {
             let (i, j, _) = overlaps[0];
             let area: f64 = overlaps.iter().map(|o| o.2).sum();
             push("overlap", format!("{} of tiles overlap by more than {tolerance} m ({area:.1} m² in all; first: {} and {}); points in the overlaps are counted twice", plural(overlaps.len(), "pair"), self.tiles[i].path.display(), self.tiles[j].path.display()));
+            let heavy = self.heavily_overlapping(&overlaps);
+            if !heavy.is_empty() {
+                push("unindexed_overlap", format!("{} without a spatial index overlap{} other files over most of {} extent (flight lines, or files cut by time rather than area; first: {}); a chunk reads every file it reaches in full, so retile them first (als.retile reads each file once)", plural(heavy.len(), "file"), if heavy.len() == 1 { "s" } else { "" }, if heavy.len() == 1 { "its" } else { "their" }, self.tiles[heavy[0]].path.display()));
+            }
         }
         let gaps = self.gaps(tolerance);
         if !gaps.is_empty() {
@@ -441,6 +446,23 @@ impl Catalog {
             push("gap", format!("{} in the coverage ({area:.1} m² in all; first near x {:.1}..{:.1}, y {:.1}..{:.1})", plural(gaps.len(), "hole"), b[0], b[2], b[1], b[3]));
         }
         out
+    }
+
+    /// Tiles without a spatial index that other tiles overlap over at least
+    /// half of their extent, from the `overlaps` of [`Catalog::overlaps`].
+    fn heavily_overlapping(&self, overlaps: &[(usize, usize, f64)]) -> Vec<usize> {
+        let mut shared = vec![0.0; self.tiles.len()];
+        for &(i, j, a) in overlaps {
+            shared[i] += a;
+            shared[j] += a;
+        }
+        (0..self.tiles.len())
+            .filter(|&i| {
+                let t = &self.tiles[i];
+                let area = (t.bounds[3] - t.bounds[0]) * (t.bounds[4] - t.bounds[1]);
+                !t.spatial_index && area > 0.0 && shared[i] >= 0.5 * area
+            })
+            .collect()
     }
 
     /// A plain-text report: extent, counts, density, formats, CRS and issues.
@@ -453,7 +475,7 @@ impl Catalog {
             s.push_str(&format!("  extent   x {:.2} .. {:.2}, y {:.2} .. {:.2}, z {:.2} .. {:.2}\n", b[0], b[3], b[1], b[4], b[2], b[5]));
             s.push_str(&format!("  area     {:.4} km² covered by tile extents ({:.1} x {:.1} m bounding box)\n", area / 1e6, b[3] - b[0], b[4] - b[1]));
             if area > 0.0 {
-                s.push_str(&format!("  density  {:.2} points/m²\n", n as f64 / area));
+                s.push_str(&format!("  density  {:.2} points/m² over the tile extents{}\n", n as f64 / area, if self.overlaps(tolerance).is_empty() { "" } else { " (tiles overlap: flight lines fill little of their extent, so this underestimates)" }));
             }
             let mut sizes: Vec<f64> = self.tiles.iter().map(|t| (t.bounds[3] - t.bounds[0]).max(t.bounds[4] - t.bounds[1])).collect();
             sizes.sort_by(f64::total_cmp);
@@ -951,7 +973,8 @@ mod tests {
         cat.tiles[2].point_format = 1;
         cat.tiles.push(tile("over.laz", [50.0, 50.0, 150.0, 60.0], 10, Some("EPSG:28355"), 6));
         let kinds: Vec<String> = cat.issues(1.0).into_iter().map(|i| i.kind).collect();
-        assert_eq!(kinds, ["mixed_crs", "mixed_point_format", "overlap"]);
+        // The strip across the grid, unindexed and mostly over other tiles, is also flagged.
+        assert_eq!(kinds, ["mixed_crs", "mixed_point_format", "overlap", "unindexed_overlap"]);
         assert_eq!(cat.crs(), None);
 
         // A 3 x 3 layout with the middle tile missing is a hole; a missing

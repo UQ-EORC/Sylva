@@ -301,7 +301,8 @@ class Catalog:
         -------
         dict
             ``n_tiles``, ``n_points``, ``bounds``, ``area`` (m² of tile
-            extents), ``density`` (points/m²), ``crs``, ``point_formats``
+            extents), ``density`` (points/m² over the tile extents, an
+            underestimate for flight lines), ``crs``, ``point_formats``
             (format to tile count), ``indexed`` (tiles with a spatial index)
             and ``issues``.
         """
@@ -783,8 +784,8 @@ def _heights(dtm) -> tuple[str, tuple | None]:
 
 
 def chm(catalog: Catalog, resolution: float = 0.5, dtm="auto", dtm_resolution: float = 1.0,
-        min_height: float = 0.0, chunk_size: float | None = None, buffer: float = 20.0,
-        workers: int | None = None) -> Raster:
+        min_height: float = 0.0, drop_noise: bool = True, chunk_size: float | None = None,
+        buffer: float = 20.0, workers: int | None = None) -> Raster:
     """Canopy height model of a whole catalogue: the highest point per cell.
 
     Heights above ground are computed per chunk, then gridded as
@@ -807,6 +808,9 @@ def chm(catalog: Catalog, resolution: float = 0.5, dtm="auto", dtm_resolution: f
         Cell size (m) of the ``"auto"`` DTM.
     min_height
         Cells with nothing at or above this height are 0.
+    drop_noise
+        Leave out points classified as noise (7 or 18), as
+        :func:`filter` with ``classify=True`` marks them.
     chunk_size, buffer, workers
         As for :func:`apply`.
 
@@ -825,7 +829,7 @@ def chm(catalog: Catalog, resolution: float = 0.5, dtm="auto", dtm_resolution: f
     cat = _as_catalog(catalog)
     mode, raster = _heights(dtm)
     d = _core.als_chm(cat._core(), float(resolution), mode, raster, float(dtm_resolution),
-                      float(min_height), **_run_kw(chunk_size, buffer, workers))
+                      float(min_height), bool(drop_noise), **_run_kw(chunk_size, buffer, workers))
     return cat._raster(d)
 
 
@@ -930,6 +934,12 @@ def filter(catalog: Catalog, out: str | Path, method: str = "ror", radius: float
 def retile(catalog: Catalog, out: str | Path, size: float, buffer: float = 0.0, origin=None,
            workers: int | None = None, format: str | None = None) -> Catalog:
     """Cut a catalogue into new square tiles.
+
+    Each input file is read once, whatever its extent: its points are sent to
+    the tiles that hold them, held in temporary part files under ``out``,
+    and each tile is then assembled from its parts. Flight lines and other
+    large files without a spatial index, which every chunk of the other
+    functions would decompress in full, are best retiled first.
 
     Parameters
     ----------

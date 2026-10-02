@@ -115,7 +115,7 @@ To put a whole survey in one frame with a `transforms.json` or a folder of
 
 Classifies ground (`classification` 2), builds a DTM at `--resolution` (m),
 and writes the cloud with a `height` attribute. `--dtm` also writes the
-terrain (`.tif` needs `rasterio`, otherwise `.asc`).
+terrain (`.tif`, otherwise `.asc`).
 
 ### `trees`
 
@@ -251,8 +251,8 @@ sylva als-normalize ground/ normalised/ [--dtm-resolution 1] [--dtm DTM.asc] [--
 CRS and every problem found (missing or unreadable files, mixed CRS or point
 formats, overlapping tiles, holes); with `--strict` it exits with status 1 if
 there is any. `als-ground` writes the tiles with ground classified;
-`als-dtm` and `als-chm` write one raster for the whole area (`.tif` needs
-`rasterio`, otherwise `.asc`); `als-chm` normalises on the fly from the
+`als-dtm` and `als-chm` write one raster for the whole area (`.tif`, or
+`.asc` with a `.prj`); `als-chm` normalises on the fly from the
 ground points unless given `--dtm` or `--normalized` (tiles whose z is
 already height); `als-normalize` writes the tiles with a `height` attribute,
 or with z replaced by it (`--replace-z`, the elevation kept as

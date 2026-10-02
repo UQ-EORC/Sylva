@@ -38,7 +38,7 @@ prints them under a summary:
 ALS catalogue: 4 tiles, 1,256,899 points
   extent   x 0.00 .. 100.00, y 0.00 .. 100.00, z -0.24 .. 33.47
   area     0.0100 km² covered by tile extents (100.0 x 100.0 m bounding box)
-  density  125.69 points/m²
+  density  125.69 points/m² over the tile extents
   tiles    50.0 m across (median), 289,958 to 325,473 points
   format   LAS 1.4 format 6 (4)
   index    0 of 4 with a spatial index
@@ -54,6 +54,7 @@ ALS catalogue: 4 tiles, 1,256,899 points
 | `mixed_point_format` | attributes missing from some formats (GPS time, colour) are dropped where tiles meet |
 | `mixed_scale` | tiles quantise coordinates differently |
 | `overlap` | tile extents overlap by more than `tolerance`; the points in the overlap are counted twice |
+| `unindexed_overlap` | files without a spatial index that other files overlap over most of their extent, as flight lines do; every chunk reads the files it reaches in full, so retile them first ([below](#flight-lines)) |
 | `gap` | holes enclosed by tiles (a concave outline of the survey is not a hole) |
 
 `tolerance` (1 m by default) is how far tile extents may overlap, or fall
@@ -145,6 +146,39 @@ not a plot:
   slightly between tiles; `"ror"`, the default, is purely local.
 - Decimation needs no buffer; a voxel or cell that straddles two tiles
   keeps a point in each.
+- `chm` leaves out points classified as noise (7 or 18), as `grid_metrics`
+  and `gap_profile` do (`drop_noise=False` keeps them), so that noise found
+  by `als.filter(..., classify=True)` does not reach the canopy surface.
+
+## Flight lines
+
+Some surveys are delivered as flight lines (strips) rather than tiles: a few
+large files, each a long swath across the whole survey, overlapping their
+neighbours, often without a spatial index. The catalogue reports them as
+`unindexed_overlap`. They can be processed as they are, but slowly: a chunk
+reads every file whose extent reaches it, and without an index every point
+of such a file is decompressed to find the few inside the chunk, so each
+strip is decoded once for every chunk its extent reaches (a diagonal strip's
+extent is a large square, so that can be every chunk of the survey).
+
+Retile them first. `als.retile` reads each file once, whatever its extent,
+and sends every point to the tiles that hold it, so the strips are merged
+into square tiles in a single pass; everything after that runs one chunk
+per tile:
+
+```python
+strips = als.catalog("flightlines/")
+print(strips.report())                       # [unindexed_overlap] ...
+tiles = als.retile(strips, "tiles_500m/", 500.0)
+ground = als.classify_ground(tiles, "ground/")     # or use the vendor's class 2
+```
+
+The retiled points keep their attributes, including `point_source_id` (the
+flight line) and `gps_time`, so the strips can still be told apart. Points
+from overlapping strips are all kept: a tile under two strips has the
+density of both, which the area-based metrics and canopy profiles count as
+it is (they are ratios of returns, not counts per square metre), but which
+`n` and the intensity totals do not hide.
 
 ## Your own function: `als.apply`
 
@@ -300,7 +334,8 @@ ground.
 - Every file a chunk overlaps is decompressed in full to find the points in
   the chunk's box; spatial indexes (`.lax`, COPC) are reported but not yet
   used. With one chunk per tile and a buffer, each tile is decoded by itself
-  and its neighbours, so about nine times.
+  and its neighbours, so about nine times. `als.retile` is the exception: it
+  reads each file once (see [Flight lines](#flight-lines)).
 - Sylva never reprojects: tiles in different CRS are reported, not
   converted.
 - Waveform and NIR point formats are written as the nearest format without

@@ -131,6 +131,18 @@ lower than the mean of the cells' profiles where the canopy is clumped
 between cells). Cells should hold a few hundred pulses: 10 to 30 m for
 typical ALS densities.
 
+Returns classified as noise (7 or 18) are left out (`drop_noise=True`).
+By default the layers stop at the height below which all but one part in
+100,000 of the weight above `min_height` lies (`top_quantile=0.99999`): the
+few stray returns far above a survey's canopy (birds, haze, a mast) count as
+intercepted above every layer instead of stretching the profile with empty
+layers and empty strata. The layers kept are as they would be without the
+cut, since a layer's transmittance depends only on the returns at and below
+it. `max_height` fixes the top instead, and `top_quantile=1` reaches the
+highest return. Over a single plot one part in 100,000 is less than one
+return, so there noise is best classified (`als.filter(...,
+classify=True)`) or the top set.
+
 On a catalogue, each return is counted once, by the chunk whose core holds
 it, so the counts are the same cell for cell whatever the chunks and the
 number of workers (this is tested), provided the buffer is wider than the

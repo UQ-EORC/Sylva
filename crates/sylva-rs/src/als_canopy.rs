@@ -37,7 +37,7 @@ use std::collections::BTreeMap;
 use rayon::prelude::*;
 
 use crate::als::{catalog_grid, plan, run, workers_for_estimates, Catalog, BYTES_PER_POINT};
-use crate::als_ops::{chunk_heights, Heights, RunOptions};
+use crate::als_ops::{chunk_heights, noise_mask, Heights, RunOptions};
 use crate::als_trajectory::{estimate, line_extents, merge_extents, pulse_lines, thin, EstimateParams, Estimated, Trajectory};
 use crate::error::{Error, Result};
 use crate::raster::Raster;
@@ -371,6 +371,10 @@ pub enum Angles {
     Nadir,
 }
 
+/// Default [`ProfileParams::top_quantile`]: one part in 100,000 of the
+/// weight above `min_height` may lie above the top layer.
+pub const DEFAULT_TOP_QUANTILE: f64 = 0.99999;
+
 /// Settings of the gap-fraction profiles.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProfileParams {
@@ -382,8 +386,16 @@ pub struct ProfileParams {
     /// Layer thickness (m).
     pub bin_size: f64,
     /// Top of the highest layer (m); returns above it count as intercepted
-    /// above every layer. None: up to the highest return.
+    /// above every layer. None: up to the height below which `top_quantile`
+    /// of the weight above `min_height` lies (see [`ProfileGrid::trim_top`]).
     pub max_height: Option<f64>,
+    /// Share (0-1] of the weight above `min_height` the layers must hold
+    /// when `max_height` is None; 1 reaches the highest return. Just below
+    /// 1, a few stray returns far above the canopy (birds, haze, a mast)
+    /// do not stretch the profile with empty layers.
+    pub top_quantile: f64,
+    /// Leave out returns classified as noise (7 or 18).
+    pub drop_noise: bool,
     pub weighting: ReturnWeight,
     pub projection: Projection,
     pub angles: Angles,
@@ -398,7 +410,7 @@ pub struct ProfileParams {
 
 impl Default for ProfileParams {
     fn default() -> Self {
-        ProfileParams { resolution: 10.0, min_height: 1.0, bin_size: 1.0, max_height: None, weighting: ReturnWeight::Equal, projection: Projection::Lad(Lad::Spherical), angles: Angles::Nadir, max_zenith: 90.0, anchor_ground: true }
+        ProfileParams { resolution: 10.0, min_height: 1.0, bin_size: 1.0, max_height: None, top_quantile: DEFAULT_TOP_QUANTILE, drop_noise: true, weighting: ReturnWeight::Equal, projection: Projection::Lad(Lad::Spherical), angles: Angles::Nadir, max_zenith: 90.0, anchor_ground: true }
     }
 }
 
@@ -417,6 +429,9 @@ impl ProfileParams {
             if !(m.is_finite() && m > self.min_height) {
                 return Err(Error::invalid(format!("max_height must be above min_height, got {m}")));
             }
+        }
+        if !(self.top_quantile > 0.0 && self.top_quantile <= 1.0) {
+            return Err(Error::invalid(format!("top_quantile must be in (0, 1], got {}", self.top_quantile)));
         }
         if let Projection::Constant(g) = self.projection {
             if !(g.is_finite() && g > 0.0) {
@@ -484,6 +499,40 @@ impl ProfileGrid {
         grow(&mut self.weight_k, self.nz);
         self.nz = nz;
         self
+    }
+
+    /// Drop the top layers that together hold no more than `1 - quantile`
+    /// of the weight above `min_height`, folding their returns into the
+    /// layer above the top (intercepted above every layer). The layers kept
+    /// are unchanged: a layer's transmittance depends only on the returns at
+    /// and below it. At least one layer is kept.
+    pub fn trim_top(&mut self, quantile: f64) {
+        let per = self.nx * self.ny;
+        let layer_sum = |l: usize| self.weight[l * per..(l + 1) * per].iter().sum::<f64>();
+        let sums: Vec<f64> = (1..=self.nz + 1).map(layer_sum).collect();
+        let allowed = (1.0 - quantile) * sums.iter().sum::<f64>();
+        // Layers 1..=nz are sums[0..nz]; sums[nz] is the layer above.
+        let mut keep = self.nz;
+        let mut above = sums[self.nz];
+        while keep > 1 && above + sums[keep - 1] <= allowed {
+            above += sums[keep - 1];
+            keep -= 1;
+        }
+        if keep == self.nz {
+            return;
+        }
+        for v in [&mut self.weight, &mut self.weight_k] {
+            for l in keep + 1..=self.nz + 1 {
+                for i in 0..per {
+                    let w = v[l * per + i];
+                    if l != keep + 1 {
+                        v[(keep + 1) * per + i] += w;
+                    }
+                }
+            }
+            v.truncate((keep + 2) * per);
+        }
+        self.nz = keep;
     }
 }
 
@@ -593,11 +642,22 @@ pub fn profile_cloud(cloud: &PointCloud, heights: &[f64], p: &ProfileParams, bou
         return Err(Error::invalid(format!("bounds must be (xmin, ymin, xmax, ymax), got {b:?}")));
     }
     let (xmin, ymin, nx, ny) = layout(b, p.resolution);
-    let idx: Vec<usize> = (0..cloud.len()).collect();
+    let idx = without_noise(cloud, (0..cloud.len()).collect(), p);
     let nz = p.n_layers(top_height(heights, &idx).max(p.min_height));
     let mut g = ProfileGrid::empty(xmin, ymin, nx, ny, nz, p)?;
     accumulate(&mut g, cloud, heights, &idx, p, (xmin, ymin), (0, 0))?;
+    if p.max_height.is_none() {
+        g.trim_top(p.top_quantile);
+    }
     Ok(g)
+}
+
+/// `idx` without the returns classified as noise, when `p.drop_noise`.
+fn without_noise(cloud: &PointCloud, idx: Vec<usize>, p: &ProfileParams) -> Vec<usize> {
+    match noise_mask(cloud).filter(|_| p.drop_noise) {
+        Some(noise) => idx.into_iter().filter(|&i| !noise[i]).collect(),
+        None => idx,
+    }
 }
 
 /// The profile grid of a whole catalogue, on the catalogue grid at
@@ -614,7 +674,7 @@ pub fn profile_catalog(cat: &Catalog, heights: &Heights, p: &ProfileParams, opts
     let w = workers_for_estimates(&chunks.iter().map(|c| c.est_points).collect::<Vec<_>>(), opts.workers, BYTES_PER_POINT)?;
     let parts = run(cat, &chunks, w, "canopy profiles", |chunk, data| {
         let Some(h) = chunk_heights(cat, chunk, &data.cloud, heights)? else { return Ok(None) };
-        let idx = data.core_indices();
+        let idx = without_noise(&data.cloud, data.core_indices(), p);
         // The buffered box: a return of the core can be counted where its beam meets the ground.
         let cell = |v: f64, o: f64, n: usize| (((v - o) / p.resolution).floor().max(0.0) as usize).min(n - 1);
         let (c0, c1) = (cell(chunk.outer[0], grid.xmin, grid.ncols), cell(chunk.outer[2], grid.xmin, grid.ncols));
@@ -643,6 +703,9 @@ pub fn profile_catalog(cat: &Catalog, heights: &Heights, p: &ProfileParams, opts
                 }
             }
         }
+    }
+    if p.max_height.is_none() {
+        out.trim_top(p.top_quantile);
     }
     Ok(out)
 }
@@ -1409,5 +1472,40 @@ mod tests {
         assert!(g.area_metrics(&[vec![2]], 1.0).is_err());
         let (_, per_cell) = g.metrics(1.0).unwrap();
         assert_eq!(per_cell.len(), names.len() * 2);
+    }
+
+    #[test]
+    fn stray_returns_and_noise_do_not_stretch_the_profile() {
+        // A turbid layer from 10 to 20 m, as above, and a bird at 80 m.
+        let n = 10_000;
+        let mut xyz = Vec::new();
+        for i in 0..n {
+            let depth = -((i as f64 + 0.5) / n as f64).ln() / 0.25;
+            xyz.push([0.5, 0.5, if depth < 10.0 { 20.0 - depth } else { 0.0 }]);
+        }
+        xyz.push([0.5, 0.5, 80.0]);
+        let mut c = PointCloud::new(xyz.clone());
+        let h: Vec<f64> = xyz.iter().map(|p| p[2]).collect();
+        let p = ProfileParams { resolution: 1.0, weighting: ReturnWeight::All, top_quantile: 0.999, ..Default::default() };
+        let full = profile_cloud(&c, &h, &ProfileParams { top_quantile: 1.0, ..p.clone() }, None).unwrap();
+        let trimmed = profile_cloud(&c, &h, &p, None).unwrap();
+        // Layers of 1 m from 1 m: 19 reach the canopy top at 20 m, 80 the bird.
+        assert_eq!(full.nz, 80);
+        // The top canopy layer (19-20 m) holds more than the 0.1 % allowed, so it stays.
+        assert_eq!(trimmed.nz, 19);
+        // The layers kept are unchanged, and the bird is still counted above them.
+        assert_eq!(&full.pad()[..trimmed.nz], &trimmed.pad()[..]);
+        assert_eq!(trimmed.weight.iter().sum::<f64>(), full.weight.iter().sum::<f64>());
+        assert!((trimmed.pai()[0] - 5.0).abs() < 0.1, "{}", trimmed.pai()[0]);
+        // As noise (class 7) the bird is left out, and nothing is trimmed.
+        let mut cls = vec![1u8; n + 1];
+        cls[n] = 7;
+        c.attrs.insert("classification".into(), Attr::U8(cls));
+        let clean = profile_cloud(&c, &h, &ProfileParams { top_quantile: 1.0, ..p.clone() }, None).unwrap();
+        assert_eq!(clean.nz, 19);
+        assert_eq!(clean.weight.iter().sum::<f64>(), n as f64);
+        let kept = profile_cloud(&c, &h, &ProfileParams { top_quantile: 1.0, drop_noise: false, ..p.clone() }, None).unwrap();
+        assert_eq!(kept.nz, 80);
+        assert!(profile_cloud(&c, &h, &ProfileParams { top_quantile: 0.0, ..p }, None).is_err());
     }
 }

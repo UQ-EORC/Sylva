@@ -31,8 +31,8 @@ fn source(mode: &str, dtm: Dtm<'_>, dtm_resolution: f64, attribute: Option<Strin
     Ok(HeightSource::Heights(heights(mode, dtm, dtm_resolution)?))
 }
 
-fn params(threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool) -> MetricParams {
-    MetricParams { threshold, entropy_bin, cover_break, min_height, drop_noise }
+fn params(threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool, clamp_negative: bool) -> MetricParams {
+    MetricParams { threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative }
 }
 
 fn plots_from_py(circles: Option<PyReadonlyArray2<'_, f64>>, polygons: FlatPolygons<'_>) -> PyResult<Vec<Plot>> {
@@ -50,14 +50,14 @@ fn plots_from_py(circles: Option<PyReadonlyArray2<'_, f64>>, polygons: FlatPolyg
 
 /// Metrics of one cloud: names and values.
 #[pyfunction]
-#[pyo3(signature = (xyz, attrs, heights, threshold, entropy_bin, cover_break, min_height, drop_noise))]
-fn als_cloud_metrics<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>, heights: Option<PyReadonlyArray1<f64>>, threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool) -> PyResult<(Vec<String>, Bound<'py, PyArray1<f64>>)> {
+#[pyo3(signature = (xyz, attrs, heights, threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative))]
+fn als_cloud_metrics<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>, heights: Option<PyReadonlyArray1<f64>>, threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool, clamp_negative: bool) -> PyResult<(Vec<String>, Bound<'py, PyArray1<f64>>)> {
     let cloud = cloud_from_py(xyz, attrs)?;
     let h: Vec<f64> = match heights {
         Some(h) => h.as_array().to_vec(),
         None => cloud.xyz.iter().map(|p| p[2]).collect(),
     };
-    let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise);
+    let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative);
     let (names, values) = py.detach(|| als_metrics::cloud_metrics(&cloud, &h, &p)).map_err(err)?;
     Ok((names, values.into_pyarray(py)))
 }
@@ -69,11 +69,11 @@ fn als_metric_names(threshold: f64) -> Vec<String> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (catalog, resolution, names, mode, dtm, dtm_resolution, attribute, threshold, entropy_bin, cover_break, min_height, drop_noise, chunk_size, buffer, workers))]
-fn als_grid_metrics<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolution: f64, names: Option<Vec<String>>, mode: &str, dtm: Dtm<'_>, dtm_resolution: f64, attribute: Option<String>, threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool, chunk_size: Option<f64>, buffer: f64, workers: usize) -> PyResult<(Vec<String>, Bound<'py, PyList>)> {
+#[pyo3(signature = (catalog, resolution, names, mode, dtm, dtm_resolution, attribute, threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative, chunk_size, buffer, workers))]
+fn als_grid_metrics<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolution: f64, names: Option<Vec<String>>, mode: &str, dtm: Dtm<'_>, dtm_resolution: f64, attribute: Option<String>, threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool, clamp_negative: bool, chunk_size: Option<f64>, buffer: f64, workers: usize) -> PyResult<(Vec<String>, Bound<'py, PyList>)> {
     let c = catalog_from_py(catalog)?;
     let h = source(mode, dtm, dtm_resolution, attribute)?;
-    let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise);
+    let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative);
     let opts = RunOptions { layout: layout(chunk_size, None), buffer, workers };
     let r = py.detach(|| als_metrics::grid_metrics(&c, resolution, &h, &p, names.as_deref(), &opts)).map_err(err)?;
     let out = PyList::empty(py);
@@ -101,11 +101,11 @@ fn als_metrics_plan<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolutio
 /// cells + 1) and whether each cell's centre is in the core. None when the
 /// chunk has no points of its own or too little ground.
 #[pyfunction]
-#[pyo3(signature = (catalog, chunk, resolution, mode, dtm, dtm_resolution, attribute, threshold, entropy_bin, cover_break, min_height, drop_noise))]
-fn als_metric_cells<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, chunk: &Bound<'_, PyDict>, resolution: f64, mode: &str, dtm: Dtm<'_>, dtm_resolution: f64, attribute: Option<String>, threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool) -> PyResult<Option<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<bool>>)>> {
+#[pyo3(signature = (catalog, chunk, resolution, mode, dtm, dtm_resolution, attribute, threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative))]
+fn als_metric_cells<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, chunk: &Bound<'_, PyDict>, resolution: f64, mode: &str, dtm: Dtm<'_>, dtm_resolution: f64, attribute: Option<String>, threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool, clamp_negative: bool) -> PyResult<Option<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<bool>>)>> {
     let (c, ch) = (catalog_from_py(catalog)?, chunk_from_py(chunk)?);
     let h = source(mode, dtm, dtm_resolution, attribute)?;
-    let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise);
+    let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative);
     p.check().map_err(err)?;
     let grid = sylva_rs::als::catalog_grid(&c, resolution).map_err(err)?;
     let got = py
@@ -124,12 +124,12 @@ fn als_metric_cells<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, chunk: &B
 }
 
 #[pyfunction]
-#[pyo3(signature = (catalog, circles, polygons, names, mode, dtm, dtm_resolution, attribute, threshold, entropy_bin, cover_break, min_height, drop_noise, buffer, workers))]
-fn als_plot_metrics<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, circles: Option<PyReadonlyArray2<f64>>, polygons: FlatPolygons<'_>, names: Option<Vec<String>>, mode: &str, dtm: Dtm<'_>, dtm_resolution: f64, attribute: Option<String>, threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool, buffer: f64, workers: usize) -> PyResult<(Vec<String>, Bound<'py, PyArray2<f64>>)> {
+#[pyo3(signature = (catalog, circles, polygons, names, mode, dtm, dtm_resolution, attribute, threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative, buffer, workers))]
+fn als_plot_metrics<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, circles: Option<PyReadonlyArray2<f64>>, polygons: FlatPolygons<'_>, names: Option<Vec<String>>, mode: &str, dtm: Dtm<'_>, dtm_resolution: f64, attribute: Option<String>, threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool, clamp_negative: bool, buffer: f64, workers: usize) -> PyResult<(Vec<String>, Bound<'py, PyArray2<f64>>)> {
     let c = catalog_from_py(catalog)?;
     let plots = plots_from_py(circles, polygons)?;
     let h = source(mode, dtm, dtm_resolution, attribute)?;
-    let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise);
+    let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative);
     let (names, rows) = py.detach(|| als_metrics::plot_metrics(&c, &plots, &h, &p, names.as_deref(), buffer, workers)).map_err(err)?;
     let k = names.len();
     let flat: Vec<f64> = rows.concat();
@@ -140,12 +140,12 @@ fn als_plot_metrics<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, circles: 
 /// The retained points of each plot, in canonical order, with their
 /// heights; None for plots overlapping no tile (or without enough ground).
 #[pyfunction]
-#[pyo3(signature = (catalog, circles, polygons, mode, dtm, dtm_resolution, attribute, threshold, entropy_bin, cover_break, min_height, drop_noise, buffer, workers))]
-fn als_plot_points<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, circles: Option<PyReadonlyArray2<f64>>, polygons: FlatPolygons<'_>, mode: &str, dtm: Dtm<'_>, dtm_resolution: f64, attribute: Option<String>, threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool, buffer: f64, workers: usize) -> PyResult<Bound<'py, PyList>> {
+#[pyo3(signature = (catalog, circles, polygons, mode, dtm, dtm_resolution, attribute, threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative, buffer, workers))]
+fn als_plot_points<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, circles: Option<PyReadonlyArray2<f64>>, polygons: FlatPolygons<'_>, mode: &str, dtm: Dtm<'_>, dtm_resolution: f64, attribute: Option<String>, threshold: f64, entropy_bin: f64, cover_break: f64, min_height: Option<f64>, drop_noise: bool, clamp_negative: bool, buffer: f64, workers: usize) -> PyResult<Bound<'py, PyList>> {
     let c = catalog_from_py(catalog)?;
     let plots = plots_from_py(circles, polygons)?;
     let h = source(mode, dtm, dtm_resolution, attribute)?;
-    let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise);
+    let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative);
     let got = py.detach(|| als_metrics::plot_points(&c, &plots, &h, &p, buffer, workers, |_, cloud, heights, idx| Ok((cloud.take(idx), idx.iter().map(|&i| heights[i]).collect::<Vec<f64>>())))).map_err(err)?;
     let out = PyList::empty(py);
     for g in got {

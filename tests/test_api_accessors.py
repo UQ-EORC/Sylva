@@ -66,12 +66,25 @@ def test_to_geotiff_round_trip(tmp_path):
     np.testing.assert_array_equal(np.flipud(back), data.astype(np.float32))
 
 
-def test_to_geotiff_without_rasterio_names_the_extra(tmp_path, monkeypatch):
+def test_to_geotiff_needs_no_rasterio(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "rasterio", None)       # makes `import rasterio` fail
-    r = Raster(np.zeros((2, 2)), 0.0, 0.0, 1.0)
-    with pytest.raises(ImportError, match=r"pip install sylva-rs\[geotiff\]"):
-        r.to_geotiff(tmp_path / "r.tif")
-    assert not (tmp_path / "r.tif").exists()
+    r = Raster(np.zeros((2, 2)), 0.0, 0.0, 1.0, crs="EPSG:28356")
+    r.to_geotiff(tmp_path / "r.tif")
+    assert (tmp_path / "r.tif").read_bytes()[:4] == b"II*\x00"
+    with pytest.raises(ValueError):
+        r.to_geotiff(tmp_path / "bad.tif", crs="not a crs")
+
+
+def test_ascii_grid_keeps_its_crs_in_a_prj(tmp_path):
+    r = Raster(np.arange(6.0).reshape(2, 3), 500.0, 7000.0, 2.0, crs="EPSG:28356")
+    r.to_ascii_grid(tmp_path / "r.asc")
+    assert "MGA zone 56" in (tmp_path / "r.prj").read_text()
+    back = Raster.from_ascii_grid(tmp_path / "r.asc")
+    assert back.crs == "EPSG:28356"
+    np.testing.assert_array_equal(back.data, r.data)
+    Raster(r.data, 500.0, 7000.0, 2.0).to_ascii_grid(tmp_path / "plain.asc")
+    assert not (tmp_path / "plain.prj").exists()
+    assert Raster.from_ascii_grid(tmp_path / "plain.asc").crs is None
 
 
 # --------------------------------------------------------------------------- #

@@ -386,7 +386,7 @@ fn change_als_metrics<'py>(py: Python<'py>, catalog_a: &Bound<'_, PyDict>, catal
     let (a, b) = (catalog_from_py(catalog_a)?, catalog_from_py(catalog_b)?);
     let al = alignment.map(alignment_from_py).transpose()?;
     let p = MetricChangeParams {
-        metrics: MetricParams { threshold, entropy_bin, cover_break, min_height, drop_noise },
+        metrics: MetricParams { threshold, entropy_bin, cover_break, min_height, drop_noise, ..Default::default() },
         names,
         resolution,
         dtm_resolution,
