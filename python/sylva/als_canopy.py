@@ -711,6 +711,174 @@ class ALSProfile:
         return _core.als_profile_pooled(self.weight, self.weight_k, float(self.bin_size),
                                         self._mask(mask))
 
+    def metrics(self, strata: float = 5.0) -> dict[str, Raster]:
+        """Summary metrics of each cell's profile, as rasters, for use
+        beside the height metrics of :func:`sylva.als.grid_metrics` in a
+        model of height, cover or biomass.
+
+        - ``pulses``: the cell's weight (its number of pulses with the
+          ``"equal"`` weighting); a check on how well the cell is sampled.
+        - ``pai`` and ``cover``: as :meth:`pai` and :meth:`cover`.
+        - ``fhd``: foliage height diversity, the Shannon index
+          ``-sum(p ln p)`` of the shares ``p`` of the plant area in each
+          layer (MacArthur & MacArthur 1961; GEDI L2B ``fhd_normal``). 0
+          where there is no plant area.
+        - ``pad_max`` and ``height_pad_max``: the density of the densest
+          layer and the height of its middle.
+        - ``height_pad_mean`` and ``height_pad_sd``: the mean and standard
+          deviation of height weighted by plant area: where the canopy is
+          and how deep it is.
+        - For each stratum ``[a, b)`` of ``strata`` m from the ground
+          (the strata of GEDI L2B with ``strata=5``):
+          ``pavd_<a>_<b>``, its mean plant area density;
+          ``pai_above_<h>``, the plant area index above ``h``, the bottom
+          of the stratum's lowest layer; ``cover_above_<h>``, the canopy
+          cover at ``h``.
+
+        A layer belongs to the stratum its middle falls in, and strata
+        below ``min_height`` are left out (so with ``min_height=1`` the
+        lowest stratum is ``pavd_0_5`` over 1 to 5 m). Layers no pulse
+        reached are left out of every sum. ``pai`` corrects each return for
+        its own beam angle; the layer sums behind ``pai_above_<h>``
+        correct each layer by the mean angle of the returns that reached
+        it, so the two can differ slightly under a wide swath.
+
+        Parameters
+        ----------
+        strata
+            Thickness of the strata (m); at least ``bin_size``.
+
+        Returns
+        -------
+        dict[str, Raster]
+            One raster per metric, in a fixed order. Cells without returns
+            are NaN, but for ``pulses`` (0).
+        """
+        names, values = _core.als_profile_metrics(self.weight, self.weight_k,
+                                                  float(self.min_height), float(self.bin_size),
+                                                  float(strata))
+        return {n: self._raster(values[k]) for k, n in enumerate(names)}
+
+    def area_metrics(self, mask=None, strata: float = 5.0) -> dict[str, float]:
+        """The metrics of :meth:`metrics` for an area, from its pooled counts
+        (the area seen as one column, as :meth:`profile`).
+
+        Parameters
+        ----------
+        mask
+            ``(ny, nx)`` booleans selecting the cells; all if None.
+        strata
+            Thickness of the strata (m).
+
+        Returns
+        -------
+        dict[str, float]
+        """
+        m = self._mask(mask)
+        cells = np.arange(self.shape[1] * self.shape[2]) if m is None else np.flatnonzero(m)
+        names, values = _core.als_profile_area_metrics(
+            self.weight, self.weight_k, float(self.min_height), float(self.bin_size), float(strata),
+            [cells.tolist()])
+        return {n: float(values[0, k]) for k, n in enumerate(names)}
+
+    def plot_cells(self, plots, radius=None) -> list[np.ndarray]:
+        """The cells of each plot: those whose centre lies inside it.
+
+        Parameters
+        ----------
+        plots, radius
+            As for :func:`sylva.als.plot_metrics`: ``(N, 2)`` centres with
+            a radius, or polygons in any form :mod:`sylva.masks` accepts.
+
+        Returns
+        -------
+        list of numpy.ndarray
+            Row-major cell indices (``row * nx + column``) of each plot.
+        """
+        from . import masks
+
+        _, ny, nx = self.shape
+        res = self.resolution
+        cx = self.xmin + (np.arange(nx) + 0.5) * res
+        cy = self.ymin + (np.arange(ny) + 0.5) * res
+
+        def cells_in(x0, y0, x1, y1, inside):
+            c = np.flatnonzero((cx >= x0) & (cx <= x1))
+            r = np.flatnonzero((cy >= y0) & (cy <= y1))
+            if not (c.size and r.size):
+                return np.zeros(0, np.int64)
+            gx, gy = np.meshgrid(cx[c], cy[r])
+            keep = inside(gx.ravel(), gy.ravel())
+            return (r[:, None] * nx + c[None, :]).ravel()[keep].astype(np.int64)
+
+        if radius is not None:
+            centres = np.asarray(plots, dtype=np.float64)
+            if centres.shape == (2,):
+                centres = centres[None, :]
+            if centres.ndim != 2 or centres.shape[1] != 2:
+                raise ValueError("with a radius, plots must be (N, 2) centres, "
+                                 f"got shape {centres.shape}")
+            radii = np.broadcast_to(np.asarray(radius, dtype=np.float64), (len(centres),))
+            if not np.all(np.isfinite(radii) & (radii > 0)):
+                raise ValueError("radius must be positive and finite")
+            return [cells_in(x - r, y - r, x + r, y + r,
+                             lambda px, py, x=x, y=y, r=r: (px - x) ** 2 + (py - y) ** 2 <= r * r)
+                    for (x, y), r in zip(centres, radii, strict=True)]
+        out = []
+        for parts in masks._as_features(plots):
+            ring = np.concatenate([p.exterior for p in parts])
+            (x0, y0), (x1, y1) = ring.min(axis=0), ring.max(axis=0)
+            feature = masks.MultiPolygon(parts)
+
+            def inside(px, py, feature=feature):
+                pts = PointCloud(np.column_stack([px, py, np.zeros_like(px)]))
+                return masks.inside_polygons(pts, feature)
+
+            out.append(cells_in(x0, y0, x1, y1, inside))
+        return out
+
+    def plot_metrics(self, plots, radius=None, ids=None, strata: float = 5.0):
+        """The metrics of :meth:`metrics` for field plots, each from the
+        pooled counts of the cells whose centre lies inside it, as a table
+        to join with :func:`sylva.als.plot_metrics` and the plot data.
+
+        The plot is represented by whole cells, so use a resolution well
+        below the plot size (a 2 m grid for a 0.1 ha plot). Because the
+        counts add up exactly, pooling small cells gives the profile of the
+        plot itself. ``area`` gives the area of the cells used.
+
+        Parameters
+        ----------
+        plots, radius
+            As for :func:`sylva.als.plot_metrics`.
+        ids
+            Optional identifiers, one per plot.
+        strata
+            Thickness of the strata (m).
+
+        Returns
+        -------
+        PlotMetrics
+            Columns ``plot``, ``id`` (with ``ids``), ``area`` (m²), then
+            the metrics. A plot covering no cell centre has ``area`` 0 and
+            ``pulses`` 0, NaN elsewhere.
+        """
+        from .als_metrics import PlotMetrics
+
+        cells = self.plot_cells(plots, radius)
+        if ids is not None and len(ids) != len(cells):
+            raise ValueError(f"{len(ids)} ids for {len(cells)} plots")
+        names, values = _core.als_profile_area_metrics(
+            self.weight, self.weight_k, float(self.min_height), float(self.bin_size), float(strata),
+            [c.tolist() for c in cells])
+        values = np.asarray(values).reshape(len(cells), len(names))
+        columns = {"plot": np.arange(len(cells))}
+        if ids is not None:
+            columns["id"] = np.asarray(ids)
+        columns["area"] = np.array([len(c) for c in cells], dtype=np.float64) * self.resolution ** 2
+        columns.update({n: values[:, k] for k, n in enumerate(names)})
+        return PlotMetrics(columns, ["area", *names])
+
 
 def _angles(angles: str, trajectory) -> str:
     if angles == "auto":

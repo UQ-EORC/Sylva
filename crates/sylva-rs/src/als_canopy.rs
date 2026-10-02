@@ -702,6 +702,125 @@ pub fn column_pai(weight: &[f64], weight_k: &[f64]) -> f64 {
     -pg.ln() / (total_k / total) + 0.0
 }
 
+// ------------------------------------------------------- profile metrics
+
+/// One height stratum of the profile metrics: its edges (m) and the layers
+/// (1-based, as in the counts) whose middle falls inside it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Stratum {
+    lo: f64,
+    hi: f64,
+    first: usize,
+    last: usize,
+}
+
+/// The strata of `size` m from the ground that hold at least one of the
+/// `nz` layers above `min_height`. A layer belongs to the stratum its
+/// middle falls in, so strata that are not a whole number of layers keep
+/// every layer exactly once.
+fn strata(min_height: f64, bin_size: f64, nz: usize, size: f64) -> Vec<Stratum> {
+    let mut out: Vec<Stratum> = Vec::new();
+    for layer in 1..=nz {
+        let mid = min_height + (layer as f64 - 0.5) * bin_size;
+        let k = (mid / size).floor();
+        let (lo, hi) = (k * size, (k + 1.0) * size);
+        match out.last_mut() {
+            Some(s) if s.lo == lo => s.last = layer,
+            _ => out.push(Stratum { lo, hi, first: layer, last: layer }),
+        }
+    }
+    out
+}
+
+fn check_strata(bin_size: f64, size: f64) -> Result<()> {
+    if !(size.is_finite() && size >= bin_size) {
+        return Err(Error::invalid(format!("strata must be at least the layer thickness ({bin_size} m), got {size}")));
+    }
+    Ok(())
+}
+
+/// Number of metrics before the per-stratum ones.
+const PROFILE_SCALARS: usize = 8;
+
+/// Names of the metrics [`column_metrics`] gives for a profile of `nz`
+/// layers of `bin_size` m above `min_height`, with strata of `strata` m.
+///
+/// - `pulses`: the weight of the column, the number of pulses with the
+///   `equal` weighting.
+/// - `pai`: plant area index above `min_height` (as [`column_pai`]).
+/// - `cover`: one minus the gap probability at `min_height`.
+/// - `fhd`: foliage height diversity, the Shannon index `-sum(p ln p)` of
+///   the shares `p` of the plant area in each layer (MacArthur & MacArthur
+///   1961; GEDI L2B's `fhd_normal`). 0 for a column with no plant area.
+/// - `pad_max`, `height_pad_max`: the densest layer's plant area density
+///   and the height of its middle.
+/// - `height_pad_mean`, `height_pad_sd`: mean and standard deviation of
+///   height weighted by plant area, the centre and the spread of the canopy.
+/// - per stratum `[a, b)`: `pavd_<a>_<b>`, its mean plant area density
+///   (as GEDI's `pavd_z`); `pai_above_<h>`, the plant area index above the
+///   bottom `h` of its lowest layer (as `pai_z`); `cover_above_<h>`, the
+///   cover at that height (as `cover_z`).
+pub fn profile_metric_names(min_height: f64, bin_size: f64, nz: usize, strata_size: f64) -> Result<Vec<String>> {
+    check_strata(bin_size, strata_size)?;
+    let mut v: Vec<String> = ["pulses", "pai", "cover", "fhd", "pad_max", "height_pad_max", "height_pad_mean", "height_pad_sd"].iter().map(|s| s.to_string()).collect();
+    debug_assert_eq!(v.len(), PROFILE_SCALARS);
+    let st = strata(min_height, bin_size, nz, strata_size);
+    v.extend(st.iter().map(|s| format!("pavd_{}_{}", s.lo, s.hi)));
+    v.extend(st.iter().map(|s| format!("pai_above_{}", min_height + (s.first - 1) as f64 * bin_size)));
+    v.extend(st.iter().map(|s| format!("cover_above_{}", min_height + (s.first - 1) as f64 * bin_size)));
+    Ok(v)
+}
+
+/// The metrics of [`profile_metric_names`] for one column of `nz + 2`
+/// weights and weighted extinctions. A column without returns is NaN
+/// throughout but for `pulses` (0); a column with returns and no plant area
+/// has 0 plant area, density and diversity and NaN heights. Layers no pulse
+/// reached are left out of the sums.
+pub fn column_metrics(weight: &[f64], weight_k: &[f64], min_height: f64, bin_size: f64, strata_size: f64) -> Vec<f64> {
+    let nz = weight.len().saturating_sub(2);
+    let st = strata(min_height, bin_size, nz, strata_size);
+    let n = PROFILE_SCALARS + 3 * st.len();
+    let total: f64 = weight.iter().sum();
+    if total.is_nan() || total <= 0.0 {
+        let mut v = vec![f64::NAN; n];
+        v[0] = 0.0;
+        return v;
+    }
+    let pad = column_pad(weight, weight_k, bin_size);
+    let pgap = column_pgap(weight);
+    let mid = |layer: usize| min_height + (layer as f64 - 0.5) * bin_size;
+    // Plant area of each layer (m²/m²), 0 where no pulse reached it.
+    let area: Vec<f64> = pad.iter().map(|&p| if p.is_finite() { p * bin_size } else { 0.0 }).collect();
+    let sum_area: f64 = area.iter().sum();
+
+    let mut out = Vec::with_capacity(n);
+    out.push(total);
+    out.push(column_pai(weight, weight_k));
+    out.push(1.0 - pgap[0]);
+    if sum_area > 0.0 {
+        let fhd: f64 = area.iter().filter(|&&a| a > 0.0).map(|&a| a / sum_area).map(|p| -p * p.ln()).sum();
+        let (imax, pmax) = pad.iter().enumerate().filter(|(_, p)| p.is_finite()).fold((0, f64::NEG_INFINITY), |acc, (i, &p)| if p > acc.1 { (i, p) } else { acc });
+        let mean: f64 = area.iter().enumerate().map(|(i, a)| a * mid(i + 1)).sum::<f64>() / sum_area;
+        let var: f64 = area.iter().enumerate().map(|(i, a)| a * (mid(i + 1) - mean).powi(2)).sum::<f64>() / sum_area;
+        out.extend([fhd + 0.0, pmax, mid(imax + 1), mean, var.sqrt()]);
+    } else {
+        out.extend([0.0, 0.0, f64::NAN, f64::NAN, f64::NAN]);
+    }
+    for s in &st {
+        let reached: Vec<usize> = (s.first..=s.last).filter(|&l| pad[l - 1].is_finite()).collect();
+        let thick = reached.len() as f64 * bin_size;
+        out.push(if thick > 0.0 { reached.iter().map(|&l| area[l - 1]).sum::<f64>() / thick } else { f64::NAN });
+    }
+    for s in &st {
+        out.push(area[s.first - 1..].iter().sum());
+    }
+    for s in &st {
+        out.push(1.0 - pgap[s.first - 1]);
+    }
+    debug_assert_eq!(out.len(), n);
+    out
+}
+
 impl ProfileGrid {
     fn column(&self, v: &[f64], cell: usize) -> Vec<f64> {
         let per = self.nx * self.ny;
@@ -748,6 +867,39 @@ impl ProfileGrid {
         }
         let sum = |v: &[f64]| -> Vec<f64> { (0..self.nz + 2).map(|l| (0..per).filter(|&c| mask.is_none_or(|m| m[c])).map(|c| v[l * per + c]).sum()).collect() };
         Ok((sum(&self.weight), sum(&self.weight_k)))
+    }
+
+    /// The profile metrics of every cell ([`profile_metric_names`]):
+    /// the names, and the values as `(k, ny, nx)`.
+    pub fn metrics(&self, strata_size: f64) -> Result<(Vec<String>, Vec<f64>)> {
+        let names = profile_metric_names(self.min_height, self.bin_size, self.nz, strata_size)?;
+        let per = self.nx * self.ny;
+        let cols: Vec<Vec<f64>> = (0..per).into_par_iter().map(|c| column_metrics(&self.column(&self.weight, c), &self.column(&self.weight_k, c), self.min_height, self.bin_size, strata_size)).collect();
+        let mut out = vec![0.0; names.len() * per];
+        for (c, col) in cols.iter().enumerate() {
+            for (k, v) in col.iter().enumerate() {
+                out[k * per + c] = *v;
+            }
+        }
+        Ok((names, out))
+    }
+
+    /// The profile metrics of areas, each given by the cells (row-major
+    /// indices) whose counts are pooled into one column: one row per area.
+    pub fn area_metrics(&self, areas: &[Vec<usize>], strata_size: f64) -> Result<(Vec<String>, Vec<Vec<f64>>)> {
+        let names = profile_metric_names(self.min_height, self.bin_size, self.nz, strata_size)?;
+        let per = self.nx * self.ny;
+        if let Some(&c) = areas.iter().flatten().find(|&&c| c >= per) {
+            return Err(Error::invalid(format!("cell {c} is outside the {per} cells of the grid")));
+        }
+        let rows = areas
+            .par_iter()
+            .map(|cells| {
+                let sum = |v: &[f64]| -> Vec<f64> { (0..self.nz + 2).map(|l| cells.iter().map(|&c| v[l * per + c]).sum()).collect() };
+                column_metrics(&sum(&self.weight), &sum(&self.weight_k), self.min_height, self.bin_size, strata_size)
+            })
+            .collect();
+        Ok((names, rows))
     }
 }
 
@@ -1180,5 +1332,82 @@ mod tests {
         assert!((pad[1] - (8.0f64).ln() / 0.5).abs() < 1e-12);
         assert!(column_pai(&[0.0; 4], &[0.0; 4]).is_nan());
         assert_eq!(column_pgap(&[1.0, 1.0, 2.0, 0.0]), vec![0.25, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn strata_keep_every_layer_once() {
+        let st = strata(1.0, 1.0, 12, 5.0);
+        let spans: Vec<(f64, f64, usize, usize)> = st.iter().map(|s| (s.lo, s.hi, s.first, s.last)).collect();
+        assert_eq!(spans, vec![(0.0, 5.0, 1, 4), (5.0, 10.0, 5, 9), (10.0, 15.0, 10, 12)]);
+        // A stratum below min_height has no layer and no metric.
+        assert_eq!(strata(6.0, 1.0, 4, 5.0)[0].lo, 5.0);
+        let names = profile_metric_names(1.0, 1.0, 12, 5.0).unwrap();
+        assert_eq!(&names[PROFILE_SCALARS..PROFILE_SCALARS + 3], ["pavd_0_5", "pavd_5_10", "pavd_10_15"]);
+        assert!(names.contains(&"pai_above_5".to_string()) && names.contains(&"cover_above_1".to_string()));
+        assert!(profile_metric_names(1.0, 1.0, 12, 0.5).is_err());
+    }
+
+    /// Value of metric `name` in a column of `nz` layers of 1 m from 0 m,
+    /// strata of 1 m; vertical beams with G = 0.5.
+    fn metric(weight: &[f64], name: &str) -> f64 {
+        let k: Vec<f64> = weight.iter().map(|w| w * 0.5).collect();
+        let names = profile_metric_names(0.0, 1.0, weight.len() - 2, 1.0).unwrap();
+        column_metrics(weight, &k, 0.0, 1.0, 1.0)[names.iter().position(|n| n == name).unwrap()]
+    }
+
+    #[test]
+    fn one_dense_layer() {
+        // Half the pulses stop in the second layer, none in the first.
+        let w = [50.0, 0.0, 50.0, 0.0];
+        let pad = 2.0 * 2f64.ln();
+        assert_eq!(metric(&w, "pulses"), 100.0);
+        assert!((metric(&w, "pai") - pad).abs() < 1e-12);
+        assert!((metric(&w, "cover") - 0.5).abs() < 1e-12);
+        assert_eq!(metric(&w, "fhd"), 0.0);
+        assert!((metric(&w, "pad_max") - pad).abs() < 1e-12);
+        assert_eq!(metric(&w, "height_pad_max"), 1.5);
+        assert_eq!(metric(&w, "height_pad_mean"), 1.5);
+        assert_eq!(metric(&w, "height_pad_sd"), 0.0);
+        assert_eq!(metric(&w, "pavd_0_1"), 0.0);
+        assert!((metric(&w, "pavd_1_2") - pad).abs() < 1e-12);
+        assert!((metric(&w, "pai_above_1") - pad).abs() < 1e-12);
+        assert!((metric(&w, "cover_above_1") - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn equal_plant_area_in_two_layers() {
+        // Each layer stops half of what reaches it: equal density in both.
+        let w = [25.0, 25.0, 50.0, 0.0];
+        assert!((metric(&w, "fhd") - 2f64.ln()).abs() < 1e-12);
+        assert_eq!(metric(&w, "height_pad_mean"), 1.0);
+        assert!((metric(&w, "height_pad_sd") - 0.5).abs() < 1e-12);
+        assert!((metric(&w, "pai_above_0") - 2.0 * metric(&w, "pai_above_1")).abs() < 1e-12);
+        assert!((metric(&w, "cover_above_1") - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn open_and_empty_columns() {
+        // Every pulse reached the ground: no plant area, no heights.
+        let w = [10.0, 0.0, 0.0, 0.0];
+        assert_eq!(metric(&w, "pai"), 0.0);
+        assert_eq!(metric(&w, "fhd"), 0.0);
+        assert!(metric(&w, "height_pad_mean").is_nan());
+        let empty = [0.0; 4];
+        assert_eq!(metric(&empty, "pulses"), 0.0);
+        assert!(metric(&empty, "pai").is_nan() && metric(&empty, "fhd").is_nan());
+    }
+
+    #[test]
+    fn pooled_areas_add_their_cells() {
+        let mut g = ProfileGrid { nx: 2, ny: 1, nz: 2, bin_size: 1.0, resolution: 1.0, ..Default::default() };
+        // Layers are the slowest axis: (nz + 2, ny, nx).
+        g.weight = vec![50.0, 0.0, 0.0, 0.0, 50.0, 0.0, 0.0, 100.0];
+        g.weight_k = g.weight.iter().map(|w| w * 0.5).collect();
+        let (names, rows) = g.area_metrics(&[vec![0], vec![0, 1]], 1.0).unwrap();
+        let pulses = names.iter().position(|n| n == "pulses").unwrap();
+        assert_eq!((rows[0][pulses], rows[1][pulses]), (100.0, 200.0));
+        assert!(g.area_metrics(&[vec![2]], 1.0).is_err());
+        let (_, per_cell) = g.metrics(1.0).unwrap();
+        assert_eq!(per_cell.len(), names.len() * 2);
     }
 }

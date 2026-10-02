@@ -115,6 +115,17 @@ section radius and Leonardo's rule at forks in [`sylva.qsm`](api/qsm.md); also
 the raycloudtools baseline of the [tree](benchmarks/trees.md) and
 [QSM](benchmarks/qsm.md) benchmarks.
 
+Dubayah, R., Blair, J. B., Goetz, S., Fatoyinbo, L., Hansen, M., Healey, S.,
+Hofton, M., Hurtt, G., Kellner, J., Luthcke, S., Armston, J., Tang, H.,
+Duncanson, L., Hancock, S., Jantz, P., Marselis, S., Patterson, P. L., Qi, W.,
+& Silva, C. (2020). The Global Ecosystem Dynamics Investigation:
+High-resolution laser ranging of the Earth's forests and topography. *Science
+of Remote Sensing*, *1*, 100002. <https://doi.org/10.1016/j.srs.2020.100002>
+In Sylva: the GEDI L2B canopy products (`pavd_z`, `pai_z`, `cover_z`,
+`fhd_normal`) that the profile metrics of
+[`ALSProfile.metrics`](guide/als_canopy.md) follow, so ALS can calibrate
+models built on GEDI.
+
 Fischler, M. A., & Bolles, R. C. (1981). Random sample consensus: A paradigm
 for model fitting with applications to image analysis and automated
 cartography. *Communications of the ACM*, *24*(6), 381–395.
@@ -225,6 +236,11 @@ MacArthur, R. H., & Horn, H. S. (1969). Foliage profile by vertical
 measurements. *Ecology*, *50*(5), 802–804. <https://doi.org/10.2307/1933693>
 Used by: the layer-by-layer inversion of gap fraction into plant area
 density in [`als.gap_profile`](guide/als_canopy.md).
+
+MacArthur, R. H., & MacArthur, J. W. (1961). On bird species diversity.
+*Ecology*, *42*(3), 594–598. <https://doi.org/10.2307/1932254>
+In Sylva: foliage height diversity, `fhd`, of
+[`ALSProfile.metrics`](guide/als_canopy.md).
 
 Marquardt, D. W. (1963). An algorithm for least-squares estimation of
 nonlinear parameters. *Journal of the Society for Industrial and Applied
