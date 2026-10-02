@@ -369,6 +369,67 @@ def test_weightings_on_multi_return_pulses(slab_flight7):
     assert first > 1.5 * equal
 
 
+@pytest.fixture(scope="module")
+def slab_profile(slab_flight):
+    return als.gap_profile(slab_flight.points, slab_flight.trajectory, resolution=10.0, bounds=AREA,
+                           dtm=None, min_height=2.0, max_height=18.0)
+
+
+def test_profile_metrics_recover_a_turbid_layer(slab_profile):
+    """A layer of PAD 0.3 from 5 to 15 m: uniform density in its two
+    strata, its centre at 10 m, the spread of a uniform 10 m layer and the
+    diversity of ten equal layers."""
+    m = slab_profile.area_metrics(_interior())
+    assert m["pavd_5_10"] == pytest.approx(PAD, rel=0.03)
+    assert m["pavd_10_15"] == pytest.approx(PAD, rel=0.03)
+    assert m["pavd_0_5"] < 0.01 and m["pavd_15_20"] < 0.01
+    assert m["pai"] == pytest.approx(PAD * (Z2 - Z1), rel=0.02)
+    assert m["pai_above_10"] == pytest.approx(PAD * (Z2 - 10.0), rel=0.03)
+    assert m["pai_above_15"] < 0.05
+    assert m["height_pad_mean"] == pytest.approx((Z1 + Z2) / 2, abs=0.2)
+    assert m["height_pad_sd"] == pytest.approx((Z2 - Z1) / np.sqrt(12), rel=0.03)
+    assert m["fhd"] == pytest.approx(np.log(Z2 - Z1), rel=0.02)
+    assert Z1 <= m["height_pad_max"] <= Z2
+    assert m["cover"] == pytest.approx(1 - slab_profile.pgap(_interior())[1][0])
+    assert m["cover_above_2"] == m["cover"] and m["cover_above_15"] < 0.02
+    assert 0.5 < m["cover_above_10"] < m["cover"]
+
+
+def test_profile_metrics_per_cell_match_the_pooled_cell(slab_profile):
+    rasters = slab_profile.metrics()
+    assert list(rasters)[:4] == ["pulses", "pai", "cover", "fhd"]
+    assert rasters["pavd_5_10"].shape == (5, 5)
+    np.testing.assert_allclose(rasters["pai"].data, slab_profile.pai().data, equal_nan=True)
+    one = np.zeros((5, 5), bool)
+    one[2, 3] = True
+    cell = slab_profile.area_metrics(one)
+    for name, r in rasters.items():
+        assert r.data[2, 3] == pytest.approx(cell[name], nan_ok=True), name
+    # Wider strata: fewer, coarser columns; thinner than a layer is refused.
+    assert "pavd_0_10" in slab_profile.metrics(strata=10.0)
+    with pytest.raises(ValueError, match="strata"):
+        slab_profile.metrics(strata=0.5)
+
+
+def test_plot_metrics_pool_the_cells_of_each_plot(slab_profile):
+    centres = np.array([[20.0, 20.0], [100.0, 100.0]])   # the second is off the grid
+    table = slab_profile.plot_metrics(centres, radius=10.0, ids=["a", "b"])
+    assert len(table) == 2 and list(table["id"]) == ["a", "b"]
+    # Cell centres at 15 and 25 m lie within 10 m of (20, 20): four cells.
+    assert table["area"][0] == 400.0
+    mask = np.zeros((5, 5), bool)
+    mask[1:3, 1:3] = True
+    pooled = slab_profile.area_metrics(mask)
+    assert table["pavd_5_10"][0] == pytest.approx(pooled["pavd_5_10"])
+    assert table["area"][1] == 0.0 and table["pulses"][1] == 0.0 and np.isnan(table["pai"][1])
+    # The same plot as a polygon.
+    square = np.array([[10.0, 10.0], [30.0, 10.0], [30.0, 30.0], [10.0, 30.0]])
+    by_polygon = slab_profile.plot_metrics([square])
+    assert by_polygon["pai"][0] == pytest.approx(table["pai"][0])
+    with pytest.raises(ValueError, match="ids"):
+        slab_profile.plot_metrics(centres, radius=10.0, ids=["a"])
+
+
 def test_profile_errors(slab_flight):
     pts, traj = slab_flight.points, slab_flight.trajectory
     with pytest.raises(ValueError, match="number_of_returns"):

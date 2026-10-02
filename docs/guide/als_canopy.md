@@ -137,6 +137,58 @@ number of workers (this is tested), provided the buffer is wider than the
 drift of a beam between its returns and the ground (canopy height times the
 tangent of the scan angle) and than what the `"auto"` DTM needs.
 
+### Metrics for models of height, cover and biomass
+
+Height percentiles alone leave much of the variation in biomass
+unexplained: stands of one height differ in how much plant material they
+hold and where it sits. `ALSProfile.metrics()` summarises each cell's
+profile as rasters that sit beside the height metrics of
+[`als.grid_metrics`](als_metrics.md), and `plot_metrics(plots)` gives the
+same metrics for field plots, to train the model on:
+
+```python
+prof = als.gap_profile(cat, traj, resolution=2.0)          # fine cells, pooled per plot below
+table = prof.plot_metrics(centres, radius=17.84, ids=plot_ids)   # one row per 0.1 ha plot
+table.to_csv("plot_profile_metrics.csv")
+
+coarse = als.gap_profile(cat, traj, resolution=25.0)       # the prediction grid
+for name, raster in coarse.metrics(strata=5.0).items():
+    raster.to_geotiff(f"{name}_25m.tif")
+```
+
+| Metric | Meaning |
+|---|---|
+| `pulses` | weight of the cell (its pulses, with the `"equal"` weighting): how well it is sampled |
+| `pai`, `cover` | plant area index above `min_height`, and one minus the gap probability there |
+| `fhd` | foliage height diversity, `-Σ p ln p` over the shares `p` of plant area in each layer ([MacArthur & MacArthur 1961](../references.md)) |
+| `pad_max`, `height_pad_max` | density of the densest layer, and the height of its middle |
+| `height_pad_mean`, `height_pad_sd` | mean and standard deviation of height weighted by plant area |
+| `pavd_<a>_<b>` | mean plant area density of each stratum `[a, b)` of `strata` m |
+| `pai_above_<h>`, `cover_above_<h>` | plant area index above, and canopy cover at, the bottom of each stratum's lowest layer |
+
+The strata, `fhd` and the cumulative profiles follow the GEDI L2B canopy
+products (`pavd_z`, `pai_z`, `cover_z`, `fhd_normal`;
+[Dubayah et al. 2020](../references.md)), so ALS metrics can calibrate a
+model driven by GEDI over a wider region. A layer belongs to the stratum
+its middle falls in, and strata below `min_height` are left out.
+
+The counts of the cells add up exactly, so a plot's metrics are those of
+the cells pooled into one column; with cells much smaller than the plot,
+that is the plot's own profile. `area` in the table says how much of the
+plot the cells cover. Some care for a model:
+
+- **Sampling.** A cell with few pulses gives a noisy profile; use
+  `pulses` to drop or weight cells, and a prediction grid no finer than
+  the pulse density allows (a few hundred pulses per cell).
+- **Grain.** The metrics of a 25 m cell are not those of a 2 m cell
+  averaged: the pooled profile is lower where the canopy is clumped. Train
+  and predict at the same grain, or pool the training plots as here.
+- **Acquisitions.** The gap probability is a ratio of pulses, so it
+  depends less on point density than return counts do, and the beam-angle
+  correction removes most of the swath effect. Leaf-on and leaf-off
+  surveys still differ, and surveys of different sensitivity detect
+  different amounts of fine material in the upper canopy.
+
 ## Ray-traced voxels
 
 `als.ray_voxelize` reconstructs the pulses and traces them along their

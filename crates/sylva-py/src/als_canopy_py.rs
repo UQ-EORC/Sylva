@@ -263,6 +263,27 @@ fn als_profile_pooled<'py>(py: Python<'py>, weight: PyReadonlyArray3<f64>, weigh
     Ok((ac::column_pad(&w, &wk, bin_size).into_pyarray(py), ac::column_pgap(&w).into_pyarray(py), ac::column_pai(&w, &wk)))
 }
 
+/// The profile metrics of every cell: their names and a `(k, ny, nx)` array.
+#[pyfunction]
+fn als_profile_metrics<'py>(py: Python<'py>, weight: PyReadonlyArray3<f64>, weight_k: PyReadonlyArray3<f64>, min_height: f64, bin_size: f64, strata: f64) -> PyResult<(Vec<String>, Bound<'py, PyAny>)> {
+    let mut g = grid_from_py(weight, weight_k, bin_size)?;
+    g.min_height = min_height;
+    let (names, values) = py.detach(|| g.metrics(strata)).map_err(err)?;
+    let k = names.len();
+    Ok((names, PyArray1::from_vec(py, values).reshape([k, g.ny, g.nx])?.into_any()))
+}
+
+/// The profile metrics of areas, each the pooled column of its cells
+/// (row-major indices): their names and an `(areas, k)` array.
+#[pyfunction]
+fn als_profile_area_metrics<'py>(py: Python<'py>, weight: PyReadonlyArray3<f64>, weight_k: PyReadonlyArray3<f64>, min_height: f64, bin_size: f64, strata: f64, areas: Vec<Vec<usize>>) -> PyResult<(Vec<String>, Bound<'py, PyAny>)> {
+    let mut g = grid_from_py(weight, weight_k, bin_size)?;
+    g.min_height = min_height;
+    let (names, rows) = py.detach(|| g.area_metrics(&areas, strata)).map_err(err)?;
+    let (n, k) = (rows.len(), names.len());
+    Ok((names, PyArray1::from_vec(py, rows.concat()).reshape([n, k])?.into_any()))
+}
+
 // ------------------------------------------------------------ ray tracing
 
 fn voxels_to_py<'py>(py: Python<'py>, v: &CatalogVoxels) -> PyResult<Bound<'py, PyDict>> {
@@ -357,6 +378,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(als_profile_catalog, m)?,
         wrap_pyfunction!(als_profile_products, m)?,
         wrap_pyfunction!(als_profile_pooled, m)?,
+        wrap_pyfunction!(als_profile_metrics, m)?,
+        wrap_pyfunction!(als_profile_area_metrics, m)?,
         wrap_pyfunction!(als_ray_voxelize, m)?,
         wrap_pyfunction!(als_voxel_height_profile, m)?,
         wrap_pyfunction!(als_voxel_column_sums, m)?,
