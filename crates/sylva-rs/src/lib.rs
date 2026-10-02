@@ -42,6 +42,7 @@ pub mod crs;
 pub mod error;
 pub mod filters;
 pub mod fusion;
+pub mod geotiff;
 pub mod ground;
 pub mod interpolate;
 pub mod io;

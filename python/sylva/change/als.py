@@ -592,7 +592,7 @@ class SurfaceChange:
         directory
             Output directory (created if needed).
         format : {"asc", "tif"}
-            ESRI ASCII grids, or GeoTIFF (needs rasterio).
+            ESRI ASCII grids (with a ``.prj``), or GeoTIFF.
 
         Returns
         -------
@@ -1888,7 +1888,7 @@ def _add_commands(sub, fmt, common, write_raster) -> None:
     s.add_argument("--gap-min-area", type=float, default=10.0, help="smallest gap (m²)")
     s.add_argument("--years", type=float, default=None, help="time between the surveys")
     s.add_argument("--format", choices=["asc", "tif"], default="asc",
-                   help="raster format (tif needs rasterio)")
+                   help="raster format")
     common(s)
     s.set_defaults(func=lambda args: _cmd_als_change(args, write_raster))
 

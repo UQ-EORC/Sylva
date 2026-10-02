@@ -98,7 +98,9 @@ def test_problems_are_reported(tiles, flight, tmp_path):
     cat = als.catalog([*sorted(tmp_path.glob("*.laz")), *sorted((tmp_path / "other").glob("*.laz")),
                        tmp_path / "missing.laz"])
     kinds = [k for k, _ in cat.issues()]
-    assert kinds == ["missing", "mixed_crs", "mixed_point_format", "overlap"], cat.issues()
+    # The copy lies wholly over another unindexed file, which every chunk would read too.
+    assert kinds == ["missing", "mixed_crs", "mixed_point_format", "overlap",
+                     "unindexed_overlap"], cat.issues()
     assert cat.missing == [str(tmp_path / "missing.laz")]
     assert cat.overlaps()
     assert cat.crs is None

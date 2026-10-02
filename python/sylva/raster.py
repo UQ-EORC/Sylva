@@ -33,8 +33,8 @@ class Raster:
     resolution
         Cell size in the units of x and y (m).
     crs
-        Optional CRS string (``"EPSG:28355"``) used by :meth:`to_geotiff`.
-        Sylva never reprojects.
+        Optional CRS string (``"EPSG:28355"``) written by :meth:`to_geotiff`
+        and, as a ``.prj``, by :meth:`to_ascii_grid`. Sylva never reprojects.
     """
 
     data: np.ndarray
@@ -48,7 +48,7 @@ class Raster:
 
     @classmethod
     def _from_core(cls, d: dict) -> Raster:
-        return cls(d["data"], d["xmin"], d["ymin"], d["resolution"])
+        return cls(d["data"], d["xmin"], d["ymin"], d["resolution"], d.get("crs"))
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -132,33 +132,33 @@ class Raster:
     def to_geotiff(self, path: str | Path, crs: str | None = None) -> None:
         """Write a single-band float32 GeoTIFF, north-up, nodata = NaN.
 
+        Written by Sylva itself (uncompressed, in strips; BigTIFF from
+        4 GB), so no GDAL or rasterio is needed.
+
         Parameters
         ----------
         path
             Output file.
         crs
-            CRS to write; defaults to :attr:`crs`. With neither, the file has
-            a geotransform but no CRS.
+            CRS to write (an EPSG code such as ``"EPSG:28356"``, or WKT);
+            defaults to :attr:`crs`. With neither, the file has a
+            geotransform but no CRS. A CRS with an EPSG code goes in the
+            file's GeoKeys; one without (custom WKT) goes in a GDAL
+            ``<path>.aux.xml`` beside it, which GDAL-based software reads.
 
         Raises
         ------
-        ImportError
-            If ``rasterio`` is not installed (``pip install sylva-rs[geotiff]``).
+        ValueError
+            For an empty raster or a CRS that cannot be read.
         """
-        try:
-            import rasterio
-            from rasterio.transform import from_origin
-        except ImportError as exc:
-            raise ImportError("to_geotiff requires rasterio: pip install sylva-rs[geotiff]") from exc
-        transform = from_origin(self.xmin, self.ymax, self.resolution, self.resolution)
-        with rasterio.open(
-            path, "w", driver="GTiff", height=self.data.shape[0], width=self.data.shape[1],
-            count=1, dtype="float32", crs=crs or self.crs, transform=transform, nodata=np.nan,
-        ) as dst:
-            dst.write(np.flipud(self.data).astype(np.float32), 1)
+        c = crs or self.crs
+        _core.write_geotiff(str(path), self.data, self.xmin, self.ymin, self.resolution,
+                            None if c is None or c.startswith("user-defined") else c)
 
-    def to_ascii_grid(self, path: str | Path, nodata: float = -9999.0) -> None:
-        """Write an ESRI ASCII grid (``.asc``), north-up.
+    def to_ascii_grid(self, path: str | Path, nodata: float = -9999.0,
+                      crs: str | None = None) -> None:
+        """Write an ESRI ASCII grid (``.asc``), north-up, with its CRS in a
+        ``.prj`` beside it.
 
         Parameters
         ----------
@@ -166,8 +166,14 @@ class Raster:
             Output file.
         nodata
             Value written for NaN cells (``NODATA_value`` in the header).
+        crs
+            CRS to write, as WKT, to the ``.prj`` beside it (``dtm.asc`` ->
+            ``dtm.prj``); defaults to :attr:`crs`. With neither, no
+            ``.prj`` is written.
         """
-        _core.write_ascii_grid(str(path), self.data, self.xmin, self.ymin, self.resolution, nodata)
+        c = crs or self.crs
+        _core.write_ascii_grid(str(path), self.data, self.xmin, self.ymin, self.resolution, nodata,
+                               None if c is None or c.startswith("user-defined") else c)
 
     @classmethod
     def from_ascii_grid(cls, path: str | Path) -> Raster:
@@ -181,7 +187,7 @@ class Raster:
         Returns
         -------
         Raster
-            Grid with row 0 at the south; ``crs`` is None (ASCII grids carry
-            no CRS).
+            Grid with row 0 at the south; ``crs`` from the ``.prj`` beside
+            it (``EPSG:<code>`` when its WKT names one), else None.
         """
         return cls._from_core(_core.read_ascii_grid(str(path)))

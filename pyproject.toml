@@ -30,7 +30,7 @@ Documentation = "https://uq-eorc.github.io/Sylva/"
 Issues = "https://github.com/UQ-EORC/Sylva/issues"
 
 [project.optional-dependencies]
-geotiff = ["rasterio>=1.3"]
+geotiff = []   # GeoTIFF is written natively now; kept so that "sylva-rs[geotiff]" still installs
 dev = ["pytest>=7", "ruff>=0.4", "maturin>=1.5", "scipy>=1.10", "matplotlib>=3.7"]   # scipy, matplotlib: tests
 examples = ["matplotlib>=3.7", "jupyterlab>=4"]
 docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5", "mkdocstrings[python]>=0.25", "mkdocs-jupyter>=0.24"]

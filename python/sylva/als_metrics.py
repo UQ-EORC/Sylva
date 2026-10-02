@@ -67,7 +67,7 @@ def metric_names(threshold: float = 2.0) -> list[str]:
     return list(_core.als_metric_names(float(threshold)))
 
 
-def _params(threshold, entropy_bin, cover_break, min_height, drop_noise) -> dict:
+def _params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative) -> dict:
     for name, v in (("threshold", threshold), ("cover_break", cover_break)):
         if not np.isfinite(float(v)):
             raise ValueError(f"{name} must be a finite height, got {v}")
@@ -78,7 +78,7 @@ def _params(threshold, entropy_bin, cover_break, min_height, drop_noise) -> dict
     return {"threshold": float(threshold), "entropy_bin": float(entropy_bin),
             "cover_break": float(cover_break),
             "min_height": None if min_height is None else float(min_height),
-            "drop_noise": bool(drop_noise)}
+            "drop_noise": bool(drop_noise), "clamp_negative": bool(clamp_negative)}
 
 
 def _source(dtm, dtm_resolution) -> dict:
@@ -128,7 +128,8 @@ def _as_dict(value) -> dict[str, float]:
 
 def cloud_metrics(cloud: PointCloud, height=None, threshold: float = 2.0,
                   entropy_bin: float = 1.0, cover_break: float = 2.0,
-                  min_height: float | None = None, drop_noise: bool = True) -> dict[str, float]:
+                  min_height: float | None = None, drop_noise: bool = True,
+                  clamp_negative: bool = False) -> dict[str, float]:
     """The standard metrics of one cloud (lidR's ``cloud_metrics(las, .stdmetrics)``).
 
     Parameters
@@ -154,6 +155,12 @@ def cloud_metrics(cloud: PointCloud, height=None, threshold: float = 2.0,
         negative height).
     drop_noise
         Leave out returns classified as noise (7 or 18).
+    clamp_negative
+        Set heights below 0 to 0 before anything else (lidR users' other
+        habit, ``Z[Z < 0] <- 0``). Ground returns a few centimetres below
+        the DTM are in nearly every cell of a survey, and make ``zentropy``
+        NaN there; clamping keeps them, as ground, where ``min_height=0``
+        would leave out the ones below it.
 
     Returns
     -------
@@ -169,7 +176,7 @@ def cloud_metrics(cloud: PointCloud, height=None, threshold: float = 2.0,
         For an unknown attribute, heights of the wrong length or bad
         settings.
     """
-    p = _params(threshold, entropy_bin, cover_break, min_height, drop_noise)
+    p = _params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative)
     if height is None:
         h = None
     elif isinstance(height, str):
@@ -188,8 +195,8 @@ def grid_metrics(catalog, resolution: float = 20.0, metrics=None, func: Callable
                  dtm="auto", dtm_resolution: float = 1.0, threshold: float = 2.0,
                  entropy_bin: float = 1.0, cover_break: float = 2.0,
                  min_height: float | None = None, drop_noise: bool = True,
-                 chunk_size: float | None = None, buffer: float = 20.0,
-                 workers: int | None = None):
+                 clamp_negative: bool = False, chunk_size: float | None = None,
+                 buffer: float = 20.0, workers: int | None = None):
     """Rasters of area-based metrics over a whole catalogue (lidR's ``pixel_metrics``).
 
     Every return is assigned to the cell of the catalogue grid that holds
@@ -226,7 +233,7 @@ def grid_metrics(catalog, resolution: float = 20.0, metrics=None, func: Callable
         :func:`sylva.als.normalize` without ``replace_z``).
     dtm_resolution
         Cell size (m) of the ``"auto"`` DTM.
-    threshold, entropy_bin, cover_break, min_height, drop_noise
+    threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative
         As for :func:`cloud_metrics`.
     chunk_size, buffer
         As for :func:`sylva.als.apply`. The buffer is raised to at least 1.5
@@ -266,7 +273,7 @@ def grid_metrics(catalog, resolution: float = 20.0, metrics=None, func: Callable
     if not (np.isfinite(float(resolution)) and float(resolution) > 0):
         raise ValueError(f"resolution must be a positive number, got {resolution}")
     names, single = _names(metrics)
-    p = _params(threshold, entropy_bin, cover_break, min_height, drop_noise)
+    p = _params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative)
     src = _source(dtm, dtm_resolution)
     cs = None if chunk_size is None else float(chunk_size)
     if func is None:
@@ -274,6 +281,8 @@ def grid_metrics(catalog, resolution: float = 20.0, metrics=None, func: Callable
                                               chunk_size=cs, buffer=float(buffer),
                                               workers=_workers(workers))
         out = {n: cat._raster(d) for n, d in zip(got, rasters, strict=True)}
+        if not clamp_negative and (min_height is None or min_height < 0):
+            _warn_entropy(out)
     else:
         if not callable(func):
             raise ValueError("func must be callable as func(cloud)")
@@ -282,6 +291,23 @@ def grid_metrics(catalog, resolution: float = 20.0, metrics=None, func: Callable
 
 
 pixel_metrics = grid_metrics
+
+
+def _warn_entropy(out: dict) -> None:
+    """Warn when ``zentropy`` is NaN in most cells that have returns."""
+    z = out.get("zentropy")
+    others = [r.data for k, r in out.items() if k != "zentropy"]
+    if z is None or not others:
+        return
+    has = np.isfinite(out["n"].data if "n" in out else others[0])
+    nan = has & ~np.isfinite(z.data)
+    if has.sum() and nan.sum() > 0.5 * has.sum():
+        import warnings
+
+        warnings.warn(f"zentropy is NaN in {100 * nan.sum() / has.sum():.0f} % of the cells with "
+                      "returns: as in lidR it is NaN for any cell with a height below 0, and "
+                      "ground returns just under the DTM are in most cells; pass "
+                      "clamp_negative=True (or min_height=0)", stacklevel=3)
 
 
 def _grid_func(cat, resolution, func, names, src, p, chunk_size, buffer) -> dict[str, Raster]:
@@ -401,8 +427,9 @@ def _plots(plots, radius) -> tuple[int, Callable]:
 def plot_metrics(catalog, plots, radius=None, metrics=None, func: Callable | None = None,
                  dtm="auto", dtm_resolution: float = 1.0, threshold: float = 2.0,
                  entropy_bin: float = 1.0, cover_break: float = 2.0,
-                 min_height: float | None = None, drop_noise: bool = True, ids=None,
-                 buffer: float = 20.0, workers: int | None = None) -> PlotMetrics:
+                 min_height: float | None = None, drop_noise: bool = True,
+                 clamp_negative: bool = False, ids=None, buffer: float = 20.0,
+                 workers: int | None = None) -> PlotMetrics:
     """Area-based metrics of field plots from a catalogue (lidR's ``plot_metrics``).
 
     Plots are grouped by the tiles they overlap; each group reads only
@@ -431,7 +458,7 @@ def plot_metrics(catalog, plots, radius=None, metrics=None, func: Callable | Non
         when it overlaps no tile).
     dtm, dtm_resolution
         Where heights come from, as for :func:`grid_metrics`.
-    threshold, entropy_bin, cover_break, min_height, drop_noise
+    threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative
         As for :func:`cloud_metrics`.
     ids
         Labels of the plots (one per plot), kept as an ``id`` column.
@@ -472,7 +499,7 @@ def plot_metrics(catalog, plots, radius=None, metrics=None, func: Callable | Non
     if not (np.isfinite(float(buffer)) and float(buffer) >= 0):
         raise ValueError(f"buffer must be zero or more, got {buffer}")
     names, _ = _names(metrics)
-    p = _params(threshold, entropy_bin, cover_break, min_height, drop_noise)
+    p = _params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative)
     src = _source(dtm, dtm_resolution)
     kw = {**src, **p, "buffer": float(buffer), "workers": _workers(workers)}
     if func is None:
@@ -528,6 +555,8 @@ def _add_commands(sub, fmt: dict, common: Callable, write_raster: Callable) -> N
                        help="leave out returns below this height (m)")
         s.add_argument("--keep-noise", action="store_true",
                        help="keep returns classified as noise (7, 18)")
+        s.add_argument("--clamp-negative", action="store_true",
+                       help="set heights below 0 to 0 (else zentropy is NaN where any is)")
         s.add_argument("--metrics", help="comma-separated metric names (default: all)")
 
     s = sub.add_parser("als-metrics", help="area-based metrics of a directory of ALS tiles, as "
@@ -536,7 +565,7 @@ def _add_commands(sub, fmt: dict, common: Callable, write_raster: Callable) -> N
     s.add_argument("output", help="directory for the rasters, one <metric>.<format> each")
     s.add_argument("--resolution", type=float, default=20.0, help="cell size (m)")
     s.add_argument("--format", choices=["asc", "tif"], default="asc",
-                   help="raster format (.tif needs rasterio)")
+                   help="raster format")
     heights(s)
     common(s)
     s.set_defaults(func=lambda a: _cmd_metrics(a, write_raster))
@@ -572,6 +601,7 @@ def _cli_kw(args) -> dict:
     return {"dtm": dtm, "dtm_resolution": args.dtm_resolution, "threshold": args.threshold,
             "cover_break": args.cover_break, "entropy_bin": args.entropy_bin,
             "min_height": args.min_height, "drop_noise": not args.keep_noise,
+            "clamp_negative": args.clamp_negative,
             "metrics": [m.strip() for m in args.metrics.split(",")] if args.metrics else None}
 
 

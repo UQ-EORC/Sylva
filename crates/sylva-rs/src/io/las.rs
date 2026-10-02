@@ -107,27 +107,8 @@ pub fn read_las_where(path: impl AsRef<Path>, keep: impl FnMut(&Point) -> bool) 
 fn read_las_impl(path: &Path, mut keep: impl FnMut(&Point) -> bool, reserve_all: bool) -> Result<PointCloud> {
     let mut reader = Reader::from_path(path)?;
     let header = reader.header().clone();
-    let format = header.point_format().clone();
-    let extra_dims: Vec<ExtraDim> = header
-        .all_vlrs()
-        .filter(|v| v.user_id == EXTRA_BYTES_USER_ID && v.record_id == EXTRA_BYTES_RECORD_ID)
-        .flat_map(parse_extra_bytes_vlr)
-        .collect();
     let total = header.number_of_points();
-    let n = if reserve_all { total as usize } else { 0 };
-
-    let mut xyz: Vec<Point> = Vec::with_capacity(n);
-    let mut intensity = Vec::with_capacity(n);
-    let mut return_number = Vec::with_capacity(n);
-    let mut number_of_returns = Vec::with_capacity(n);
-    let mut classification = Vec::with_capacity(n);
-    let mut scan_angle = Vec::with_capacity(n);
-    let mut user_data = Vec::with_capacity(n);
-    let mut point_source_id = Vec::with_capacity(n);
-    let mut gps_time = if format.has_gps_time { Some(Vec::with_capacity(n)) } else { None };
-    let mut color = if format.has_color { Some((Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n))) } else { None };
-    let mut extra: Vec<Vec<f64>> = extra_dims.iter().map(|_| Vec::with_capacity(n)).collect();
-
+    let mut cols = Columns::new(&header, if reserve_all { total as usize } else { 0 });
     let mut left = total;
     while left > 0 {
         let pd = reader.read_points(left.min(READ_BATCH))?;
@@ -137,57 +118,127 @@ fn read_las_impl(path: &Path, mut keep: impl FnMut(&Point) -> bool, reserve_all:
         left -= pd.len() as u64;
         for p in pd.points() {
             let p = p?;
-            if !keep(&[p.x, p.y, p.z]) {
-                continue;
+            if keep(&[p.x, p.y, p.z]) {
+                cols.push(&p);
             }
-            xyz.push([p.x, p.y, p.z]);
-            intensity.push(p.intensity);
-            return_number.push(p.return_number);
-            number_of_returns.push(p.number_of_returns);
-            classification.push(u8::from(p.classification));
-            scan_angle.push(p.scan_angle);
-            user_data.push(p.user_data);
-            point_source_id.push(p.point_source_id);
-            if let (Some(v), Some(t)) = (&mut gps_time, p.gps_time) {
-                v.push(t);
-            }
-            if let (Some((r, g, b)), Some(c)) = (&mut color, p.color) {
-                r.push(c.red);
-                g.push(c.green);
-                b.push(c.blue);
-            }
-            let mut off = 0;
-            for (k, dim) in extra_dims.iter().enumerate() {
-                if off + dim.size <= p.extra_bytes.len() {
-                    extra[k].push(decode_dim(dim, &p.extra_bytes[off..off + dim.size]));
-                }
-                off += dim.size;
-            }
+        }
+    }
+    Ok(cols.into_cloud())
+}
+
+/// Stream a LAS/LAZ file in batches of up to `batch` points, handing each to
+/// `f` as a cloud with the attributes of [`read_las`], in file order. Only
+/// one batch is held in memory at a time.
+pub fn read_las_batches(path: impl AsRef<Path>, batch: u64, mut f: impl FnMut(PointCloud) -> Result<()>) -> Result<()> {
+    let mut reader = Reader::from_path(path.as_ref())?;
+    let header = reader.header().clone();
+    let batch = batch.max(1);
+    let mut left = header.number_of_points();
+    while left > 0 {
+        let pd = reader.read_points(left.min(batch))?;
+        if pd.is_empty() {
+            break;
+        }
+        left -= pd.len() as u64;
+        let mut cols = Columns::new(&header, pd.len());
+        for p in pd.points() {
+            cols.push(&p?);
+        }
+        f(cols.into_cloud())?;
+    }
+    Ok(())
+}
+
+/// The columns of [`read_las`], filled one point at a time.
+struct Columns {
+    extra_dims: Vec<ExtraDim>,
+    xyz: Vec<Point>,
+    intensity: Vec<u16>,
+    return_number: Vec<u8>,
+    number_of_returns: Vec<u8>,
+    classification: Vec<u8>,
+    scan_angle: Vec<f32>,
+    user_data: Vec<u8>,
+    point_source_id: Vec<u16>,
+    gps_time: Option<Vec<f64>>,
+    color: Option<(Vec<u16>, Vec<u16>, Vec<u16>)>,
+    extra: Vec<Vec<f64>>,
+}
+
+impl Columns {
+    fn new(header: &las::Header, n: usize) -> Columns {
+        let format = header.point_format();
+        let extra_dims: Vec<ExtraDim> = header
+            .all_vlrs()
+            .filter(|v| v.user_id == EXTRA_BYTES_USER_ID && v.record_id == EXTRA_BYTES_RECORD_ID)
+            .flat_map(parse_extra_bytes_vlr)
+            .collect();
+        Columns {
+            extra: extra_dims.iter().map(|_| Vec::with_capacity(n)).collect(),
+            extra_dims,
+            xyz: Vec::with_capacity(n),
+            intensity: Vec::with_capacity(n),
+            return_number: Vec::with_capacity(n),
+            number_of_returns: Vec::with_capacity(n),
+            classification: Vec::with_capacity(n),
+            scan_angle: Vec::with_capacity(n),
+            user_data: Vec::with_capacity(n),
+            point_source_id: Vec::with_capacity(n),
+            gps_time: if format.has_gps_time { Some(Vec::with_capacity(n)) } else { None },
+            color: if format.has_color { Some((Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n))) } else { None },
         }
     }
 
-    let mut cloud = PointCloud::new(xyz);
-    cloud.attrs.insert("intensity".into(), Attr::U16(intensity));
-    cloud.attrs.insert("return_number".into(), Attr::U8(return_number));
-    cloud.attrs.insert("number_of_returns".into(), Attr::U8(number_of_returns));
-    cloud.attrs.insert("classification".into(), Attr::U8(classification));
-    cloud.attrs.insert("scan_angle".into(), Attr::F32(scan_angle));
-    cloud.attrs.insert("user_data".into(), Attr::U8(user_data));
-    cloud.attrs.insert("point_source_id".into(), Attr::U16(point_source_id));
-    if let Some(t) = gps_time {
-        cloud.attrs.insert("gps_time".into(), Attr::F64(t));
-    }
-    if let Some((r, g, b)) = color {
-        cloud.attrs.insert("red".into(), Attr::U16(r));
-        cloud.attrs.insert("green".into(), Attr::U16(g));
-        cloud.attrs.insert("blue".into(), Attr::U16(b));
-    }
-    for (dim, values) in extra_dims.iter().zip(extra) {
-        if dim.data_type != 0 && values.len() == cloud.len() {
-            cloud.attrs.insert(dim.name.clone(), attr_from_dim(dim, values));
+    fn push(&mut self, p: &LasPoint) {
+        self.xyz.push([p.x, p.y, p.z]);
+        self.intensity.push(p.intensity);
+        self.return_number.push(p.return_number);
+        self.number_of_returns.push(p.number_of_returns);
+        self.classification.push(u8::from(p.classification));
+        self.scan_angle.push(p.scan_angle);
+        self.user_data.push(p.user_data);
+        self.point_source_id.push(p.point_source_id);
+        if let (Some(v), Some(t)) = (&mut self.gps_time, p.gps_time) {
+            v.push(t);
+        }
+        if let (Some((r, g, b)), Some(c)) = (&mut self.color, p.color) {
+            r.push(c.red);
+            g.push(c.green);
+            b.push(c.blue);
+        }
+        let mut off = 0;
+        for (k, dim) in self.extra_dims.iter().enumerate() {
+            if off + dim.size <= p.extra_bytes.len() {
+                self.extra[k].push(decode_dim(dim, &p.extra_bytes[off..off + dim.size]));
+            }
+            off += dim.size;
         }
     }
-    Ok(cloud)
+
+    fn into_cloud(self) -> PointCloud {
+        let mut cloud = PointCloud::new(self.xyz);
+        cloud.attrs.insert("intensity".into(), Attr::U16(self.intensity));
+        cloud.attrs.insert("return_number".into(), Attr::U8(self.return_number));
+        cloud.attrs.insert("number_of_returns".into(), Attr::U8(self.number_of_returns));
+        cloud.attrs.insert("classification".into(), Attr::U8(self.classification));
+        cloud.attrs.insert("scan_angle".into(), Attr::F32(self.scan_angle));
+        cloud.attrs.insert("user_data".into(), Attr::U8(self.user_data));
+        cloud.attrs.insert("point_source_id".into(), Attr::U16(self.point_source_id));
+        if let Some(t) = self.gps_time {
+            cloud.attrs.insert("gps_time".into(), Attr::F64(t));
+        }
+        if let Some((r, g, b)) = self.color {
+            cloud.attrs.insert("red".into(), Attr::U16(r));
+            cloud.attrs.insert("green".into(), Attr::U16(g));
+            cloud.attrs.insert("blue".into(), Attr::U16(b));
+        }
+        for (dim, values) in self.extra_dims.iter().zip(self.extra) {
+            if dim.data_type != 0 && values.len() == cloud.len() {
+                cloud.attrs.insert(dim.name.clone(), attr_from_dim(dim, values));
+            }
+        }
+        cloud
+    }
 }
 
 #[derive(Debug, Clone)]

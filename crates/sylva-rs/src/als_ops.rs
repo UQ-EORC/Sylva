@@ -12,21 +12,23 @@
 //! edge of the survey a result does not show where the tiles meet. Rasters
 //! are computed on one grid for the whole catalogue ([`catalog_grid`]).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use las::Vlr;
 use rayon::prelude::*;
 
-use crate::als::{buffer_attr, catalog_grid, chunk_bounds, mosaic, output_path, plan, run, workers_for, write_like, Catalog, Chunk, ChunkData, Layout, BYTES_PER_POINT};
+use crate::als::{buffer_attr, catalog_grid, chunk_bounds, in_box, merge_clouds, mosaic, output_path, plan, run, workers_for, workers_for_estimates, write_like, Catalog, Chunk, ChunkData, Layout, BYTES_PER_POINT};
 use crate::error::{Error, Result};
 use crate::filters;
 use crate::ground::{self, CsfParams, PmfParams, GROUND_CLASS};
 use crate::interpolate::{self, GridParams};
-use crate::io::las::{write_las_with_vlrs, LasWriteOptions};
+use crate::io::las::{read_las, read_las_batches, write_las_with_vlrs, LasWriteOptions};
 use crate::pointcloud::Attr;
 use crate::raster::Raster;
-use crate::{Point, PointCloud};
+use crate::{progress, Point, PointCloud};
 
 /// ASPRS low noise class.
 pub const NOISE_CLASS: u8 = 7;
@@ -101,6 +103,14 @@ const NO_GROUND: &str = "no chunk has 3 ground points (classification 2); classi
 fn classification(cloud: &PointCloud) -> Result<Vec<u8>> {
     let c = cloud.attr("classification").ok_or_else(|| Error::invalid("the tiles have no 'classification'; classify ground first (als.classify_ground)"))?;
     Ok((0..cloud.len()).map(|i| c.get_f64(i) as u8).collect())
+}
+
+/// Which points are classified as noise (7 or 18); None when there is no
+/// classification or no noise.
+pub fn noise_mask(cloud: &PointCloud) -> Option<Vec<bool>> {
+    let c = cloud.attr("classification")?;
+    let mask: Vec<bool> = (0..cloud.len()).map(|i| matches!(c.get_f64(i) as u8, NOISE_CLASS | HIGH_NOISE_CLASS)).collect();
+    mask.contains(&true).then_some(mask)
 }
 
 fn ground_points(cloud: &PointCloud) -> Result<Vec<Point>> {
@@ -242,16 +252,26 @@ pub fn chunk_heights(cat: &Catalog, chunk: &Chunk, cloud: &PointCloud, heights: 
 
 /// Canopy height model of the whole catalogue: the highest point above
 /// ground per cell, as [`ground::make_chm`] makes it (0 where nothing is
-/// above `min_height`). Chunks without enough ground for
-/// [`Heights::Auto`] leave their cells NaN.
-pub fn chm(cat: &Catalog, resolution: f64, heights: &Heights, min_height: f64, opts: &RunOptions) -> Result<Raster> {
+/// above `min_height`). With `drop_noise`, points classified as noise (7 or
+/// 18) are left out. Chunks without enough ground for [`Heights::Auto`]
+/// leave their cells NaN.
+pub fn chm(cat: &Catalog, resolution: f64, heights: &Heights, min_height: f64, drop_noise: bool, opts: &RunOptions) -> Result<Raster> {
     heights.check()?;
     let grid = catalog_grid(cat, resolution)?;
     let (chunks, w) = chunks_and_workers(cat, opts)?;
     let parts = run(cat, &chunks, w, "CHM", |chunk, data| {
         let Some(h) = chunk_heights(cat, chunk, &data.cloud, heights)? else { return Ok(None) };
         let b = chunk_bounds(&grid, &chunk.outer);
-        Ok(Some((ground::make_chm(&data.cloud.xyz, &h, resolution, Some(b), min_height)?, chunk.core)))
+        let r = match noise_mask(&data.cloud).filter(|_| drop_noise) {
+            Some(noise) => {
+                let keep: Vec<usize> = (0..h.len()).filter(|&i| !noise[i]).collect();
+                let xyz: Vec<Point> = keep.iter().map(|&i| data.cloud.xyz[i]).collect();
+                let hk: Vec<f64> = keep.iter().map(|&i| h[i]).collect();
+                ground::make_chm(&xyz, &hk, resolution, Some(b), min_height)?
+            }
+            None => ground::make_chm(&data.cloud.xyz, &h, resolution, Some(b), min_height)?,
+        };
+        Ok(Some((r, chunk.core)))
     })?;
     let parts: Vec<(Raster, [f64; 4])> = parts.into_iter().flatten().flatten().collect();
     if parts.is_empty() && matches!(heights, Heights::Auto { .. }) {
@@ -348,22 +368,191 @@ pub fn filter_noise(cat: &Catalog, out_dir: &Path, method: &NoiseMethod, classif
 
 // ------------------------------------------------------------------ reorganising
 
+/// Points read from a file per batch by [`retile`].
+const RETILE_BATCH: u64 = 1 << 20;
+/// Points one reader of [`retile`] holds for its tiles before writing the
+/// largest of them out.
+const RETILE_HOLD: usize = 1 << 22;
+
 /// Cut the catalogue into new square tiles of `size` m (on a grid anchored
 /// at `origin`, by default the catalogue's minimum snapped down to a
 /// multiple of `size`), named `<xmin>_<ymin>`. With a `buffer`, each tile
 /// also holds the points within `buffer` m of it, flagged by a `buffer`
 /// attribute (1 for buffer points).
+///
+/// Every input file is read once, whatever its extent: each reader streams
+/// its file and sends every point to the tiles that hold it, writing what
+/// it holds for a tile to a part file when it holds too much. Each tile is
+/// then assembled from its parts, in file order, so the points of a tile
+/// come in the order the chunk engine would read them. Reading each file
+/// once matters for files that span many tiles (flight lines, or a survey
+/// delivered as a few large files without a spatial index), which the
+/// chunk engine would decompress in full for every tile they reach.
 pub fn retile(cat: &Catalog, out_dir: &Path, size: f64, buffer: f64, origin: Option<(f64, f64)>, format: Option<&str>, workers: usize) -> Result<Vec<PathBuf>> {
-    let opts = RunOptions { layout: Layout::Grid { size, origin }, buffer, workers };
-    write_chunks(cat, out_dir, format, &opts, "retiling", |_, data| {
-        if buffer > 0.0 {
-            let mut c = data.cloud;
-            c.attrs.insert("buffer".into(), buffer_attr(&data.buffer));
-            Ok(c)
-        } else {
-            Ok(data.cloud.take(&data.core_indices()))
+    retile_in_parts(cat, out_dir, size, buffer, origin, format, workers, RETILE_BATCH, RETILE_HOLD)
+}
+
+/// [`retile`], reading `batch` points at a time and holding up to `hold`
+/// per reader.
+#[allow(clippy::too_many_arguments)]
+fn retile_in_parts(cat: &Catalog, out_dir: &Path, size: f64, buffer: f64, origin: Option<(f64, f64)>, format: Option<&str>, workers: usize, batch: u64, hold: usize) -> Result<Vec<PathBuf>> {
+    let chunks = plan(cat, Layout::Grid { size, origin }, buffer)?;
+    std::fs::create_dir_all(out_dir)?;
+    for c in &chunks {
+        output_path(cat, out_dir, &c.name, &out_ext(cat, c, format)?)?;
+    }
+    let b = cat.xy_bounds().expect("plan checked the catalogue");
+    let (ox, oy) = origin.unwrap_or(((b[0] / size).floor() * size, (b[1] / size).floor() * size));
+    let cell_of = |x: f64, o: f64| ((x - o) / size).floor() as i64;
+    let index: HashMap<(i64, i64), usize> = chunks.iter().enumerate().map(|(k, c)| ((cell_of(c.core[0] + 0.5 * size, ox), cell_of(c.core[1] + 0.5 * size, oy)), k)).collect();
+    // How many tiles away a buffer point can be.
+    let reach = (buffer / size).ceil() as i64;
+    let parts = PartsDir::new(out_dir)?;
+
+    // Read every file once, sending its points to their tiles.
+    let read_w = workers_for_estimates(&vec![hold as u64 + batch; cat.tiles.len()], workers, BYTES_PER_POINT)?;
+    let task = progress::start("retiling: reading", cat.tiles.len() as u64);
+    for_each_parallel(cat.tiles.len(), read_w, |f| {
+        let tile = &cat.tiles[f];
+        let mut held: BTreeMap<usize, Vec<PointCloud>> = BTreeMap::new();
+        let mut seq: BTreeMap<usize, usize> = BTreeMap::new();
+        let mut n_held = 0usize;
+        let mut flush = |held: &mut BTreeMap<usize, Vec<PointCloud>>, n_held: &mut usize, all: bool| -> Result<()> {
+            while *n_held > 0 && (all || *n_held > hold / 2) {
+                let (&k, _) = held.iter().max_by_key(|(k, v)| (v.iter().map(PointCloud::len).sum::<usize>(), std::cmp::Reverse(**k))).expect("points are held");
+                let part = merge_clouds(held.remove(&k).expect("key exists"));
+                *n_held -= part.len();
+                let s = seq.entry(k).or_insert(0);
+                write_like(&part, &parts.path(k, f, *s), tile)?;
+                *s += 1;
+            }
+            Ok(())
+        };
+        if tile.n_points > 0 {
+            read_las_batches(&tile.path, batch, |cloud| {
+                let mut groups: BTreeMap<usize, (Vec<usize>, Vec<bool>)> = BTreeMap::new();
+                for (i, p) in cloud.xyz.iter().enumerate() {
+                    let (c, r) = (cell_of(p[0], ox), cell_of(p[1], oy));
+                    for dr in -reach..=reach {
+                        for dc in -reach..=reach {
+                            let Some(&k) = index.get(&(c + dc, r + dr)) else { continue };
+                            let own = dr == 0 && dc == 0;
+                            if own || in_box(&chunks[k].outer, p[0], p[1]) {
+                                let g = groups.entry(k).or_default();
+                                g.0.push(i);
+                                g.1.push(!own);
+                            }
+                        }
+                    }
+                }
+                for (k, (idx, flags)) in groups {
+                    let mut part = cloud.take(&idx);
+                    if buffer > 0.0 {
+                        part.attrs.insert("buffer".into(), buffer_attr(&flags));
+                    }
+                    n_held += part.len();
+                    held.entry(k).or_default().push(part);
+                }
+                if n_held > hold {
+                    flush(&mut held, &mut n_held, false)?;
+                }
+                Ok(())
+            })
+            .map_err(|e| match e {
+                Error::File { .. } => e,
+                other => Error::file(&tile.path, other.to_string()),
+            })?;
         }
-    })
+        flush(&mut held, &mut n_held, true)?;
+        task.inc(1);
+        Ok(())
+    })?;
+    drop(task);
+
+    // Assemble each tile from its parts, in file order.
+    let w = workers_for(&chunks, workers, BYTES_PER_POINT)?;
+    let task = progress::start("retiling: writing", chunks.len() as u64);
+    let written: Mutex<Vec<Option<PathBuf>>> = Mutex::new(vec![None; chunks.len()]);
+    for_each_parallel(chunks.len(), w, |k| {
+        let chunk = &chunks[k];
+        let files = parts.files(k)?;
+        let cloud = merge_clouds(files.iter().map(read_las).collect::<Result<Vec<_>>>()?);
+        let has_core = match cloud.attr("buffer") {
+            Some(b) => (0..cloud.len()).any(|i| b.get_f64(i) == 0.0),
+            None => !cloud.is_empty(),
+        };
+        if has_core {
+            let path = output_path(cat, out_dir, &chunk.name, &out_ext(cat, chunk, format)?)?;
+            write_like(&cloud, &path, &cat.tiles[like_tile(chunk)])?;
+            written.lock().expect("written lock")[k] = Some(path);
+        }
+        task.inc(1);
+        Ok(())
+    })?;
+    Ok(written.into_inner().expect("written lock").into_iter().flatten().collect())
+}
+
+/// The temporary parts of [`retile`]: `<out_dir>/.retile-parts-<pid>/<tile>/<file>-<seq>.laz`,
+/// removed when dropped (on success or error).
+struct PartsDir(PathBuf);
+
+impl PartsDir {
+    fn new(out_dir: &Path) -> Result<PartsDir> {
+        let dir = out_dir.join(format!(".retile-parts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir)?;
+        Ok(PartsDir(dir))
+    }
+
+    fn path(&self, tile: usize, file: usize, seq: usize) -> PathBuf {
+        self.0.join(tile.to_string()).join(format!("{file:08}-{seq:08}.laz"))
+    }
+
+    /// The parts of a tile, in file order then in the order they were written.
+    fn files(&self, tile: usize) -> Result<Vec<PathBuf>> {
+        let dir = self.0.join(tile.to_string());
+        if !dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut v: Vec<PathBuf> = std::fs::read_dir(&dir)?.map(|e| e.map(|e| e.path())).collect::<std::io::Result<_>>()?;
+        v.sort();
+        Ok(v)
+    }
+}
+
+impl Drop for PartsDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Run `f(0..n)` on `workers` threads, each taking the next item; the first
+/// error (lowest item) stops the workers taking new items and is returned.
+fn for_each_parallel(n: usize, workers: usize, f: impl Fn(usize) -> Result<()> + Sync) -> Result<()> {
+    let next = AtomicUsize::new(0);
+    let failed = AtomicBool::new(false);
+    let errors: Mutex<Vec<(usize, Error)>> = Mutex::new(Vec::new());
+    let work = || loop {
+        if failed.load(Ordering::Relaxed) {
+            break;
+        }
+        let i = next.fetch_add(1, Ordering::Relaxed);
+        if i >= n {
+            break;
+        }
+        if let Err(e) = f(i) {
+            failed.store(true, Ordering::Relaxed);
+            errors.lock().expect("errors lock").push((i, e));
+        }
+    };
+    std::thread::scope(|s| {
+        for _ in 0..workers.max(1).min(n.max(1)) {
+            s.spawn(work);
+        }
+    });
+    let mut errors = errors.into_inner().expect("errors lock");
+    errors.sort_by_key(|e| e.0);
+    errors.into_iter().next().map_or(Ok(()), |(_, e)| Err(e))
 }
 
 /// How [`decimate`] thins the points.
@@ -556,7 +745,7 @@ mod tests {
     fn chm_normalise_and_ground_run_on_tiles() {
         let d = tmp("ops");
         let (_, cat) = scene(&d);
-        let chm_r = chm(&cat, 5.0, &Heights::Auto { resolution: 2.0 }, 0.0, &RunOptions::default()).unwrap();
+        let chm_r = chm(&cat, 5.0, &Heights::Auto { resolution: 2.0 }, 0.0, true, &RunOptions::default()).unwrap();
         let top = chm_r.data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         assert!((top - 10.0).abs() < 0.4, "{top}");
         let out = normalize(&cat, &d.join("norm"), &Heights::Auto { resolution: 2.0 }, true, None, &RunOptions::default()).unwrap();
@@ -573,6 +762,68 @@ mod tests {
         assert!(agree as f64 > 0.98 * c.len() as f64, "{agree} of {}", c.len());
         // Outputs never overwrite inputs.
         assert!(classify_ground(&cat, &d, &GroundMethod::Csf(CsfParams::default()), false, None, &RunOptions::default()).is_err());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The scene's points as two "flight lines" over the whole area, each
+    /// one file, the second also holding a few noise points 50 m up.
+    fn strips(dir: &Path) -> (PointCloud, Catalog) {
+        let (cloud, _) = scene(&dir.join("scene"));
+        let half = cloud.len() / 2;
+        let a = cloud.take(&(0..half).collect::<Vec<_>>());
+        let mut b = cloud.take(&(half..cloud.len()).collect::<Vec<_>>());
+        if let Some(Attr::U8(c)) = b.attrs.get_mut("classification") {
+            for i in (0..c.len()).step_by(997) {
+                c[i] = NOISE_CLASS;
+                b.xyz[i][2] += 50.0;
+            }
+        }
+        #[allow(clippy::needless_update)]
+        let opts = LasWriteOptions { point_format: 6, scale: 0.001, ..Default::default() };
+        let paths = [dir.join("a.laz"), dir.join("b.laz")];
+        write_las_with_vlrs(&a, &paths[0], &opts, &[epsg_vlr(28355)]).unwrap();
+        write_las_with_vlrs(&b, &paths[1], &opts, &[epsg_vlr(28355)]).unwrap();
+        (cloud, Catalog::open(&paths))
+    }
+
+    #[test]
+    fn retile_reads_each_strip_once_and_gives_what_the_chunks_read() {
+        let d = tmp("strips");
+        let (cloud, cat) = strips(&d);
+        assert!(cat.issues(1.0).iter().any(|i| i.kind == "unindexed_overlap"), "{:?}", cat.issues(1.0));
+        assert!(cat.report(1.0).contains("underestimates"));
+        // Small batches and a small hold, so that tiles are written in many parts.
+        let out = retile_in_parts(&cat, &d.join("re"), 50.0, 5.0, None, None, 3, 1000, 3000).unwrap();
+        let chunks = plan(&cat, Layout::Grid { size: 50.0, origin: None }, 5.0).unwrap();
+        assert_eq!(out.len(), chunks.len());
+        let mut core = 0;
+        for (path, chunk) in out.iter().zip(&chunks) {
+            assert_eq!(path.file_stem().unwrap().to_string_lossy(), chunk.name);
+            let tile = crate::io::read(path).unwrap();
+            let want = read_chunk(&cat, chunk).unwrap();
+            // The same points, in the same order, with the same buffer flags.
+            assert_eq!(tile.len(), want.cloud.len());
+            assert!(tile.xyz.iter().zip(&want.cloud.xyz).all(|(p, q)| (0..3).all(|k| (p[k] - q[k]).abs() < 1e-6)));
+            assert_eq!(tile.attr("classification").unwrap().to_f64(), want.cloud.attr("classification").unwrap().to_f64());
+            let flags = tile.attr("buffer").unwrap().to_f64();
+            assert!(flags.iter().zip(&want.buffer).all(|(f, b)| (*f == 1.0) == *b));
+            core += flags.iter().filter(|&&f| f == 0.0).count();
+        }
+        assert_eq!(core, cloud.len());
+        assert!(!d.join("re").read_dir().unwrap().any(|e| e.unwrap().file_name().to_string_lossy().starts_with(".retile")));
+        // Retiled, the files no longer overlap.
+        let tiles = Catalog::open(&retile(&cat, &d.join("plain"), 50.0, 0.0, None, None, 0).unwrap());
+        assert!(!tiles.issues(1.0).iter().any(|i| i.kind == "unindexed_overlap" || i.kind == "overlap"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn chm_leaves_out_noise() {
+        let d = tmp("chm-noise");
+        let (_, cat) = strips(&d);
+        let top = |drop: bool| chm(&cat, 5.0, &Heights::Auto { resolution: 2.0 }, 0.0, drop, &RunOptions::default()).unwrap().data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        assert!((top(true) - 10.0).abs() < 0.4, "{}", top(true));
+        assert!(top(false) > 45.0, "{}", top(false));
         let _ = std::fs::remove_dir_all(&d);
     }
 

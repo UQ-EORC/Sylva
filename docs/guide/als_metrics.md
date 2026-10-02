@@ -58,8 +58,13 @@ reproduced from the R code.
 returns in each of the `k` bins and divides the Shannon index by that of a
 uniform distribution over the same bins: `-sum(p ln p) / ln(k)`, so it is
 between 0 (every return in one bin) and 1 (as many in each). It is NaN when
-`zmax < 2 by` or any height is negative, as in lidR, so it is common to
-leave out the returns below 0 (`min_height=0`). The bins are half-open,
+`zmax < 2 by` or any height is negative, as in lidR. Ground returns a few
+centimetres below the DTM are in nearly every cell of a survey, so on real
+data it is NaN almost everywhere unless the negative heights are dealt
+with: `clamp_negative=True` sets them to 0 (lidR users' `Z[Z < 0] <- 0`,
+which keeps them as ground for every other metric), or `min_height=0`
+leaves them out. `grid_metrics` warns when `zentropy` is NaN in most cells
+and neither was given. The bins are half-open,
 `[a, b)`, as R's `findInterval` makes them, so a return exactly on the top
 edge (at `zmax` when it is a whole number of bins) is not counted.
 
@@ -216,8 +221,8 @@ sylva als-plot-metrics ground/ plots.shp plots.csv --id-field plot_id --min-heig
 sylva als-plot-metrics ground/ centres.csv plots.csv --radius 11.28
 ```
 
-`als-metrics` writes one raster per metric, `<metric>.asc` (or `.tif` with
-`--format tif`, which needs `rasterio`), into the output directory.
+`als-metrics` writes one raster per metric, `<metric>.asc` with its `.prj`
+(or `.tif` with `--format tif`), into the output directory.
 `als-plot-metrics` reads plot polygons (`.shp`, `.geojson`) or a CSV of
 centres with columns `x`, `y` and optionally `radius` and `id`, and writes
 the table as CSV (empty cells for NaN). Both take `--dtm DTM.asc`,

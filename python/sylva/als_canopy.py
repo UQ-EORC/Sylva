@@ -907,7 +907,8 @@ def _cloud_heights(cloud: PointCloud, dtm, dtm_resolution: float) -> np.ndarray:
 
 
 def gap_profile(source, trajectory=None, resolution: float = 10.0, bin_size: float = 1.0,
-                min_height: float = 1.0, max_height: float | None = None, weighting: str = "equal",
+                min_height: float = 1.0, max_height: float | None = None,
+                top_quantile: float = 0.99999, drop_noise: bool = True, weighting: str = "equal",
                 angles: str = "auto", lad: str = "spherical", lad_params: Sequence[float] = (),
                 g: float | None = None, max_zenith: float = 90.0, anchor: str = "ground",
                 dtm="auto", dtm_resolution: float = 1.0,
@@ -968,7 +969,18 @@ def gap_profile(source, trajectory=None, resolution: float = 10.0, bin_size: flo
         are pulses that went through.
     max_height
         Top of the highest layer; returns above it are intercepted above
-        every layer. By default the layers reach the highest return.
+        every layer. By default the layers stop where ``top_quantile`` of
+        the weight above ``min_height`` lies below.
+    top_quantile
+        With ``max_height`` None, the top layers that together hold no more
+        than ``1 - top_quantile`` of the weight above ``min_height`` are
+        dropped (their returns count as above every layer), so that a few
+        stray returns far above the canopy (birds, haze, a mast) do not
+        stretch the profile with empty layers. The layers kept are as they
+        would be without it, since a layer's transmittance depends only on
+        the returns at and below it. 1 reaches the highest return.
+    drop_noise
+        Leave out returns classified as noise (7 or 18).
     weighting : {"equal", "first", "all"}
         Share of a pulse each return stands for: ``1 / number_of_returns``,
         first returns only (the original MacArthur-Horn), or one per return
@@ -1018,7 +1030,8 @@ def gap_profile(source, trajectory=None, resolution: float = 10.0, bin_size: flo
     if ang != "trajectory":
         traj = None
     mh = None if max_height is None else float(max_height)
-    common = (float(resolution), float(min_height), float(bin_size), mh, str(weighting), str(lad),
+    common = (float(resolution), float(min_height), float(bin_size), mh, float(top_quantile),
+              bool(drop_noise), str(weighting), str(lad),
               [float(v) for v in lad_params], None if g is None else float(g), ang,
               None if traj is None else traj._core(), _gap(max_gap), float(time_offset),
               float(max_zenith), str(anchor))

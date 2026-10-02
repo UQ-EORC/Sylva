@@ -19,7 +19,7 @@ branch.
   `SurveyResult` or `QSM` are plain containers of arrays; their methods call
   stateless core functions with those arrays, and they pickle.
 - **Per-language only:** the command-line interface (Python, and the
-  `sylva` binary), the progress bar, and GeoTIFF export (rasterio).
+  `sylva` binary) and the progress bar.
 
 ## Changing or adding a computation
 

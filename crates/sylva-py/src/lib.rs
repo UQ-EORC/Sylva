@@ -483,15 +483,36 @@ fn make_chm<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonl
     raster_to_py(py, &r)
 }
 
+/// Write an ESRI ASCII grid, and with `crs` its `.prj`.
 #[pyfunction]
-#[pyo3(signature = (path, data, xmin, ymin, resolution, nodata=-9999.0))]
-fn write_ascii_grid(path: PathBuf, data: PyReadonlyArray2<f64>, xmin: f64, ymin: f64, resolution: f64, nodata: f64) -> PyResult<()> {
-    raster_from_py(data, xmin, ymin, resolution).write_ascii_grid(path, nodata).map_err(err)
+#[pyo3(signature = (path, data, xmin, ymin, resolution, nodata=-9999.0, crs=None))]
+#[allow(clippy::too_many_arguments)]
+fn write_ascii_grid(py: Python<'_>, path: PathBuf, data: PyReadonlyArray2<f64>, xmin: f64, ymin: f64, resolution: f64, nodata: f64, crs: Option<String>) -> PyResult<()> {
+    let r = raster_from_py(data, xmin, ymin, resolution);
+    py.detach(|| {
+        r.write_ascii_grid(&path, nodata)?;
+        match crs {
+            Some(c) => sylva_rs::geotiff::write_prj(&path, &c),
+            None => Ok(()),
+        }
+    })
+    .map_err(err)
 }
 
+/// Read an ESRI ASCII grid, with the CRS of its `.prj` (None without one).
 #[pyfunction]
 fn read_ascii_grid<'py>(py: Python<'py>, path: PathBuf) -> PyResult<Bound<'py, PyDict>> {
-    raster_to_py(py, &Raster::read_ascii_grid(path).map_err(err)?)
+    let d = raster_to_py(py, &Raster::read_ascii_grid(&path).map_err(err)?)?;
+    d.set_item("crs", sylva_rs::geotiff::read_prj(&path).map_err(err)?)?;
+    Ok(d)
+}
+
+/// Write a single-band float32 GeoTIFF, north-up, NaN for nodata.
+#[pyfunction]
+#[pyo3(signature = (path, data, xmin, ymin, resolution, crs=None))]
+fn write_geotiff(py: Python<'_>, path: PathBuf, data: PyReadonlyArray2<f64>, xmin: f64, ymin: f64, resolution: f64, crs: Option<String>) -> PyResult<()> {
+    let r = raster_from_py(data, xmin, ymin, resolution);
+    py.detach(|| sylva_rs::geotiff::write_geotiff(&r, &path, crs.as_deref())).map_err(err)
 }
 
 // --------------------------------------------------------------------- canopy
@@ -1586,6 +1607,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(make_chm, m)?,
         wrap_pyfunction!(write_ascii_grid, m)?,
         wrap_pyfunction!(read_ascii_grid, m)?,
+        wrap_pyfunction!(write_geotiff, m)?,
         wrap_pyfunction!(voxelize, m)?,
         wrap_pyfunction!(pad_profile_voxel, m)?,
         wrap_pyfunction!(gap_fraction_zenith, m)?,

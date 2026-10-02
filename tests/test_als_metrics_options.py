@@ -182,3 +182,53 @@ def test_metrics_heights_from_an_attribute_or_a_dtm_file(flat_tile, tmp_path):
                 cell = ((cloud.x >= 20 * j) & (cloud.x < 20 * (j + 1))
                         & (cloud.y >= 20 * i) & (cloud.y < 20 * (i + 1)))
                 assert zmax.data[i, j] == pytest.approx(cloud.z[cell].max() - 10.0, abs=1e-3)
+
+
+# --------------------------------------------------------------------------- #
+# negative heights and noise
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture(scope="module")
+def noisy_tile(tmp_path_factory):
+    """Ground returns just under the DTM (height -5 to 0 cm), vegetation 0-15 m,
+    and a few noise returns (class 7) 60 m up."""
+    rng = np.random.default_rng(23)
+    d = tmp_path_factory.mktemp("noisy")
+    n = 3000
+    xy = rng.uniform(0, 40, (3 * n + 20, 2))
+    h = np.concatenate([rng.uniform(-0.05, 0.0, n), rng.uniform(0, 15, 2 * n), np.full(20, 60.0)])
+    cls = np.concatenate([np.full(n, 2), np.full(2 * n, 5), np.full(20, 7)]).astype(np.uint8)
+    io.write(PointCloud(np.column_stack([xy, 10.0 + h]),
+                        {"classification": cls, "height": h}), d / "t.las")
+    return als.catalog(d)
+
+
+def test_zentropy_warns_until_negative_heights_are_clamped(noisy_tile):
+    with pytest.warns(UserWarning, match="clamp_negative=True"):
+        lidr = als.grid_metrics(noisy_tile, 10.0, ["n", "zentropy"], dtm="height")
+    assert np.isnan(lidr["zentropy"].data).all()
+    clamped = als.grid_metrics(noisy_tile, 10.0, ["n", "zentropy", "zq5"], dtm="height",
+                               clamp_negative=True)
+    assert np.isfinite(clamped["zentropy"].data).all()
+    np.testing.assert_array_equal(clamped["n"].data, lidr["n"].data)   # kept, as ground
+    assert np.nanmin(clamped["zq5"].data) == 0.0
+    dropped = als.grid_metrics(noisy_tile, 10.0, ["n", "zentropy"], dtm="height", min_height=0.0)
+    assert (dropped["n"].data < lidr["n"].data).all()
+    one = als.cloud_metrics(io.read(noisy_tile.paths[0]), height="height", clamp_negative=True)
+    assert np.isfinite(one["zentropy"])
+
+
+def test_chm_and_gap_profile_leave_out_noise(noisy_tile):
+    dtm = Raster(np.full((1, 1), 10.0), 0.0, 0.0, 100.0)
+    assert np.nanmax(als.chm(noisy_tile, 2.0, dtm=dtm).data) <= 15.0
+    noisy = als.chm(noisy_tile, 2.0, dtm=dtm, drop_noise=False)
+    assert np.nanmax(noisy.data) == pytest.approx(60.0, abs=0.01)
+    cloud = io.read(noisy_tile.paths[0])
+    heights = PointCloud(np.column_stack([cloud.x, cloud.y, cloud.attrs["height"]]),
+                         dict(cloud.attrs))
+    kw = {"resolution": 20.0, "angles": "none", "dtm": None, "weighting": "all"}
+    clean = als.gap_profile(heights, **kw)
+    assert clean.weight.shape[0] - 2 <= 15
+    kept = als.gap_profile(heights, drop_noise=False, top_quantile=1.0, **kw)
+    assert kept.weight.shape[0] - 2 == 60

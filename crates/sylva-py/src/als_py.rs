@@ -255,12 +255,12 @@ pub(crate) fn heights(mode: &str, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, 
 }
 
 #[pyfunction]
-#[pyo3(signature = (catalog, resolution, mode, dtm, dtm_resolution, min_height, chunk_size, buffer, workers))]
-fn als_chm<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolution: f64, mode: &str, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, dtm_resolution: f64, min_height: f64, chunk_size: Option<f64>, buffer: f64, workers: usize) -> PyResult<Bound<'py, PyDict>> {
+#[pyo3(signature = (catalog, resolution, mode, dtm, dtm_resolution, min_height, drop_noise, chunk_size, buffer, workers))]
+fn als_chm<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolution: f64, mode: &str, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, dtm_resolution: f64, min_height: f64, drop_noise: bool, chunk_size: Option<f64>, buffer: f64, workers: usize) -> PyResult<Bound<'py, PyDict>> {
     let c = catalog_from_py(catalog)?;
     let h = heights(mode, dtm, dtm_resolution)?;
     let opts = run_options(chunk_size, buffer, workers);
-    raster_to_py(py, &py.detach(|| als_ops::chm(&c, resolution, &h, min_height, &opts)).map_err(err)?)
+    raster_to_py(py, &py.detach(|| als_ops::chm(&c, resolution, &h, min_height, drop_noise, &opts)).map_err(err)?)
 }
 
 #[pyfunction]

@@ -408,10 +408,9 @@ for a, r, title, label in ((ax[0], dtm, "Terrain (DTM)", "elevation (m)"),
 ax[0].set_ylabel("y (m)")
 ax[2].scatter(cloud.x[slab], cloud.attrs["height"][slab], s=0.3, c=LEAF)
 ax[2].set(title=f"Heights in the row at y = {y0:.1f} m", xlabel="x (m)", ylabel="height (m)");""",
-    md("""Rasters export to an ESRI ASCII grid, or to GeoTIFF with
-`dtm.to_geotiff("dtm.tif", crs="EPSG:28352")` when `rasterio` is installed
-(`pip install sylva-rs[geotiff]`). Pass the same `bounds` on every date so a
-time series lines up."""),
+    md("""Rasters export to an ESRI ASCII grid (with a `.prj` when the CRS is
+known), or to GeoTIFF with `dtm.to_geotiff("dtm.tif", crs="EPSG:28352")`.
+Pass the same `bounds` on every date so a time series lines up."""),
     """\
 chm.to_ascii_grid("chm.asc")
 sylva.write(cloud, "tile_normalized.laz")       # keeps 'height' as an extra-bytes dimension

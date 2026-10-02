@@ -47,8 +47,9 @@ are already flattened with `ground.flatten`.
 | `.parquet` | `Shots.load` | `Shots.save` | Pulse data, see [Pulse data](pulses.md). |
 
 Rasters (DTM, CHM) are `sylva.Raster` objects, written with
-`to_ascii_grid` (`.asc`) or `to_geotiff` (`.tif`, needs `rasterio`:
-`pip install sylva-rs[geotiff]`). Row 0 of `Raster.data` is the southern
+`to_ascii_grid` (`.asc`, with the CRS as WKT in a `.prj` beside it, which
+`from_ascii_grid` reads back) or `to_geotiff` (`.tif`, float32 with NaN as
+nodata, written by Sylva itself). Row 0 of `Raster.data` is the southern
 edge, and both writers flip it to north-up.
 
 The format specifications are listed on the [references](../references.md)

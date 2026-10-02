@@ -155,7 +155,7 @@ occluded).
 | `OSError` | files that are missing, unreadable or malformed |
 | `ValueError` | invalid parameters, unknown methods, too few points, RiVLib not found |
 | `KeyError` | a named attribute that the data lacks |
-| `ImportError` | optional dependencies (`rasterio` for GeoTIFF) |
+| `ImportError` | optional dependencies (`matplotlib` for figures) |
 
 A plot with no detectable stems returns an empty list, not an error, so check
 counts before indexing.
