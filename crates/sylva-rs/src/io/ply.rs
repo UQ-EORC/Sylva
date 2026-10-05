@@ -106,6 +106,13 @@ struct Element {
     props: Vec<(String, PlyType, Option<PlyType>)>,
 }
 
+/// Read the header, stopping at `end_header` with the reader left at the
+/// first record.
+///
+/// A PLY header declares its format (ASCII or binary, and which byte order)
+/// and then a run of elements, each with a count and a list of properties.
+/// Nothing about the records can be known before this is read, which is why
+/// it comes back as a description for `read_ply` to act on.
 fn parse_header<R: BufRead>(r: &mut R, path: &Path) -> Result<(Format, Vec<Element>)> {
     let mut line = String::new();
     r.read_line(&mut line)?;

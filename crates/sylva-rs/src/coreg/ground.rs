@@ -443,6 +443,21 @@ pub fn feature_transform(background: &[bool], ny: usize, nx: usize) -> Vec<[i32;
 }
 
 /// scipy `_VoronoiFT` for rank 2 along axis `d`, without sampling.
+///
+/// One line of the exact Euclidean distance transform, by the method of
+/// Maurer, Qi & Raghavan (2003): for every cell on the line, find the nearest
+/// feature cell. Doing it naively would compare every cell with every
+/// feature; instead the first loop walks the line keeping a stack `g` of the
+/// features that could still be nearest to something, discarding one as soon
+/// as the geometry shows it is hidden behind two others, and the second loop
+/// then sweeps the line once, advancing through that stack. Both loops are
+/// linear in the length of the line.
+///
+/// The arithmetic is squared distances throughout, so no square roots are
+/// taken and the comparisons stay exact. It is a transcription of scipy's
+/// C routine - including `l` as a signed stack top, -1 meaning empty - so
+/// that the ported pipeline gives scipy's distances to the bit; prefer
+/// leaving it alone to tidying it.
 #[allow(clippy::needless_range_loop)]
 fn voronoi_line(line: &mut [[i32; 2]], coor: [i64; 2], d: usize) {
     let len = line.len();

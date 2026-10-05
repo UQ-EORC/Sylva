@@ -366,6 +366,13 @@ struct Columns {
 }
 
 impl Columns {
+    /// A 2-D index of the scene, by column: an airborne pulse comes down
+    /// steeply, so grouping the scene by its footprint on the ground is
+    /// enough to narrow what a pulse can hit.
+    ///
+    /// Stored flat, grouped by cell, like the terrestrial scanner's 3-D grid:
+    /// count each cell's points, turn the counts into running starts, then
+    /// place each point.
     fn new(points: &[Point], targets: &[usize], r: f64) -> Result<Columns> {
         let cell = (4.0 * r).max(0.1);
         let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);

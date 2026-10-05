@@ -367,8 +367,15 @@ pub struct TreeSummary {
 /// Totals over some rows (all of them, or those in an area).
 pub fn summarise(rows: &[&TreeChangeRow], years: Option<f64>) -> TreeSummary {
     let mut s = TreeSummary::default();
+    // Height changes of the trees whose growth could be measured, and the
+    // sum of their measurement variances. The two are kept apart because the
+    // result reports both: how much the growth rates vary between trees, and
+    // how well any one of them was measured.
     let mut dh = Vec::new();
     let mut var = 0.0;
+    // Count each tree under its status. A row with no id in the first survey
+    // is a tree only the second saw, which is what separates the two
+    // "undetected" and "unobserved" counts.
     for r in rows {
         let from_a = r.id_a != 0;
         match (r.status, from_a) {
@@ -403,6 +410,11 @@ pub fn summarise(rows: &[&TreeChangeRow], years: Option<f64>) -> TreeSummary {
             _ => {}
         }
     }
+    // Mean growth, with two separate uncertainties: `growth_se` is the
+    // standard error of the mean over the trees, and
+    // `growth_measurement_se` is what the per-tree height uncertainties
+    // alone imply. If the first is much the larger, the trees really do
+    // differ; if the second is, the survey is the limit.
     s.n_growth = dh.len();
     if !dh.is_empty() {
         let n = dh.len() as f64;
@@ -417,6 +429,12 @@ pub fn summarise(rows: &[&TreeChangeRow], years: Option<f64>) -> TreeSummary {
     }
     s.mortality_rate = f64::NAN;
     s.recruitment_rate = f64::NAN;
+    // Annual rates, as Sheil, Burslem and Alder (1995) define them: the
+    // proportion lost or gained compounded over the interval rather than
+    // divided by it, so rates from intervals of different lengths can be
+    // compared. Mortality is over the trees present at the start,
+    // recruitment over those present at the end, and a tree the survey did
+    // not see counts in neither.
     if let Some(t) = years.filter(|t| *t > 0.0) {
         let n0 = (s.survivors + s.damaged + s.dead) as f64;
         let n1 = (s.survivors + s.damaged + s.recruits + s.released) as f64;

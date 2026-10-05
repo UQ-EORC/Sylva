@@ -143,6 +143,19 @@ fn relative(a: f64, b: f64) -> f64 {
 /// Minimum-cost assignment of the rows of a `n x m` cost matrix (`n <= m`)
 /// to distinct columns: the shortest augmenting path form of the Hungarian
 /// method, O(n² m). Returns the column of each row.
+///
+/// Here the rows are one survey's trees, the columns the other's, and the
+/// cost how poorly a pair matches, so the result is the pairing of trees that
+/// is best *overall*. That is not the same as giving every tree its own
+/// nearest neighbour: two trees cannot claim the same match, and accepting a
+/// slightly worse pair here often allows a much better one there.
+///
+/// The implementation is the textbook one and reads as such: `u` and `v` are
+/// the dual potentials, `p[j]` the row currently assigned to column `j`,
+/// `way` the augmenting path back, and the 1-based indices with `0` as a
+/// sentinel come from the same source. It is a self-contained numerical
+/// routine; the names will mean something next to the method's description
+/// and little without it.
 pub fn assign(cost: &[Vec<f64>]) -> Vec<usize> {
     let n = cost.len();
     if n == 0 {
@@ -158,6 +171,9 @@ pub fn assign(cost: &[Vec<f64>]) -> Vec<usize> {
         let mut j0 = 0usize;
         let mut minv = vec![inf; m + 1];
         let mut used = vec![false; m + 1];
+        // Grow a shortest augmenting path from row `i` until it reaches a
+        // column nothing is assigned to; the row then takes that column and
+        // everything along the path shifts over by one.
         loop {
             used[j0] = true;
             let i0 = p[j0];
@@ -188,6 +204,7 @@ pub fn assign(cost: &[Vec<f64>]) -> Vec<usize> {
                 break;
             }
         }
+        // Walk the path back, moving each row on it to the next column.
         loop {
             let j1 = way[j0];
             p[j0] = p[j1];

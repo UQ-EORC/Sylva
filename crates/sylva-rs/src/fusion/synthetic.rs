@@ -54,6 +54,20 @@ struct Grid {
 }
 
 impl Grid {
+    /// A uniform grid over the scene, so a ray only tests the spheres whose
+    /// cells it crosses.
+    ///
+    /// The points are stored in one flat `idx` array grouped by cell, with
+    /// `start` giving where each cell's group begins, rather than a list per
+    /// cell: one allocation instead of millions, and a cell's points sit next
+    /// to each other in memory. Building it is the standard counting sort -
+    /// count each cell's points, turn the counts into running starts, then
+    /// place each point. A point is entered in every cell its sphere reaches,
+    /// which is why one can appear several times.
+    ///
+    /// The cell size grows until the grid fits in a sensible number of cells,
+    /// so a scene spread over a large area does not ask for an enormous and
+    /// mostly empty grid.
     fn new(points: &[Point], targets: &[usize], r: f64) -> Result<Grid> {
         let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
         for &i in targets {
@@ -93,6 +107,7 @@ impl Grid {
                 }
             }
         }
+        // Running totals: `count[k]` becomes where cell `k`'s points start.
         for k in 1..count.len() {
             count[k] += count[k - 1];
         }

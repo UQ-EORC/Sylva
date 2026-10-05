@@ -213,6 +213,13 @@ pub struct CoregConfig {
 }
 
 impl Default for CoregConfig {
+    /// The settings a survey runs with unless the caller changes them.
+    ///
+    /// These are the values the published interface documents, chosen on TLS
+    /// plots of the kind the package was written for; a caller overrides the
+    /// few it cares about and leaves the rest - `..Default::default()`. They
+    /// live here rather than in the Python wrapper so the R bindings and the
+    /// command line get the same run from the same request.
     fn default() -> Self {
         CoregConfig {
             ground_cell_size: 0.5,

@@ -163,6 +163,10 @@ impl Parser<'_> {
         Ok(v)
     }
 
+    /// A quoted string, with the escapes undone.
+    ///
+    /// The common case is a string with no escape in it at all, so the loop
+    /// copies whole runs between escapes rather than one character at a time.
     fn string(&mut self) -> Result<String> {
         self.i += 1;
         let mut out = String::new();
@@ -316,6 +320,8 @@ fn write_str(out: &mut String, s: &str) {
     out.push('"');
 }
 
+/// Append one value's text, calling itself for the members of an object or an
+/// array; `level` is how deep that recursion is, which sets the indent.
 fn write_value(out: &mut String, v: &Json, indent: usize, level: usize) {
     let pad = |out: &mut String, level: usize| {
         out.push('\n');

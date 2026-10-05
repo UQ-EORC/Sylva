@@ -408,6 +408,10 @@ pub(crate) fn chunk_dtm(ground: &[Point], grid: &Raster, outer: &[f64; 4], kind:
     if ground.len() < 3 {
         return Ok(None);
     }
+    // Two rasters come out of this: the ground height, and how uncertain it
+    // is in each cell. The second is what later decides whether a height
+    // change between surveys is real, so it is built alongside rather than
+    // guessed at afterwards.
     let b = chunk_bounds(grid, outer);
     let res = grid.resolution;
     let gg = Grid2::new(ground, res.max(1.0));
@@ -433,9 +437,18 @@ pub(crate) fn chunk_dtm(ground: &[Point], grid: &Raster, outer: &[f64; 4], kind:
             if !d.is_finite() {
                 continue;
             }
+            // Part of the uncertainty is simply distance from the nearest
+            // ground return: a cell with returns in it is known far better
+            // than one interpolated across a gap.
             let model = (interpolation_error * d).powi(2);
             let k = row * sd.ncols + col;
             match kind {
+                // Fit a plane to the ground returns around the cell, and
+                // take both the height and its uncertainty from the fit: how
+                // well the returns sit on a plane, floored at the survey's
+                // own noise. The radius doubles until enough returns are
+                // found, so sparse ground is reached without over-smoothing
+                // the places where returns are dense.
                 DtmKind::Plane => {
                     let mut r = r0;
                     while r <= reach {

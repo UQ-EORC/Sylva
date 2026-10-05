@@ -629,6 +629,16 @@ impl Expr {
         Err(Error::invalid(marked(&self.src, pos, format!("unknown attribute '{name}' at position {pos}{hint}; the cloud has: {}", all.join(", ")))))
     }
 
+    /// Turn one node of the parsed expression into something executable, and
+    /// say what type it produces.
+    ///
+    /// This is where names are resolved and types are checked, so that
+    /// `height > 2` is rejected before a single point is touched if the cloud
+    /// has no height. Each node becomes a `C`, which borrows the arrays it
+    /// reads - hence the `'a` tying the result to the cloud's lifetime - so
+    /// evaluating it later copies nothing. Mixing a number and a condition
+    /// inserts a conversion rather than failing, which is what makes
+    /// `classification == 2 + 0` behave.
     fn compile<'a>(&self, n: &Node, xyz: &'a [Point], attrs: &'a BTreeMap<String, Attr>, sets: &'a [Vec<f64>], next_set: &mut usize) -> Result<(C<'a>, Ty)> {
         let type_err = |pos: usize, msg: &str| Error::invalid(marked(&self.src, pos, format!("type error at position {pos}: {msg}")));
         let as_num = |(c, t): (C<'a>, Ty)| if t == Ty::Bool { C::ToNum(Box::new(c)) } else { c };

@@ -288,6 +288,14 @@ impl Json {
     }
 }
 
+/// Recursive descent over the text: `i` is how far it has read, and each
+/// method either consumes what it recognises and advances, or returns `None`
+/// and leaves the position alone.
+///
+/// The text is kept twice, as bytes for stepping through and as a string for
+/// cutting pieces out of, which avoids re-checking that it is valid UTF-8 at
+/// every step. `<'a>` says both borrow the caller's text, so the parser
+/// cannot outlive it.
 struct JsonParser<'a> {
     s: &'a [u8],
     text: &'a str,
@@ -310,6 +318,11 @@ impl JsonParser<'_> {
         }
     }
 
+    /// One JSON value, whichever it is, decided by its first character.
+    ///
+    /// Objects and arrays call back into this method for their members, which
+    /// is how arbitrary nesting is read: the call stack holds the structure
+    /// as it goes. `None` means the text is not valid JSON from here.
     fn value(&mut self) -> Option<Json> {
         match *self.s.get(self.i)? {
             b'{' => {
@@ -905,6 +918,14 @@ pub fn read_pose_gnss(path: &Path) -> Option<[f64; 3]> {
     Some([latitude.float()?, longitude.float()?, altitude])
 }
 
+/// Read a `project.rsp`: the project's own transform (the POP) and each scan
+/// position's transform (its SOP), with the scan files beside them.
+///
+/// The file is XML, so it is read with a parser rather than by hand, and the
+/// values are found by walking to the elements that hold them. A position
+/// whose matrix or scans are missing is skipped rather than failing the
+/// project, since a RiSCAN directory in use often has positions part-way
+/// through being registered.
 fn from_rsp(root: &Path, rsp: &Path) -> Result<RiscanProject> {
     let text = decode_xml(rsp, std::fs::read(rsp)?)?;
     let options = roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() };
