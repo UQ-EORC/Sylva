@@ -89,7 +89,7 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
   Sylva produces ([how](guide/trees.md#correcting-labels-by-hand)).
 - [raycloudtools](https://github.com/csiro-robotics/raycloudtools): ray
   clouds, which `sylva.read` and `Shots.from_ray_cloud` accept.
-- Everything Sylva implements is cited on the [references](references.md) page.
+- Everything Sylva ports or takes influence from is cited on the [references](references.md) page.
 
 ## Author and licence
 
