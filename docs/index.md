@@ -84,9 +84,9 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 
 ## Related tools
 
-- [Segfix](https://github.com/tim-devereux/segfix): a GUI for correcting the
+- [Segfix](https://github.com/UQ-EORC/Segfix): a GUI for correcting the
   instance segmentation of a plot; it reads and writes the `tree_id` column
-  Sylva produces ([how](guide/trees.md#correcting-labels-by-hand)).
+  Sylva produces, `-1` and all ([how](guide/trees.md#correcting-labels-by-hand)).
 - [raycloudtools](https://github.com/csiro-robotics/raycloudtools): ray
   clouds, which `sylva.read` and `Shots.from_ray_cloud` accept.
 - Everything Sylva ports or takes influence from is cited on the [references](references.md) page.

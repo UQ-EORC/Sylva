@@ -117,21 +117,23 @@ The losses are crown leakage between interlocking neighbours.
 ### Correcting labels by hand
 
 Where the segmentation has to be right (a reference set, a permanent plot,
-training data), fix it in [Segfix](https://github.com/tim-devereux/segfix), a
-GUI for reassigning, splitting and dismissing points of a segmented cloud. It
+training data), fix it in [Segfix](https://github.com/UQ-EORC/Segfix), a GUI
+for reassigning, splitting and dismissing points of a segmented cloud. It
 finds a `tree_id` column on its own and patches only the label bytes on save,
 so every other field survives.
 
 ```python
-ids = np.where(labels > 0, labels, 0).astype("int32")   # Segfix: 0 = unassigned
-sylva.write(cloud.with_attrs(tree_id=ids), "plot_trees.laz")
+sylva.write(cloud.with_attrs(tree_id=labels.astype("int32")), "plot_trees.laz")
 #   pip install segfix && segfix        -> open plot_trees.laz, fix, save
 fixed = sylva.read("plot_trees.laz")
-labels = np.where(fixed.attrs["tree_id"] > 0, fixed.attrs["tree_id"], -1)
+labels = fixed.attrs["tree_id"]
 ```
 
-Map Sylva's `-1` (unassigned) to `0` first and use `int32`: Segfix reads a
-negative id as its own *noise* marker.
+Write `tree_id` as `int32`. Segfix writes `-1` for points it has dismissed as
+*noise*, so the first time it opens a cloud with `-1` labels it asks whether
+they mean unassigned (Sylva's reading) or noise, and remembers the answer
+with the project; answer **Unassigned**. Points with no tree come back as
+`-1`, so there is nothing to map either way.
 
 ## 4. Crowns and the tree table
 

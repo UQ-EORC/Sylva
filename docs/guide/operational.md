@@ -22,7 +22,7 @@ Every stage takes the output of the one before, and nothing is changed in
 place, so a pipeline can keep any intermediate result it needs.
 
 Where the tree labels have to be right, they can be corrected between the
-tree and wood-model stages in [Segfix](https://github.com/tim-devereux/segfix),
+tree and wood-model stages in [Segfix](https://github.com/UQ-EORC/Segfix),
 which reads and writes the `tree_id` column in place; see
 [Trees and crowns](trees.md#correcting-labels-by-hand).
 

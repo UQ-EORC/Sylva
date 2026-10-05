@@ -477,11 +477,11 @@ ax[1].set(title="The same trees from the side", xlabel="x (m)", ylabel="height a
 demonstration: detection and segmentation are scored against manually
 segmented plots (including Litchfield) in
 [Benchmarks](../benchmarks/trees.md). Where labels have to be right, correct
-them by hand in [Segfix](https://github.com/tim-devereux/segfix), which reads
+them by hand in [Segfix](https://github.com/UQ-EORC/Segfix), which reads
 and writes the `tree_id` column:"""),
     """\
-ids = np.where(labels > 0, labels, 0).astype("int32")      # Segfix: 0 = unassigned
-sylva.write(cloud.with_attrs(tree_id=ids), "tile_trees.laz")""",
+sylva.write(cloud.with_attrs(tree_id=labels.astype("int32")), "tile_trees.laz")
+#  segfix opens this as it is: answer "Unassigned" when it asks what -1 means""",
     md("## The tree table\n\n`Tree.as_dict` and the crown metrics make one row per tree."),
     """\
 import pandas as pd

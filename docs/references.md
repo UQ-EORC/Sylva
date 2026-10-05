@@ -596,4 +596,4 @@ transcribes (BSD-3-Clause; see `THIRD_PARTY_NOTICES.md`).
 
 Segfix: a GUI for correcting instance segmentation of tree point clouds; it
 opens the `tree_id` column Sylva writes and saves it back in place:
-<https://github.com/tim-devereux/segfix>.
+<https://github.com/UQ-EORC/Segfix>.
