@@ -232,6 +232,15 @@ struct Rec {
     v: [f32; 3],
 }
 
+/// One point record, picked apart field by field.
+///
+/// `rec` is the raw bytes of the record, and every number is read from a fixed
+/// offset into it, as the LAS specification lays them out: `LE::read_i32(&rec[4..])`
+/// is "the little-endian 32-bit integer starting at byte 4" (`&rec[4..]` is a
+/// view from byte 4 onwards, not a copy). Coordinates are stored as integers
+/// and scaled on the way out, and the flag byte packs several fields, which is
+/// what the shifts and masks undo. Where the offsets move between point
+/// formats, the two cases are spelled out rather than computed.
 fn decode(rec: &[u8], info: &LasWaveInfo) -> Rec {
     let fmt = info.point_format;
     let xyz = [

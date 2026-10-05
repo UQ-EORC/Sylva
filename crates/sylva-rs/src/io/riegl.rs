@@ -22,6 +22,14 @@ use crate::error::{Error, Result};
 use crate::pointcloud::Attr;
 use crate::{Point, PointCloud, Shots};
 
+// The types below describe RiVLib's C interface to Rust. `#[repr(C)]` lays a
+// struct out exactly as a C compiler would, field by field with C's padding,
+// so the library can write into it; without it Rust is free to reorder fields.
+// The `extern "C" fn` types are function pointers with C's calling
+// convention, and they are `unsafe` because nothing in Rust can check that the
+// signature we have written here matches the one inside the shared library —
+// that is on us, against `scanifc.h`.
+
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 struct Xyz32 {
@@ -53,6 +61,12 @@ pub const ECHO_INTERIOR: u16 = 2;
 pub const ECHO_LAST: u16 = 3;
 const FLAG_PSEUDO_ECHO: u16 = 1 << 4;
 
+/// The library, loaded once and kept for the life of the process.
+///
+/// `OnceLock` is initialised on first use and never again; the `Mutex` inside
+/// it means two threads opening an `.rxp` at the same time cannot both start
+/// loading; the `Option` is "not loaded yet". Keeping it alive matters: the
+/// function pointers taken from it are only valid while the library is open.
 static LIBRARY: OnceLock<Mutex<Option<Library>>> = OnceLock::new();
 
 /// Directories searched for `libscanifc`, in order.
@@ -130,8 +144,15 @@ pub fn find_rivlib(hint: Option<&Path>) -> Result<PathBuf> {
     ))
 }
 
+/// Run `f` with the loaded library, loading it the first time.
+///
+/// `f: impl FnOnce(&Library) -> Result<T>` is a callback run once; writing it
+/// this way rather than returning the library keeps the lock held for exactly
+/// as long as the call, and keeps the library private to this module.
 fn with_library<T>(hint: Option<&Path>, f: impl FnOnce(&Library) -> Result<T>) -> Result<T> {
     let cell = LIBRARY.get_or_init(|| Mutex::new(None));
+    // The lock is released when `guard` goes out of scope at the end of the
+    // function; there is no explicit unlock to forget.
     let mut guard = cell.lock().unwrap();
     if guard.is_none() {
         let path = find_rivlib(hint)?;
@@ -189,6 +210,9 @@ struct RawRxp {
 
 fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
     with_library(opts.library.as_deref(), |lib| {
+        // Look up the four C functions by name. The byte strings end in `\0`
+        // because that is what C expects; `Symbol<OpenFn>` is a pointer to the
+        // function, typed by the signatures declared at the top of this file.
         // SAFETY: symbol signatures follow scanifc.h from RiVLib.
         let (open, read, close, last_error) = unsafe {
             let open: Symbol<OpenFn> = lib.get(b"scanifc_point3dstream_open\0").map_err(|e| Error::Riegl(e.to_string()))?;
@@ -213,6 +237,9 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
         if rc != 0 {
             return Err(describe(rc));
         }
+        // RiVLib fills buffers we provide, a chunk of echoes at a time, rather
+        // than allocating anything itself. These three are reused for the whole
+        // file; `as_mut_ptr()` below hands the library their addresses.
         const CHUNK: usize = 1 << 18;
         let mut xyz_buf = vec![Xyz32::default(); CHUNK];
         let mut attr_buf = vec![Attributes::default(); CHUNK];

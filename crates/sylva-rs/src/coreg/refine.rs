@@ -303,6 +303,9 @@ fn thousands(n: usize) -> String {
     out
 }
 
+/// One scan, prepared for one level of the coarse-to-fine refinement: the
+/// thinned points, their surface normals, and which of them are planar enough
+/// to be worth matching (`ok`).
 struct Level {
     pts: Vec<Point>,
     nrm: Vec<Point>,
@@ -346,7 +349,14 @@ pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usiz
     let mut first_residual = f64::NAN;
     let mut last_residual = f64::NAN;
 
+    // Coarse to fine: each level thins the scans harder and allows a wider
+    // search for matching surface, so the poses are brought roughly together
+    // before being settled on fine detail.
     for (&voxel, &max_dist) in p.voxel_sizes.iter().zip(&p.max_distances) {
+        // Prepare every scan at this level: one point per voxel, dropping
+        // voxels too sparse to trust, a cap on how many points a scan
+        // contributes, and a normal for each with a note of whether its
+        // neighbourhood was planar enough to match on.
         let mut levels: Vec<Level> = Vec::with_capacity(n);
         for pts_k in points.iter().take(n) {
             let mut pts = if pts_k.is_empty() {
@@ -375,12 +385,20 @@ pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usiz
         }
         let cos_limit = p.max_normal_angle_deg.to_radians().cos();
 
+        // A round is: decide which points correspond under the poses as they
+        // now stand, then take a few steps towards satisfying them. Pairing is
+        // redone each round because moving the scans changes what lies nearest
+        // what.
         for round_no in 0..p.rounds {
+            // Everything is paired in world coordinates, so each scan's points
+            // and normals are carried there by its current pose.
             let world: Vec<Vec<Point>> = (0..n).map(|k| transform_points(&poses[k], &levels[k].pts)).collect();
             let wnrm: Vec<Vec<Point>> = (0..n).map(|k| transform_vectors(&poses[k], &levels[k].nrm)).collect();
             let mut trees: BTreeMap<usize, CoregTree> = BTreeMap::new();
             let mut corr: Vec<Corr> = Vec::new();
             for &(i, j) in &edges {
+                // Each accepted pair is matched both ways round: scan i's
+                // points against j's surface, and j's against i's.
                 for (a, b) in [(i, j), (j, i)] {
                     let idx_b: Vec<usize> = (0..levels[b].ok.len()).filter(|&k| levels[b].ok[k]).collect();
                     if idx_b.is_empty() || !levels[a].ok.iter().any(|&v| v) {
@@ -399,6 +417,10 @@ pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usiz
                     if hits.is_empty() {
                         continue;
                     }
+                    // Two points are only the same surface if their normals
+                    // agree; `abs` allows the two scans to see a surface from
+                    // opposite sides. A pair left with almost nothing is
+                    // dropped rather than contributing a few noisy matches.
                     let keep: Vec<(usize, usize)> = hits.into_iter().filter(|&(s, t)| dot3(&wnrm[a][s], &wnrm[b][t]).abs() >= cos_limit).collect();
                     if keep.len() < 20 {
                         continue;
@@ -420,7 +442,13 @@ pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usiz
                 break;
             }
 
+            // Levenberg-Marquardt: Gauss-Newton steps with a damping term that
+            // rises when a step makes things worse and falls when it helps, so
+            // the solve degrades gracefully towards small, safe steps.
             let mut damping = 1e-4;
+            // How firmly each pose is held to where it started, as the inverse
+            // variance of the allowed rotation and translation. Without it, a
+            // scan with few correspondences could drift anywhere.
             let pr = 1.0 / p.prior_rotation_deg.to_radians().powi(2);
             let pt = 1.0 / p.prior_translation.powi(2);
             let prior_w = [pr, pr, pr, pt, pt, pt];
@@ -440,6 +468,10 @@ pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usiz
                     first_residual = med;
                 }
                 last_residual = med;
+                // Each scan has six unknowns (three of rotation, three of
+                // translation). The reference scan is held fixed and a scan
+                // with no points cannot be solved for, so their rows and
+                // columns are struck out and the smaller system is solved.
                 let free: Vec<usize> = (0..6 * n).filter(|&c| c / 6 != reference && !levels[c / 6].pts.is_empty()).collect();
                 let hf = DMatrix::from_fn(free.len(), free.len(), |r, c| h[(free[r], free[c])]);
                 let gf = DVector::from_iterator(free.len(), free.iter().map(|&r| -g[r]));
@@ -458,6 +490,10 @@ pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usiz
                     for (k, &c) in free.iter().enumerate() {
                         full[c] = delta[k];
                     }
+                    // The largest rotation and translation any scan is asked to
+                    // make, and the factor that keeps both within the step
+                    // limits: one badly constrained scan cannot throw the
+                    // survey across the plot in a single step.
                     let norm3 = |v: &[f64]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
                     rot = (1..n).fold(norm3(&full[0..3]), |m, k| pymax(m, norm3(&full[6 * k..6 * k + 3])));
                     tr = (1..n).fold(norm3(&full[3..6]), |m, k| pymax(m, norm3(&full[6 * k + 3..6 * k + 6])));
@@ -480,6 +516,10 @@ pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usiz
                             }
                         })
                         .collect();
+                    // Score the proposed poses the same way, on the same
+                    // correspondences and robust weights, and keep them only
+                    // if they are no worse. A rejected step means more damping
+                    // and another, shorter attempt.
                     let t = assemble(&trial, &corr, &stems_by_pair, n, p.robust_scale, p.stem_weight, false, Some(&scales), p.stem_scale);
                     let mut trial_cost = t.cost;
                     for k in (0..n).filter(|&k| k != reference) {

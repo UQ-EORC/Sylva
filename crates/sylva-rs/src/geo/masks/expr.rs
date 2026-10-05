@@ -113,6 +113,12 @@ struct Token {
 
 const OPS: [&str; 20] = ["<=", ">=", "==", "!=", "&&", "||", "<", ">", "&", "|", "!", "+", "-", "*", "/", "(", ")", ",", "=", "~"];
 
+/// Split the expression into tokens: numbers, names and operators.
+///
+/// Each token remembers where it began, which is what lets an error point at
+/// the offending character. The text is collected into a `Vec<char>` first so
+/// that `i` can step character by character; indexing a `String` directly is
+/// not allowed in Rust, because its characters are not all the same width.
 fn lex(src: &str) -> Result<Vec<Token>> {
     let chars: Vec<char> = src.chars().collect();
     let mut out = Vec::new();
@@ -124,6 +130,7 @@ fn lex(src: &str) -> Result<Vec<Token>> {
             continue;
         }
         let start = i;
+        // A number: digits, optionally a decimal point, optionally an exponent.
         if c.is_ascii_digit() || (c == '.' && chars.get(i + 1).is_some_and(|d| d.is_ascii_digit())) {
             while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
                 i += 1;
@@ -148,6 +155,8 @@ fn lex(src: &str) -> Result<Vec<Token>> {
             out.push(Token { tok: Tok::Num(v), pos: start });
             continue;
         }
+        // A name: an attribute, a coordinate, or a word operator such as
+        // `and`. Which it is, is the parser's business, not the lexer's.
         if c.is_alphabetic() || c == '_' {
             while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
                 i += 1;
@@ -155,6 +164,7 @@ fn lex(src: &str) -> Result<Vec<Token>> {
             out.push(Token { tok: Tok::Ident(chars[start..i].iter().collect()), pos: start });
             continue;
         }
+        // An operator, two characters before one, so `<=` is not read as `<`.
         let two: String = chars[i..(i + 2).min(chars.len())].iter().collect();
         if let Some(op) = OPS.iter().find(|op| op.len() == 2 && **op == two) {
             out.push(Token { tok: Tok::Op(op), pos: start });
@@ -179,6 +189,13 @@ fn lex(src: &str) -> Result<Vec<Token>> {
 
 // ----------------------------------------------------------------- parsing
 
+/// Recursive descent over the tokens: one method per level of the grammar
+/// above, each calling the level that binds more tightly, so `or` calls `and`
+/// calls `not` and so on down to `atom`. `i` is how far along `toks` we are.
+///
+/// The `<'a>` is a lifetime: it marks that the parser borrows the expression
+/// text rather than owning a copy, and so cannot outlive it. It carries no
+/// run-time cost and no behaviour — it is a note to the compiler.
 struct Parser<'a> {
     src: &'a str,
     toks: Vec<Token>,
@@ -398,12 +415,21 @@ enum Ty {
     Bool,
 }
 
+/// Where a named value comes from: an axis of the coordinates, or an
+/// attribute. Both borrow the cloud's arrays — nothing is copied to evaluate.
 #[derive(Clone, Copy)]
 enum Column<'a> {
     Coord(&'a [Point], usize),
     Attr(&'a Attr),
 }
 
+/// The parsed expression, ready to run against a cloud: the syntax tree with
+/// every name already resolved to a column and every type already checked, so
+/// evaluating a chunk of points is arithmetic and nothing else.
+///
+/// `Box<C>` is a child node held on the heap. A node cannot simply contain
+/// another node of the same type — that would be a value of infinite size —
+/// so the children sit behind a pointer, as they would in C.
 enum C<'a> {
     Num(f64),
     Bool(bool),
@@ -420,6 +446,11 @@ enum C<'a> {
 }
 
 /// A value over a chunk of points: one scalar for all, or one per point.
+///
+/// Keeping the two apart is what makes `height > 2` cheap: the right-hand side
+/// stays a single number instead of being copied into a full-length array.
+/// `<T>` is a type parameter, so the same enum serves `f64` values and `bool`
+/// ones without being written twice.
 enum Val<T> {
     S(T),
     V(Vec<T>),

@@ -156,6 +156,10 @@ pub(crate) fn ransac_circle_weighted(xy: &[[f64; 2]], w: &[f64], p: &StemParams,
     let mut best_w = 0.0;
     let mut best = (0.0, 0.0, 0.0);
     let mut tried = 0usize;
+    // When to stop drawing triples: once the best circle explains nearly all
+    // the weight, or once enough triples have been tried that the chance of
+    // never having drawn three inliers is below 1 in 1000. That is the
+    // standard RANSAC estimate, with the inlier *share* measured by weight.
     let stop = |best_count: usize, best_w: f64, tried: usize| {
         if best_count < 3 {
             return false;
@@ -163,6 +167,10 @@ pub(crate) fn ransac_circle_weighted(xy: &[[f64; 2]], w: &[f64], p: &StemParams,
         let ratio = best_w / total_w;
         ratio > 0.99 || tried as f64 >= (1e-3f64).ln() / (1.0 - ratio.powi(3)).max(1e-12).ln()
     };
+    // Score one candidate circle and keep it if it is the best so far. A
+    // circle earns the weight of every point within `ransac_tolerance` of it,
+    // less a penalty for how far inside that band those points sit, so a
+    // circle that merely passes near many points loses to one they lie on.
     let consider = |cx: f64, cy: f64, r: f64, best_score: &mut f64, best_count: &mut usize, best_w: &mut f64, best: &mut (f64, f64, f64)| {
         let mut count = 0usize;
         let mut sw = 0.0;

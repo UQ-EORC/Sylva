@@ -148,6 +148,12 @@ const FACE_TOLERANCE: f64 = 1e-10;
 /// each axis. `visit(cell, t_enter, t_exit, length)` receives the distances
 /// along the segment at which it enters and leaves `cell` (`t_exit` can pass
 /// `length` in the last voxel) and returns `true` to stop.
+///
+/// `visit: impl FnMut(...) -> bool` is a callback: the caller passes a closure
+/// (a lambda), which may hold and change state of its own between calls —
+/// several below accumulate into a counter or a bit mask. Writing it this way
+/// rather than returning a list of voxels means nothing is allocated per
+/// pulse, which matters when there are hundreds of millions of them.
 pub(crate) fn walk_grid(start: &Point, end: &Point, mut visit: impl FnMut([i64; 3], f64, f64, f64) -> bool) {
     let span = sub(end, start);
     let full = norm(&span);
@@ -206,6 +212,16 @@ fn eff_free_path(z: f64, lambda1: f64) -> f64 {
 
 /// Sums are kept in `f64` while pulses are added in whatever order the threads
 /// get to them, so that the `f32` results do not depend on that order.
+///
+/// Reading this without Rust: there is no atomic `f64`, so the running sum is
+/// kept as the `f64`'s own bit pattern inside an atomic 64-bit integer
+/// (`to_bits` / `from_bits` reinterpret, they do not convert). The loop is the
+/// usual lock-free update: read the current value, work out what it should
+/// become, and swap it in *only if* no other thread has changed it meanwhile.
+/// `compare_exchange_weak` returns the value it actually found when that
+/// fails, so the loop simply tries again from there. `Relaxed` says we need
+/// nothing of the ordering between threads beyond the single value being
+/// updated atomically, which is true here: every sum stands alone.
 #[inline]
 fn fadd(a: &AtomicU64, v: f64) {
     let mut cur = a.load(Relaxed);
@@ -221,14 +237,26 @@ fn fadd(a: &AtomicU64, v: f64) {
 /// Everything a pulse adds to one voxel, side by side: a traversal touches
 /// most fields of each voxel it visits, so a voxel should be one stretch of
 /// memory rather than an entry in twenty arrays.
+///
+/// The fields are fixed-size arrays indexed by the field enums [`F`] (sums,
+/// held as bits — see [`fadd`]) and [`I`] (counts), so `F::PathLength as usize`
+/// is simply a slot number.
 pub(crate) struct Cell {
     f: [AtomicU64; F::COUNT],
     i: [AtomicI32; I::COUNT],
 }
 
 /// Shared accumulators, written concurrently.
+///
+/// Threads trace different pulses into the same grid at the same time. Rather
+/// than lock a voxel, every slot is an atomic the hardware updates on its own,
+/// which is why `addf` and `addi` below take `&self` (a shared reference) and
+/// not `&mut self`: nothing here is exclusively borrowed, so any number of
+/// threads may hold it at once.
 struct Accum {
     cells: Vec<Cell>,
+    /// Sub-voxel occupancy, `n_sub` slots per voxel laid end to end, so voxel
+    /// `idx`'s slots start at `idx * n_sub`.
     sub: Vec<AtomicU8>,
 }
 
@@ -334,6 +362,10 @@ impl Tracer<'_> {
         // left the box (every coordinate is monotone, so it cannot come back).
         let mut inside = false;
         walk_grid(&vs, &ve, |cell, in_len, out_len, max_len| {
+            // `index` gives `None` for a voxel outside the grid (or outside the
+            // window being accumulated); `let ... else` takes the value when
+            // there is one and otherwise runs the block, which here ends the
+            // walk once the ray has crossed the window and left it again.
             let Some(idx) = self.index(cell) else { return inside && self.window.is_some() };
             inside = true;
             self.visit(&ray, pass, zenith, sin_az, cos_az, cell, idx, in_len, out_len, max_len);
@@ -386,6 +418,10 @@ impl Tracer<'_> {
                     }
                     p
                 };
+                // Which of the voxel's own sub-cells this pulse crossed. A
+                // sub-cell is counted once however long the pulse spent in it,
+                // so the crossing is recorded as one bit per sub-cell in a
+                // 64-bit mask (`split` is at most 4, so at most 64 of them).
                 let mut bits = 0u64;
                 let s = split as i64;
                 walk_grid(&local(in_len), &local(end_len), |c, _, _, _| {
@@ -395,9 +431,16 @@ impl Tracer<'_> {
                     false
                 });
                 let n_sub = split * split * split;
+                // Walk the bits that are set: `trailing_zeros` is the lowest
+                // one, and `bits &= bits - 1` clears it, so the loop runs once
+                // per crossed sub-cell rather than once per sub-cell.
                 while bits != 0 {
                     let b = bits.trailing_zeros() as usize;
                     bits &= bits - 1;
+                    // The counters are single bytes, so a sub-cell crossed more
+                    // than 255 times stops counting rather than wrapping to 0:
+                    // `checked_add` gives `None` at the ceiling and
+                    // `fetch_update` then leaves the value alone.
                     let _ = a.sub[idx * n_sub + b].fetch_update(Relaxed, Relaxed, |v| v.checked_add(1));
                 }
             }
@@ -772,6 +815,15 @@ impl Engine {
             done: u64,
         }
         let task = crate::util::progress::start("tracing pulses", shots.n_shots() as u64);
+        // Trace every pulse, on as many threads as the machine has. Reading
+        // this without Rust: `into_par_iter` turns the range of pulse numbers
+        // into a parallel loop (rayon), `with_min_len(256)` hands out work in
+        // chunks of at least that many so the bookkeeping does not cost more
+        // than the tracing, and `fold` gives each thread its own `Local` —
+        // reusable buffers, and the hits it finds — so the threads share
+        // nothing but the grid's atomics. `reduce` then joins those per-thread
+        // lists into one. The grid itself is written as the tracing goes, by
+        // the atomic adds in [`Accum`]; only the PPL hits have to be collected.
         let mut hits: Vec<PplHit> = (0..shots.n_shots())
             .into_par_iter()
             .with_min_len(256)

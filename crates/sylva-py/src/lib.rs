@@ -6,6 +6,20 @@
 //!
 //! Point clouds cross the boundary as `(xyz: ndarray (N,3) float64, attrs: dict[str, ndarray])`
 //! and shots as a dict of arrays; see `python/sylva` for the friendly wrappers.
+//!
+//! Every function here does the same three things and nothing else: convert
+//! the NumPy arrays Python passed into the core's own types, call one function
+//! of `sylva_rs`, and convert what comes back. Decisions, defaults and
+//! argument checking belong on either side of this layer — in `python/sylva`
+//! where they are part of the published interface, or in the core where they
+//! are part of the computation — so that the R bindings get the same
+//! behaviour without repeating any of it.
+//!
+//! Reading the signatures: `#[pyfunction]` marks a function Python can call,
+//! `PyReadonlyArray2<f64>` is a NumPy array borrowed without copying,
+//! `Bound<'py, PyArray1<bool>>` is a Python object owned by the interpreter,
+//! and `PyResult<T>` turns an error into a Python exception. The `'py`
+//! lifetime ties those objects to the span in which Python's lock is held.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -62,6 +76,10 @@ fn err(e: sylva_rs::Error) -> PyErr {
 
 // ----------------------------------------------------------------- converters
 
+/// A NumPy `(N, 3)` array as the core's `Vec<Point>`.
+///
+/// This copies, because the core works on `[f64; 3]` rows while NumPy may hand
+/// over any striding, including a view of someone else's array.
 fn xyz_from_py(xyz: PyReadonlyArray2<f64>) -> PyResult<Vec<Point>> {
     let a = xyz.as_array();
     if a.ncols() != 3 {

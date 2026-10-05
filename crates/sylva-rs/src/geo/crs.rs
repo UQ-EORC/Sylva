@@ -129,6 +129,12 @@ impl WktParser<'_> {
         Error::invalid(format!("malformed WKT at character {}: {what}", self.i))
     }
 
+    /// One WKT node: a keyword, then its items in brackets.
+    ///
+    /// WKT nests — `PROJCS["...", GEOGCS[...], PROJECTION[...], ...]` — so this
+    /// calls itself for each item that is itself a node, and returns when the
+    /// closing bracket is reached. Either bracket style is accepted, since both
+    /// appear in the wild, and the one that opened a node must close it.
     fn node(&mut self) -> Result<WktNode> {
         self.ws();
         let start = self.i;
@@ -422,6 +428,11 @@ impl Crs {
     /// tables, or WKT without an EPSG code in a projection not covered by
     /// [`wkt1_to_proj4`].
     pub fn parse(text: &str) -> Result<Crs> {
+        // Each form is recognised by how it starts, cheapest test first: a
+        // PROJ string by its leading '+', then the names and codes that need
+        // only a lookup, and WKT last, since it is the only one that has to be
+        // parsed. Trailing NUL bytes come from fixed-width fields in LAS
+        // headers, where the text is padded rather than terminated.
         let s = text.trim_matches(|c: char| c.is_whitespace() || c == '\0');
         if s.is_empty() {
             return Err(Error::invalid("empty CRS definition"));

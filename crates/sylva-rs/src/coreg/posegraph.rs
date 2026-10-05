@@ -286,6 +286,12 @@ impl Graph<'_> {
         (ji, jj)
     }
 
+    /// Levenberg-Marquardt over the graph: move every scan a little, each
+    /// step, so that the measured transform on each edge is better satisfied.
+    ///
+    /// Anchored scans are held where they are, so `slot` maps a scan to its
+    /// six columns in the system being solved, or `usize::MAX` for one that is
+    /// not solved for at all.
     fn run_lm(&self, poses: &mut Vec<Mat4>, subset: &[usize], max_iterations: usize, tolerance: f64) -> (usize, bool) {
         let free: Vec<usize> = (0..self.n).filter(|k| !self.anchors.contains(k)).collect();
         let mut slot = vec![usize::MAX; self.n];
@@ -296,6 +302,9 @@ impl Graph<'_> {
         if dim == 0 {
             return (0, true);
         }
+        // Six small nudges, one per degree of freedom, used to work out the
+        // derivatives numerically: how much the error on an edge changes when
+        // a scan is rotated or shifted a touch.
         let steps: [Mat4; 6] = std::array::from_fn(|k| {
             let mut xi = Vector6::zeros();
             xi[k] = 1e-5;
@@ -309,6 +318,11 @@ impl Graph<'_> {
             let mut h = DMatrix::zeros(dim, dim);
             let mut b = DVector::zeros(dim);
             for &k in subset {
+                // How far this edge's measured transform is from what the
+                // current poses imply, and how much to trust it: Huber
+                // weighting leaves ordinary edges alone and pulls the
+                // influence of a badly wrong one down towards nothing, so one
+                // mismatched pair cannot bend the whole survey.
                 let e = &self.edges[k];
                 let r = residual(e, poses);
                 let c = chi2(&r, &e.information);

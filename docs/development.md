@@ -21,6 +21,14 @@ pytest
 cargo test -p sylva-rs
 ```
 
+## The Rust core
+
+The computations live in `crates/sylva-rs`; the Python package is a thin layer
+over it. [The Rust core](dev/rust-core.md) explains that division and the
+protocol for changing a computation, and [Reading the core without
+Rust](dev/reading-the-core.md) is for anyone who wants to check what a
+function does without taking up the language.
+
 ## Documentation
 
 ```bash

@@ -419,10 +419,15 @@ pub fn scan_beam(cloud: &PointCloud, p: &BeamScan) -> Result<Shots> {
         let j1 = (j0 + BLOCK).min(n_pulses);
         let noise = if p.range_noise > 0.0 || p.range_noise_slope > 0.0 { rng.normal_n(0.0, 1.0, (j1 - j0) * p.max_echoes) } else { vec![0.0; (j1 - j0) * p.max_echoes] };
         let block: Vec<(Point, Vec<(Echo, f64)>)> = (j0..j1).into_par_iter().map(|j| {
+            // The pulse's place on the scan pattern: one row per zenith step,
+            // one column per azimuth step, aimed at the middle of its cell.
             let (iz, ia) = (j / n_az, j % n_az);
             let z = (p.min_zenith_deg + (iz as f64 + 0.5) * res).to_radians();
             let a = ((ia as f64 + 0.5) * res).to_radians();
             let d = [z.sin() * a.sin(), z.sin() * a.cos(), z.cos()];
+            // Two directions across the beam, so the footprint can be sampled:
+            // any vector not parallel to the beam gives the first by a cross
+            // product, and the second follows from both.
             let h = if d[2].abs() < 0.9 { [0.0, 0.0, 1.0] } else { [1.0, 0.0, 0.0] };
             let e1 = {
                 let c = [d[1] * h[2] - d[2] * h[1], d[2] * h[0] - d[0] * h[2], d[0] * h[1] - d[1] * h[0]];
@@ -430,6 +435,10 @@ pub fn scan_beam(cloud: &PointCloud, p: &BeamScan) -> Result<Shots> {
                 [c[0] / nn, c[1] / nn, c[2] / nn]
             };
             let e2 = [d[1] * e1[2] - d[2] * e1[1], d[2] * e1[0] - d[0] * e1[2], d[0] * e1[1] - d[1] * e1[0]];
+            // The beam is not a line: it leaves the scanner with a width and
+            // spreads as it goes, so it is sampled by several sub-rays, each
+            // offset across the exit aperture and tilted within the
+            // divergence. Each returns the first surface it meets, if any.
             let mut hits: Vec<(f64, usize)> = offsets.iter().filter_map(|off| {
                 let lat: Point = std::array::from_fn(|k| off[0] * e1[k] + off[1] * e2[k]);
                 let os: Point = std::array::from_fn(|k| o[k] + half_exit * lat[k]);
@@ -438,6 +447,10 @@ pub fn scan_beam(cloud: &PointCloud, p: &BeamScan) -> Result<Shots> {
                 let ds = [ds[0] / nn, ds[1] / nn, ds[2] / nn];
                 grid.cast(&cloud.xyz, &normals, &os, &ds, 0.1, p.max_range)
             }).collect();
+            // Sub-rays that came back from nearly the same distance are one
+            // echo: a real scanner cannot separate returns closer together
+            // than `echo_separation`. Sorting by range makes those runs
+            // adjacent, and the loop below walks one run at a time.
             hits.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
             let mut echoes: Vec<Echo> = Vec::new();
             let mut g0 = 0;
@@ -455,6 +468,10 @@ pub fn scan_beam(cloud: &PointCloud, p: &BeamScan) -> Result<Shots> {
                         best = k;
                     }
                 }
+                // A mixed pixel: where the beam straddles an edge, the scanner
+                // reports one range between the two surfaces, weighted by how
+                // much energy each returned. Without that, the echo is simply
+                // the brightest sub-ray's own range.
                 let range = if p.mixed_pixels && energy > 0.0 { group.iter().zip(&w).map(|(h, w)| h.0 * w).sum::<f64>() / energy } else { group[best].0 };
                 if energy >= p.detection_threshold && energy > 0.0 {
                     echoes.push(Echo { range, energy, fraction: share * group.len() as f64, spread: group[group.len() - 1].0 - group[0].0, point: group[best].1 });

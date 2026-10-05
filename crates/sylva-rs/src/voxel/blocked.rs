@@ -356,6 +356,11 @@ impl BlockedGrid {
     }
 
     /// Voxel layers `k0..k1` a slab of blocks at a time, bottom first.
+    ///
+    /// Returning `impl Iterator` hands back a lazy sequence rather than a list:
+    /// the slab bounds are worked out as the caller asks for them, so a grid of
+    /// any height is walked without holding more than one slab in memory. The
+    /// `+ '_` says the sequence borrows `self` and so cannot outlive the grid.
     fn slabs(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
         (0..self.n_blocks()[2]).map(|bz| (bz * self.block[2], ((bz + 1) * self.block[2]).min(self.shape[2])))
     }
@@ -567,6 +572,11 @@ impl BlockedGrid {
 }
 
 /// Writes the blocks of a trace as they finish.
+///
+/// Blocks are traced in parallel and finish in no particular order, so the
+/// manifest they all update sits behind a `Mutex`: a thread takes the lock,
+/// records its block, and releases it. Only the bookkeeping is serialised —
+/// each block's Parquet file is written by its own thread, outside the lock.
 pub(crate) struct BlockWriter {
     grid: Mutex<BlockedGrid>,
 }

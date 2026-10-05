@@ -113,7 +113,10 @@ nav:
       - sylva.util:
           - sylva.util.progress: api/progress.md
           - sylva.util.limits: api/limits.md
-  - Development: development.md
+  - Development:
+      - Overview: development.md
+      - The Rust core: dev/rust-core.md
+      - Reading the core without Rust: dev/reading-the-core.md
   - Releasing: release.md
   - References: references.md
 

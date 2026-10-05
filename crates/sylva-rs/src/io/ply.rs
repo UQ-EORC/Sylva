@@ -154,6 +154,13 @@ fn parse_header<R: BufRead>(r: &mut R, path: &Path) -> Result<(Format, Vec<Eleme
 }
 
 /// Read the `vertex` element of a PLY file.
+///
+/// A PLY header lists its elements (`vertex`, often `face`) and the properties
+/// of each. The points live in `vertex`, but its records can only be found by
+/// reading the elements declared before it, so every element is walked in
+/// order; the ones that are not `vertex` are read past and discarded. Each
+/// property becomes a column, whatever its stored type, and the columns become
+/// coordinates and attributes afterwards.
 pub fn read_ply(path: impl AsRef<Path>) -> Result<PointCloud> {
     let path = path.as_ref();
     let mut r = BufReader::new(std::fs::File::open(path)?);

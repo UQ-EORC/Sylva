@@ -76,11 +76,17 @@ pub fn ordered_map<T: Send>(n: usize, workers: usize, f: impl Fn(usize) -> T + S
         }
         return out;
     }
+    // One slot per item, each empty until its result lands in it. `Option` is
+    // "a value or nothing", so `None` here means "not computed yet".
     let slots: Vec<Mutex<Option<T>>> = (0..n).map(|_| Mutex::new(None)).collect();
+    // The queue, in one number: a thread claims the next item by adding one to
+    // this atomically, so no two threads can claim the same index.
     let next = AtomicUsize::new(0);
     // Index of the first result not yet passed to `done`, under the lock that
     // serialises the calls to `done`.
     let emitted = Mutex::new(0usize);
+    // What each worker runs: claim an item, compute it, then pass on whatever
+    // prefix of the results is now complete.
     let run = || loop {
         let k = next.fetch_add(1, Ordering::SeqCst);
         if k >= n {
@@ -88,6 +94,10 @@ pub fn ordered_map<T: Send>(n: usize, workers: usize, f: impl Fn(usize) -> T + S
         }
         let v = f(k);
         *slots[k].lock().expect("slot") = Some(v);
+        // Holding `emitted` is what keeps `done` single-file and in order: the
+        // thread that finished item 3 may find 0, 1 and 2 already waiting and
+        // deliver all four, while a thread that finished item 9 early delivers
+        // nothing and goes back for more work.
         let mut first = emitted.lock().expect("emitter");
         while *first < n {
             let slot = slots[*first].lock().expect("slot");
@@ -95,15 +105,23 @@ pub fn ordered_map<T: Send>(n: usize, workers: usize, f: impl Fn(usize) -> T + S
                 Some(v) => done(*first, v),
                 None => break,
             }
+            // Release this slot before moving on, rather than waiting for the
+            // end of the loop body.
             drop(slot);
             *first += 1;
         }
     };
+    // Scoped threads may borrow what is around them (`slots`, `f`, `done`)
+    // because the scope cannot end until they have all finished, which is what
+    // lets this function hand out references rather than copies.
     std::thread::scope(|s| {
         for _ in 0..workers.min(n) {
             s.spawn(run);
         }
     });
+    // The threads are done, so the locks can be dropped and the values taken
+    // out: `into_inner` consumes each `Mutex`, and every slot is filled because
+    // every index was claimed exactly once.
     slots.into_iter().map(|m| m.into_inner().expect("slot").expect("every item ran")).collect()
 }
 

@@ -121,12 +121,19 @@ pub fn waveforms_from_shots(shots: &Shots, gps_time: Option<&[f64]>, opts: &Simu
         wf.metres_per_ns.push(mpns);
         wf.sample_start.push(wf.samples.len());
         wf.sample_count.push(n as u32);
+        // The waveform starts as background and every echo adds a Gaussian to
+        // it, which is what a digitiser records: overlapping returns sum.
         let mut y = vec![opts.background; n];
         for e in a..a + k {
             let t0 = (shots.echo_range[e] - start) / mpns; // ns after the first sample
+            // A target with depth spreads the return: the outgoing pulse and
+            // the target's extent combine in quadrature, and the peak falls by
+            // as much as the return widens, so the energy under it is kept.
             let depth = ext[e] / mpns;
             let sigma = (opts.pulse_width * opts.pulse_width + depth * depth).sqrt();
             let peak = amp[e] * opts.pulse_width / sigma;
+            // Only the samples within eight standard deviations are touched;
+            // beyond that the Gaussian is far below one digitiser count.
             let (lo, hi) = (((t0 - 8.0 * sigma) / opts.interval).floor().max(0.0) as usize, ((t0 + 8.0 * sigma) / opts.interval).ceil().max(0.0) as usize);
             for (i, v) in y.iter_mut().enumerate().take(hi.min(n - 1) + 1).skip(lo) {
                 let d = i as f64 * opts.interval - t0;
@@ -139,6 +146,8 @@ pub fn waveforms_from_shots(shots: &Shots, gps_time: Option<&[f64]>, opts: &Simu
             truth.xyz.push(wf.position_at(row, t0));
             truth.range.push(shots.echo_range[e]);
         }
+        // Noise and digitisation last, so that the recorded echoes above are
+        // the truth a decomposition should recover, not what it will see.
         for v in &mut y {
             if opts.noise > 0.0 {
                 *v += g.normal(0.0, opts.noise);

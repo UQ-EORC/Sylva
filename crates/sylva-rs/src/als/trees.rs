@@ -736,7 +736,11 @@ pub fn li2012(xy: &[[f64; 2]], h: &[f64], p: &Li2012) -> Result<Vec<u32>> {
         return Err(Error::invalid(format!("{} points but {} heights", xy.len(), h.len())));
     }
     let n = h.len();
+    // Points with a missing coordinate or height take no part and end up
+    // labelled 0; `valid` indexes the rest.
     let valid: Vec<usize> = (0..n).filter(|&i| h[i].is_finite() && xy[i][0].is_finite() && xy[i][1].is_finite()).collect();
+    // Which points are local maxima, since the rule for them is the stricter
+    // one. Without a window radius every point is treated as one, as lidR does.
     let mut is_lm = vec![false; n];
     if p.r > 0.0 {
         for i in local_maxima_points(xy, h, &Window::Fixed(p.r), 0.0, Shape::Circular)? {
@@ -745,12 +749,17 @@ pub fn li2012(xy: &[[f64; 2]], h: &[f64], p: &Li2012) -> Result<Vec<u32>> {
     } else {
         is_lm.iter_mut().for_each(|v| *v = true);
     }
+    // Highest point first; the tie-breaks on x, then y, then index make the
+    // result reproducible, and match lidR's order so the two agree point for
+    // point. `rank` is the position of each point in that order.
     let mut order = valid.clone();
     order.sort_by(|&a, &b| h[b].total_cmp(&h[a]).then(xy[a][0].total_cmp(&xy[b][0])).then(xy[a][1].total_cmp(&xy[b][1])).then(a.cmp(&b)));
     let mut rank = vec![u32::MAX; n];
     for (k, &i) in order.iter().enumerate() {
         rank[i] = k as u32;
     }
+    // Spatial index, so the points within `speed_up` of a treetop are found
+    // without scanning the whole cloud for every tree.
     let grid = Buckets::new(xy, &valid, (p.speed_up / 4.0).max(0.25));
     let mut alive = vec![false; n];
     for &i in &valid {
@@ -765,6 +774,8 @@ pub fn li2012(xy: &[[f64; 2]], h: &[f64], p: &Li2012) -> Result<Vec<u32>> {
     let mut k = 0u32;
     let mut near: Vec<usize> = Vec::new();
     loop {
+        // The highest point not yet in a tree starts the next one. Everything
+        // below `hmin` is understorey and ends the loop.
         while next < order.len() && !alive[order[next]] {
             next += 1;
         }
@@ -794,12 +805,21 @@ pub fn li2012(xy: &[[f64; 2]], h: &[f64], p: &Li2012) -> Result<Vec<u32>> {
                 }
             }
         }
+        // Candidates from the top down, so a point is decided only after
+        // everything above it: that is what makes the rule below meaningful.
         near.sort_unstable_by_key(|&j| rank[j]);
         for &v in &near {
+            // d1 to this tree (P), d2 to everything set aside for later trees
+            // (N). Distances stay squared throughout; so do the thresholds.
             let (x, y) = (xy[v][0], xy[v][1]);
             let d1 = pset.nearest_sq(x, y);
             let d2 = nset.nearest_sq(x, y);
+            // The spacing allowed between a tree and its neighbour, wider in
+            // the upper canopy than below `zu`.
             let dt = if h[v] > p.zu { dt2 } else { dt1 };
+            // A local maximum is another treetop unless it sits well inside
+            // this crown; an ordinary point simply joins whichever set is
+            // nearer.
             let to_p = if is_lm[v] { !(d1 > dt || (d1 < dt && d1 > d2)) } else { d1 <= d2 };
             if to_p {
                 pset.push(xy[v]);

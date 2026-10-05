@@ -280,6 +280,14 @@ fn mean_sd(v: &[f64]) -> (f64, f64) {
 /// core point, unless `normals` are given (one per core point; they are
 /// normalised and not re-oriented).
 ///
+/// At each core point the method (Lague et al. 2013) takes the surface normal,
+/// drops a cylinder of radius `projection_scale / 2` and half-length
+/// `max_depth` along it, and averages the two clouds' points inside that
+/// cylinder along the normal. The change is the difference of those two means,
+/// and the level of detection is how large a difference the scatter of the two
+/// neighbourhoods plus the registration error could produce on its own; a
+/// change is reported as significant only when it exceeds it.
+///
 /// # Errors
 /// Invalid parameters, or `normals` of the wrong length.
 pub fn m3c2(a: &[Point], b: &[Point], core: &[Point], normals: Option<&[Point]>, params: &M3c2Params) -> Result<M3c2> {
@@ -296,12 +304,19 @@ pub fn m3c2(a: &[Point], b: &[Point], core: &[Point], normals: Option<&[Point]>,
     let h = params.max_depth;
     let min_points = params.min_points.max(2);
     type Row = (f64, f64, Point, u32, u32, f64, f64);
+    // Core points are independent, so they are worked out in parallel.
+    // `map_init` gives each thread two scratch vectors (the points each cloud
+    // puts in the cylinder) that are cleared and reused for every core point
+    // rather than allocated afresh.
     let rows: Vec<Row> = (0..n)
         .into_par_iter()
         .with_min_len(CHUNK / 16)
         .map_init(
             || (Vec::new(), Vec::new()),
             |(ba, bb), i| {
+                // A core point with no normal, or off the end of either cloud,
+                // yields NaNs: it keeps its row so the output lines up with
+                // the input one for one.
                 let nan = (f64::NAN, f64::NAN, [f64::NAN; 3], 0, 0, f64::NAN, f64::NAN);
                 let c = &core[i];
                 if !finite(c) {
@@ -324,10 +339,16 @@ pub fn m3c2(a: &[Point], b: &[Point], core: &[Point], normals: Option<&[Point]>,
                     Some(t) => cylinder(t, c, &normal, r, h, bb),
                     None => bb.clear(),
                 }
+                // Each cloud's points along the normal, as a mean and a spread.
                 let (ma, sa) = mean_sd(ba);
                 let (mb, sb) = mean_sd(bb);
                 let (na, nb) = (ba.len(), bb.len());
+                // The change: how far the surface moved along its own normal.
                 let dist = mb - ma;
+                // What that difference could have been from noise alone — the
+                // standard error of the two means, widened by the registration
+                // uncertainty, at 95 % confidence. Too few points on either
+                // side and no level of detection can be claimed.
                 let lod = if na >= min_points && nb >= min_points {
                     Z95 * ((sa * sa / na as f64 + sb * sb / nb as f64).sqrt() + params.registration_sigma)
                 } else {
