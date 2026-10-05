@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for sylva_rs::tiles_trees: tiled segmentation and tree stores.
+//! Bindings for sylva_rs::als::tiles_trees: tiled segmentation and tree stores.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 use std::path::PathBuf;
@@ -11,9 +11,9 @@ use numpy::PyArray2;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use sylva_rs::tiles::RunInfo;
-use sylva_rs::tiles_trees::{self as tt, MergeSettings, TreeEntry, TreeTiling};
-use sylva_rs::tree_prune::PruneParams;
+use sylva_rs::als::tiles::RunInfo;
+use sylva_rs::als::tiles_trees::{self as tt, MergeSettings, TreeEntry, TreeTiling};
+use sylva_rs::trees::prune::PruneParams;
 use sylva_rs::trees::SegmentParams;
 
 use crate::als_py::catalog_from_py;

@@ -771,7 +771,7 @@ impl Engine {
             hits: Vec<PplHit>,
             done: u64,
         }
-        let task = crate::progress::start("tracing pulses", shots.n_shots() as u64);
+        let task = crate::util::progress::start("tracing pulses", shots.n_shots() as u64);
         let mut hits: Vec<PplHit> = (0..shots.n_shots())
             .into_par_iter()
             .with_min_len(256)

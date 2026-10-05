@@ -16,7 +16,7 @@
 
 use crate::error::{Error, Result};
 use crate::filters::Rng;
-use crate::stems::{angular_coverage, StemParams};
+use crate::trees::stems::{angular_coverage, StemParams};
 use crate::Point;
 
 use super::model::{fit_cylinders_with, fourier_area_radius, power_mean_radius, scaled_to_spacing, skeletonize, Qsm, QsmParams, BINS};
@@ -49,7 +49,7 @@ pub fn build_qsm_weighted(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParam
     if pts.is_empty() {
         return Err(Error::invalid(format!("no point has a weight of at least min_weight = {}", p.min_weight)));
     }
-    let task = crate::progress::start("building a QSM", 2);
+    let task = crate::util::progress::start("building a QSM", 2);
     let p = &scaled_to_spacing(&pts, p);
     let skel = skeletonize(&pts, base_xy, p)?;
     task.inc(1);
@@ -130,7 +130,7 @@ fn circumcircle(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Option<(f64, f64, f64)
 }
 
 /// RANSAC circle scored by the summed weight of its inliers: the weighted
-/// form of the circle RANSAC in [`crate::stems`] (its score,
+/// form of the circle RANSAC in [`crate::trees::stems`] (its score,
 /// `weight * (1 - weighted mean residual / tol)`, and its adaptive stop on
 /// the share of the total weight explained), with the weighted refit.
 /// Candidate triples are drawn from the confident points (weight at least
@@ -253,7 +253,7 @@ pub(crate) fn ransac_circle_weighted(xy: &[[f64; 2]], w: &[f64], p: &StemParams,
 
 /// Weighted Kåsa (1976) fit about the weighted centroid, then weighted
 /// Gauss-Newton geometric refinement: minimises `sum w (d - r)^2`. Weights
-/// of one give the unweighted fit of [`crate::stems`] exactly.
+/// of one give the unweighted fit of [`crate::trees::stems`] exactly.
 pub fn fit_circle_refined_weighted(xy: &[[f64; 2]], w: &[f64]) -> Option<(f64, f64, f64)> {
     if xy.len() < 3 || w.len() != xy.len() {
         return None;
@@ -307,7 +307,7 @@ pub fn fit_circle_refined_weighted(xy: &[[f64; 2]], w: &[f64]) -> Option<(f64, f
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nprandom::Generator;
+    use crate::util::nprandom::Generator;
     use crate::qsm::{build_qsm, fit_cylinders};
 
     /// `n` points on a circle of radius `r` about `(cx, cy)` with radial noise.
@@ -364,10 +364,10 @@ mod tests {
             let mut xy = circle(&mut rng, 0.0, 0.0, 0.05 + 0.02 * trial as f64, 80, 0.01);
             xy.extend(clutter(&mut rng, 0.5, 40 + 10 * trial));
             let ones = vec![1.0; xy.len()];
-            assert_eq!(fit_circle_refined_weighted(&xy, &ones), crate::stems::fit_circle_refined(&xy));
+            assert_eq!(fit_circle_refined_weighted(&xy, &ones), crate::trees::stems::fit_circle_refined(&xy));
             for p in [StemParams { min_radius: 0.0025, max_radius: 1.0, ransac_iterations: 120, ransac_tolerance: 0.02, ..Default::default() }, StemParams::coreg()] {
                 let a = ransac_circle_weighted(&xy, &ones, &p, &mut Rng::new(trial as u64 + 1));
-                let b = crate::stems::ransac_circle(&xy, &p, &mut Rng::new(trial as u64 + 1));
+                let b = crate::trees::stems::ransac_circle(&xy, &p, &mut Rng::new(trial as u64 + 1));
                 assert_eq!(a, b);
             }
         }

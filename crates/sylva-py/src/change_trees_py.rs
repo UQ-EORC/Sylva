@@ -11,7 +11,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use sylva_rs::change::{epochs, provenance, summary, synthetic, trees};
-use sylva_rs::coreg_ground::GroundModel;
+use sylva_rs::coreg::ground::GroundModel;
 use sylva_rs::{Point, Transform};
 
 use crate::{cloud_to_py, err, shots_to_py, xyz_from_py};

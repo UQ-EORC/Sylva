@@ -16,9 +16,10 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use sylva_rs::qsm::buttress::{Buttress, ButtressParams};
 use sylva_rs::qsm::QsmParams;
-use sylva_rs::qsm_ops::{self as ops, Row, Segment};
-use sylva_rs::qsm_plot::{self as plot, ButtressView, PlotEntry, PlotParams};
-use sylva_rs::{mesh_io, Point};
+use sylva_rs::qsm::ops::{self as ops, Row, Segment};
+use sylva_rs::qsm::plot::{self as plot, ButtressView, PlotEntry, PlotParams};
+use sylva_rs::io::mesh as mesh_io;
+use sylva_rs::Point;
 
 use crate::{err, xyz_from_py, xyz_to_py};
 

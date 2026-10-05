@@ -23,7 +23,7 @@
 //!    The fine cells are widened for sparse surveys, to hold about
 //!    `returns_per_cell` ALS returns each (a CHM of cells with one or two
 //!    returns is too ragged to place a plot by).
-//! 2. **Refinement.** A robust point-to-plane ICP ([`crate::coreg_icp`]:
+//! 2. **Refinement.** A robust point-to-plane ICP ([`crate::coreg::icp`]:
 //!    Huber weights, trimming) of the TLS points onto the ALS points, on the
 //!    ground and the canopy both see, or on the ground alone, from each of
 //!    the refined peaks. A run counts only if it stays within
@@ -48,8 +48,8 @@
 use nalgebra::{Matrix4, Matrix6};
 use rayon::prelude::*;
 
-use crate::coreg_geometry::{voxel_downsample, CoregTree};
-use crate::coreg_icp::{self, IcpConfig, IcpTarget};
+use crate::coreg::geometry::{voxel_downsample, CoregTree};
+use crate::coreg::icp::{self, IcpConfig, IcpTarget};
 use crate::error::{Error, Result};
 use crate::ground::make_dtm;
 use crate::raster::{Raster, Reducer};
@@ -504,7 +504,7 @@ fn heading_of(m: &Matrix4<f64>) -> f64 {
 }
 
 fn apply(m: &Matrix4<f64>, pts: &[Point]) -> Vec<Point> {
-    coreg_icp::transform_points(m, pts)
+    icp::transform_points(m, pts)
 }
 
 fn median(v: &mut [f64]) -> f64 {
@@ -706,18 +706,18 @@ pub fn register(tls: &[Point], tls_ground: &[bool], als: &[Point], als_ground: &
         if src.len() >= 10 && dst_all.len() >= 10 {
             let target = IcpTarget::new(&dst_all, &cfg);
             let starts: Vec<Matrix4<f64>> = distinct.iter().map(&pose_of).collect();
-            let runs: Vec<Result<(IcpSummary, coreg_icp::IcpResult)>> = starts
+            let runs: Vec<Result<(IcpSummary, icp::IcpResult)>> = starts
                 .par_iter()
                 .zip(&distinct)
                 .map(|(start, c)| {
-                    let r = coreg_icp::icp_prepared(&src, &target, Some(*start), &cfg)?;
+                    let r = icp::icp_prepared(&src, &target, Some(*start), &cfg)?;
                     let moved_by = (r.transform[(0, 3)] - start[(0, 3)]).hypot(r.transform[(1, 3)] - start[(1, 3)]);
                     let turn = angle_diff(heading_of(&r.transform), c.heading);
                     let accepted = r.n_correspondences >= 10 && moved_by <= p.max_refine_shift && turn <= p.max_refine_turn && r.transform.iter().all(|v| v.is_finite());
                     Ok((IcpSummary { fitness: r.fitness, rmse: r.inlier_rmse, n: r.n_correspondences, iterations: r.iterations, converged: r.converged, accepted, shift: moved_by, turn, start: 0 }, r))
                 })
                 .collect();
-            let mut runs: Vec<(IcpSummary, coreg_icp::IcpResult)> = runs.into_iter().collect::<Result<_>>()?;
+            let mut runs: Vec<(IcpSummary, icp::IcpResult)> = runs.into_iter().collect::<Result<_>>()?;
             for (k, r) in runs.iter_mut().enumerate() {
                 r.0.start = k;
             }
@@ -740,7 +740,7 @@ pub fn register(tls: &[Point], tls_ground: &[bool], als: &[Point], als_ground: &
                             if sub.len() < 10 {
                                 return None;
                             }
-                            let j = coreg_icp::icp_prepared(&sub, &target, Some(local), &cfg).ok()?;
+                            let j = icp::icp_prepared(&sub, &target, Some(local), &cfg).ok()?;
                             Some([j.transform[(0, 3)], j.transform[(1, 3)], j.transform[(2, 3)], heading_of(&j.transform)])
                         })
                         .collect();

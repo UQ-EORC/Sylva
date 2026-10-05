@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for sylva_rs::als_trajectory and sylva_rs::als_canopy.
+//! Bindings for sylva_rs::als::trajectory and sylva_rs::als::canopy.
 //!
 //! A trajectory crosses the boundary as a dict of equal-length arrays
 //! (`time`, `x`, `y`, `z` and optionally `roll`, `pitch`, `heading`), a
@@ -15,9 +15,9 @@ use numpy::{IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyA
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use sylva_rs::als_canopy::{self as ac, Angles, CatalogVoxels, ProfileGrid, ProfileParams, Projection, PulseParams, PulseReport, ReturnWeight, TraceSettings};
-use sylva_rs::als_trajectory::{self as at, EstimateParams, Estimated, Sbet, Trajectory};
-use sylva_rs::crs::{self, Crs};
+use sylva_rs::als::canopy::{self as ac, Angles, CatalogVoxels, ProfileGrid, ProfileParams, Projection, PulseParams, PulseReport, ReturnWeight, TraceSettings};
+use sylva_rs::als::trajectory::{self as at, EstimateParams, Estimated, Sbet, Trajectory};
+use sylva_rs::geo::crs::{self, Crs};
 use sylva_rs::voxel::{self, EchoLabels};
 use sylva_rs::Point;
 

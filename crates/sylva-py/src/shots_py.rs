@@ -3,7 +3,7 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Bindings for the pulse operations of sylva_rs::shots and
-//! sylva_rs::shots_ops: echo bookkeeping, subsets, stacking, beam angles and
+//! sylva_rs::shots::ops: echo bookkeeping, subsets, stacking, beam angles and
 //! the misses added from a scan pattern.
 #![allow(clippy::type_complexity)]
 
@@ -11,8 +11,9 @@ use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2}
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use sylva_rs::shots_ops::azimuth_deg;
-use sylva_rs::{canopy_profile, Shots};
+use sylva_rs::shots::ops::azimuth_deg;
+use sylva_rs::canopy::profile as canopy_profile;
+use sylva_rs::Shots;
 
 use crate::canopy_py::pattern_from_py;
 use crate::{err, shots_from_py, shots_to_py, xyz_from_py, xyz_to_py};

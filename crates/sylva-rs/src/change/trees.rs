@@ -845,7 +845,7 @@ mod tests {
 
     /// A vertical stem of diameter `d` sampled all round at the slice heights.
     fn stem(d: f64, noise: f64, seed: u64) -> (Vec<Point>, Vec<f64>) {
-        let mut rng = crate::nprandom::Generator::new(seed);
+        let mut rng = crate::util::nprandom::Generator::new(seed);
         let mut pts = Vec::new();
         for _ in 0..6000 {
             let h = rng.uniform(0.8, 3.2);

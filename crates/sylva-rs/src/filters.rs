@@ -6,7 +6,7 @@
 
 use rayon::prelude::*;
 
-use crate::spatial::{min_corner, voxel_groups, KdTree};
+use crate::util::spatial::{min_corner, voxel_groups, KdTree};
 use crate::{Point, PointCloud};
 
 /// Simple xorshift RNG so results are reproducible without extra deps.

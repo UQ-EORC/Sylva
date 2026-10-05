@@ -9,7 +9,7 @@
 //! reveal. Stems (their axes at breast height) and the terrain are the
 //! stable parts of a plot: a stem thickens but its axis stays where it
 //! was, and the ground changes little. Starting from a coarse transform
-//! (from [`crate::coreg_pipeline::register_pair`]), the alignment is
+//! (from [`crate::coreg::pipeline::register_pair`]), the alignment is
 //! refined by robust Gauss-Newton on two kinds of residual: the horizontal
 //! offset of each matched stem (x, y, rotation about z) and the height of
 //! the second epoch's terrain above the first's (z, and the tilts through
@@ -20,7 +20,7 @@
 
 use nalgebra::{Matrix3, Matrix6, Rotation3, Vector3, Vector6};
 
-use crate::coreg_ground::GroundModel;
+use crate::coreg::ground::GroundModel;
 use crate::error::{Error, Result};
 use crate::{Point, Transform};
 use super::{positive, non_negative};

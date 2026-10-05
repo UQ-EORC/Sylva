@@ -9,8 +9,9 @@ use std::path::PathBuf;
 use numpy::{PyArray2, PyReadonlyArray2};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use sylva_rs::crs::{self, Crs, Plan};
-use sylva_rs::{coords, Transform};
+use sylva_rs::geo::crs::{self, Crs, Plan};
+use sylva_rs::geo::coords;
+use sylva_rs::Transform;
 
 use crate::{err, matrix_from_py, matrix_to_py, xyz_from_py, xyz_to_py};
 

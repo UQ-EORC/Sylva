@@ -23,7 +23,7 @@ use spade::{DelaunayTriangulation, FloatTriangulation, HasPosition, HintGenerato
 use crate::error::{Error, Result};
 use crate::pointcloud::Attr;
 use crate::raster::Raster;
-use crate::spatial::KdTree;
+use crate::util::spatial::KdTree;
 use crate::Point;
 
 /// Targets handled by one parallel task.

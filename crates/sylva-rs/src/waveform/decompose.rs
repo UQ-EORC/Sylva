@@ -618,7 +618,7 @@ mod tests {
 
     #[test]
     fn noise_estimate_ignores_echoes() {
-        let mut g = crate::nprandom::Generator::new(3);
+        let mut g = crate::util::nprandom::Generator::new(3);
         let mut y = gauss(200, &[(50.0, 200.0, 2.0), (120.0, 80.0, 3.0)], 10.0);
         for v in &mut y {
             *v += g.normal(0.0, 2.0) as f32;
@@ -668,7 +668,7 @@ mod tests {
     #[test]
     fn same_result_on_any_thread_count() {
         let mut wf = Waveforms::default();
-        let mut g = crate::nprandom::Generator::new(1);
+        let mut g = crate::util::nprandom::Generator::new(1);
         for i in 0..300 {
             let y = gauss(80, &[(20.0 + (i % 7) as f64, 50.0, 2.0), (50.0, 30.0, 2.0)], 3.0);
             wf.pulse.push(i);

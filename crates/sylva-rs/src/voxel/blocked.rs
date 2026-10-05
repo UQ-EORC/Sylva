@@ -40,9 +40,9 @@ use super::traverse::Window;
 use super::write::WriteOptions;
 use super::{Attenuation, BeamSpec, Lad, RayVoxels, VoxelParams, WeightMethod, F, I};
 use crate::error::{Error, Result};
-use crate::json::{self, Json};
-use crate::numeric::{arange, searchsorted_right};
-use crate::voxel_grid::{FieldData, OcclusionProfile, EMPTY, FILLED, OCCLUDED};
+use crate::util::json::{self, Json};
+use crate::util::numeric::{arange, searchsorted_right};
+use crate::voxel::grid::{FieldData, OcclusionProfile, EMPTY, FILLED, OCCLUDED};
 use crate::Point;
 
 const FORMAT: &str = "sylva-blocked-voxels";
@@ -296,7 +296,7 @@ impl BlockedGrid {
             }
         }
         let shape: [usize; 3] = std::array::from_fn(|k| hi[k] - lo[k]);
-        crate::limits::check_cells(shape.iter().map(|&v| v as u128).product(), 4 * (F::COUNT + I::COUNT + 1) as u64 + self.params.subvoxel_split.pow(3) as u64, &format!("a {} x {} x {} voxel box", shape[0], shape[1], shape[2]), "a smaller box")?;
+        crate::util::limits::check_cells(shape.iter().map(|&v| v as u128).product(), 4 * (F::COUNT + I::COUNT + 1) as u64 + self.params.subvoxel_split.pow(3) as u64, &format!("a {} x {} x {} voxel box", shape[0], shape[1], shape[2]), "a smaller box")?;
         let origin: Point = std::array::from_fn(|k| self.origin[k] + lo[k] as f64 * self.voxel_size);
         let mut out = empty_grid(&self.params, origin, shape);
         out.has_leaf = self.has_leaf;
@@ -532,7 +532,7 @@ impl BlockedGrid {
             return Err(Error::invalid("labels must match the points, state and beams the grid"));
         }
         let n = self.n_voxels();
-        crate::limits::check_cells(n as u128, 5, "voxel states and pulse counts for the tree sampling", "a coarser grid")?;
+        crate::util::limits::check_cells(n as u128, 5, "voxel states and pulse counts for the tree sampling", "a coarser grid")?;
         let mut state = vec![0u8; n];
         let mut beams = vec![0i32; n];
         self.each_voxel(|idx, _, s, b| {

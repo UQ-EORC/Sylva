@@ -13,9 +13,9 @@ use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyArrayMethods, PyReadonl
 use pyo3::exceptions::{PyFileNotFoundError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use sylva_rs::leaf_model::{self as lm, LeafAreaGrid, LeafShape};
+use sylva_rs::leaves::model::{self as lm, LeafAreaGrid, LeafShape};
 use sylva_rs::leaves::{self, LeafAngles};
-use sylva_rs::mesh_io::{self, ObjMesh};
+use sylva_rs::io::mesh::{self, ObjMesh};
 use sylva_rs::qsm;
 
 use crate::voxels_py::PyRayVoxels;
@@ -331,7 +331,7 @@ fn write_obj(path: PathBuf, meshes: &Bound<'_, PyList>, names: Vec<String>) -> P
         parts.push((xyz_from_py(v)?, faces_from_py(f)?));
     }
     let objs: Vec<ObjMesh> = parts.iter().zip(&names).map(|((v, f), n)| ObjMesh { name: n, vertices: v, faces: f }).collect();
-    mesh_io::write_obj(path, &objs).map_err(err)
+    mesh::write_obj(path, &objs).map_err(err)
 }
 
 /// Wood cylinders and leaves to one OBJ, as objects `wood` and `leaves`.

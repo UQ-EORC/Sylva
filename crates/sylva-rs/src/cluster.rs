@@ -9,7 +9,7 @@ use std::collections::BinaryHeap;
 
 use rayon::prelude::*;
 
-use crate::spatial::KdTree;
+use crate::util::spatial::KdTree;
 use crate::Point;
 
 /// Undirected sparse graph in CSR form with edge weights.
@@ -87,7 +87,7 @@ pub fn graph_from_directed(adj: Vec<Vec<(u32, f64)>>) -> Graph {
 /// per-node vectors that build it.
 fn check_graph(n: usize, k: usize) -> crate::error::Result<()> {
     let edges = (n as u128) * (2 * k as u128 + 2);
-    crate::limits::check_cells(
+    crate::util::limits::check_cells(
         edges,
         (std::mem::size_of::<u32>() + std::mem::size_of::<f64>()) as u64 + 8,
         &format!("a {k}-neighbour graph over {n} points"),

@@ -32,7 +32,10 @@ mod voxel_blocks_py;
 mod synthetic_py;
 mod synthetic_model_py;
 mod qsm_py;
-use sylva_rs::{canopy, cluster, coreg, coreg_geometry, coreg_ground, coreg_icp as coreg_icp_rs, filters, ground, io, qsm, registration, trees, Point, PointCloud, Raster, Shots, Transform};
+use sylva_rs::coreg::geometry as coreg_geometry;
+use sylva_rs::coreg::ground as coreg_ground;
+use sylva_rs::coreg::icp as coreg_icp_rs;
+use sylva_rs::{canopy, cluster, coreg, filters, ground, io, qsm, registration, trees, Point, PointCloud, Raster, Shots, Transform};
 mod coreg_pipeline_py;
 mod interpolate_py;
 mod masks_py;
@@ -492,7 +495,7 @@ fn write_ascii_grid(py: Python<'_>, path: PathBuf, data: PyReadonlyArray2<f64>, 
     py.detach(|| {
         r.write_ascii_grid(&path, nodata)?;
         match crs {
-            Some(c) => sylva_rs::geotiff::write_prj(&path, &c),
+            Some(c) => sylva_rs::io::geotiff::write_prj(&path, &c),
             None => Ok(()),
         }
     })
@@ -503,7 +506,7 @@ fn write_ascii_grid(py: Python<'_>, path: PathBuf, data: PyReadonlyArray2<f64>, 
 #[pyfunction]
 fn read_ascii_grid<'py>(py: Python<'py>, path: PathBuf) -> PyResult<Bound<'py, PyDict>> {
     let d = raster_to_py(py, &Raster::read_ascii_grid(&path).map_err(err)?)?;
-    d.set_item("crs", sylva_rs::geotiff::read_prj(&path).map_err(err)?)?;
+    d.set_item("crs", sylva_rs::io::geotiff::read_prj(&path).map_err(err)?)?;
     Ok(d)
 }
 
@@ -512,7 +515,7 @@ fn read_ascii_grid<'py>(py: Python<'py>, path: PathBuf) -> PyResult<Bound<'py, P
 #[pyo3(signature = (path, data, xmin, ymin, resolution, crs=None))]
 fn write_geotiff(py: Python<'_>, path: PathBuf, data: PyReadonlyArray2<f64>, xmin: f64, ymin: f64, resolution: f64, crs: Option<String>) -> PyResult<()> {
     let r = raster_from_py(data, xmin, ymin, resolution);
-    py.detach(|| sylva_rs::geotiff::write_geotiff(&r, &path, crs.as_deref())).map_err(err)
+    py.detach(|| sylva_rs::io::geotiff::write_geotiff(&r, &path, crs.as_deref())).map_err(err)
 }
 
 // --------------------------------------------------------------------- canopy
@@ -651,7 +654,7 @@ fn icp<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, target: PyReadonlyAr
     Ok((matrix_to_py(py, &r.transform), info))
 }
 
-fn stem_match_to_py<'py>(py: Python<'py>, r: &coreg::StemMatch) -> PyResult<Bound<'py, PyDict>> {
+fn stem_match_to_py<'py>(py: Python<'py>, r: &coreg::matching::StemMatch) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new(py);
     d.set_item("transform", matrix_to_py(py, &r.transform))?;
     d.set_item("n_inliers", r.n_inliers)?;
@@ -674,13 +677,13 @@ fn stem_match_to_py<'py>(py: Python<'py>, r: &coreg::StemMatch) -> PyResult<Boun
 #[pyo3(signature = (source, source_diameters, source_qualities, target, target_diameters, target_qualities, min_pair_distance=2.0, max_pair_distance=35.0, pair_distance_tolerance=0.25, inlier_tolerance=0.40, diameter_rel_tolerance=0.30, diameter_abs_tolerance=0.04, use_diameters=true, max_stems=70, max_hypotheses=60000, min_inliers=4, early_exit_inliers=40, distinct_translation=1.0, distinct_yaw_deg=5.0, refine_iterations=6))]
 #[allow(clippy::too_many_arguments)]
 fn match_stem_maps<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, source_diameters: PyReadonlyArray1<f64>, source_qualities: PyReadonlyArray1<f64>, target: PyReadonlyArray2<f64>, target_diameters: PyReadonlyArray1<f64>, target_qualities: PyReadonlyArray1<f64>, min_pair_distance: f64, max_pair_distance: f64, pair_distance_tolerance: f64, inlier_tolerance: f64, diameter_rel_tolerance: f64, diameter_abs_tolerance: f64, use_diameters: bool, max_stems: usize, max_hypotheses: usize, min_inliers: usize, early_exit_inliers: usize, distinct_translation: f64, distinct_yaw_deg: f64, refine_iterations: usize) -> PyResult<Bound<'py, PyDict>> {
-    let src = coreg::StemMap { positions: xyz_from_py(source)?, diameters: source_diameters.as_array().to_vec(), qualities: source_qualities.as_array().to_vec() };
-    let dst = coreg::StemMap { positions: xyz_from_py(target)?, diameters: target_diameters.as_array().to_vec(), qualities: target_qualities.as_array().to_vec() };
+    let src = coreg::matching::StemMap { positions: xyz_from_py(source)?, diameters: source_diameters.as_array().to_vec(), qualities: source_qualities.as_array().to_vec() };
+    let dst = coreg::matching::StemMap { positions: xyz_from_py(target)?, diameters: target_diameters.as_array().to_vec(), qualities: target_qualities.as_array().to_vec() };
     if src.diameters.len() != src.len() || src.qualities.len() != src.len() || dst.diameters.len() != dst.len() || dst.qualities.len() != dst.len() {
         return Err(PyValueError::new_err("diameters and qualities must have one value per stem"));
     }
-    let p = coreg::MatchParams { min_pair_distance, max_pair_distance, pair_distance_tolerance, inlier_tolerance, diameter_rel_tolerance, diameter_abs_tolerance, use_diameters, max_stems, max_hypotheses, min_inliers, early_exit_inliers, distinct_translation, distinct_yaw_deg, refine_iterations };
-    let r = py.detach(|| coreg::match_stem_maps(&src, &dst, &p));
+    let p = coreg::matching::MatchParams { min_pair_distance, max_pair_distance, pair_distance_tolerance, inlier_tolerance, diameter_rel_tolerance, diameter_abs_tolerance, use_diameters, max_stems, max_hypotheses, min_inliers, early_exit_inliers, distinct_translation, distinct_yaw_deg, refine_iterations };
+    let r = py.detach(|| coreg::matching::match_stem_maps(&src, &dst, &p));
     stem_match_to_py(py, &r)
 }
 
@@ -1011,8 +1014,8 @@ fn detect_stems<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRea
     if h.len() != p.len() {
         return Err(PyValueError::new_err("heights must have one value per point"));
     }
-    let params = sylva_rs::stems::StemParams { slice_min, slice_max, slice_thickness, slice_step, reference_height, min_radius, max_radius, cluster_cell, min_cluster_points, max_cluster_extent, ransac_iterations, ransac_tolerance, max_circles_per_cluster, min_circle_inliers, min_coverage, min_arc_deg, max_circle_rmse, link_radius, link_radius_ratio, min_slices, max_lean_deg, link_radius_abs, prefilter, prefilter_k, prefilter_max_nz, prefilter_max_variation, seed, ransac_block, ransac_presample, recluster_wide, cluster_grid_at_slice_min, band_top_inclusive, shared_rng, taper_weight_power, min_total_points, cluster_seeds };
-    let found = py.detach(|| sylva_rs::stems::detect_stems_full(&p, &h, &params));
+    let params = sylva_rs::trees::stems::StemParams { slice_min, slice_max, slice_thickness, slice_step, reference_height, min_radius, max_radius, cluster_cell, min_cluster_points, max_cluster_extent, ransac_iterations, ransac_tolerance, max_circles_per_cluster, min_circle_inliers, min_coverage, min_arc_deg, max_circle_rmse, link_radius, link_radius_ratio, min_slices, max_lean_deg, link_radius_abs, prefilter, prefilter_k, prefilter_max_nz, prefilter_max_variation, seed, ransac_block, ransac_presample, recluster_wide, cluster_grid_at_slice_min, band_top_inclusive, shared_rng, taper_weight_power, min_total_points, cluster_seeds };
+    let found = py.detach(|| sylva_rs::trees::stems::detect_stems_full(&p, &h, &params));
     let list = PyList::empty(py);
     for s in &found {
         let d = tree_to_py(py, &s.tree)?;
@@ -1029,7 +1032,7 @@ fn detect_stems<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRea
 /// arguments of `detect_stems`.
 #[pyfunction]
 fn stems_coreg_defaults<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-    let p = sylva_rs::stems::StemParams::coreg();
+    let p = sylva_rs::trees::stems::StemParams::coreg();
     let d = PyDict::new(py);
     d.set_item("slice_min", p.slice_min)?;
     d.set_item("slice_max", p.slice_max)?;
@@ -1077,8 +1080,8 @@ fn stem_root_support<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: 
     let h = heights.as_array().to_vec();
     let t = trees_from_py(trees_list)?;
     let slabs = slab_heights.as_array().to_vec();
-    let params = sylva_rs::stems::StemParams { prefilter, ..Default::default() };
-    let out = py.detach(|| sylva_rs::stems::stem_root_support(&p, &h, &t, &params, &slabs, slab_half, trunk_scale, trunk_min));
+    let params = sylva_rs::trees::stems::StemParams { prefilter, ..Default::default() };
+    let out = py.detach(|| sylva_rs::trees::stems::stem_root_support(&p, &h, &t, &params, &slabs, slab_half, trunk_scale, trunk_min));
     let flat: Vec<i64> = out.iter().flat_map(|r| r.iter().map(|&v| v as i64)).collect();
     Ok(PyArray1::from_vec(py, flat).reshape([t.len(), slabs.len()])?)
 }
@@ -1444,39 +1447,39 @@ fn qsm_summary<'py>(py: Python<'py>, cylinders: PyReadonlyArray2<f64>) -> PyResu
 /// Memory the system says is free (bytes), or None where it will not say.
 #[pyfunction]
 fn memory_available() -> Option<u64> {
-    sylva_rs::limits::available()
+    sylva_rs::util::limits::available()
 }
 
 /// The most one allocation may ask for (bytes), or None when nothing is known.
 #[pyfunction]
 fn memory_budget() -> Option<u64> {
-    sylva_rs::limits::budget()
+    sylva_rs::util::limits::budget()
 }
 
 /// Set that budget in bytes; 0 goes back to reading the system.
 #[pyfunction]
 fn set_memory_budget(bytes: u64) {
-    sylva_rs::limits::set_budget(bytes);
+    sylva_rs::util::limits::set_budget(bytes);
 }
 
 /// Raise if `cells * per_cell` bytes would not fit, naming what and what to try.
 #[pyfunction]
 fn memory_check(cells: u128, per_cell: u64, what: &str, hint: &str) -> PyResult<()> {
-    sylva_rs::limits::check_cells(cells, per_cell, what, hint).map_err(err)
+    sylva_rs::util::limits::check_cells(cells, per_cell, what, hint).map_err(err)
 }
 
 /// The stages running now, as (label, done, total). Safe to call from
 /// another thread while the work runs: the core holds the counts in atomics.
 #[pyfunction]
 fn progress_state() -> Vec<(String, u64, u64)> {
-    sylva_rs::progress::state()
+    sylva_rs::util::progress::state()
 }
 
 /// A stage opened by Python (a loop over trees, scans, files). The handle
 /// closes it; dropping it takes it off the list.
 #[pyclass(name = "ProgressTask")]
 struct PyProgressTask {
-    task: Option<sylva_rs::progress::Task>,
+    task: Option<sylva_rs::util::progress::Task>,
 }
 
 #[pymethods]
@@ -1484,7 +1487,7 @@ impl PyProgressTask {
     #[new]
     #[pyo3(signature = (label, total=0))]
     fn new(label: &str, total: u64) -> Self {
-        PyProgressTask { task: Some(sylva_rs::progress::start(label, total)) }
+        PyProgressTask { task: Some(sylva_rs::util::progress::start(label, total)) }
     }
 
     #[pyo3(signature = (n=1))]

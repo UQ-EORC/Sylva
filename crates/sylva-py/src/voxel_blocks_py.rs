@@ -183,7 +183,7 @@ fn ray_voxelize_blocks<'py>(py: Python<'py>, shots: Option<&Bound<'py, PyDict>>,
             let ground = ground.map(|a| a.as_array().to_vec());
             let foliage = foliage.map(|a| a.as_array().to_vec());
             py.detach(|| {
-                let notes = sylva_rs::voxel_grid::annotate(&s, &labels, ground, foliage, dtm.as_ref(), params.weighting)?;
+                let notes = sylva_rs::voxel::grid::annotate(&s, &labels, ground, foliage, dtm.as_ref(), params.weighting)?;
                 voxel::voxelize_blocks(&Pulses::Memory(notes.inputs(&s, dtm.as_ref())), &params, dtm.as_ref(), &opts, out.as_deref())
             })
         }

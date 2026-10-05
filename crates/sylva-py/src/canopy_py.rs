@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for sylva_rs::canopy_profile: gap profiles, fired pulses,
+//! Bindings for sylva_rs::canopy::profile: gap profiles, fired pulses,
 //! ground planes and density-grid profiles.
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
 
@@ -10,7 +10,7 @@ use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyArrayMethods, PyReadonl
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use sylva_rs::canopy_profile as cp;
+use sylva_rs::canopy::profile as cp;
 
 use crate::{err, raster_from_py, shots_from_py, xyz_from_py};
 

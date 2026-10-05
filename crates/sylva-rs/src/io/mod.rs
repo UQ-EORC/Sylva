@@ -14,7 +14,9 @@
 //! Pulse data ([`crate::Shots`]) has its own Parquet-based format, see [`shots`].
 
 pub mod ascii;
+pub mod geotiff;
 pub mod las;
+pub mod mesh;
 pub mod ply;
 pub mod riegl;
 pub mod shots;

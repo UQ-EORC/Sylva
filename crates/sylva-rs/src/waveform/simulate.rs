@@ -19,7 +19,7 @@
 
 use super::{Echoes, Waveforms, C_HALF};
 use crate::error::{Error, Result};
-use crate::nprandom::Generator;
+use crate::util::nprandom::Generator;
 use crate::pointcloud::Attr;
 use crate::transform::normalize;
 use crate::Shots;

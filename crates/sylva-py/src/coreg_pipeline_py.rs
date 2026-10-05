@@ -2,13 +2,13 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for the coregistration pipeline (sylva_rs::coreg_pipeline and
-//! sylva_rs::coreg_survey).
+//! Bindings for the coregistration pipeline (sylva_rs::coreg::pipeline and
+//! sylva_rs::coreg::survey).
 //!
 //! Scans, pairs and surveys cross as plain tuples and dicts that
 //! `sylva/coreg/pipeline.py` builds from its dataclasses and builds them
 //! back from. Progress messages come back through
-//! [`sylva_rs::relay::relay`]: the pipeline runs on a worker thread and each
+//! [`sylva_rs::util::relay::relay`]: the pipeline runs on a worker thread and each
 //! message is handed to the Python callable on the calling thread.
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
 
@@ -19,16 +19,16 @@ use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, P
 use pyo3::exceptions::{PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
-use sylva_rs::coreg::StemMatch;
-use sylva_rs::coreg_ground::GroundModel;
-use sylva_rs::coreg_icp::{IcpConfig, IcpResult, PlaneInformation};
-use sylva_rs::coreg_pipeline as cp;
-use sylva_rs::coreg_posegraph as pg;
-use sylva_rs::coreg_reflectors::{Reflector, ReflectorMatch};
-use sylva_rs::coreg_stemmap::StemRecord;
-use sylva_rs::coreg_survey as cs;
-use sylva_rs::relay::{quiet, relay, Log};
-use sylva_rs::stems::StemParams;
+use sylva_rs::coreg::matching::StemMatch;
+use sylva_rs::coreg::ground::GroundModel;
+use sylva_rs::coreg::icp::{IcpConfig, IcpResult, PlaneInformation};
+use sylva_rs::coreg::pipeline as cp;
+use sylva_rs::coreg::posegraph as pg;
+use sylva_rs::coreg::reflectors::{Reflector, ReflectorMatch};
+use sylva_rs::coreg::stemmap::StemRecord;
+use sylva_rs::coreg::survey as cs;
+use sylva_rs::util::relay::{quiet, relay, Log};
+use sylva_rs::trees::stems::StemParams;
 use sylva_rs::{Point, Transform};
 
 use crate::{err, xyz_from_py, xyz_to_py, PyCoregIcpTarget};
@@ -164,8 +164,8 @@ fn stem_params(d: &Bound<'_, PyDict>) -> PyResult<StemParams> {
     })
 }
 
-fn match_params(d: &Bound<'_, PyDict>) -> PyResult<sylva_rs::coreg::MatchParams> {
-    Ok(sylva_rs::coreg::MatchParams {
+fn match_params(d: &Bound<'_, PyDict>) -> PyResult<sylva_rs::coreg::matching::MatchParams> {
+    Ok(sylva_rs::coreg::matching::MatchParams {
         min_pair_distance: get(d, "min_pair_distance")?,
         max_pair_distance: get(d, "max_pair_distance")?,
         pair_distance_tolerance: get(d, "pair_distance_tolerance")?,

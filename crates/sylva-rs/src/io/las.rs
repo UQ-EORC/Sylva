@@ -245,7 +245,7 @@ impl Columns {
 pub struct LasWriteOptions {
     pub point_format: u8,
     pub scale: f64,
-    /// CRS to store as an OGC WKT VLR (see [`crate::crs::Crs::to_wkt`]).
+    /// CRS to store as an OGC WKT VLR (see [`crate::geo::crs::Crs::to_wkt`]).
     pub crs_wkt: Option<String>,
 }
 

@@ -10,9 +10,9 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sylva_rs::qsm::Qsm;
-use sylva_rs::synthetic_plot::{self as plot_rs, DbhDistribution, PlotSpec, Terrain};
-use sylva_rs::synthetic_scan::{self, BeamScan, Reflectance};
-use sylva_rs::synthetic_tree::{self, Archetype, Leaf, TreeSpec};
+use sylva_rs::synthetic::plot::{self as plot_rs, DbhDistribution, PlotSpec, Terrain};
+use sylva_rs::synthetic::scan::{self, BeamScan, Reflectance};
+use sylva_rs::synthetic::tree::{self, Archetype, Leaf, TreeSpec};
 use sylva_rs::voxel::Lad;
 use sylva_rs::Point;
 
@@ -71,7 +71,7 @@ fn synthetic_tree_model<'py>(py: Python<'py>, archetype: &str, x: f64, y: f64, z
     s.pipe_exponent = pipe_exponent;
     s.min_radius = min_radius;
     s.breast_height = breast_height;
-    let t = py.detach(|| synthetic_tree::tree_model(&s)).map_err(err)?;
+    let t = py.detach(|| tree::tree_model(&s)).map_err(err)?;
     let d = PyDict::new(py);
     let (xyz, attrs) = cloud_to_py(py, &t.cloud)?;
     d.set_item("xyz", xyz)?;
@@ -226,13 +226,13 @@ fn synthetic_scan_beam<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: 
     };
     p.max_range = max_range;
     p.seed = seed;
-    let s = py.detach(|| synthetic_scan::scan_beam(&cloud, &p)).map_err(err)?;
+    let s = py.detach(|| scan::scan_beam(&cloud, &p)).map_err(err)?;
     shots_to_py(py, &s)
 }
 
 #[pyfunction]
 fn synthetic_scanner_preset<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyDict>> {
-    let p = synthetic_scan::scanner_preset(name).map_err(err)?;
+    let p = scan::scanner_preset(name).map_err(err)?;
     let d = PyDict::new(py);
     d.set_item("min_zenith_deg", p.min_zenith_deg)?;
     d.set_item("max_zenith_deg", p.max_zenith_deg)?;
