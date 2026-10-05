@@ -9,7 +9,7 @@ authors:
     affiliation: The University of Queensland
 repository-code: "https://github.com/UQ-EORC/Sylva"
 url: "https://uq-eorc.github.io/Sylva/"
-version: 0.2.1
+version: 0.3.0
 abstract: >-
   Terrestrial and airborne laser scanning processing for forest ecology and
   remote sensing: ground classification, tree segmentation, quantitative
