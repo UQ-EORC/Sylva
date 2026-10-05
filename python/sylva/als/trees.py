@@ -58,7 +58,9 @@ from pathlib import Path
 import numpy as np
 
 from .. import _core
-from . import Catalog, _as_catalog, _format, _heights, _run_kw, _written
+from .catalogue import Catalog, _as_catalog, _format, _written
+from .engine import _run_kw
+from .ops import _heights
 from ..pointcloud import PointCloud
 from ..raster import Raster
 

@@ -37,7 +37,7 @@ import numpy as np
 from .. import _core
 from .. import filters, leaves, qsm, trees
 from ..util import limits, progress
-from . import Catalog, _as_catalog, _format, _workers, _written, catalog
+from .catalogue import Catalog, _as_catalog, _format, _workers, _written, catalog
 from ..pointcloud import PointCloud
 from ..raster import Raster
 from ..trees import Tree
@@ -543,7 +543,7 @@ def build_qsms(store, stems=None, voxel_size: float = 0.01, wood: bool = True,
         As :func:`sylva.qsm.build_plot` returns it.
     """
     st = _store(store)
-    settings = qsm._qsm_settings(params)
+    settings = qsm.plot._qsm_settings(params)
     by_id = {int(s.tree_id): s for s in (stems or [])}
     saved = {}
 
@@ -576,7 +576,7 @@ def build_qsms(store, stems=None, voxel_size: float = 0.01, wood: bool = True,
         for t, c in d["models"]:
             models[t] = qsm.QSM(c)
         for t, b in d["buttresses"]:
-            bases[t] = qsm._buttress(b)
+            bases[t] = qsm.buttress._buttress(b)
         skipped.update(dict(d["skipped"]))
         points.update(dict(d["points"]))
         heights.update(dict(d["heights"]))

@@ -3,6 +3,7 @@ and keep the promises the operational guide makes."""
 
 import importlib
 import inspect
+import pkgutil
 
 import numpy as np
 import pytest
@@ -10,8 +11,25 @@ import pytest
 MODULES = ["pointcloud", "raster", "io", "shots", "riscan", "filters", "ground", "trees", "canopy",
            "voxels", "registration", "coreg", "qsm", "leaves", "quality", "fusion",
            "synthetic", "synthetic.als", "synthetic.model", "als", "als.canopy", "als.metrics",
-           "als.tiles", "als.trees", "change.als", "geo.coords", "geo.interpolate", "geo.masks",
-           "util.limits", "util.progress"]
+           "als.tiles", "als.trees", "als.catalogue", "als.engine", "als.ops", "als.trajectory",
+           "change.als", "geo.coords", "geo.interpolate", "geo.masks", "util.limits", "util.progress"]
+
+
+#: Packages that were one module before they were split: each submodule is checked.
+SPLIT = ("qsm", "fusion", "change.als")
+
+
+def _modules():
+    """The listed modules, with each split package replaced by its submodules (and itself)."""
+    seen = []
+    for m in MODULES:
+        mod = importlib.import_module(f"sylva.{m}")
+        names = [m]
+        if m in SPLIT and hasattr(mod, "__path__"):
+            names += [f"{m}.{info.name}" for info in pkgutil.iter_modules(mod.__path__)
+                      if not info.name.startswith("_") and info.name not in ("cli", "convert")]
+        seen += [n for n in names if n not in seen]
+    return seen
 
 
 def _public(mod):
@@ -32,7 +50,7 @@ def _public(mod):
 
 
 def _cases():
-    for m in MODULES:
+    for m in _modules():
         mod = importlib.import_module(f"sylva.{m}")
         for name, obj in _public(mod):
             yield pytest.param(obj, id=f"{m}.{name}")

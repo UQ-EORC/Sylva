@@ -51,18 +51,9 @@ import numpy as np
 from .. import _core
 from .. import als
 from ..util import progress
-from . import (
-    Catalog,
-    Chunk,
-    _as_catalog,
-    _format,
-    _workers,
-    _written,
-    apply,
-    catalog,
-    retile,
-    write_tiles,
-)
+from .catalogue import Catalog, Chunk, _as_catalog, _format, _workers, _written, catalog
+from .engine import apply
+from .ops import retile, write_tiles
 from ..pointcloud import PointCloud
 from ..raster import Raster
 from .tiles_trees import (

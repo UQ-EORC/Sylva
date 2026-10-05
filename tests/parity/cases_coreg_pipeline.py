@@ -234,7 +234,7 @@ def prepare():
         _put(out, f"{pre}_icp_points", f.icp_points)
     g0 = fit_ground(points, 0.5)
     for cov in (0.8, 0.3, 0.0, 1.1):
-        g = pl._refit_visible_ground(points, np.array([0.5, -0.5, 0.2]), g0, _cfg(ground_min_coverage=cov))
+        g = pl.scan._refit_visible_ground(points, np.array([0.5, -0.5, 0.2]), g0, _cfg(ground_min_coverage=cov))
         out[f"refit_{cov}_elevation"] = g.elevation
         out[f"refit_{cov}_same"] = g is g0
     return out
@@ -276,7 +276,7 @@ def reading():
             "capped": _cfg(max_points_per_scan=1000, riegl_options={"min_reflectance": -8.0}),
         }
         for name, cfg in cases.items():
-            xyz, extra = pl._read_scan(path, cfg)
+            xyz, extra = pl.scan._read_scan(path, cfg)
             out[f"read_{name}"] = xyz
             out[f"read_{name}_extra"] = len(extra)
         for name, (file, cfg) in {
@@ -286,7 +286,7 @@ def reading():
             "missing": ("nothing.ply", _cfg()),
         }.items():
             try:
-                pl._read_scan(Path(d) / file, cfg)
+                pl.scan._read_scan(Path(d) / file, cfg)
                 out[f"error_{name}"] = ""
             except Exception as exc:  # the type and message are the behaviour
                 out[f"error_{name}"] = f"{type(exc).__name__}: {exc}".replace(d, "<dir>")
@@ -308,8 +308,8 @@ def helpers():
     cfg = _cfg()
     out = {}
     for k in (0, 3):
-        out[f"terrain_samples_{k}"] = pl._terrain_samples(scans[k], 12.0)
-    out["terrain_samples_none"] = pl._terrain_samples(dataclasses.replace(scans[0], ground=None), 30.0)
+        out[f"terrain_samples_{k}"] = pl.pair._terrain_samples(scans[k], 12.0)
+    out["terrain_samples_none"] = pl.pair._terrain_samples(dataclasses.replace(scans[0], ground=None), 30.0)
     rel = _relative(1)
     lifted = rel.copy()
     lifted[2, 3] += 0.7
@@ -322,31 +322,31 @@ def helpers():
                              ("none", rel, [])):
         for c in (cfg, _cfg(ground_radius=10.0, min_ground_cells=0), _cfg(min_ground_cells=100_000)):
             key = f"height_{name}_{c.ground_radius}_{c.min_ground_cells}"
-            out[key] = pl._height_offset(scans[1], T, targets, c)
-            out[f"on_ground_{key}"] = pl._on_ground(lifted, scans[1], targets, c)
-    out["on_ground_off"] = pl._on_ground(lifted, scans[1], [(scans[0], np.eye(4))], _cfg(height_from_ground=False))
-    out["height_no_ground"] = pl._height_offset(dataclasses.replace(scans[1], ground=None), rel,
+            out[key] = pl.pair._height_offset(scans[1], T, targets, c)
+            out[f"on_ground_{key}"] = pl.pair._on_ground(lifted, scans[1], targets, c)
+    out["on_ground_off"] = pl.pair._on_ground(lifted, scans[1], [(scans[0], np.eye(4))], _cfg(height_from_ground=False))
+    out["height_no_ground"] = pl.pair._height_offset(dataclasses.replace(scans[1], ground=None), rel,
                                                 [(scans[0], np.eye(4))], cfg)
     origin = np.array([0.3, -0.2, 1.6])
     for name, pose in (("same", rel), ("near", tf.se3_exp(np.r_[0.0, 0.0, 0.3, 1.0, 1.0, 0.0]) @ rel),
                        ("far", tf.se3_exp(np.r_[0.0, 0.0, 0.0, 6.0, 0.0, 0.0]) @ rel)):
         for c in (cfg, _cfg(max_prior_rotation=5.0), _cfg(max_prior_shift=0.5, max_prior_rotation=0.1)):
-            ok, why = pl._prior_ok(pose, rel, origin, c)
+            ok, why = pl.survey._prior_ok(pose, rel, origin, c)
             out[f"prior_{name}_{c.max_prior_shift}_{c.max_prior_rotation}"] = f"{ok}|{why}"
     pairs = [(0, 1), (0, 2), (1, 2), (0, 3), (2, 3), (1, 3)]
     messages = []
     positions = np.array([[0.0, 0.0, 0.0], [30.0, 0.0, 0.0], [np.nan, 1.0, 0.0], [45.0, 0.0, 5.0]])
     for name, pos, limit in (("gnss", positions, 40.0), ("tight", positions, 10.0), ("none", None, 40.0),
                              ("inf", positions, np.inf), ("flat", np.zeros(4), 1.0), ("empty", np.zeros((0, 3)), 1.0)):
-        out[f"reach_{name}"] = np.array(pl._within_reach(pairs, pos, limit, messages.append)).reshape(-1, 2)
+        out[f"reach_{name}"] = np.array(pl.survey._within_reach(pairs, pos, limit, messages.append)).reshape(-1, 2)
     out["reach_log"] = _strings(messages)
     matches = [((i, j), match_stem_maps(scans[i].stem_map, scans[j].stem_map, cfg.matching)) for i, j in pairs]
     for limit in (1, 2, 5):
-        out[f"limit_{limit}"] = np.array([ij for ij, _ in pl._limit_per_scan(matches, limit, 4)]).reshape(-1, 2)
+        out[f"limit_{limit}"] = np.array([ij for ij, _ in pl.survey._limit_per_scan(matches, limit, 4)]).reshape(-1, 2)
     graph = PoseGraph(4)
     graph.poses = [_relative(k) for k in range(4)]
     for mask in ([True, True, True, True], [True, False, True, False], [False] * 4):
-        combined = pl._combined_stem_map(list(scans), mask, graph)
+        combined = pl.survey._combined_stem_map(list(scans), mask, graph)
         out[f"combined_{''.join('1' if m else '0' for m in mask)}"] = np.array(
             [[s.x, s.y, s.z, s.dbh, s.quality, *s.axis] for s in combined]).reshape(-1, 8)
         out[f"combined_name_{''.join('1' if m else '0' for m in mask)}"] = combined.name
@@ -355,7 +355,7 @@ def helpers():
                                 (rel, pl.PairResult(0, 1)),
                                 (np.eye(4), pl.PairResult(0, 1, matched_source=np.ones((4, 3)),
                                                           matched_target=np.zeros((4, 3)))))):
-        out[f"stem_residual_{k}"] = pl._stem_median_residual(T, p)
+        out[f"stem_residual_{k}"] = pl.pair._stem_median_residual(T, p)
     return out
 
 

@@ -27,7 +27,8 @@ from sylva.coreg import (
     transform_difference,
     transform_points,
 )
-from sylva.coreg.pipeline import _height_offset, _make_logger
+from sylva.coreg.pipeline.pair import _height_offset
+from sylva.coreg.pipeline.scan import _make_logger
 
 
 @pytest.fixture(scope="module")

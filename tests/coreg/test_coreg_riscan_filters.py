@@ -144,7 +144,7 @@ def test_pairs_without_stems_still_try_their_targets(far_pair):
 
 
 def test_trust_keeps_the_targets_pose_when_icp_drifts():
-    from sylva.coreg.pipeline import _trust_reflectors
+    from sylva.coreg.pipeline.pair import _trust_reflectors
 
     targets = coreg.yaw_transform(0.2, 5.0, 1.0, 0.0)
     drifted = coreg.yaw_transform(0.2, 5.4, 1.0, 0.0)  # ICP slid 40 cm

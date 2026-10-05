@@ -117,7 +117,7 @@ def _names(metrics) -> tuple[list[str] | None, str | None]:
 
 
 def _workers(workers) -> int:
-    from . import _workers as w
+    from .catalogue import _workers as w
 
     return w(workers)
 
@@ -269,7 +269,7 @@ def grid_metrics(catalog, resolution: float = 20.0, metrics=None, func: Callable
     ...     return {"hmean": z.mean() if len(z) else np.nan, "npts": len(c)}
     >>> mine = als.grid_metrics(cat, 20.0, func=canopy)               # doctest: +SKIP
     """
-    from . import _as_catalog
+    from .catalogue import _as_catalog
 
     cat = _as_catalog(catalog)
     if not (np.isfinite(float(resolution)) and float(resolution) > 0):
@@ -496,7 +496,7 @@ def plot_metrics(catalog, plots, radius=None, metrics=None, func: Callable | Non
     >>> names = [f.properties["name"] for f in layer]                            # doctest: +SKIP
     >>> t = als.plot_metrics(cat, layer, ids=names)                              # doctest: +SKIP
     """
-    from . import _as_catalog
+    from .catalogue import _as_catalog
 
     cat = _as_catalog(catalog)
     n, args = _plots(plots, radius)
