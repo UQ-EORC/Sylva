@@ -167,6 +167,14 @@ impl BlockedGrid {
     }
 
     /// Open a blocked grid written by [`super::voxelize_blocks`].
+    ///
+    /// Everything comes from the manifest: the grid's placement, how it was
+    /// traced, and which blocks hold anything. A trace that was interrupted
+    /// leaves `complete` false, and the directory is refused rather than read
+    /// as a grid with holes in it. The small closures below (`f`, `u`, `b`)
+    /// read one JSON value each, returning `None` when it is missing or of the
+    /// wrong kind, so a malformed manifest is reported as such instead of
+    /// quietly becoming a default.
     pub fn open(dir: impl AsRef<Path>) -> Result<Self> {
         let dir = dir.as_ref();
         let path = dir.join("grid.json");
@@ -707,6 +715,10 @@ fn read_block(path: &Path, params: &VoxelParams, shape: [usize; 3]) -> Result<Ra
     let mut out = empty_grid(params, [0.0; 3], shape);
     let names: Vec<String> = reader.metadata().file_metadata().schema_descr().columns().iter().map(|c| c.name().to_string()).collect();
     let bad = |what: &str| Error::file(path, format!("voxel block: {what}"));
+    // Parquet stores a file as row groups, each holding a stretch of the rows
+    // for every column, so the block is reassembled column by column within
+    // each group. `at[c]` is how many voxels of column `c` have been read so
+    // far, which is where the next group's values belong.
     let mut at = vec![0usize; names.len()];
     for g in 0..reader.num_row_groups() {
         let rg = reader.get_row_group(g)?;
@@ -716,6 +728,10 @@ fn read_block(path: &Path, params: &VoxelParams, shape: [usize; 3]) -> Result<Ra
             if start + rows > n {
                 return Err(bad("more rows than the block has voxels"));
             }
+            // The same read for every column type, written once: a macro
+            // rather than a function because each type needs a different
+            // reader variant, and these are generated at compile time.
+            // Parquet may return a batch at a time, hence the loop.
             macro_rules! read {
                 ($variant:ident, $ty:ty, $dst:expr) => {{
                     let ColumnReader::$variant(mut r) = rg.get_column_reader(c)? else { return Err(bad("unexpected column type")) };

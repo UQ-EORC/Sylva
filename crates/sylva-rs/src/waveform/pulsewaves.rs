@@ -287,6 +287,13 @@ struct Segment {
     samples: Vec<f32>,
 }
 
+/// Read one integer field whose width the descriptor decides, not the format.
+///
+/// PulseWaves lets a file say how many bits each field takes, so the width is
+/// only known once the descriptor has been read; everything is widened to
+/// `i64` here and interpreted by the caller. `impl Read` means "anything that
+/// can be read from", so this works on a file, a buffer, or the counting
+/// wrapper further down.
 fn read_int(r: &mut impl Read, bits: u8, signed: bool) -> std::io::Result<i64> {
     Ok(match (bits, signed) {
         (8, false) => r.read_u8()? as i64,
@@ -299,10 +306,21 @@ fn read_int(r: &mut impl Read, bits: u8, signed: bool) -> std::io::Result<i64> {
     })
 }
 
+/// Read one pulse's waves, as the descriptor says they are laid out.
+///
+/// There is no way to skip ahead: a field's width, how many segments there
+/// are and how long each is all come from the descriptor and from the bytes
+/// just read, so the record is walked strictly in order. `extra` is read and
+/// discarded because the specification allows bytes here that the descriptor
+/// does not describe.
 fn read_waves(r: &mut impl Read, desc: &Descriptor, tables: &BTreeMap<u32, Vec<f32>>, lookup: bool) -> std::io::Result<Vec<Segment>> {
     let mut extra = vec![0u8; desc.extra_waves_bytes as usize];
     r.read_exact(&mut extra)?;
     let mut out = Vec::new();
+    // A sampling is one record of the pulse - the outgoing shot, a returning
+    // channel - and each holds one or more segments, the stretches of the
+    // return the digitiser actually recorded. A zero field width means the
+    // count is fixed in the descriptor rather than stored per pulse.
     for (m, s) in desc.samplings.iter().enumerate() {
         let n_seg = if s.bits_for_segments != 0 { read_int(r, s.bits_for_segments, false)? as usize } else { s.n_segments as usize };
         let table = if lookup && s.lookup_table != 0 { tables.get(&(s.lookup_table as u32)) } else { None };
@@ -323,6 +341,10 @@ fn read_waves(r: &mut impl Read, desc: &Descriptor, tables: &BTreeMap<u32, Vec<f
                 }
                 bits => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{bits} bits per sample is not supported (8 or 16)"))),
             };
+            // Samples are stored as digitiser counts. A lookup table, when
+            // the file carries one and the caller wants it, maps each count
+            // to a physical value; a count beyond the table is left as it is
+            // rather than failing the read.
             let samples = match table {
                 Some(t) => raw.iter().map(|&x| t.get(x as usize).copied().unwrap_or(x as f32)).collect(),
                 None => raw.iter().map(|&x| x as f32).collect(),
@@ -383,6 +405,10 @@ pub fn read_waveforms(path: impl AsRef<Path>, opts: &PlsReadOptions) -> Result<(
         if LE::read_u32(&sig[16..]) != 0 {
             return Err(file_err(&wp, "compressed waves are not supported; decompress with pulsezip"));
         }
+        // The waves are read in the order they sit in the file, not in pulse
+        // order, so the read runs forwards through it. A short hop forwards is
+        // a relative skip, which the buffer can usually satisfy without
+        // asking the operating system; a long one is a real seek.
         let mut order = wanted;
         order.sort_by_key(|&i| pulses[i].offset);
         let mut pos = WAVES_HEADER as u64;
@@ -394,6 +420,9 @@ pub fn read_waveforms(path: impl AsRef<Path>, opts: &PlsReadOptions) -> Result<(
                 r.seek(SeekFrom::Start(at))?;
             }
             let desc = &info.descriptors[&(pulses[i].descriptor as u32)];
+            // A pulse's record has no stated length, so where the next one
+            // begins is only known from how many bytes this one took: hence
+            // reading through a wrapper that counts them.
             let mut counting = CountingReader { inner: &mut r, n: 0 };
             segs[i] = read_waves(&mut counting, desc, &info.tables, opts.lookup).map_err(|e| file_err(&wp, format!("waves of pulse {}: {e}", start + i as u64)))?;
             pos = at + counting.n;
@@ -409,6 +438,10 @@ pub fn read_waveforms(path: impl AsRef<Path>, opts: &PlsReadOptions) -> Result<(
         if !(len > 0.0) || !(desc.units > 0.0) {
             continue;
         }
+        // The beam's direction, and how far along it one nanosecond of
+        // sampling carries. The target is defined to lie 1000 sampling units
+        // beyond the anchor (see the module comment), which is what turns the
+        // two quantised points into a scale in metres per nanosecond.
         let dir = scale(&d, 1.0 / len);
         let mpns = len / 1000.0 / desc.units as f64;
         let origin = if desc.optical_center_to_anchor == FLUCTUATE { [f64::NAN; 3] } else { add(&p.anchor, &scale(&dir, -mpns * desc.units as f64 * desc.optical_center_to_anchor as f64)) };
@@ -453,6 +486,11 @@ pub fn read_waveforms(path: impl AsRef<Path>, opts: &PlsReadOptions) -> Result<(
     Ok((wf, start + count))
 }
 
+/// A reader that passes everything through and counts the bytes.
+///
+/// Implementing `Read` is all it takes for this to stand in for a file
+/// anywhere one is expected, which is how `read_waves` can report how long a
+/// record was without knowing anything about where it is reading from.
 struct CountingReader<'a, R: Read> {
     inner: &'a mut R,
     n: u64,

@@ -111,6 +111,25 @@ one that is safe to call from several threads. In a return type,
 how `BlockedGrid::slabs` walks a grid taller than memory
 (`voxel/blocked.rs`).
 
+**An `enum` is a value that is exactly one of several cases, and each case
+can carry data.** `Attr` (`pointcloud.rs`) is one of nine kinds of array, so
+an attribute column is a `Vec<f64>` *or* a `Vec<u8>` and never both. Code that
+handles every case writes one `match`, and the compiler refuses a `match` that
+forgets one — which is why adding an attribute type is a safe change.
+
+**Integers do not silently wrap.** `a * b` that overflows is treated as a bug
+and panics in a debug build, so code that *wants* wrapping says so:
+`wrapping_mul` in the NumPy generator (`util/nprandom`), where the arithmetic
+depends on it. The reverse shows up in grid code: row and column are unsigned,
+so `r.wrapping_sub(1)` at row 0 becomes a huge number, and the usual
+`if nr < nrows` bounds test rejects it — which is how the cloth filter in
+`ground.rs` handles its edges without a special case.
+
+**`macro_rules!` writes repetitive code at compile time.** `attr_dispatch!`
+(`pointcloud.rs`) writes one body out for all nine attribute types, and
+`read!` (`voxel/blocked.rs`) one Parquet read per column type. Read the body
+once and assume it was repeated; it is not a run-time cost.
+
 **`impl Thing for Type` adds behaviour to a type** — the nearest thing to a
 class method. `Default` provides the default settings structs, `Display`
 provides the text form used in error messages.

@@ -33,6 +33,18 @@ impl Default for CsfParams {
 }
 
 /// Ground mask by cloth simulation: `true` = ground.
+///
+/// The method, in a sentence: turn the cloud upside down, drop a stiff cloth
+/// onto it, and call ground whatever the settled cloth lies close to. The
+/// cloth cannot pass through the surface, so it drapes over the terrain and
+/// bridges the inverted canopy instead of sagging into it.
+///
+/// The simulation is the usual mass-spring one. Each cell of the cloth falls
+/// under gravity, keeps a little of its previous motion, and stops when it
+/// meets the surface; then the `rigidness` inner passes pull each cell back
+/// towards its neighbours' heights, which is what stops the cloth following
+/// every hollow. The loop ends when nothing moves appreciably, or after
+/// `iterations`.
 pub fn csf_ground_mask(points: &[Point], p: &CsfParams) -> Vec<bool> {
     if points.is_empty() {
         return Vec::new();
@@ -67,6 +79,11 @@ pub fn csf_ground_mask(points: &[Point], p: &CsfParams) -> Vec<bool> {
     surf_r.fill_nearest();
     let surface = surf_r.data;
 
+    // The cloth starts as a flat sheet below everything in the inverted
+    // cloud, so it has to fall onto the surface rather than start inside it.
+    // `prev` is where each cell was on the previous step, which is how the
+    // motion carries over; a cell that has met the surface stops being
+    // movable and is pinned there for the rest of the run.
     let inv_min = points.iter().map(|q| -q[2]).fold(f64::INFINITY, f64::min);
     let mut height = vec![inv_min - 1.0; nrows * ncols];
     let mut prev = height.clone();
@@ -85,6 +102,11 @@ pub fn csf_ground_mask(points: &[Point], p: &CsfParams) -> Vec<bool> {
                 movable[i] = false;
             }
         }
+        // Stiffness: each pass moves a cell halfway towards each neighbour
+        // it is out of line with, and more passes make a stiffer cloth. The
+        // moves are accumulated in `delta` and applied together, so that a
+        // cell is pulled by its neighbours' current heights rather than by
+        // whatever they have already been changed to this pass.
         for _ in 0..p.rigidness {
             delta.iter_mut().for_each(|d| *d = 0.0);
             for r in 0..nrows {
@@ -93,6 +115,14 @@ pub fn csf_ground_mask(points: &[Point], p: &CsfParams) -> Vec<bool> {
                     if !movable[i] {
                         continue;
                     }
+                    // The four neighbours. Row and column are unsigned, so
+                    // one step back from row 0 wraps around to a huge number
+                    // instead of going negative, and the `< nrows` test
+                    // rejects it - which is why the edges need no special
+                    // case. A neighbour already resting on the surface pulls
+                    // at full strength, a still-falling one at half, since
+                    // that one is being pulled the other way at the same
+                    // time.
                     let mut acc = 0.0;
                     let nb = [(r.wrapping_sub(1), c), (r + 1, c), (r, c.wrapping_sub(1)), (r, c + 1)];
                     for (nr, nc) in nb {

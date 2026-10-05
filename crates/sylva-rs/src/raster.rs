@@ -10,6 +10,22 @@ use std::path::Path;
 use crate::error::{Error, Result};
 
 /// A north-up grid; `data[row * ncols + col]`, row 0 is the *southern* edge.
+///
+/// The cells are one flat list, not a list of rows, so a cell is reached by
+/// `row * ncols + col` - what NumPy calls C order. Square cells only: one
+/// `resolution` serves both axes.
+///
+/// Row 0 being the southern edge is worth dwelling on, because it is the
+/// opposite of how an image is stored and of how a GeoTIFF is written: here
+/// the row index grows northwards, with the grid's corner at
+/// `(xmin, ymin)`, so a cell's centre is at
+/// `(xmin + (col + 0.5) * resolution, ymin + (row + 0.5) * resolution)`.
+/// The writers flip the rows on the way out.
+///
+/// A cell with no value holds NaN rather than a sentinel such as -9999, so
+/// arithmetic on missing data stays missing instead of quietly becoming a
+/// very low height. Comparisons against NaN are always false, which is why
+/// code here tests `is_finite()` rather than `!= nodata`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Raster {
     pub data: Vec<f64>,

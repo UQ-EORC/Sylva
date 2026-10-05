@@ -612,6 +612,13 @@ fn argmax(v: &[f64]) -> usize {
 /// pair or placement that puts a scanner more than `max_prior_shift` from
 /// its prior position is refused, and scans whose stems do not match are
 /// placed from their priors.
+///
+/// This is the survey-level driver, and it runs in stages, each marked below:
+/// decide which pairs of scans are worth trying; screen them by their stems;
+/// refine the survivors with ICP; build a pose graph from the pairs that
+/// succeeded and solve every pose at once; recover the scans that did not
+/// register; refine them all together; and report. A stage can be switched
+/// off in the configuration, in which case its poses simply pass through.
 pub fn coregister_prepared(scans: &[ScanFeatures], cfg: &CoregConfig, opts: &SurveyOptions, log: Log, already: f64) -> Result<SurveyResult> {
     let start = Instant::now();
     let n = scans.len();
@@ -632,6 +639,11 @@ pub fn coregister_prepared(scans: &[ScanFeatures], cfg: &CoregConfig, opts: &Sur
     };
     let positions = opts.approximate_positions.as_deref().or(located.as_deref());
 
+    // Which pairs to try. Named pairs are taken as given; otherwise every
+    // combination of usable scans is a candidate, less the pairs between two
+    // scans that are both already fixed, and less those too far apart to
+    // overlap - which matters, since the number of combinations grows with
+    // the square of the survey.
     let usable: Vec<usize> = (0..n).filter(|&k| scans[k].usable()).collect();
     if usable.len() < n {
         let names: Vec<&str> = scans.iter().filter(|s| !s.usable()).map(|s| s.name.as_str()).collect();
@@ -658,6 +670,10 @@ pub fn coregister_prepared(scans: &[ScanFeatures], cfg: &CoregConfig, opts: &Sur
     };
     let workers = resolve_workers(cfg.workers, 0.0, candidates.len());
 
+    // Screening: matching two scans' stem maps is far cheaper than ICP, and
+    // it rejects the pairs that do not overlap while handing the survivors a
+    // starting alignment. A rejected pair is still recorded, so the report
+    // says why it was dropped.
     let mut results: Vec<PairResult> = Vec::new();
     let matches: Vec<((usize, usize), Option<StemMatch>)> = if cfg.screen_pairs {
         log(&format!("Screening {} pairs by stem matching ...", candidates.len()));
@@ -705,6 +721,8 @@ pub fn coregister_prepared(scans: &[ScanFeatures], cfg: &CoregConfig, opts: &Sur
     results.extend(refined);
     results.sort_by_key(|p| (p.i, p.j));
 
+    // The pose graph: a node per scan, an edge per accepted pair, and one
+    // scan held fixed as the reference everything else is placed against.
     if n == 0 {
         return Err(Error::invalid("a pose graph needs at least one node"));
     }

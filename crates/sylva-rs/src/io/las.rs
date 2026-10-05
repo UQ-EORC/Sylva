@@ -19,6 +19,13 @@ const EXTRA_BYTES_USER_ID: &str = "LASF_Spec";
 const EXTRA_BYTES_RECORD_ID: u16 = 4;
 
 /// One extra-bytes dimension as described by the LAS 1.4 spec VLR.
+///
+/// LAS carries a fixed set of fields, so anything else - a ray's deviation, a
+/// tree id, a leaf/wood label - rides in "extra bytes" appended to each point
+/// record. A header record then says what those bytes mean: a name, a type
+/// code and a width. Reading them is therefore two steps: parse that record
+/// (`parse_extra_bytes_vlr`), then cut each point's trailing bytes up
+/// accordingly (`decode_dim`).
 #[derive(Debug, Clone)]
 struct ExtraDim {
     name: String,
@@ -26,6 +33,8 @@ struct ExtraDim {
     size: usize,
 }
 
+/// Bytes taken by one of the specification's numbered types, if it is one we
+/// can read; `None` for the deprecated array types.
 fn dim_size(data_type: u8) -> Option<usize> {
     Some(match data_type {
         1 | 2 => 1,
@@ -38,6 +47,13 @@ fn dim_size(data_type: u8) -> Option<usize> {
     })
 }
 
+/// The dimensions described by the extra-bytes record, in order.
+///
+/// Each description is exactly 192 bytes, so the record is read as a run of
+/// them: `chunks_exact(192)` hands over one at a time and ignores any
+/// trailing partial chunk. A dimension of a type we cannot decode is still
+/// listed, with its width, because its bytes have to be stepped over to reach
+/// the dimensions after it.
 fn parse_extra_bytes_vlr(vlr: &Vlr) -> Vec<ExtraDim> {
     let mut dims = Vec::new();
     for rec in vlr.data.chunks_exact(192) {
@@ -129,6 +145,12 @@ fn read_las_impl(path: &Path, mut keep: impl FnMut(&Point) -> bool, reserve_all:
 /// Stream a LAS/LAZ file in batches of up to `batch` points, handing each to
 /// `f` as a cloud with the attributes of [`read_las`], in file order. Only
 /// one batch is held in memory at a time.
+///
+/// `f` is a callback: this function reads a batch, hands it over, and the
+/// memory is reused for the next one, so a survey far larger than memory can
+/// be processed a piece at a time. `FnMut` means `f` may keep and update
+/// state of its own between batches - a running total, a writer - and the
+/// `?` on the call means a batch that fails stops the read there.
 pub fn read_las_batches(path: impl AsRef<Path>, batch: u64, mut f: impl FnMut(PointCloud) -> Result<()>) -> Result<()> {
     let mut reader = Reader::from_path(path.as_ref())?;
     let header = reader.header().clone();

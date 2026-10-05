@@ -59,6 +59,7 @@ fn normalize(h: &mut [f64]) {
     }
 }
 
+/// Which of `n` equal bins over `[0, pi/2]` an inclination falls in.
 fn bin_of(theta: f64, n: usize) -> usize {
     ((theta / FRAC_PI_2 * n as f64) as usize).min(n - 1)
 }
@@ -255,6 +256,18 @@ pub(crate) fn build(vox: &mut RayVoxels, echoes: EchoPoints) {
 /// all edges under `l_max`, binned by facet inclination with weight
 /// `area · sin θ`; `G` per facet is `|n_z|` (vertical mean beam direction,
 /// as in rayvoxel). Facets belong to the voxel of their first vertex.
+/// Build the triangles the Bailey method measures, per tree.
+///
+/// Every triple of mutually close points of the same class (all leaf or all
+/// wood) within `l_max` of each other becomes a facet standing for a piece of
+/// surface. Its normal gives an inclination and its area a weight, so a large
+/// surface counts for more than a cluster of points on a small one. Each
+/// triangle is formed once: `tri` is sorted and remembered, since the same
+/// three points are reached again from each of them in turn.
+///
+/// The `w = 0.5 * len * sin(theta)` weight is the triangle's area (half the
+/// cross product's length) times the sine of its inclination, which corrects
+/// for facets at a given angle being more likely to be seen.
 fn triangle_facets(pts: &[Point], neighbours: &[Vec<usize>], meta: &[(usize, u8, i32, f64)], nb: usize, l_max: f64) -> HashMap<usize, Facets> {
     let l2 = l_max * l_max;
     let d2 = |a: usize, b: usize| {

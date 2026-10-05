@@ -711,6 +711,8 @@ fn tree_dir(store: &Path, tree_id: i64) -> PathBuf {
 pub fn split_trees(cat: &Catalog, out_dir: &Path, attribute: &str, workers: usize) -> Result<(Vec<TreeEntry>, RunInfo)> {
     let counts = Counts::default();
     fs::create_dir_all(out_dir)?;
+    // Clear any tree directories from an earlier run: a tree whose points
+    // have moved would otherwise keep the parts it no longer owns.
     for e in fs::read_dir(out_dir)? {
         let p = e?.path();
         let stale = p.file_name().map(|n| n.to_string_lossy().starts_with("tree_")).unwrap_or(false);
@@ -722,6 +724,10 @@ pub fn split_trees(cat: &Catalog, out_dir: &Path, attribute: &str, workers: usiz
     let (chunks, w) = tiles::prepare(cat, None, None, 0.0, workers)?;
     let found = run(cat, &chunks, w, "splitting trees", |chunk, data| {
         counts.chunks.fetch_add(1, Ordering::Relaxed);
+        // Only the tile's own points, not the buffer its neighbours lent it,
+        // so a point near a boundary is written once and by one tile. The
+        // chunk's full data is dropped straight after, to free the buffer
+        // before the per-tree parts are built.
         let own = chunk.own.expect("one chunk per tile");
         let core = data.cloud.take(&data.core_indices());
         drop(data);
@@ -733,6 +739,8 @@ pub fn split_trees(cat: &Catalog, out_dir: &Path, attribute: &str, workers: usiz
                 groups.entry(l as i64).or_default().push(i);
             }
         }
+        // One file per tree per tile, named after the tile, so a tree's
+        // points can later be read back from the tiles it touches alone.
         let mut out = Vec::with_capacity(groups.len());
         for (id, idx) in groups {
             let part = core.take(&idx);
@@ -744,6 +752,9 @@ pub fn split_trees(cat: &Catalog, out_dir: &Path, attribute: &str, workers: usiz
         }
         Ok(out)
     })?;
+    // A tree may straddle several tiles, so the per-tile results are now
+    // merged by tree id: its points counted, its bounds widened to cover
+    // every part, and the tiles it appears in recorded.
     let mut entries: BTreeMap<i64, TreeEntry> = BTreeMap::new();
     for (id, t, n, b) in found.into_iter().flatten().flatten() {
         let e = entries.entry(id).or_insert(TreeEntry { tree_id: id, n_points: 0, bounds: [f64::INFINITY, f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], parts: Vec::new() });

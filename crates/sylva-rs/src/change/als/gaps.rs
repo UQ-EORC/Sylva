@@ -344,11 +344,19 @@ pub fn gap_change(chm_a: &Raster, chm_b: &Raster, classes: Option<&[u8]>, p: &Ga
     }
     let ga = find_gaps(chm_a, p)?;
     let gb = find_gaps(chm_b, p)?;
+    // Each cell is classified by whether it was a gap in each survey, and,
+    // where that changed, by whether the height change was large enough to
+    // believe. A cell that became gap needs a significant loss of height
+    // (class 3) to count as newly formed, and one that stopped being gap
+    // needs a gain (class 2) to count as closed; anything else is
+    // "uncertain", so noise in the surface is not read as canopy change.
     let mut cells = vec![0u8; n];
     for (k, cell) in cells.iter_mut().enumerate() {
         let (ia, ib) = (ga.labels[k] > 0, gb.labels[k] > 0);
         let data = chm_a.data[k].is_finite() && chm_b.data[k].is_finite();
         let cls = classes.map(|c| c[k]);
+        // The codes are indices into `GAP_CELLS`: 0 canopy, 1 stable_gap,
+        // 2 formed, 3 closed, 4 uncertain, 5 no_data.
         *cell = if !data {
             5
         } else if ia && ib {
@@ -374,6 +382,9 @@ pub fn gap_change(chm_a: &Raster, chm_b: &Raster, classes: Option<&[u8]>, p: &Ga
     for &c in &cells {
         areas[c as usize] += cell;
     }
+    // Per gap of one survey: how many cells it covers, how many of those are
+    // also gap in the other survey, and how many changed in the way `code`
+    // means. Those three counts are all the per-gap status needs.
     let tally = |g: &Gaps, other: &Gaps, code: u8| -> Vec<(usize, usize, usize)> {
         let mut t = vec![(0usize, 0usize, 0usize); g.gaps.len()];
         for (k, &l) in g.labels.iter().enumerate() {
@@ -392,6 +403,11 @@ pub fn gap_change(chm_a: &Raster, chm_b: &Raster, classes: Option<&[u8]>, p: &Ga
         t
     };
     let (ta, tb) = (tally(&ga, &gb, 3), tally(&gb, &ga, 2));
+    // A gap that changed somewhere and has nothing left in common with the
+    // other survey has gone entirely ("closed" looking forwards, "new"
+    // looking back); one that changed but still overlaps changed in part; one
+    // that overlaps and did not change is stable. A gap with neither is one
+    // whose change was too small to call, not one that held still.
     let status = |overlap: usize, changed: usize, gone: &'static str, partly: &'static str| -> &'static str {
         match (overlap > 0, changed > 0) {
             (false, true) => gone,

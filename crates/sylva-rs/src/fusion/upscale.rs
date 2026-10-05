@@ -214,9 +214,14 @@ pub fn predict(f: &Fit, x: &[Vec<f64>], level: f64) -> Result<Prediction> {
     if x.iter().any(|c| c.len() != rows) {
         return Err(Error::invalid("every predictor needs the same number of values"));
     }
+    // How many standard errors wide the interval is, from Student's t with
+    // the model's degrees of freedom: narrower for a model fitted on many
+    // plots, wider for one fitted on a handful.
     let t = t_quantile(0.5 * (1.0 + level), f.df as f64);
     let s2 = f.sigma * f.sigma;
     let mut out = Prediction::default();
+    // One row's predictors, with a leading 1 for the intercept. The vector is
+    // reused across rows rather than allocated per row.
     let mut x0 = vec![0.0; k];
     for i in 0..rows {
         x0[0] = 1.0;
@@ -224,6 +229,9 @@ pub fn predict(f: &Fit, x: &[Vec<f64>], level: f64) -> Result<Prediction> {
         let mut extra = false;
         for (j, c) in x.iter().enumerate() {
             let v = c[i];
+            // A predictor outside the range the model was fitted on: the
+            // prediction is still made, but flagged, because a regression
+            // says nothing dependable beyond the data behind it.
             extra |= v < f.x_min[j] || v > f.x_max[j];
             let v = if f.form == Form::LogLog { if v > 0.0 { v.ln() } else { f64::NAN } } else { v };
             ok &= v.is_finite();
@@ -237,6 +245,11 @@ pub fn predict(f: &Fit, x: &[Vec<f64>], level: f64) -> Result<Prediction> {
             out.extrapolated.push(false);
             continue;
         }
+        // The fitted value, then its uncertainty. `h` is this row's leverage,
+        // which grows the further its predictors sit from the middle of the
+        // fitting data, so a prediction out at the edge of the plots comes
+        // with a wider interval. The `1.0 +` is the scatter of a single new
+        // observation about the line, on top of the uncertainty in the line.
         let m: f64 = x0.iter().zip(&f.coef).map(|(a, b)| a * b).sum();
         let mut h = 0.0;
         for a in 0..k {
@@ -252,6 +265,11 @@ pub fn predict(f: &Fit, x: &[Vec<f64>], level: f64) -> Result<Prediction> {
                 out.lower.push(m - t * s);
                 out.upper.push(m + t * s);
             }
+            // A log-log model was fitted on logarithms, so exponentiating the
+            // fitted value gives a median, not a mean: the `0.5 * s2` term is
+            // the usual correction back to the mean. The interval needs no
+            // correction, since exponentiating is monotonic, which is why it
+            // is not symmetric about the mean.
             Form::LogLog => {
                 out.mean.push((m + 0.5 * s2).exp());
                 out.se.push((m + 0.5 * s * s).exp() * ((s * s).exp() - 1.0).sqrt());

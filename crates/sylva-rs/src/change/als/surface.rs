@@ -473,7 +473,14 @@ fn epoch_cells(cloud: &PointCloud, heights: &[f64], dtm_sd: &Raster, dtm_fine: O
     let first = first_returns(cloud);
     let keys = super::pulse_keys(cloud);
     let mut firsts = vec![0usize; n];
+    // One height per cell per pulse, the highest that pulse returned there.
+    // A cell's height is then compared across surveys pulse by pulse rather
+    // than point by point, so a cell that happened to be hit by more pulses
+    // in one survey does not look taller for it.
     let mut best: HashMap<(usize, u64), f64> = HashMap::new();
+    // Which cell of this chunk's window a coordinate falls in, if any; the
+    // window is a window on a larger catalogue, so points outside it are not
+    // this chunk's business.
     let cell_of = |x: f64, y: f64| -> Option<usize> {
         let (r, c) = (((y - y0) / res).floor(), ((x - x0) / res).floor());
         if r >= 0.0 && c >= 0.0 && (r as usize) < nr && (c as usize) < nc { Some(r as usize * nc + c as usize) } else { None }
@@ -498,6 +505,9 @@ fn epoch_cells(cloud: &PointCloud, heights: &[f64], dtm_sd: &Raster, dtm_fine: O
                     *e = h;
                 }
             };
+            // A point can be spread over a small circle before being binned,
+            // which fills the gaps between returns on a sparse survey: the
+            // point claims the eight cells around it as well as its own.
             if p.subcircle > 0.0 {
                 for a in 0..8 {
                     let ang = a as f64 * std::f64::consts::FRAC_PI_4;
@@ -510,6 +520,10 @@ fn epoch_cells(cloud: &PointCloud, heights: &[f64], dtm_sd: &Raster, dtm_fine: O
             }
         }
     }
+    // Gather the per-pulse heights into a sorted list per cell. Sorting makes
+    // the later statistics (a median, a percentile) straightforward, and it
+    // also means the result does not depend on the order the hash map
+    // happened to hand them back, which varies between runs.
     let mut units = vec![Vec::new(); n];
     for ((k, _), h) in best {
         units[k].push(h);
@@ -523,6 +537,10 @@ fn epoch_cells(cloud: &PointCloud, heights: &[f64], dtm_sd: &Raster, dtm_fine: O
     for k in 0..n {
         let (r, c) = (k / nc, k % nc);
         let (cx, cy) = (x0 + (c as f64 + 0.5) * res, y0 + (r as f64 + 0.5) * res);
+        // How uncertain the ground is under this cell, which later sets how
+        // large a height change has to be to be believed. A surface model
+        // measured from the top does not stand on the DTM at all, so it
+        // carries none of its uncertainty.
         match (p.surface, dtm_fine) {
             (Surface::Dsm, _) => sd[k] = 0.0,
             (Surface::Dtm, Some((v, s))) => {

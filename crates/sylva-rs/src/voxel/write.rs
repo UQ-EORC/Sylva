@@ -34,6 +34,17 @@ fn real(v: f64) -> String {
 
 impl RayVoxels {
     /// Output columns after the voxel indices, in rayvoxel's order.
+    ///
+    /// A column is a name and a function from a voxel's index to its text, so
+    /// the table is described here once and the writers simply walk it. The
+    /// functions are boxed because each is a different closure; `Box<dyn Fn>`
+    /// is "some function, decided at run time", which is what lets them sit in
+    /// one list. Nothing is computed until a writer asks for a voxel, so the
+    /// derived quantities cost nothing for a column that is not written.
+    ///
+    /// The order is rayvoxel's, and some columns appear only when the trace
+    /// recorded them — leaf and wood counts, sub-voxel splits, the beam
+    /// fields — so the header matches what is actually in the grid.
     pub(crate) fn columns(&self) -> Vec<Column<'_>> {
         let mut cols: Vec<Column> = Vec::new();
         macro_rules! col {
@@ -41,6 +52,7 @@ impl RayVoxels {
                 cols.push(($name.to_string(), Box::new($f)))
             };
         }
+        // Shorthands: a raw counter, and a raw sum formatted as rayvoxel does.
         let int = |fld: I| move |i: usize| self.get_i(fld, i).to_string();
         let flt = |fld: F| move |i: usize| real(self.get_f(fld, i) as f64);
         let incl = self.predominant_tree.is_some();

@@ -866,6 +866,10 @@ impl ScanTiler {
     /// threads, fewer if memory is short), remove the scratch files and
     /// return the paths and point counts, south to north, west to east.
     pub fn finish(self, workers: usize) -> Result<(Vec<(PathBuf, usize)>, RunInfo)> {
+        // Points were written to a scratch file per tile as the survey was
+        // read; each of those is now read back, thinned if asked, and written
+        // as one file. A tile is held whole in memory while it is assembled,
+        // so the thread count is cut when the biggest tiles would not fit.
         let keys: Vec<((i64, i64), u64)> = self.spilled.iter().map(|(k, n)| (*k, *n)).collect();
         let w = workers_for_estimates(&keys.iter().map(|k| k.1).collect::<Vec<_>>(), workers, BYTES_PER_POINT)?;
         let vlrs: Vec<las::Vlr> = self.params.epsg.map(epsg_vlr).into_iter().collect();

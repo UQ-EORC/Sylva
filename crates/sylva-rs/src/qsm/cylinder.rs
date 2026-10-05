@@ -20,6 +20,11 @@ pub struct CylinderFit {
     pub rmse: f64,
 }
 
+/// The direction the points are most spread along, as a starting axis.
+///
+/// For points on a branch that is the branch's own direction: the covariance
+/// matrix's largest eigenvector. It only has to be close, since the fit
+/// below adjusts it.
 fn axis_from_pca(xyz: &[Point]) -> Point {
     let n = xyz.len() as f64;
     let mut c = [0.0; 3];
@@ -39,6 +44,12 @@ fn axis_from_pca(xyz: &[Point]) -> Point {
     normalize(&[v[0], v[1], v[2]])
 }
 
+/// Two perpendicular directions across the axis.
+///
+/// The fit shifts the axis sideways within this pair rather than moving a
+/// point in space, which is what keeps the parameters to five: moving along
+/// the axis would not change the cylinder at all, and a parameter that does
+/// nothing makes the solve ill-conditioned.
 fn perp_basis(axis: &Point) -> (Point, Point) {
     let helper = if axis[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
     let u = normalize(&cross(axis, &helper));
@@ -72,10 +83,17 @@ pub fn fit_cylinder(xyz: &[Point], axis_init: Option<Point>) -> Result<CylinderF
             centroid[k] += p[k] / n;
         }
     }
+    // The starting guess: the caller's axis if it has one (the parent branch's
+    // direction, usually), else PCA. The axis is carried as two angles rather
+    // than three components, so it cannot drift off unit length during the
+    // solve, and the radius starts as the mean distance from the axis.
     let axis0 = axis_init.map(|a| normalize(&a)).unwrap_or_else(|| axis_from_pca(xyz));
     let theta0 = axis0[2].clamp(-1.0, 1.0).acos();
     let phi0 = axis0[1].atan2(axis0[0]);
     let r0 = cylinder_residuals(xyz, &centroid, &axis0, 0.0).iter().sum::<f64>() / n;
+    // The five numbers the solver works on, turned back into a cylinder: two
+    // angles for the axis, two offsets across it, and the radius. The solver
+    // knows nothing of cylinders - it is handed this and the residuals.
     let (u, v) = perp_basis(&axis0);
     let unpack = |p: &[f64]| -> (Point, Point, f64) {
         let (theta, phi) = (p[0], p[1]);
@@ -96,6 +114,10 @@ pub fn fit_cylinder(xyz: &[Point], axis_init: Option<Point>) -> Result<CylinderF
         100,
         1e-10,
     );
+    // An axis and its reverse describe the same cylinder, and the radius may
+    // come back negative for the same reason, so both are given one form:
+    // pointing up, with a positive radius. Two fits of the same points are
+    // then comparable.
     let (pt, mut axis, r) = unpack(&res.x);
     if axis[2] < 0.0 {
         axis = scale(&axis, -1.0);

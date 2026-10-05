@@ -15,6 +15,12 @@
 
 pub mod dist;
 
+// The constants are NumPy's own, and the arithmetic below is deliberately
+// written with `wrapping_mul`, `wrapping_add` and `wrapping_sub`: these
+// hashes and the generator's step rely on multiplication running off the end
+// of the integer and keeping only the low bits. Rust's ordinary `*` and `+`
+// treat that overflow as a bug and panic on it in a debug build, so the
+// wrapping forms are what say "overflow is the point here".
 const MULT: u128 = 0x2360_ED05_1FC6_5DA4_4385_DF64_9FCC_F645;
 const INIT_A: u32 = 0x43b0_d7e5;
 const MULT_A: u32 = 0x931e_8875;

@@ -3,6 +3,17 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Core point cloud container.
+//!
+//! A [`PointCloud`] is the shape almost every function in the core takes or
+//! returns: coordinates in one list, named attribute columns beside them. It
+//! is columnar, like a data frame and like the NumPy arrays it becomes on the
+//! Python side, not a list of point objects - a cloud of ten million points
+//! is a handful of long arrays, so a pass over one attribute reads only that
+//! attribute.
+//!
+//! It is plain data and holds no indexes, no spatial structure and no opinion
+//! about what the attributes mean. Anything that needs a neighbour search
+//! builds a tree over the coordinates and drops it afterwards.
 
 use std::collections::BTreeMap;
 
@@ -14,6 +25,15 @@ use crate::Point;
 ///
 /// Types mirror what LAS and numpy commonly carry so files round-trip
 /// without silent widening.
+///
+/// An `enum` in Rust is a value that is exactly one of its listed cases, and
+/// here each case carries a whole column: an `Attr` is one of nine kinds of
+/// array, not a struct with nine fields. Code that handles every type writes
+/// one `match`, and the compiler refuses any `match` that forgets a case -
+/// which is why `attr_dispatch!` below can write the same body once for all
+/// nine. Reading a value of unknown type is [`Attr::get_f64`], and a whole
+/// column as f64 is [`Attr::to_f64`]; both widen, so use them where the
+/// stored type does not matter and the variant directly where it does.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Attr {
     F64(Vec<f64>),
@@ -130,6 +150,16 @@ attr_from!(f64 => F64, f32 => F32, i64 => I64, i32 => I32, u32 => U32, u16 => U1
            i8 => I8, bool => Bool);
 
 /// A set of 3-D points with optional per-point attributes.
+///
+/// `xyz[i]` is point `i` as `[x, y, z]`, and every column in `attrs` has one
+/// value per point in the same order, so point `i` is row `i` everywhere. A
+/// function that drops or reorders points must do the same to every
+/// attribute, which is what [`PointCloud::take`] is for.
+///
+/// `attrs` is a `BTreeMap`, a map kept sorted by name rather than hashed, so
+/// walking the attributes gives the same order on every run and in every
+/// process - which matters because that order reaches written files and
+/// recorded test output.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PointCloud {
     pub xyz: Vec<Point>,
@@ -177,6 +207,12 @@ impl PointCloud {
         Ok(())
     }
 
+    /// The column called `name`, or `None` if the cloud has no such column.
+    ///
+    /// `Option` is how Rust says "there may be nothing here"; there is no
+    /// null, so the caller has to say what happens when the attribute is
+    /// absent - usually `?`, or an error naming it. The returned `&Attr`
+    /// borrows this cloud's column rather than copying it.
     pub fn attr(&self, name: &str) -> Option<&Attr> {
         self.attrs.get(name)
     }
@@ -199,6 +235,12 @@ impl PointCloud {
         self.xyz.iter().map(|p| p[1])
     }
 
+    /// Every point's height, as a sequence computed on demand.
+    ///
+    /// Nothing is allocated: `impl Iterator` is a lazy sequence that produces
+    /// one value at a time, so `cloud.z().sum()` walks the coordinates
+    /// without building a column of them. Call `.collect()` for a `Vec` when
+    /// one is genuinely needed.
     pub fn z(&self) -> impl Iterator<Item = f64> + '_ {
         self.xyz.iter().map(|p| p[2])
     }
@@ -220,6 +262,12 @@ impl PointCloud {
     }
 
     /// Subset by explicit row indices.
+    ///
+    /// The one way to keep a subset of the points: the coordinates and every
+    /// attribute are indexed together, so rows cannot fall out of step. `idx`
+    /// may repeat an index or give them in any order, so this also reorders
+    /// and duplicates - the result has one point per entry of `idx`, in that
+    /// order. It is the core's equivalent of `cloud[idx]` on a NumPy array.
     pub fn take(&self, idx: &[usize]) -> PointCloud {
         PointCloud {
             xyz: idx.iter().map(|&i| self.xyz[i]).collect(),

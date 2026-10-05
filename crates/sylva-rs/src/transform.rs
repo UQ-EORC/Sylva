@@ -10,6 +10,19 @@ use crate::error::{Error, Result};
 use crate::Point;
 
 /// A 4x4 homogeneous transform (row-major semantics: `p' = M p`).
+///
+/// The usual 4x4: the top-left 3x3 rotates (and, for an affine one, scales or
+/// shears), the last column translates, and the fourth row is `0 0 0 1`. A
+/// point is carried by multiplying on the left, so `a * b` applies `b` first
+/// and then `a` - the order to keep in mind when composing a chain of
+/// registrations.
+///
+/// `Transform(pub Matrix4<f64>)` is a named wrapper around one matrix: a
+/// distinct type, so a transform cannot be mistaken for any other 4x4, with
+/// the matrix itself reachable as `.0` when nalgebra's own operations are
+/// wanted. Being `Copy` means it is duplicated on assignment like a number
+/// rather than moved, which is why transforms are passed around by value
+/// throughout the core.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform(pub Matrix4<f64>);
 
