@@ -9,7 +9,7 @@ use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntyped
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use sylva_rs::quality_summary as qs;
+use sylva_rs::quality::summary as qs;
 
 use crate::err;
 

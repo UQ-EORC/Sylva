@@ -53,7 +53,7 @@ pub struct BlockOptions {
     /// shorter).
     pub block: [usize; 3],
     /// Bytes the tracing accumulators of one pass may take; `None` is half
-    /// of [`crate::limits::budget`] (8 GB when the system does not say).
+    /// of [`crate::util::limits::budget`] (8 GB when the system does not say).
     pub max_memory: Option<u64>,
     /// Threads; 0 uses the global pool.
     pub workers: usize,
@@ -369,7 +369,7 @@ pub fn voxelize_blocks(pulses: &Pulses, params: &VoxelParams, dtm: Option<&Raste
             if xyz.is_empty() {
                 return Err(Error::invalid("no echoes to fit the grid to; pass bounds"));
             }
-            pad_bounds((crate::spatial::min_corner(&xyz), crate::spatial::max_corner(&xyz)))
+            pad_bounds((crate::util::spatial::min_corner(&xyz), crate::util::spatial::max_corner(&xyz)))
         }
     };
     let shape = grid_shape(params, bounds)?;
@@ -379,7 +379,7 @@ pub fn voxelize_blocks(pulses: &Pulses, params: &VoxelParams, dtm: Option<&Raste
     let block: [usize; 3] = std::array::from_fn(|k| opts.block[k].min(shape[k]));
     let nb: [usize; 3] = std::array::from_fn(|k| shape[k].div_ceil(block[k]));
     let per_voxel = bytes_per_voxel(params);
-    let allowance = opts.max_memory.unwrap_or_else(|| crate::limits::budget().map_or(8_000_000_000, |b| b / 2));
+    let allowance = opts.max_memory.unwrap_or_else(|| crate::util::limits::budget().map_or(8_000_000_000, |b| b / 2));
     let budget = (allowance / per_voxel as u64).max(1) as usize;
     let passes = plan_passes(shape, block, nb, budget)?;
 
@@ -388,7 +388,7 @@ pub fn voxelize_blocks(pulses: &Pulses, params: &VoxelParams, dtm: Option<&Raste
         None => {
             let n = shape.iter().map(|&v| v as u128).product::<u128>();
             let fields = super::F::ALL.len() + super::I::ALL.len() + 1;
-            crate::limits::check_cells(
+            crate::util::limits::check_cells(
                 n,
                 (fields * 4 + params.subvoxel_split.pow(3)) as u64,
                 &format!("the assembled {} x {} x {} voxel grid at {} m", shape[0], shape[1], shape[2], params.voxel_size),
@@ -428,7 +428,7 @@ pub fn voxelize_blocks(pulses: &Pulses, params: &VoxelParams, dtm: Option<&Raste
         for (p, pass) in passes.iter().enumerate() {
             let mut engines: Vec<Engine> = pass.windows.par_iter().map(|w| Engine::new_window(params, geom.clone(), *w)).collect();
             stats.peak_voxels = stats.peak_voxels.max(engines.iter().map(|e| e.n_cells()).sum());
-            let task = crate::progress::start(format!("tracing blocks, pass {} of {}", p + 1, passes.len()), total);
+            let task = crate::util::progress::start(format!("tracing blocks, pass {} of {}", p + 1, passes.len()), total);
             for_each_batch(pulses, dtm, |inputs, range| {
                 // A batch starting at pulse 0 is a new set of inputs: all of
                 // them in memory, or the next row groups of a file.

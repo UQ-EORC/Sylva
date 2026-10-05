@@ -39,8 +39,8 @@ def voxel_downsample(cloud: PointCloud, voxel_size: float, method: str = "first"
     origin
         ``(x, y, z)`` of a corner of the voxel grid, so that different
         clouds are thinned on one grid (``(0, 0, 0)`` for voxels at
-        multiples of ``voxel_size``, as :func:`sylva.tiles.from_scans` and
-        :func:`sylva.tiles.voxel_downsample` use); ``"first"`` only.
+        multiples of ``voxel_size``, as :func:`sylva.als.tiles.from_scans` and
+        :func:`sylva.als.tiles.voxel_downsample` use); ``"first"`` only.
 
     Returns
     -------

@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 from scipy.spatial import ConvexHull
 
-from sylva import PointCloud, Raster, als, als_metrics, canopy, io, trees, waveform
+from sylva import PointCloud, Raster, als, canopy, io, trees, waveform
+from sylva.als import metrics as als_metrics
 from sylva.coreg import simulate
 from sylva.coreg.icp import ICPConfig, ICPTarget, plane_information
 from sylva.coreg.matching import MatchResult

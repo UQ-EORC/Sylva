@@ -22,6 +22,7 @@
 //! * [`voxels`]: voxel occupancy change from two ray-traced grids;
 //! * [`qsm`]: QSMs compared, branch by branch, where both were measured.
 
+pub mod als;
 pub mod epochs;
 pub mod points;
 pub mod provenance;

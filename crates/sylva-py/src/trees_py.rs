@@ -8,8 +8,8 @@
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use sylva_rs::buttress_detect as bd;
-use sylva_rs::tree_prune as tp;
+use sylva_rs::qsm::buttress_detect as bd;
+use sylva_rs::trees::prune as tp;
 
 use crate::{err, tree_to_py, trees_from_py, xyz_from_py};
 

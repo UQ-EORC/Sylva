@@ -1,6 +1,6 @@
 # Interpolation
 
-`sylva.interpolate` moves values between point clouds and rasters:
+`sylva.geo.interpolate` moves values between point clouds and rasters:
 
 | Function | From | To | Methods |
 |---|---|---|---|
@@ -21,7 +21,8 @@ then gridded into a DTM that is read back at every point.
 
 ```python
 import sylva
-from sylva import filters, ground, interpolate
+from sylva import filters, ground
+from sylva.geo import interpolate
 
 cloud = sylva.read("docs/examples/data/litch_tile.laz")
 thin = filters.voxel_downsample(cloud, 0.2)           # 92,061 points

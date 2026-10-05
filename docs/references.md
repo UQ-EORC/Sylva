@@ -312,7 +312,7 @@ Environment*, *251*, 112061. <https://doi.org/10.1016/j.rse.2020.112061>
 In Sylva: the catalogue of tiles processed in buffered chunks that
 [`sylva.als`](api/als.md) follows, and the reference its DTMs and CHMs were
 checked against; the definitions of the area-based metrics of
-[`sylva.als_metrics`](api/als_metrics.md) (`stdmetrics`, `entropy`).
+[`sylva.als.metrics`](api/als_metrics.md) (`stdmetrics`, `entropy`).
 
 Rusu, R. B., Marton, Z. C., Blodow, N., Dolha, M., & Beetz, M. (2008). Towards
 3D point cloud based object maps for household environments. *Robotics and

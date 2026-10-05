@@ -1,3 +1,3 @@
-# sylva.limits
+# sylva.util.limits
 
-::: sylva.limits
+::: sylva.util.limits

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for sylva_rs::masks.
+//! Bindings for sylva_rs::geo::masks.
 //!
 //! Polygon layers cross the boundary flattened: `coords (M, 2)`,
 //! `ring_start (R + 1)` into coords, `part_start (P + 1)` into rings (the
@@ -15,7 +15,7 @@ use numpy::{IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyA
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use sylva_rs::masks::{self, Expr, MultiPolygon, Polygon, PolygonIndex, Property, RasterTest};
+use sylva_rs::geo::masks::{self, Expr, MultiPolygon, Polygon, PolygonIndex, Property, RasterTest};
 use sylva_rs::Point;
 
 use crate::{attr_from_py, err, raster_from_py};

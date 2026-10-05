@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for sylva_rs::change_als: change between airborne surveys.
+//! Bindings for sylva_rs::change::als: change between airborne surveys.
 //!
 //! Rasters cross as `(data, xmin, ymin, resolution)` tuples one way and
 //! dicts the other, catalogues as the dicts of `als_py`, and an alignment as
@@ -15,15 +15,15 @@ use numpy::{IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyA
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use sylva_rs::als_canopy::ProfileGrid;
-use sylva_rs::als_metrics::MetricParams;
-use sylva_rs::change_als::align::{self, AlignParams, Alignment, Model};
-use sylva_rs::change_als::gaps::{self, GapParams, Gaps};
-use sylva_rs::change_als::metrics::{self, MetricChangeParams};
-use sylva_rs::change_als::surface::{self, DtmKind, EpochStats, Surface, SurfaceParams};
-use sylva_rs::change_als::trees::{self, AlsTree, CanopyChange, TreeChangeParams, TreeChangeRow};
-use sylva_rs::change_als::Harmonise;
-use sylva_rs::masks::Polygon;
+use sylva_rs::als::canopy::ProfileGrid;
+use sylva_rs::als::metrics::MetricParams;
+use sylva_rs::change::als::align::{self, AlignParams, Alignment, Model};
+use sylva_rs::change::als::gaps::{self, GapParams, Gaps};
+use sylva_rs::change::als::metrics::{self, MetricChangeParams};
+use sylva_rs::change::als::surface::{self, DtmKind, EpochStats, Surface, SurfaceParams};
+use sylva_rs::change::als::trees::{self, AlsTree, CanopyChange, TreeChangeParams, TreeChangeRow};
+use sylva_rs::change::als::Harmonise;
+use sylva_rs::geo::masks::Polygon;
 use sylva_rs::Raster;
 
 use crate::als_py::{catalog_from_py, layout};

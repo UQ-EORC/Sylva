@@ -150,23 +150,23 @@ def fuse():
         out[f"{name}_volume"] = t.volume
     out["total_volume"] = b.total_volume(model)
     # The cross-sections and the join fit on their own.
-    base = qsm._section(np.asarray(b.vertices, float), np.asarray(b.faces), b.top_z - 0.05)
+    base = qsm.buttress._section(np.asarray(b.vertices, float), np.asarray(b.faces), b.top_z - 0.05)
     wv, wf, _ = model.above(b.top_z).mesh(12, True)
-    stem = qsm._section(wv, wf, b.top_z + 0.05)
+    stem = qsm.buttress._section(wv, wf, b.top_z + 0.05)
     out["section_base"] = base
     out["section_stem"] = stem
-    out["join_fit"] = np.array(qsm._join_fit(base, stem))
-    out["join_fit_coarse"] = np.array(qsm._join_fit(base, stem, cell=0.07))
-    out["join_fit_empty"] = np.array(qsm._join_fit(base, np.zeros((0, 2, 2))))
+    out["join_fit"] = np.array(qsm.buttress._join_fit(base, stem))
+    out["join_fit_coarse"] = np.array(qsm.buttress._join_fit(base, stem, cell=0.07))
+    out["join_fit_empty"] = np.array(qsm.buttress._join_fit(base, np.zeros((0, 2, 2))))
     rng = np.random.default_rng(5)
     pts = rng.uniform(-1.2, 1.2, (3000, 2))
-    out["inside_base"] = qsm._inside(base, pts)
-    out["inside_stem"] = qsm._inside(stem, pts)
+    out["inside_base"] = qsm.buttress._inside(base, pts)
+    out["inside_stem"] = qsm.buttress._inside(stem, pts)
     # A mesh with vertices exactly on the plane and flat triangles.
     v = np.array([[0, 0, 0], [1, 0, 1], [0, 1, 1], [1, 1, 0.5], [2, 0, 0.5], [2, 2, 0.5]], float)
     f = np.array([[0, 1, 2], [1, 3, 2], [3, 4, 5], [0, 4, 1], [1, 4, 3]])
     for k, z in enumerate([0.0, 0.5, 0.75, 1.0]):
-        out[f"section_small_{k}"] = qsm._section(v, f, z)
+        out[f"section_small_{k}"] = qsm.buttress._section(v, f, z)
     return out
 
 

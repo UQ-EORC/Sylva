@@ -26,7 +26,7 @@ use rayon::prelude::*;
 
 use crate::cluster::{connected_components, dijkstra, knn_graph, radius_graph};
 use crate::filters::{planarity_linearity, statistical_outlier_mask, voxel_downsample_indices};
-use crate::spatial::KdTree;
+use crate::util::spatial::KdTree;
 use crate::Point;
 
 #[derive(Debug, Clone)]
@@ -359,7 +359,7 @@ fn classify_piece(points: &[Point], members: &[usize], step: &[Point], interval:
     // Cylindrical: the cross-section has some spread and a circle fits it.
     let spread = s_u.min(s_v) / total;
     if spread > 0.01 {
-        if let Some((cx, cy, r)) = crate::stems::fit_circle_refined(&xy) {
+        if let Some((cx, cy, r)) = crate::trees::stems::fit_circle_refined(&xy) {
             if r > 0.0 {
                 let rmse = (xy.iter().map(|q| ((q[0] - cx).hypot(q[1] - cy) - r).powi(2)).sum::<f64>() / n).sqrt();
                 if rmse / r < p.circle_error {

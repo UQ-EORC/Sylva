@@ -25,6 +25,7 @@
 
 mod blocked;
 mod blocks;
+pub mod grid;
 mod iad;
 pub(crate) mod metrics;
 pub mod quality;
@@ -459,7 +460,7 @@ impl Voxelizer {
         let cells = shape.iter().map(|&n| n as u128).product::<u128>();
         let per_cell = std::mem::size_of::<traverse::Cell>() as u64
             + (params.subvoxel_split.max(1).pow(3) as u64);
-        crate::limits::check_cells(
+        crate::util::limits::check_cells(
             cells,
             per_cell,
             &format!("a {} x {} x {} voxel grid at {} m", shape[0], shape[1], shape[2], params.voxel_size),
@@ -573,7 +574,7 @@ pub fn voxelize(inputs: &VoxelInputs, params: &VoxelParams) -> Result<RayVoxels>
             if xyz.is_empty() {
                 return Err(Error::invalid("no echoes to fit the grid to; pass bounds"));
             }
-            pad_bounds((crate::spatial::min_corner(&xyz), crate::spatial::max_corner(&xyz)))
+            pad_bounds((crate::util::spatial::min_corner(&xyz), crate::util::spatial::max_corner(&xyz)))
         }
     };
     let mut v = Voxelizer::new(params, bounds, inputs.dtm)?;

@@ -198,7 +198,7 @@ pub fn write_shots(shots: &Shots, path: impl AsRef<Path>, opts: &ShotsWriteOptio
 
     let xyz_bounds = {
         let xyz = shots.echo_xyz();
-        (crate::spatial::min_corner(&xyz), crate::spatial::max_corner(&xyz))
+        (crate::util::spatial::min_corner(&xyz), crate::util::spatial::max_corner(&xyz))
     };
     let join = |p: &Point| format!("{} {} {}", p[0], p[1], p[2]);
     // Per-pulse origins are integers in units of `origin_scale` from the first

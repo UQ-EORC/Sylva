@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for sylva_rs::tiles: tiles from scans and tiled point operations.
+//! Bindings for sylva_rs::als::tiles: tiles from scans and tiled point operations.
 //!
 //! A catalogue crosses the boundary as the dict of `sylva.als.Catalog._core`.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -14,8 +14,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use sylva_rs::io::las::LasWriteOptions;
-use sylva_rs::stems::StemParams;
-use sylva_rs::tiles::{self, Feature, RunInfo, ScanTiler, ScanTiling};
+use sylva_rs::trees::stems::StemParams;
+use sylva_rs::als::tiles::{self, Feature, RunInfo, ScanTiler, ScanTiling};
 
 use crate::als_py::catalog_from_py;
 use crate::{cloud_from_py, err, matrix_from_py, tree_to_py, xyz_from_py};
@@ -116,7 +116,7 @@ fn tiles_detect_stems<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, height_
     Ok((list, info_to_py(py, &info)?))
 }
 
-/// Tiles built from scans added one at a time (sylva_rs::tiles::ScanTiler).
+/// Tiles built from scans added one at a time (sylva_rs::als::tiles::ScanTiler).
 #[pyclass(name = "ScanTiler")]
 struct PyScanTiler {
     inner: Option<ScanTiler>,

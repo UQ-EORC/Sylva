@@ -1,3 +1,3 @@
-# sylva.masks
+# sylva.geo.masks
 
-::: sylva.masks
+::: sylva.geo.masks

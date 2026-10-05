@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 
 use crate::error::{Error, Result};
 use crate::pointcloud::Attr;
-use crate::shots_ops::concatenate_attrs;
+use crate::shots::ops::concatenate_attrs;
 use crate::transform::{add, dot, normalize, scale, sub};
 use crate::{Point, Shots};
 

@@ -2,8 +2,8 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for sylva_rs::als_trees and the tree truth of
-//! sylva_rs::synthetic_als.
+//! Bindings for sylva_rs::als::trees and the tree truth of
+//! sylva_rs::synthetic::als.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 use std::path::PathBuf;
@@ -12,8 +12,8 @@ use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, P
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use sylva_rs::als_trees::{self, Dalponte, Hull, Li2012, Method, Shape, TopsFrom, Tree, TreeParams, Window};
-use sylva_rs::synthetic_als;
+use sylva_rs::als::trees::{self, Dalponte, Hull, Li2012, Method, Shape, TopsFrom, Tree, TreeParams, Window};
+use sylva_rs::synthetic::als;
 
 use crate::als_py::{catalog_from_py, heights, run_options};
 use crate::{cloud_from_py, err, raster_from_py};
@@ -130,7 +130,7 @@ fn trees_to_py<'py>(py: Python<'py>, trees: &[Tree]) -> PyResult<Bound<'py, PyDi
 fn als_trees_lmf_raster<'py>(py: Python<'py>, data: PyReadonlyArray2<f64>, xmin: f64, ymin: f64, resolution: f64, window_kind: &str, window_values: Vec<f64>, hmin: f64, shape: &str) -> PyResult<Bound<'py, PyArray1<i64>>> {
     let r = raster_from_py(data, xmin, ymin, resolution);
     let (w, s) = (window(window_kind, window_values)?, Shape::parse(shape).map_err(err)?);
-    let tops = py.detach(|| als_trees::local_maxima_raster(&r, &w, hmin, s)).map_err(err)?;
+    let tops = py.detach(|| trees::local_maxima_raster(&r, &w, hmin, s)).map_err(err)?;
     Ok(tops.into_iter().map(|i| i as i64).collect::<Vec<_>>().into_pyarray(py))
 }
 
@@ -140,7 +140,7 @@ fn als_trees_lmf_points<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, h: PyR
     let xy = xy_from(&xyz)?;
     let h = h.as_array().to_vec();
     let (w, s) = (window(window_kind, window_values)?, Shape::parse(shape).map_err(err)?);
-    let tops = py.detach(|| als_trees::local_maxima_points(&xy, &h, &w, hmin, s)).map_err(err)?;
+    let tops = py.detach(|| trees::local_maxima_points(&xy, &h, &w, hmin, s)).map_err(err)?;
     Ok(tops.into_iter().map(|i| i as i64).collect::<Vec<_>>().into_pyarray(py))
 }
 
@@ -155,10 +155,10 @@ fn als_trees_crowns<'py>(py: Python<'py>, data: PyReadonlyArray2<f64>, xmin: f64
     let tops: Vec<[f64; 3]> = t.rows().into_iter().map(|q| [q[0], q[1], q[2]]).collect();
     let labels = py
         .detach(|| {
-            let seeds = als_trees::seed_raster(&r, &tops);
+            let seeds = trees::seed_raster(&r, &tops);
             match method {
-                "watershed" => als_trees::watershed(&r, &seeds, th_tree),
-                "dalponte2016" => als_trees::dalponte2016(&r, &seeds, &Dalponte { th_tree, th_seed, th_cr, max_cr }),
+                "watershed" => trees::watershed(&r, &seeds, th_tree),
+                "dalponte2016" => trees::dalponte2016(&r, &seeds, &Dalponte { th_tree, th_seed, th_cr, max_cr }),
                 other => Err(sylva_rs::Error::invalid(format!("unknown method {other:?}; expected 'dalponte2016' or 'watershed'"))),
             }
         })
@@ -172,7 +172,7 @@ fn als_trees_li2012<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, h: PyReado
     let xy = xy_from(&xyz)?;
     let h = h.as_array().to_vec();
     let p = Li2012 { dt1, dt2, r, zu, hmin, speed_up };
-    let l = py.detach(|| als_trees::li2012(&xy, &h, &p)).map_err(err)?;
+    let l = py.detach(|| trees::li2012(&xy, &h, &p)).map_err(err)?;
     Ok(l.into_iter().map(|v| v as i64).collect::<Vec<_>>().into_pyarray(py))
 }
 
@@ -186,7 +186,7 @@ fn als_trees_hull<'py>(py: Python<'py>, xy: PyReadonlyArray2<f64>, kind: &str, l
             return Err(PyValueError::new_err(format!("concavity must be a positive number of metres, got {l}")));
         }
     }
-    let out = py.detach(|| als_trees::hull(&pts, h));
+    let out = py.detach(|| trees::hull(&pts, h));
     let n = out.len();
     PyArray1::from_vec(py, out.into_iter().flat_map(|q| q.into_iter()).collect()).reshape([n, 2])
 }
@@ -197,7 +197,7 @@ fn als_trees_segment<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, h: PyRead
     let cloud = cloud_from_py(xyz, None)?;
     let h = h.as_array().to_vec();
     let p = params(method, settings)?;
-    let (trees, labels) = py.detach(|| als_trees::segment_cloud(&cloud.xyz, &h, &p)).map_err(err)?;
+    let (trees, labels) = py.detach(|| trees::segment_cloud(&cloud.xyz, &h, &p)).map_err(err)?;
     Ok((trees_to_py(py, &trees)?, labels.into_iter().map(|v| v as i64).collect::<Vec<_>>().into_pyarray(py)))
 }
 
@@ -209,7 +209,7 @@ fn als_trees_catalog<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, method: 
     let p = params(method, settings)?;
     let h = heights(mode, dtm, dtm_resolution)?;
     let opts = run_options(chunk_size, buffer, workers);
-    let r = py.detach(|| als_trees::catalog_trees(&c, &p, &h, out_dir.as_deref(), attribute, format.as_deref(), &opts)).map_err(err)?;
+    let r = py.detach(|| trees::catalog_trees(&c, &p, &h, out_dir.as_deref(), attribute, format.as_deref(), &opts)).map_err(err)?;
     let d = trees_to_py(py, &r.trees)?;
     d.set_item("written", r.written.iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>())?;
     d.set_item("at_edge", r.at_edge)?;
@@ -221,7 +221,7 @@ fn als_trees_catalog<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, method: 
 #[pyfunction]
 fn synthetic_scene_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: &Bound<'_, PyDict>, terrain_slope: f64) -> PyResult<Bound<'py, PyDict>> {
     let cloud = cloud_from_py(xyz, Some(attrs))?;
-    let t = py.detach(|| synthetic_als::scene_trees(&cloud, terrain_slope)).map_err(err)?;
+    let t = py.detach(|| als::scene_trees(&cloud, terrain_slope)).map_err(err)?;
     let d = PyDict::new(py);
     d.set_item("tree_id", t.iter().map(|s| s.id as i64).collect::<Vec<_>>().into_pyarray(py))?;
     d.set_item("stem_x", t.iter().map(|s| s.stem[0]).collect::<Vec<_>>().into_pyarray(py))?;
@@ -238,15 +238,15 @@ fn synthetic_scene_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs
 /// A scene of trees with solid crowns.
 #[pyfunction]
 fn synthetic_crown_forest<'py>(py: Python<'py>, trees: Vec<(f64, f64, f64, f64)>, form: &str, crown_radius: f64, crown_length: f64, density: f64, size: f64, ground_points: usize, margin: f64, seed: u64) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
-    let f = synthetic_als::CrownForm::parse(form).map_err(err)?;
-    let c = py.detach(|| synthetic_als::crown_forest(&trees, f, crown_radius, crown_length, density, size, ground_points, margin, seed)).map_err(err)?;
+    let f = als::CrownForm::parse(form).map_err(err)?;
+    let c = py.detach(|| als::crown_forest(&trees, f, crown_radius, crown_length, density, size, ground_points, margin, seed)).map_err(err)?;
     crate::cloud_to_py(py, &c)
 }
 
 /// Random stems for synthetic.forest.
 #[pyfunction]
 fn synthetic_stand(n: usize, size: f64, min_spacing: f64, heights: (f64, f64), seed: u64) -> PyResult<Vec<(f64, f64, f64, f64)>> {
-    synthetic_als::stand(n, size, min_spacing, heights, seed).map_err(err)
+    als::stand(n, size, min_spacing, heights, seed).map_err(err)
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {

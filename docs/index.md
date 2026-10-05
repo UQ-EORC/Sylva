@@ -25,11 +25,11 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 | Module | What it does |
 |---|---|
 | [`sylva.io`](api/io.md) | LAS/LAZ (typed extra bytes, CRS), PLY (incl. raycloudtools ray clouds), XYZ/CSV/PTS, RIEGL `.rxp` via RiVLib, RiSCAN project parsing |
-| [`sylva.coords`](api/coords.md) | translation, rotation, recentring, reprojection between CRSs, applying transform files to many scans |
+| [`sylva.geo.coords`](api/coords.md) | translation, rotation, recentring, reprojection between CRSs, applying transform files to many scans |
 | [`sylva.filters`](api/filters.md) | voxel / random / Poisson-disk subsampling, box & cylinder crops, statistical & radius outlier removal, PCA normals, planarity, Euclidean clustering, kNN |
 | [`sylva.ground`](api/ground.md) | Cloth Simulation Filter and Progressive Morphological Filter ground classification, DTM (lowest point, TIN, natural neighbour or IDW), height normalisation, CHM |
-| [`sylva.interpolate`](api/interpolate.md) | attributes carried between clouds, grids from points (IDW, TIN, natural neighbour), rasters sampled onto points |
-| [`sylva.masks`](api/masks.md) | masks and crops by polygons, rasters, attribute expressions and distance to another cloud |
+| [`sylva.geo.interpolate`](api/interpolate.md) | attributes carried between clouds, grids from points (IDW, TIN, natural neighbour), rasters sampled onto points |
+| [`sylva.geo.masks`](api/masks.md) | masks and crops by polygons, rasters, attribute expressions and distance to another cloud |
 | [`sylva.trees`](api/trees.md) | RANSAC circle fitting, stem detection & DBH, basal area, taper profiles, graph-based tree segmentation, tree heights, crown metrics |
 | [`sylva.canopy`](api/canopy.md) | voxel grids, contact-frequency PAD profiles, zenith-ring gap fraction, hinge/Miller LAI, ray-traced density grids from pulse data |
 | [`sylva.voxels`](api/voxels.md) | AMAPVox-style ray-traced voxels (port of raycloudtools `rayvoxel`): echo-weighted free / potential path lengths, FPL / PPL / transmittance / Bailey attenuation, analytic or estimated leaf-angle `G`, PAD / LAD / WAD, occlusion, sub-voxel exploration, QSM wood volume, `.vox` export |
@@ -38,9 +38,9 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 | [`sylva.qsm`](api/qsm.md) | cylinder fitting, geodesic skeletonisation, cylinder QSMs with volumes and branch orders, a QSM for every tree of a plot, buttress meshes, `_trees.txt` export |
 | [`sylva.change`](api/change.md) | change between two epochs of a plot: alignment, tree matching and increments, plot summaries, point change (C2C, M3C2, DEM of difference, voxel occupancy), QSM change, each labelled trusted or not |
 | [`sylva.als`](api/als.md) | airborne lidar over tiled areas: catalogues and buffered chunks, ground, DTM, CHM, normalisation, filtering, retiling and thinning |
-| [`sylva.als_metrics`](api/als_metrics.md) | area-based metrics (the lidR standard set, cover, gap fraction) as rasters or plot tables |
-| [`sylva.als_trees`](api/als_trees.md) | tree tops, crowns (watershed, Dalponte 2016, Li 2012), crown outlines and labelled tiles |
-| [`sylva.als_canopy`](api/als_canopy.md) | pulses from the flight trajectory, gap-fraction and PAD profiles corrected for beam angle, ray-traced voxels |
+| [`sylva.als.metrics`](api/als_metrics.md) | area-based metrics (the lidR standard set, cover, gap fraction) as rasters or plot tables |
+| [`sylva.als.trees`](api/als_trees.md) | tree tops, crowns (watershed, Dalponte 2016, Li 2012), crown outlines and labelled tiles |
+| [`sylva.als.canopy`](api/als_canopy.md) | pulses from the flight trajectory, gap-fraction and PAD profiles corrected for beam angle, ray-traced voxels |
 | [`sylva.fusion`](api/fusion.md) | TLS and ALS together: a plot registered on a survey, stems linked to airborne trees, merged clouds and plant area profiles, plot values upscaled with leave-one-out checks |
 | [`sylva.waveform`](api/waveform.md) | LAS wave packets and PulseWaves, Gaussian decomposition into echoes, waveforms to pulses |
 | [`sylva.Shots`](api/shots.md) | pulse-centric data (origin, direction, CSR echoes) for ray-based metrics, with a compact Parquet file format that stores misses without far points and streams into the voxeliser |

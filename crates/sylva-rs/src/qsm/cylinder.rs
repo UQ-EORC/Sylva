@@ -6,7 +6,7 @@
 
 use crate::error::{Error, Result};
 use crate::filters::Rng;
-use crate::optim::levenberg_marquardt;
+use crate::util::optim::levenberg_marquardt;
 use crate::transform::{cross, dot, norm, normalize, scale, sub};
 use crate::Point;
 

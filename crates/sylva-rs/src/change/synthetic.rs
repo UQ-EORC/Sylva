@@ -21,7 +21,7 @@
 
 use std::f64::consts::PI;
 
-use crate::nprandom::Generator;
+use crate::util::nprandom::Generator;
 use crate::pointcloud::Attr;
 use crate::synthetic::{scan, terrain_height, LEAF_RADIUS};
 use crate::{Error, Point, PointCloud, Result, Shots, Transform};

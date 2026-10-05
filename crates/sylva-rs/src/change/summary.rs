@@ -19,7 +19,7 @@
 use std::f64::consts::PI;
 
 use crate::error::{Error, Result};
-use crate::nprandom::Generator;
+use crate::util::nprandom::Generator;
 use super::positive;
 
 /// A survivor: its first-epoch size and its increments, with standard

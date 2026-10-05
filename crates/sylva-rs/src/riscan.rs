@@ -1592,8 +1592,8 @@ mod tests {
 
     #[test]
     fn json_reads_what_the_json_module_reads() {
-        use crate::json::{self as j, Json as J};
-        // The same documents through this parser and crate::json, which is checked against Python.
+        use crate::util::json::{self as j, Json as J};
+        // The same documents through this parser and crate::util::json, which is checked against Python.
         fn same(a: &Json, b: &J) -> bool {
             match (a, b) {
                 (Json::Null, J::Null) => true,

@@ -11,7 +11,7 @@
 //! with, as JSON) is flattened to dotted keys and the two are compared.
 
 use crate::error::Result;
-use crate::json::{self, py_float_repr, Json};
+use crate::util::json::{self, py_float_repr, Json};
 
 /// One setting that differs: its dotted key and the two values as text
 /// (`None` where an epoch does not have it).

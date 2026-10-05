@@ -53,7 +53,7 @@ As a condition of this licence, you agree that where you make any adaptations, m
 
 ## SciPy (`scipy.ndimage`)
 
-`feature_transform` and `voronoi_line` in `crates/sylva-rs/src/coreg_ground.rs`
+`feature_transform` and `voronoi_line` in `crates/sylva-rs/src/coreg/ground.rs`
 are translated from `scipy/ndimage/src/ni_morphology.c`
 (<https://github.com/scipy/scipy>):
 

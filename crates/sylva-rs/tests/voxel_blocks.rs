@@ -80,7 +80,7 @@ fn assert_same(a: &RayVoxels, b: &RayVoxels) {
 }
 
 fn whole(shots: &Shots, p: &VoxelParams, dtm: Option<&Raster>) -> RayVoxels {
-    one_thread(|| sylva_rs::voxel_grid::voxelize_labelled(shots, p, &labels(), None, None, dtm).unwrap())
+    one_thread(|| sylva_rs::voxel::grid::voxelize_labelled(shots, p, &labels(), None, None, dtm).unwrap())
 }
 
 fn blocked(shots: &Shots, p: &VoxelParams, dtm: Option<&Raster>, block: [usize; 3], workers: usize) -> RayVoxels {

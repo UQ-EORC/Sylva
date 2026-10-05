@@ -22,7 +22,7 @@ use rayon::prelude::*;
 use super::metrics::{classify_de_wit, compute_g_from_histogram};
 use super::traverse::Geom;
 use super::{foliage, Attenuation, RayVoxels, VoxelInputs};
-use crate::spatial::KdTree;
+use crate::util::spatial::KdTree;
 use crate::transform::{add, cross, norm, scale, sub};
 use crate::Point;
 

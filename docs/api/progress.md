@@ -1,3 +1,3 @@
-# sylva.progress
+# sylva.util.progress
 
-::: sylva.progress
+::: sylva.util.progress

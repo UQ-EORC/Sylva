@@ -12,7 +12,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sylva_rs::voxel;
-use sylva_rs::voxel_grid::{self, FieldData};
+use sylva_rs::voxel::grid::{self, FieldData};
 
 use crate::{err, qsm_from_rows, raster_from_py, shots_from_py, xyz_from_py};
 
@@ -177,7 +177,7 @@ impl PyRayVoxels {
 }
 
 /// An occlusion profile as the dictionary the Python package returns.
-pub(crate) fn occlusion_dict(py: Python<'_>, p: voxel_grid::OcclusionProfile) -> PyResult<Bound<'_, PyDict>> {
+pub(crate) fn occlusion_dict(py: Python<'_>, p: grid::OcclusionProfile) -> PyResult<Bound<'_, PyDict>> {
     let d = PyDict::new(py);
     d.set_item("height", p.height.into_pyarray(py))?;
     d.set_item("n_voxels", p.n_voxels.into_pyarray(py))?;
@@ -281,7 +281,7 @@ fn ray_voxelize(py: Python<'_>, shots: &Bound<'_, PyDict>, voxel_size: f64, boun
     let ground = ground.map(|a| a.as_array().to_vec());
     let foliage = foliage.map(|a| a.as_array().to_vec());
     let dtm = dtm.map(|(data, xmin, ymin, res)| raster_from_py(data, xmin, ymin, res));
-    let inner = py.detach(|| voxel_grid::voxelize_labelled(&s, &params, &labels, ground, foliage, dtm.as_ref())).map_err(err)?;
+    let inner = py.detach(|| grid::voxelize_labelled(&s, &params, &labels, ground, foliage, dtm.as_ref())).map_err(err)?;
     Ok(PyRayVoxels { inner })
 }
 

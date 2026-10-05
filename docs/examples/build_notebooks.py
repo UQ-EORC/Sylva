@@ -1148,10 +1148,10 @@ NOTEBOOKS["11_coordinates"] = [
 
 Coordinate reference systems on point clouds, reprojection, shifts and
 rotations, and registration matrices applied to a set of scans, with
-`sylva.coords` and the `PointCloud` methods `translate`, `rotate` and
+`sylva.geo.coords` and the `PointCloud` methods `translate`, `rotate` and
 `recentre`. The [guide](../guide/coordinates.md) gives the rules behind
 them."""),
-    SETUP + "\nfrom sylva import coords, filters\n\ncloud = sylva.read(DATA / \"litch_tile.laz\")",
+    SETUP + "\nfrom sylva import filters\nfrom sylva.geo import coords\n\ncloud = sylva.read(DATA / \"litch_tile.laz\")",
     md("""## A CRS on the cloud
 
 `sylva.read` takes the CRS of a LAS/LAZ file from its header. The tile is
@@ -1339,12 +1339,12 @@ print("in memory: largest error", max(np.abs(c.xyz - seen[n].xyz).max() for c, n
 NOTEBOOKS["12_interpolation"] = [
     md("""# 12. Interpolation
 
-Moving values between point clouds and rasters with `sylva.interpolate`:
+Moving values between point clouds and rasters with `sylva.geo.interpolate`:
 labels computed on a thinned copy carried back to every point, terrain
 models interpolated from the ground returns, and rasters read back onto the
 points as attributes. The [guide](../guide/interpolation.md) describes the
 methods."""),
-    SETUP + "\nimport pandas as pd\nfrom sylva import filters, ground, interpolate, trees\n\ncloud = sylva.read(DATA / \"litch_tile.laz\")",
+    SETUP + "\nimport pandas as pd\nfrom sylva import filters, ground, trees\nfrom sylva.geo import interpolate\n\ncloud = sylva.read(DATA / \"litch_tile.laz\")",
     md("""## Labels from a thinned copy
 
 Much of the work on a plot cloud is done on a thinned copy, and the result
@@ -1483,14 +1483,14 @@ fig.colorbar(sc, ax=ax, shrink=0.8, label="height / CHM");""",
 NOTEBOOKS["13_masking"] = [
     md("""# 13. Masking
 
-Selecting points with `sylva.masks`: by polygons read from a file, by the
+Selecting points with `sylva.geo.masks`: by polygons read from a file, by the
 raster cell under each point, by an expression over the attributes, and by
 the distance to another cloud. A mask is a boolean array, one entry per
 point, so masks from different sources combine with `&`, `|` and `~`. The
 [guide](../guide/masking.md) has the details."""),
     SETUP + """
 import json
-from sylva import ground, masks
+from sylva import ground\nfrom sylva.geo import masks
 
 cloud = sylva.read(DATA / "litch_tile.laz")
 cloud = ground.normalize_height(cloud, ground.make_dtm(cloud, 0.5, bounds=(0, 0, 20, 20)))""",

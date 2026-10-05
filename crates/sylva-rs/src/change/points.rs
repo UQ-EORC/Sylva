@@ -539,7 +539,7 @@ pub fn dod(a: &Raster, b: &Raster, min_detectable: Option<&CellValue>, sigma_a: 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nprandom::Generator;
+    use crate::util::nprandom::Generator;
 
     fn plane(n_side: usize, step: f64, z: f64, noise: f64, seed: u64) -> Vec<Point> {
         let mut g = Generator::new(seed);

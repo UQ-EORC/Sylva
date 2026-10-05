@@ -97,7 +97,7 @@ Chunks are processed in parallel, `workers` at a time (one per CPU by
 default). How many can be in memory at once is worked out from the header
 point counts: each chunk's expected number of points (from the share of each
 tile's extent inside its buffered box) times about 256 bytes per point, set
-against the memory budget of [`sylva.limits`](../api/limits.md). If the
+against the memory budget of [`sylva.util.limits`](../api/limits.md). If the
 largest chunk alone does not fit, the run is refused with a message saying
 so and suggesting a smaller `chunk_size`; otherwise fewer workers are used
 when fewer fit. `SYLVA_MEM_BUDGET` (GB) or `limits.set_budget` change the
@@ -105,7 +105,7 @@ budget.
 
 Results never depend on the number of workers: each chunk is processed on
 its own, deterministically, and results are assembled in chunk order.
-Progress shows through [`sylva.progress`](../api/progress.md), with
+Progress shows through [`sylva.util.progress`](../api/progress.md), with
 `progress.bar()` in scripts and by default in the command line.
 
 ## What runs on a catalogue

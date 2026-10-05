@@ -3,7 +3,7 @@
 A large plot does not fit in memory with room to process it. The TERN
 Tumbarumba hectare, scanned from 138 positions, is 306 million points at
 2 cm; processed as one cloud it needed about 55 GB of a 62 GB machine, and
-merging the scans had to be split into strips by hand. `sylva.tiles` keeps
+merging the scans had to be split into strips by hand. `sylva.als.tiles` keeps
 such a plot as square LAS/LAZ tiles and processes one tile at a time, each
 with a buffer of points from its neighbours, so that memory is bounded by
 the tile size rather than the plot size. The results are those of the
@@ -23,7 +23,8 @@ normalised and searched for stems:
 
 ```python
 import numpy as np
-from sylva import PointCloud, filters, synthetic, tiles, trees
+from sylva import PointCloud, filters, synthetic, trees
+from sylva.als import tiles
 
 rng = np.random.default_rng(1)
 stems = [(x, y, d, h) for x, y, d, h in zip(rng.uniform(3, 27, 12), rng.uniform(3, 27, 12),
@@ -270,7 +271,7 @@ trees and QSMs, and the `sylva tiles-plot` command runs it from the shell:
 
 ```python
 import numpy as np
-from sylva import tiles
+from sylva.als import tiles
 
 st = np.load("coreg_state.npz")                 # corrections from coregistration
 scans = [f"scans/{i:03d}.laz" for i in range(len(st["corr"]))]
@@ -349,7 +350,7 @@ a time from the store.
 
 At most `workers` tiles are in memory at a time, each with its buffer:
 about 256 bytes per point, the same budget as for airborne tiles (see
-[`sylva.limits`](../api/limits.md)), and fewer workers are used when that
+[`sylva.util.limits`](../api/limits.md)), and fewer workers are used when that
 many would not fit. `tiles.last_run()` returns what the last operation
 held:
 

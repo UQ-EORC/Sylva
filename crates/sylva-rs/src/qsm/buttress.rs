@@ -393,7 +393,7 @@ pub fn buttress_mesh(points: &[Point], heights: &[f64], cx: f64, cy: f64, ground
         res: p.resolution,
     };
     let nz = (p.max_height / p.slice).ceil() as usize;
-    if let Err(e) = crate::limits::check_cells(
+    if let Err(e) = crate::util::limits::check_cells(
         (g.nx as u128) * (g.ny as u128) * (nz as u128),
         2,
         &format!("a {} x {} x {} buttress raster at {} m", g.nx, g.ny, nz, p.resolution),
@@ -420,7 +420,7 @@ pub fn buttress_mesh(points: &[Point], heights: &[f64], cx: f64, cy: f64, ground
     let flare_cells = (p.max_flare * p.slice / p.resolution).round();
     let flare = (p.max_flare > 0.0 && flare_cells.is_finite() && flare_cells < g.nx.max(g.ny) as f64)
         .then(|| disk((flare_cells as isize).max(1)));
-    let task = crate::progress::start("rebuilding the stem base", nz as u64);
+    let task = crate::util::progress::start("rebuilding the stem base", nz as u64);
     let mut above: Option<Vec<bool>> = None;
     for k in (0..nz).rev() {
         task.inc(1);

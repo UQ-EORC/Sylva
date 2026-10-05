@@ -37,6 +37,6 @@ branch.
    these.
 
 `sylva_rs::numeric` holds NumPy-exact helpers (histograms, quantiles,
-`arange`, `gradient`, pairwise sums), and `sylva_rs::nprandom` reproduces
+`arange`, `gradient`, pairwise sums), and `sylva_rs::util::nprandom` reproduces
 NumPy's `default_rng` streams (uniform, ziggurat normal and integer draws,
 `choice`), so ported code can match what NumPy gave to the bit.

@@ -2,4 +2,6 @@
 
 Re-exported by `sylva.als`; see the [guide](../guide/als_canopy.md).
 
-::: sylva.als_canopy
+::: sylva.als.canopy
+
+::: sylva.als.trajectory

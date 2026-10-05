@@ -432,7 +432,7 @@ pub struct Skeleton {
 /// per-shell DBSCAN with minPts = 1), independent of the geodesic graph.
 fn eps_components(xyz: &[Point], members: &[usize], eps: f64) -> Vec<usize> {
     let pts: Vec<Point> = members.iter().map(|&i| xyz[i]).collect();
-    let tree = crate::spatial::KdTree::new(&pts);
+    let tree = crate::util::spatial::KdTree::new(&pts);
     let mut label = vec![usize::MAX; pts.len()];
     let mut count = 0;
     let mut stack = Vec::new();
@@ -580,11 +580,11 @@ pub fn skeletonize(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParams) -> R
             }
             if p.centre_fit_points > 0 && m.len() >= p.centre_fit_points {
                 let xy: Vec<[f64; 2]> = m.iter().map(|&i| [xyz[i][0], xyz[i][1]]).collect();
-                let cp = crate::stems::StemParams { min_radius: p.apex_radius, max_radius: p.max_radius, ransac_tolerance: 0.04, ransac_iterations: 120, ..Default::default() };
+                let cp = crate::trees::stems::StemParams { min_radius: p.apex_radius, max_radius: p.max_radius, ransac_tolerance: 0.04, ransac_iterations: 120, ..Default::default() };
                 let mut rng = crate::filters::Rng::new(m.len() as u64);
-                if let Some((cx, cy, r, mask)) = crate::stems::ransac_circle(&xy, &cp, &mut rng) {
+                if let Some((cx, cy, r, mask)) = crate::trees::stems::ransac_circle(&xy, &cp, &mut rng) {
                     let inl: Vec<[f64; 2]> = xy.iter().zip(&mask).filter(|(_, &k)| k).map(|(q, _)| *q).collect();
-                    let (_, arc) = crate::stems::angular_coverage(&inl, cx, cy);
+                    let (_, arc) = crate::trees::stems::angular_coverage(&inl, cx, cy);
                     if arc >= 120.0 && inl.len() * 2 >= xy.len() && (cx - c[0]).hypot(cy - c[1]) <= r {
                         return [cx, cy, c[2]];
                     }
@@ -605,7 +605,7 @@ pub fn skeletonize(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParams) -> R
     let _ = &pred;
     let mut edges: Vec<(usize, usize)> = Vec::with_capacity(n_seg);
     if n_seg > 0 {
-        let tree = crate::spatial::KdTree::new(&centres);
+        let tree = crate::util::spatial::KdTree::new(&centres);
         let mut done = vec![false; n_seg];
         let mut cur = (0..n_seg).min_by(|&a, &b| centres[a][2].partial_cmp(&centres[b][2]).unwrap()).unwrap();
         done[cur] = true;
@@ -788,7 +788,7 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
         .collect();
 
     // 2. Radius per node from a perpendicular circle fit.
-    let circle_params = crate::stems::StemParams {
+    let circle_params = crate::trees::stems::StemParams {
         min_radius: p.apex_radius,
         max_radius: p.max_radius,
         ransac_iterations: 120,
@@ -817,19 +817,19 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
                 return power_mean_radius(&xy, p);
             }
             let mut rng = crate::filters::Rng::new(s as u64 + 1);
-            let (cx0, cy0, r0, _) = crate::stems::ransac_circle(&xy, &circle_params, &mut rng)?;
+            let (cx0, cy0, r0, _) = crate::trees::stems::ransac_circle(&xy, &circle_params, &mut rng)?;
             // Rough bark on thick stems spans more than the RANSAC band, and a
             // tight band then favours a sub-arc and a small radius. Refit on
             // every point within a radius-relative band (>= 8 % of r).
             let band = p.ransac_threshold.max(p.relative_tolerance * r0);
             let inl: Vec<[f64; 2]> = xy.iter().filter(|q| ((q[0] - cx0).hypot(q[1] - cy0) - r0).abs() <= band).cloned().collect();
-            let (cx, cy, r) = crate::stems::fit_circle_refined(&inl).unwrap_or((cx0, cy0, r0));
+            let (cx, cy, r) = crate::trees::stems::fit_circle_refined(&inl).unwrap_or((cx0, cy0, r0));
             let inl: Vec<[f64; 2]> = xy.iter().filter(|q| ((q[0] - cx).hypot(q[1] - cy) - r).abs() <= band).cloned().collect();
             if inl.len() < p.min_points {
                 return None;
             }
             let rmse = (inl.iter().map(|q| ((q[0] - cx).hypot(q[1] - cy) - r).powi(2)).sum::<f64>() / inl.len() as f64).sqrt();
-            let (_, arc) = crate::stems::angular_coverage(&inl, cx, cy);
+            let (_, arc) = crate::trees::stems::angular_coverage(&inl, cx, cy);
             let frac = inl.len() as f64 / xy.len() as f64;
             let ok = arc >= p.min_arc_deg && rmse <= p.max_rmse.max(band) && frac >= p.min_inlier_fraction;
             if ok && frac >= p.buttress_max_inlier_fraction {
@@ -1530,7 +1530,7 @@ pub(super) fn power_mean_radius(xy: &[[f64; 2]], p: &QsmParams) -> Option<(f64, 
     }
     let e = d.iter().map(|&x| (x - r).abs()).sum::<f64>() / n as f64;
     let accuracy = r / (e + p.sensor_noise);
-    let (_, arc) = crate::stems::angular_coverage(xy, 0.0, 0.0);
+    let (_, arc) = crate::trees::stems::angular_coverage(xy, 0.0, 0.0);
     // Map the accuracy onto the [0, 1] confidence the rest of the model reads
     // as an inlier fraction: 1 is a section whose points sit on a circle to
     // within the noise floor.
@@ -1575,7 +1575,7 @@ pub fn scaled_to_spacing(xyz: &[Point], p: &QsmParams) -> QsmParams {
 
 /// [`skeletonize`] then [`fit_cylinders`].
 pub fn build_qsm(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParams) -> Result<Qsm> {
-    let task = crate::progress::start("building a QSM", 2);
+    let task = crate::util::progress::start("building a QSM", 2);
     let p = &scaled_to_spacing(xyz, p);
     let skel = skeletonize(xyz, base_xy, p)?;
     task.inc(1); // skeleton

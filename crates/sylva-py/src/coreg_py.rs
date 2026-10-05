@@ -3,7 +3,7 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Bindings for coregistration's numerical layers: rigid transforms
-//! (sylva_rs::coreg_transforms), reflective targets (coreg_reflectors), the
+//! (sylva_rs::coreg::transforms), reflective targets (coreg_reflectors), the
 //! pose graph (coreg_posegraph) and joint refinement (coreg_refine).
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
 
@@ -14,10 +14,10 @@ use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyArrayMethods, PyReadonl
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use sylva_rs::coreg_posegraph as pg;
-use sylva_rs::coreg_reflectors as rf;
-use sylva_rs::coreg_refine as refine;
-use sylva_rs::coreg_transforms as tf;
+use sylva_rs::coreg::posegraph as pg;
+use sylva_rs::coreg::reflectors as rf;
+use sylva_rs::coreg::refine as refine;
+use sylva_rs::coreg::transforms as tf;
 use sylva_rs::Point;
 
 use crate::{err, xyz_from_py, xyz_to_py};
@@ -291,7 +291,7 @@ fn coreg_posegraph_optimise<'py>(py: Python<'py>, n: usize, i: Vec<usize>, j: Ve
 fn coreg_ground_slope_deg(elevation: PyReadonlyArray2<f64>, cell_size: f64) -> PyResult<f64> {
     let (ny, nx) = (elevation.shape()[0], elevation.shape()[1]);
     let e: Vec<f64> = elevation.as_array().iter().copied().collect();
-    sylva_rs::coreg_ground::slope_deg(&e, ny, nx, cell_size).map_err(err)
+    sylva_rs::coreg::ground::slope_deg(&e, ny, nx, cell_size).map_err(err)
 }
 
 // --------------------------------------------------------- joint refinement

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for sylva_rs::als_metrics.
+//! Bindings for sylva_rs::als::metrics.
 //!
 //! Heights cross as `(mode, dtm, dtm_resolution, attribute)`: mode "z",
 //! "auto", "dtm" (with the raster) or "attribute" (with its name). Plots
@@ -14,8 +14,8 @@ use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2,
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use sylva_rs::als_metrics::{self, HeightSource, MetricParams, Plot};
-use sylva_rs::als_ops::RunOptions;
+use sylva_rs::als::metrics::{self, HeightSource, MetricParams, Plot};
+use sylva_rs::als::ops::RunOptions;
 
 use crate::als_py::{catalog_from_py, chunk_from_py, chunk_to_py, heights, layout};
 use crate::masks_py::features_from_flat;
@@ -58,14 +58,14 @@ fn als_cloud_metrics<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: Op
         None => cloud.xyz.iter().map(|p| p[2]).collect(),
     };
     let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative);
-    let (names, values) = py.detach(|| als_metrics::cloud_metrics(&cloud, &h, &p)).map_err(err)?;
+    let (names, values) = py.detach(|| metrics::cloud_metrics(&cloud, &h, &p)).map_err(err)?;
     Ok((names, values.into_pyarray(py)))
 }
 
 /// Names of the metrics a catalogue gives.
 #[pyfunction]
 fn als_metric_names(threshold: f64) -> Vec<String> {
-    als_metrics::metric_names(als_metrics::Available::ALL, &MetricParams { threshold, ..Default::default() })
+    metrics::metric_names(metrics::Available::ALL, &MetricParams { threshold, ..Default::default() })
 }
 
 #[pyfunction]
@@ -75,7 +75,7 @@ fn als_grid_metrics<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolutio
     let h = source(mode, dtm, dtm_resolution, attribute)?;
     let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative);
     let opts = RunOptions { layout: layout(chunk_size, None), buffer, workers };
-    let r = py.detach(|| als_metrics::grid_metrics(&c, resolution, &h, &p, names.as_deref(), &opts)).map_err(err)?;
+    let r = py.detach(|| metrics::grid_metrics(&c, resolution, &h, &p, names.as_deref(), &opts)).map_err(err)?;
     let out = PyList::empty(py);
     for raster in &r.rasters {
         out.append(raster_to_py(py, raster)?)?;
@@ -88,7 +88,7 @@ fn als_grid_metrics<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolutio
 #[pyo3(signature = (catalog, resolution, chunk_size, buffer))]
 fn als_metrics_plan<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolution: f64, chunk_size: Option<f64>, buffer: f64) -> PyResult<Bound<'py, PyList>> {
     let c = catalog_from_py(catalog)?;
-    let chunks = als_metrics::metrics_plan(&c, layout(chunk_size, None), buffer, resolution).map_err(err)?;
+    let chunks = metrics::metrics_plan(&c, layout(chunk_size, None), buffer, resolution).map_err(err)?;
     let out = PyList::empty(py);
     for ch in &chunks {
         out.append(chunk_to_py(py, ch)?)?;
@@ -114,7 +114,7 @@ fn als_metric_cells<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, chunk: &B
             if data.n_core() == 0 {
                 return Ok(None);
             }
-            Ok(als_metrics::chunk_cells(&c, &ch, &data.cloud, &grid, &h, &p)?.map(|cells| (data.cloud.take(&cells.order), cells)))
+            Ok(metrics::chunk_cells(&c, &ch, &data.cloud, &grid, &h, &p)?.map(|cells| (data.cloud.take(&cells.order), cells)))
         })
         .map_err(err)?;
     let Some((cloud, cells)) = got else { return Ok(None) };
@@ -130,7 +130,7 @@ fn als_plot_metrics<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, circles: 
     let plots = plots_from_py(circles, polygons)?;
     let h = source(mode, dtm, dtm_resolution, attribute)?;
     let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative);
-    let (names, rows) = py.detach(|| als_metrics::plot_metrics(&c, &plots, &h, &p, names.as_deref(), buffer, workers)).map_err(err)?;
+    let (names, rows) = py.detach(|| metrics::plot_metrics(&c, &plots, &h, &p, names.as_deref(), buffer, workers)).map_err(err)?;
     let k = names.len();
     let flat: Vec<f64> = rows.concat();
     let arr = numpy::ndarray::Array2::from_shape_vec((plots.len(), k), flat).map_err(|e| PyValueError::new_err(e.to_string()))?;
@@ -146,7 +146,7 @@ fn als_plot_points<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, circles: O
     let plots = plots_from_py(circles, polygons)?;
     let h = source(mode, dtm, dtm_resolution, attribute)?;
     let p = params(threshold, entropy_bin, cover_break, min_height, drop_noise, clamp_negative);
-    let got = py.detach(|| als_metrics::plot_points(&c, &plots, &h, &p, buffer, workers, |_, cloud, heights, idx| Ok((cloud.take(idx), idx.iter().map(|&i| heights[i]).collect::<Vec<f64>>())))).map_err(err)?;
+    let got = py.detach(|| metrics::plot_points(&c, &plots, &h, &p, buffer, workers, |_, cloud, heights, idx| Ok((cloud.take(idx), idx.iter().map(|&i| heights[i]).collect::<Vec<f64>>())))).map_err(err)?;
     let out = PyList::empty(py);
     for g in got {
         match g {
@@ -165,7 +165,7 @@ fn als_plot_points<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, circles: O
 #[pyo3(signature = (path, names, ids, values))]
 fn als_metrics_csv(path: std::path::PathBuf, names: Vec<String>, ids: Option<Vec<String>>, values: PyReadonlyArray2<f64>) -> PyResult<()> {
     let rows: Vec<Vec<f64>> = values.as_array().rows().into_iter().map(|r| r.to_vec()).collect();
-    als_metrics::write_metrics_csv(&path, &names, ids.as_deref(), &rows).map_err(err)
+    metrics::write_metrics_csv(&path, &names, ids.as_deref(), &rows).map_err(err)
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {

@@ -311,7 +311,7 @@ registration error in the sigmas. The result also gives the volumes raised
 and lowered over the significant cells.
 
 ```python
-from sylva import interpolate
+from sylva.geo import interpolate
 
 dtm_a = interpolate.grid(PointCloud(a), 0.5, method="tin", bounds=(0, 0, 20, 20))
 dtm_b = interpolate.grid(PointCloud(b), 0.5, method="tin", bounds=(0, 0, 20, 20))

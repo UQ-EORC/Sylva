@@ -57,8 +57,12 @@ def forest(rng, tree_specs):
 
 
 @pytest.fixture(scope="session")
-def single_tree(rng):
-    """One stem (r=0.15, 6 m) with a side branch, already normalised."""
+def single_tree():
+    """One stem (r=0.15, 6 m) with a side branch, already normalised.
+
+    Has its own generator, so it does not depend on which tests ran first.
+    """
+    rng = np.random.default_rng(0)
     stem = make_stem(rng, 0, 0, 0.15, 6.0, density=3000)
     # Branch leaving at 4 m, going out along +x and slightly up.
     n = 1500

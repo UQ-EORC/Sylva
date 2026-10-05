@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for sylva_rs::als, sylva_rs::als_ops and sylva_rs::synthetic_als.
+//! Bindings for sylva_rs::als, sylva_rs::als::ops and sylva_rs::synthetic::als.
 //!
 //! A catalogue crosses the boundary as a dict of per-tile lists (what
 //! `sylva.als.Catalog._core` builds) and a chunk as a dict of its fields.
@@ -15,11 +15,11 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use sylva_rs::als::{self, Catalog, Chunk, Layout, Tile};
-use sylva_rs::als_ops::{self, Decimation, DtmMethod, GroundMethod, Heights, NoiseMethod, RunOptions};
+use sylva_rs::als::ops::{self, Decimation, DtmMethod, GroundMethod, Heights, NoiseMethod, RunOptions};
 use sylva_rs::ground::{CsfParams, PmfParams};
-use sylva_rs::interpolate::{GridMethod, GridParams};
+use sylva_rs::geo::interpolate::{GridMethod, GridParams};
 use sylva_rs::io::las::LasWriteOptions;
-use sylva_rs::synthetic_als::{self, FlightParams, ScanPattern, Trajectory};
+use sylva_rs::synthetic::als::{self as synthetic_als, FlightParams, ScanPattern, Trajectory};
 
 use crate::{cloud_from_py, cloud_to_py, err, raster_from_py, raster_to_py, xyz_to_py};
 
@@ -226,7 +226,7 @@ fn als_classify_ground(py: Python<'_>, catalog: &Bound<'_, PyDict>, out_dir: Pat
         other => return Err(PyValueError::new_err(format!("unknown method {other:?}; expected 'csf' or 'pmf'"))),
     };
     let opts = run_options(chunk_size, buffer, workers);
-    Ok(paths_to_py(py.detach(|| als_ops::classify_ground(&c, &out_dir, &m, last_returns, format.as_deref(), &opts)).map_err(err)?))
+    Ok(paths_to_py(py.detach(|| ops::classify_ground(&c, &out_dir, &m, last_returns, format.as_deref(), &opts)).map_err(err)?))
 }
 
 fn dtm_method(method: &str, power: f64, k: usize, max_distance: Option<f64>) -> PyResult<DtmMethod> {
@@ -242,7 +242,7 @@ fn als_dtm<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolution: f64, m
     let c = catalog_from_py(catalog)?;
     let m = dtm_method(method, power, k, max_distance)?;
     let opts = run_options(chunk_size, buffer, workers);
-    raster_to_py(py, &py.detach(|| als_ops::dtm(&c, resolution, &m, &opts)).map_err(err)?)
+    raster_to_py(py, &py.detach(|| ops::dtm(&c, resolution, &m, &opts)).map_err(err)?)
 }
 
 pub(crate) fn heights(mode: &str, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, dtm_resolution: f64) -> PyResult<Heights> {
@@ -260,7 +260,7 @@ fn als_chm<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolution: f64, m
     let c = catalog_from_py(catalog)?;
     let h = heights(mode, dtm, dtm_resolution)?;
     let opts = run_options(chunk_size, buffer, workers);
-    raster_to_py(py, &py.detach(|| als_ops::chm(&c, resolution, &h, min_height, drop_noise, &opts)).map_err(err)?)
+    raster_to_py(py, &py.detach(|| ops::chm(&c, resolution, &h, min_height, drop_noise, &opts)).map_err(err)?)
 }
 
 #[pyfunction]
@@ -269,7 +269,7 @@ fn als_normalize(py: Python<'_>, catalog: &Bound<'_, PyDict>, out_dir: PathBuf, 
     let c = catalog_from_py(catalog)?;
     let h = heights(mode, dtm, dtm_resolution)?;
     let opts = run_options(chunk_size, buffer, workers);
-    Ok(paths_to_py(py.detach(|| als_ops::normalize(&c, &out_dir, &h, replace_z, format.as_deref(), &opts)).map_err(err)?))
+    Ok(paths_to_py(py.detach(|| ops::normalize(&c, &out_dir, &h, replace_z, format.as_deref(), &opts)).map_err(err)?))
 }
 
 #[pyfunction]
@@ -282,14 +282,14 @@ fn als_filter(py: Python<'_>, catalog: &Bound<'_, PyDict>, out_dir: PathBuf, met
         other => return Err(PyValueError::new_err(format!("unknown method {other:?}; expected 'sor' or 'ror'"))),
     };
     let opts = run_options(chunk_size, buffer, workers);
-    Ok(paths_to_py(py.detach(|| als_ops::filter_noise(&c, &out_dir, &m, classify, format.as_deref(), &opts)).map_err(err)?))
+    Ok(paths_to_py(py.detach(|| ops::filter_noise(&c, &out_dir, &m, classify, format.as_deref(), &opts)).map_err(err)?))
 }
 
 #[pyfunction]
 #[pyo3(signature = (catalog, out_dir, size, buffer, origin, format, workers))]
 fn als_retile(py: Python<'_>, catalog: &Bound<'_, PyDict>, out_dir: PathBuf, size: f64, buffer: f64, origin: Option<(f64, f64)>, format: Option<String>, workers: usize) -> PyResult<Vec<String>> {
     let c = catalog_from_py(catalog)?;
-    Ok(paths_to_py(py.detach(|| als_ops::retile(&c, &out_dir, size, buffer, origin, format.as_deref(), workers)).map_err(err)?))
+    Ok(paths_to_py(py.detach(|| ops::retile(&c, &out_dir, size, buffer, origin, format.as_deref(), workers)).map_err(err)?))
 }
 
 #[pyfunction]
@@ -303,7 +303,7 @@ fn als_decimate(py: Python<'_>, catalog: &Bound<'_, PyDict>, out_dir: PathBuf, m
         other => return Err(PyValueError::new_err(format!("unknown method {other:?}; expected 'random', 'voxel' or 'highest'"))),
     };
     let opts = run_options(chunk_size, 0.0, workers);
-    Ok(paths_to_py(py.detach(|| als_ops::decimate(&c, &out_dir, &m, format.as_deref(), &opts)).map_err(err)?))
+    Ok(paths_to_py(py.detach(|| ops::decimate(&c, &out_dir, &m, format.as_deref(), &opts)).map_err(err)?))
 }
 
 #[pyfunction]
@@ -312,7 +312,7 @@ fn als_write_tiles(py: Python<'_>, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bo
     let cloud = cloud_from_py(xyz, attrs)?;
     #[allow(clippy::needless_update)]
     let opts = LasWriteOptions { point_format, scale, ..Default::default() };
-    let out = py.detach(|| als_ops::write_tiles(&cloud, &out_dir, size, origin, format, &opts, epsg)).map_err(err)?;
+    let out = py.detach(|| ops::write_tiles(&cloud, &out_dir, size, origin, format, &opts, epsg)).map_err(err)?;
     Ok(out.into_iter().map(|(p, n)| (p.to_string_lossy().to_string(), n)).collect())
 }
 

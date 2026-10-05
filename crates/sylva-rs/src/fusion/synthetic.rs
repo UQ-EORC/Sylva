@@ -3,7 +3,7 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! A terrestrial scanner that sees a synthetic scene as the airborne
-//! simulator ([`crate::synthetic_als::fly`]) does.
+//! simulator ([`crate::synthetic::als::fly`]) does.
 //!
 //! Every scene point is a sphere of `target_radius` (points of class 2, the
 //! scene's ground, are ignored) and the ground is the analytic terrain of

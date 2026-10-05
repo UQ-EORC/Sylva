@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use crate::error::{Error, Result};
 use crate::filters::estimate_normals;
 use crate::pointcloud::Attr;
-use crate::spatial::KdTree;
+use crate::util::spatial::KdTree;
 use crate::transform::{cross, dot, sub, Transform};
 use crate::{Point, PointCloud};
 
