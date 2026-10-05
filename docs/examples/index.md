@@ -1,8 +1,8 @@
 # Example notebooks
 
 One notebook per stage of a TLS workflow, three more on change between
-epochs, airborne lidar and full waveforms, and one on the synthetic data the
-others check themselves against. Most of them run on a real scan: a
+epochs, airborne lidar and full waveforms, one on the synthetic data the
+others check themselves against, and one on buttressed trees. Most of them run on a real scan: a
 20 × 20 m tile of the TERN [Litchfield Savanna
 SuperSite](https://www.tern.org.au) plot in the Northern Territory, scanned in
 2021 with a RIEGL VZ-2000i from many positions and registered into one cloud.
@@ -24,6 +24,15 @@ density, leaf angles and gap fraction against a known stand. These scenes
 come from `synthetic.tree_model` and `synthetic.plot`, scanned by
 `synthetic.scan` with a beam footprint, range noise and mixed pixels
 (notebook 17).
+
+The buttress notebook (18) uses two other real clouds instead: single trees from
+the destructive-harvest data of Burt et al. (2021), cut by
+`make_buttress_subset.py` (see the [data README](data/README.md)).
+
+| File | What | Size |
+|---|---|---|
+| `data/buttress_tree.laz` | the whole of a 46 m tree with a flanged base: 1.04 M points, 1 cm up to 6 m and 5 cm above | 3 MB |
+| `data/round_tree.laz` | the lowest 8 m of a tree with a round stem, 41 k points at 1 cm | 0.1 MB |
 
 What real data shows that a synthetic scene cannot is worth reading. Two
 examples the notebooks work through: the cloth simulation filter puts the
@@ -52,6 +61,7 @@ statistical outlier filter removes 4 % of the cloud, two thirds of it below
 | 15 | [Airborne lidar](15_als.ipynb) | synthetic | a simulated flight written as tiles: catalogue, ground, DTM, CHM, area-based metrics, individual trees against the known stand, pulses from the trajectory, gap profiles and ray-traced PAI against a known layer |
 | 16 | [Full waveforms](16_waveform.ipynb) | synthetic | waveforms of known targets, LAS wave packets written and read, Gaussian decomposition against the truth, echoes as pulses for ray-traced voxels |
 | 17 | [Synthetic data](17_synthetic.ipynb) | synthetic | tree archetypes and their truth (cylinders, leaves, leaf angles), a mixed stand with understorey and dead wood, a finite-beam scan and where its mixed pixels fall |
+| 18 | [Buttresses](18_buttress.ipynb) | two real trees | 3D views of the points, detecting a flanged base, rebuilding it as a closed mesh, the cylinder model it replaces, one fused mesh of the whole tree |
 
 The numbers the notebooks print describe this one tile and are not validation.
 Accuracy against reference plots, felled trees and independent instruments is

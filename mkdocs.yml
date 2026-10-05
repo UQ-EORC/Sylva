@@ -70,6 +70,7 @@ nav:
       - 15. Airborne lidar: examples/15_als.ipynb
       - 16. Full waveforms: examples/16_waveform.ipynb
       - 17. Synthetic data: examples/17_synthetic.ipynb
+      - 18. Buttresses: examples/18_buttress.ipynb
   - Benchmarks:
       - Tree detection: benchmarks/trees.md
       - QSMs: benchmarks/qsm.md
@@ -123,6 +124,7 @@ exclude_docs: |
   hooks.py
   examples/build_notebooks.py
   examples/make_litch_subset.py
+  examples/make_buttress_subset.py
   examples/build_riscan_notebook.py
   examples/data/*.laz
   examples/data/*.parquet

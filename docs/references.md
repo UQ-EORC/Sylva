@@ -458,7 +458,8 @@ Burt, A., Boni Vicari, M., da Costa, A. C. L., Coughlin, I., Meir, P., Rowland,
 L., & Disney, M. (2021). New insights into large tropical tree mass and
 structure from direct harvest and terrestrial lidar. *Royal Society Open
 Science*, *8*(2), 201458. <https://doi.org/10.1098/rsos.201458>
-In Sylva: felled tropical trees in the [QSM benchmark](benchmarks/qsm.md).
+In Sylva: felled tropical trees in the [QSM benchmark](benchmarks/qsm.md), and
+two of the trees in the [buttress example](examples/18_buttress.ipynb).
 
 Calders, K., Newnham, G., Burt, A., Murphy, S., Raumonen, P., Herold, M.,
 Culvenor, D., Avitabile, V., Disney, M., Armston, J., & Kaasalainen, M. (2015).

@@ -303,7 +303,9 @@ values near 0 mean they follow the priors.
 A cylinder cannot follow a buttressed base. At 1.3 m a large tropical tree can
 be a star of flanges that a circle explains only a fraction of, so the QSM
 either misses the flanges or spans the gaps between them. Sylva finds
-buttresses, then rebuilds them as a closed mesh:
+buttresses, then rebuilds them as a closed mesh (the
+[buttress notebook](../examples/18_buttress.ipynb) runs all of this on two real
+trees, one flanged and one round):
 
 ```python
 from sylva import qsm, trees

@@ -1,5 +1,7 @@
 """Tiled point operations (sylva.als.tiles) against the same operations on the whole cloud."""
 
+import csv
+
 import numpy as np
 import pytest
 
@@ -358,4 +360,8 @@ def test_cli(plot, tmp_path, capsys):
           "--height-attribute", "height"])
     out = capsys.readouterr().out
     assert "stems from" in out and (tmp_path / "stems.csv").exists()
+    n_stems = int(out.split("stems from")[0].split()[-1].replace(",", ""))
+    with open(tmp_path / "stems.csv", newline="") as f:      # written without pandas, which is optional
+        rows = list(csv.DictReader(f))
+    assert len(rows) == n_stems and (n_stems == 0 or {"x", "y"} <= set(rows[0]))
     assert "planarity" in tiles.catalog(tmp_path / "x").read().attrs

@@ -42,6 +42,7 @@ Examples
 
 from __future__ import annotations
 
+import csv
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -806,8 +807,12 @@ def _add_commands(sub, fmt: dict) -> None:
         cat = catalog(a.input, pattern=a.pattern)
         found = detect_stems(cat, height_attr=a.height_attribute, buffer=a.buffer,
                              workers=a.workers, min_arc_deg=a.min_arc)
-        import pandas as pd
-        pd.DataFrame([t.as_dict() for t in found]).to_csv(a.output, index=False)
+        rows = [t.as_dict() for t in found]
+        with open(a.output, "w", newline="") as f:
+            if rows:
+                writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
         print(f"{len(found):,} stems from {len(cat)} tiles -> {a.output}")
 
     s = sub.add_parser("tiles-stems", help="stems and DBH over height-normalised tiles", **fmt)
