@@ -1,4 +1,4 @@
-// Sylva: terrestrial laser scanning processing for forest ecology.
+// Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Adapted from rayvoxel (Josh Rivory, unpublished), a port of AMAPVox (UMR AMAP);
 // see THIRD_PARTY_NOTICES.md.

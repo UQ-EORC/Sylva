@@ -1,4 +1,4 @@
-//! sylva-rs: terrestrial laser scanning processing for forest ecology.
+//! sylva-rs: LiDAR processing for forest ecology and remote sensing research.
 //!
 //! Copyright (C) 2026 Tim Devereux, The University of Queensland. Free
 //! software under the GNU General Public License v3.0 or later; see the

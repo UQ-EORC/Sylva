@@ -1,8 +1,8 @@
-# Sylva: terrestrial laser scanning processing for forest ecology.
+# Sylva: LiDAR processing for forest ecology and remote sensing research.
 # Copyright (C) 2026 Tim Devereux, The University of Queensland.
 # Free software under the GNU General Public License v3.0 or later;
 # see the LICENSE file. There is no warranty, to the extent permitted by law.
-"""sylva: terrestrial laser scanning processing for forest ecology.
+"""sylva: LiDAR processing for forest ecology and remote sensing research.
 
 The heavy lifting is done by a Rust core (``sylva._core``); this package
 provides a numpy-friendly API on top of it.

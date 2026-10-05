@@ -1,7 +1,7 @@
 # sylva-cli
 
-The `sylva` command: terrestrial laser scanning processing for forest ecology,
-built on [`sylva-rs`](https://crates.io/crates/sylva-rs).
+The `sylva` command: LiDAR processing for forest ecology and remote sensing
+research, built on [`sylva-rs`](https://crates.io/crates/sylva-rs).
 
 ```bash
 cargo install sylva-cli
