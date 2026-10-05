@@ -1,9 +1,9 @@
-# sylva.tiles
+# sylva.als.tiles
 
 `Catalog`, `Chunk`, `catalog`, `apply`, `retile` and `write_tiles` are the
 objects of [`sylva.als`](als.md), documented there.
 
-::: sylva.tiles
+::: sylva.als.tiles
     options:
       members:
         - RunInfo

@@ -7,7 +7,7 @@
 //! noise filtering, retiling, decimation, and writing a cloud as tiles.
 //!
 //! Each runs the single-cloud function of [`crate::ground`],
-//! [`crate::filters`] or [`crate::interpolate`] on a chunk with its buffer
+//! [`crate::filters`] or [`crate::geo::interpolate`] on a chunk with its buffer
 //! and keeps what falls in the chunk's core, so that away from the outer
 //! edge of the survey a result does not show where the tiles meet. Rasters
 //! are computed on one grid for the whole catalogue ([`catalog_grid`]).
@@ -24,7 +24,7 @@ use crate::als::{buffer_attr, catalog_grid, chunk_bounds, in_box, merge_clouds, 
 use crate::error::{Error, Result};
 use crate::filters;
 use crate::ground::{self, CsfParams, PmfParams, GROUND_CLASS};
-use crate::interpolate::{self, GridParams};
+use crate::geo::interpolate::{self, GridParams};
 use crate::io::las::{read_las, read_las_batches, write_las_with_vlrs, LasWriteOptions};
 use crate::pointcloud::Attr;
 use crate::raster::Raster;

@@ -1,3 +1,3 @@
-# sylva.voxel_blocks
+# sylva.voxels.blocks
 
-::: sylva.voxel_blocks
+::: sylva.voxels.blocks

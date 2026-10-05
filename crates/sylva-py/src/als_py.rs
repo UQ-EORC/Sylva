@@ -17,7 +17,7 @@ use pyo3::types::{PyDict, PyList};
 use sylva_rs::als::{self, Catalog, Chunk, Layout, Tile};
 use sylva_rs::als::ops::{self, Decimation, DtmMethod, GroundMethod, Heights, NoiseMethod, RunOptions};
 use sylva_rs::ground::{CsfParams, PmfParams};
-use sylva_rs::interpolate::{GridMethod, GridParams};
+use sylva_rs::geo::interpolate::{GridMethod, GridParams};
 use sylva_rs::io::las::LasWriteOptions;
 use sylva_rs::synthetic::als::{self as synthetic_als, FlightParams, ScanPattern, Trajectory};
 

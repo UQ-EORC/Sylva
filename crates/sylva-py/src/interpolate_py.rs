@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for sylva_rs::interpolate.
+//! Bindings for sylva_rs::geo::interpolate.
 
 use std::borrow::Cow;
 
@@ -10,7 +10,7 @@ use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntyped
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use sylva_rs::interpolate::{self, GridMethod, GridParams, SampleMethod};
+use sylva_rs::geo::interpolate::{self, GridMethod, GridParams, SampleMethod};
 use sylva_rs::Point;
 
 use crate::{attr_from_py, err, raster_from_py, raster_to_py};

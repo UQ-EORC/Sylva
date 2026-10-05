@@ -7,4 +7,4 @@
 `tree_model`, `plot`, `archetype` and `scanner_preset` are available from
 `sylva.synthetic`; see [Synthetic trees, plots and scans](../guide/synthetic.md).
 
-::: sylva.synthetic_model
+::: sylva.synthetic.model

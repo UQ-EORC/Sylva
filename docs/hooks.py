@@ -15,22 +15,17 @@ MARKER = "<!-- function-index -->"
 #: Module -> API page, in the order of the index.
 PAGES = {
     "pointcloud": "pointcloud.md", "raster": "pointcloud.md", "io": "io.md", "shots": "shots.md",
-    "riscan": "shots.md", "filters": "filters.md", "registration": "registration.md",
-    "coreg": "coreg.md", "ground": "ground.md", "trees": "trees.md", "canopy": "canopy.md", "voxels": "voxels.md",
-    "interpolate": "interpolate.md", "als": "als.md",
-    "qsm": "qsm.md", "leaves": "leaves.md", "quality": "quality.md", "synthetic": "synthetic.md",
-    "progress": "progress.md", "limits": "limits.md",
-    "masks": "masks.md",
-    "change": "change.md",
+    "riscan": "shots.md", "filters": "filters.md", "ground": "ground.md", "registration": "registration.md",
+    "coreg": "coreg.md", "trees": "trees.md", "qsm": "qsm.md", "leaves": "leaves.md",
+    "canopy": "canopy.md", "voxels": "voxels.md", "voxels.blocks": "voxel_blocks.md",
+    "quality": "quality.md", "waveform": "waveform.md",
+    "als": "als.md", "als.tiles": "tiles.md", "als.metrics": "als_metrics.md",
+    "als.canopy": "als_canopy.md", "als.trees": "als_trees.md",
+    "change": "change.md", "fusion": "fusion.md",
+    "geo.coords": "coords.md", "geo.interpolate": "interpolate.md", "geo.masks": "masks.md",
+    "synthetic": "synthetic.md", "synthetic.model": "synthetic.md",
+    "util.progress": "progress.md", "util.limits": "limits.md",
 }
-PAGES["coords"] = "coords.md"
-PAGES["als_metrics"] = "als_metrics.md"
-PAGES["waveform"] = "waveform.md"
-PAGES["als_canopy"] = "als_canopy.md"
-PAGES["als_trees"] = "als_trees.md"
-PAGES["fusion"] = "fusion.md"
-PAGES["tiles"] = "tiles.md"
-PAGES["synthetic_model"] = "synthetic.md"
 
 
 def _summary(obj) -> str:
@@ -47,12 +42,12 @@ def _index(src: Path) -> str:
     for name, page in PAGES.items():
         mod = pkg[name]
         rows = []
-        # A package (sylva.coreg) is indexed through its public submodules.
-        if mod.is_package:
-            modules = [(f"{name}.{sub}", m) for sub, m in mod.modules.items()
-                       if not sub.startswith("_")]
-        else:
-            modules = [(name, mod)]
+        # A package (sylva.coreg) is indexed through its own members and any
+        # public submodules that do not have a page of their own.
+        modules = [(name, mod)]
+        if mod.modules:
+            modules += [(f"{name}.{sub}", m) for sub, m in mod.modules.items()
+                        if not sub.startswith("_") and f"{name}.{sub}" not in PAGES]
         members = [(where, member) for where, m in modules for member in m.members.values()]
         for where, member in members:
             kind = member.kind.value

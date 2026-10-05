@@ -1,3 +1,3 @@
-# sylva.interpolate
+# sylva.geo.interpolate
 
-::: sylva.interpolate
+::: sylva.geo.interpolate

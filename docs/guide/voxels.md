@@ -110,12 +110,12 @@ once (from memory, or from a shots file a few row groups at a time) and
 traces it into the blocks of the pass that its line passes through. With
 `out` the blocks are written to a directory as they finish, and the grid is
 never held whole. Use it when the whole trace does not fit (`ray_voxelize`
-refuses a grid larger than the memory budget of `sylva.limits`), or to keep
+refuses a grid larger than the memory budget of `sylva.util.limits`), or to keep
 a fine grid on disk and read it a part at a time.
 
 ```python
 from sylva import voxels
-from sylva.voxel_blocks import open_blocked
+from sylva.voxels.blocks import open_blocked
 
 grid = voxels.ray_voxelize(
     "rays.parquet", 0.1, bounds, dtm=dtm, occlusion=True, beam=(0.007, 0.00027),

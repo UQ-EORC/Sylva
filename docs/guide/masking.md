@@ -1,13 +1,13 @@
 # Masking
 
 A mask is a boolean array with one entry per point, `True` where the point
-is kept. `sylva.masks` builds masks from four sources: polygons, rasters,
+is kept. `sylva.geo.masks` builds masks from four sources: polygons, rasters,
 expressions over the attributes, and the distance to another cloud. Masks
 combine with `&`, `|` and `~` and index a cloud directly, so a selection that
 draws on several sources is a single line:
 
 ```python
-from sylva import masks
+from sylva.geo import masks
 
 keep = masks.inside_polygons(cloud, plots) & masks.expression(cloud, "height > 2")
 subset = cloud[keep]
@@ -30,7 +30,8 @@ margin of extra points around it.
 
 ```python
 import numpy as np
-from sylva import ground, masks, synthetic
+from sylva import ground, synthetic
+from sylva.geo import masks
 
 cloud = synthetic.forest()
 cloud = ground.normalize_height(cloud, ground.make_dtm(cloud))

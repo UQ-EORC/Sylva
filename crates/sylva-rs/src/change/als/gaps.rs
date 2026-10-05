@@ -23,7 +23,7 @@
 use std::collections::HashMap;
 
 use crate::error::{Error, Result};
-use crate::masks::Polygon;
+use crate::geo::masks::Polygon;
 use crate::raster::Raster;
 
 /// Settings of [`find_gaps`].

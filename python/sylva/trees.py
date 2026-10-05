@@ -172,7 +172,7 @@ def detect_stems(cloud: PointCloud, height_attr: str = "height", **params) -> li
     ``seed`` [0], ``cluster_seeds`` [False] (a random stream per cluster
     rather than per layer, each cluster's points in input order, and the
     prefilter's neighbours at equal distances taken by index, so that each
-    stem depends only on the points around it; :func:`sylva.tiles.detect_stems`
+    stem depends only on the points around it; :func:`sylva.als.tiles.detect_stems`
     uses it, and gives the same stems as this function with it).
 
     Parameters
@@ -431,7 +431,7 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
     voxel_origin
         ``(x, y, z)`` of a corner of the graph's voxel grid; None anchors it
         at the lowest point above ``cut_above_ground``. A fixed corner puts
-        the graph on the grid :func:`sylva.tiles.segment_trees` uses, which
+        the graph on the grid :func:`sylva.als.tiles.segment_trees` uses, which
         then gives these labels tile by tile.
 
     Returns

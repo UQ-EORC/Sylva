@@ -58,7 +58,7 @@ use rayon::prelude::*;
 use crate::als::{catalog_grid, est_points, in_core, plan, run, workers_for, Catalog, Chunk, Layout, BYTES_PER_POINT};
 use crate::als::ops::{chunk_heights, Heights, RunOptions, HIGH_NOISE_CLASS, NOISE_CLASS};
 use crate::error::{Error, Result};
-use crate::masks::{MultiPolygon, PolygonIndex};
+use crate::geo::masks::{MultiPolygon, PolygonIndex};
 use crate::util::numeric::{pairwise_sum, quantile_sorted};
 use crate::raster::Raster;
 use crate::PointCloud;
@@ -587,7 +587,7 @@ fn ret_attrs(cols: &Columns, i: usize) -> Return {
 pub enum Plot {
     /// A circle; a point on the circle is inside.
     Circle { x: f64, y: f64, radius: f64 },
-    /// Polygons (closed sets, holes excluded), as [`crate::masks`] tests them.
+    /// Polygons (closed sets, holes excluded), as [`crate::geo::masks`] tests them.
     Polygon(MultiPolygon),
 }
 
@@ -783,7 +783,7 @@ mod tests {
     use crate::als::read_region;
     use crate::als::ops::write_tiles;
     use crate::io::las::LasWriteOptions;
-    use crate::masks::Polygon;
+    use crate::geo::masks::Polygon;
     use crate::util::nprandom::Generator;
     use crate::pointcloud::Attr;
     use std::path::{Path, PathBuf};

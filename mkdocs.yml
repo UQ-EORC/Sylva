@@ -76,35 +76,42 @@ nav:
       - Canopy gap profiles: benchmarks/canopy.md
   - API reference:
       - Function index: api/index.md
-      - PointCloud, Raster: api/pointcloud.md
-      - io: api/io.md
-      - Shots, RiSCAN: api/shots.md
-      - filters: api/filters.md
-      - masks: api/masks.md
-      - ground: api/ground.md
-      - interpolate: api/interpolate.md
-      - tiles: api/tiles.md
-      - als: api/als.md
-      - als_metrics: api/als_metrics.md
-      - waveform: api/waveform.md
-      - als (canopy): api/als_canopy.md
-      - als (trees): api/als_trees.md
-      - change: api/change.md
-      - fusion: api/fusion.md
-      - change (airborne): api/change_als.md
-      - trees: api/trees.md
-      - canopy: api/canopy.md
-      - voxels: api/voxels.md
-      - voxel_blocks: api/voxel_blocks.md
-      - registration: api/registration.md
-      - coords: api/coords.md
-      - coreg: api/coreg.md
-      - qsm: api/qsm.md
-      - leaves: api/leaves.md
-      - quality: api/quality.md
-      - progress: api/progress.md
-      - limits: api/limits.md
-      - synthetic: api/synthetic.md
+      - Core types:
+          - PointCloud, Raster: api/pointcloud.md
+          - Shots, RiSCAN: api/shots.md
+          - sylva.io: api/io.md
+      - Point clouds:
+          - sylva.filters: api/filters.md
+          - sylva.ground: api/ground.md
+          - sylva.registration: api/registration.md
+          - sylva.coreg: api/coreg.md
+      - Forest structure:
+          - sylva.trees: api/trees.md
+          - sylva.qsm: api/qsm.md
+          - sylva.leaves: api/leaves.md
+          - sylva.canopy: api/canopy.md
+          - sylva.voxels: api/voxels.md
+          - sylva.voxels.blocks: api/voxel_blocks.md
+          - sylva.quality: api/quality.md
+          - sylva.waveform: api/waveform.md
+      - Airborne lidar:
+          - sylva.als: api/als.md
+          - sylva.als.tiles: api/tiles.md
+          - sylva.als.metrics: api/als_metrics.md
+          - sylva.als.canopy: api/als_canopy.md
+          - sylva.als.trees: api/als_trees.md
+      - Change and fusion:
+          - sylva.change: api/change.md
+          - sylva.change.als: api/change_als.md
+          - sylva.fusion: api/fusion.md
+      - Geospatial:
+          - sylva.geo.coords: api/coords.md
+          - sylva.geo.interpolate: api/interpolate.md
+          - sylva.geo.masks: api/masks.md
+      - sylva.synthetic: api/synthetic.md
+      - sylva.util:
+          - sylva.util.progress: api/progress.md
+          - sylva.util.limits: api/limits.md
   - Development: development.md
   - Releasing: release.md
   - References: references.md

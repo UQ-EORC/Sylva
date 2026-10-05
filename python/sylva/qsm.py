@@ -1114,7 +1114,7 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
     The loop that :func:`build_qsm` needs around it: each tree's points are
     taken from ``labels``, thinned, put through the wood filter and fitted,
     and a tree that cannot be fitted is recorded rather than raising. Progress
-    is reported (:mod:`sylva.progress`), so a plot of a few hundred trees is
+    is reported (:mod:`sylva.util.progress`), so a plot of a few hundred trees is
     not silent.
 
     Parameters

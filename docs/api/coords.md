@@ -1,6 +1,6 @@
-# sylva.coords
+# sylva.geo.coords
 
 Shifting, rotating and recentring are methods of
 [`PointCloud`](pointcloud.md): `translate`, `rotate` and `recentre`.
 
-::: sylva.coords
+::: sylva.geo.coords

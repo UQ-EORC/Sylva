@@ -128,7 +128,7 @@ return is at or above the ground.
 
 `als.plot_metrics(cat, plots, radius=...)` takes circular plots as an
 `(N, 2)` array of centres and a radius (one for all or one per plot), or,
-without `radius`, polygons in any form [`sylva.masks`](masking.md) accepts:
+without `radius`, polygons in any form [`sylva.geo.masks`](masking.md) accepts:
 a layer from `masks.read_polygons("plots.shp")`, `Polygon` objects with
 holes, or `(K, 2)` vertex arrays, one plot per feature. Points on a plot's
 boundary are inside it. The plots are grouped by the tiles they overlap and
@@ -141,7 +141,8 @@ input), an `id` column when `ids` are given, and one column per metric:
 `t["zq95"]`, `t.row(0)`, `t.to_pandas()`, `t.to_csv(path)`.
 
 ```python
-from sylva import als, masks
+from sylva import als
+from sylva.geo import masks
 
 layer = masks.read_polygons("plots.shp")
 t = als.plot_metrics(cat, layer, ids=[f.properties["plot_id"] for f in layer],

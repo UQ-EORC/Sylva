@@ -14,11 +14,11 @@ command over it.
 | Module | What it does |
 |---|---|
 | `sylva.io` | LAS/LAZ (typed extra bytes, CRS from and to the WKT or GeoTIFF records), PLY (incl. raycloudtools ray clouds), XYZ/CSV/PTS, RIEGL `.rxp` via RiVLib, RiSCAN project parsing |
-| `sylva.coords` | translation, rotation about any axis and point, recentring, reprojection between CRSs (EPSG codes, PROJ strings, WKT; pure Rust, no PROJ install), applying transform files (`transforms.json`, RiSCAN SOPs) to many scans |
+| `sylva.geo.coords` | translation, rotation about any axis and point, recentring, reprojection between CRSs (EPSG codes, PROJ strings, WKT; pure Rust, no PROJ install), applying transform files (`transforms.json`, RiSCAN SOPs) to many scans |
 | `sylva.filters` | voxel / random / Poisson-disk subsampling, box & cylinder crops, statistical & radius outlier removal, PCA normals, planarity, Euclidean clustering, kNN |
 | `sylva.ground` | Cloth Simulation Filter and Progressive Morphological Filter ground classification, DTM (lowest point, or TIN, natural-neighbour or IDW), height normalisation, CHM |
-| `sylva.interpolate` | attributes carried between clouds (nearest, inverse distance, majority vote), grids from points (IDW, TIN, natural neighbour), rasters sampled onto points |
-| `sylva.masks` | point masks and crops by polygons (shapefile, GeoJSON, with holes), rasters, attribute expressions (`cloud.where("height > 2 & classification != 2")`) and distance to another cloud |
+| `sylva.geo.interpolate` | attributes carried between clouds (nearest, inverse distance, majority vote), grids from points (IDW, TIN, natural neighbour), rasters sampled onto points |
+| `sylva.geo.masks` | point masks and crops by polygons (shapefile, GeoJSON, with holes), rasters, attribute expressions (`cloud.where("height > 2 & classification != 2")`) and distance to another cloud |
 | `sylva.trees` | RANSAC circle fitting, stem detection & DBH, basal area, taper profiles, graph-based tree segmentation, tree heights, crown metrics, crown shape (stacked-hull volume, asymmetry) |
 | `sylva.canopy` | voxel grids, contact-frequency PAD profiles, zenith-ring gap fraction, hinge/Miller LAI, ray-traced density grids from pulse data, Jupp gap-probability profiles with hinge / linear / weighted PAI, clumping index and canopy height |
 | `sylva.voxels` | AMAPVox-style ray-traced voxels (port of raycloudtools `rayvoxel`): echo-weighted free / potential path lengths, FPL / PPL / transmittance / Bailey attenuation, analytic or estimated leaf-angle `G`, PAD / LAD / WAD, occlusion, sub-voxel exploration, QSM wood volume, `.vox` export, occlusion profiles and per-tree sampling (is the top real?) |
@@ -29,9 +29,9 @@ command over it.
 | `sylva.quality` | scan quality from stems: range noise with the stem shape removed, per-scan registration offsets, mixed-pixel tails |
 | `sylva.change` | change between two epochs of a plot: epoch alignment on stems and ground, tree matching with increments and their uncertainty, plot summaries (growth, mortality, recruitment), point change (C2C, M3C2, DEM of difference, voxel occupancy with occlusion), QSM change by height and branch, each labelled trusted or not |
 | `sylva.als` | airborne lidar over tiled areas: catalogues and buffered chunks, ground, DTM, CHM, normalisation, filtering, retiling and thinning over whole areas |
-| `sylva.als_metrics` | area-based metrics (the lidR standard set, cover, gap fraction) as rasters or plot tables, or any user function |
-| `sylva.als_trees` | tree tops from local maxima, crowns by watershed, Dalponte 2016 or Li 2012, crown outlines and labelled tiles, each tree once across tiles |
-| `sylva.als_canopy` | ALS and UAV pulses from the flight trajectory (SBET or text, or estimated), gap-fraction and PAD profiles corrected for beam angle, ray-traced voxels |
+| `sylva.als.metrics` | area-based metrics (the lidR standard set, cover, gap fraction) as rasters or plot tables, or any user function |
+| `sylva.als.trees` | tree tops from local maxima, crowns by watershed, Dalponte 2016 or Li 2012, crown outlines and labelled tiles, each tree once across tiles |
+| `sylva.als.canopy` | ALS and UAV pulses from the flight trajectory (SBET or text, or estimated), gap-fraction and PAD profiles corrected for beam angle, ray-traced voxels |
 | `sylva.fusion` | TLS and ALS together: a plot registered on a survey (canopy and terrain search, robust ICP, residuals and uncertainty), TLS stems linked to ALS trees with the trees under each crown, merged clouds and plant area profiles weighted by sampling, plot values upscaled by regression with leave-one-out checks |
 | `sylva.waveform` | full waveforms: LAS 1.3/1.4 wave packets and PulseWaves read and written, Gaussian decomposition into echoes, waveforms to pulses |
 | `sylva.Shots` | pulse-centric data (origin, direction, CSR echoes) for ray-based metrics, with a compact Parquet file format that stores misses without far points and streams into the voxeliser; pulses that returned nothing rebuilt from the scan pattern or from the returns alone |
@@ -117,7 +117,7 @@ grid = voxels.ray_voxelize(shots, 0.25, ground_class=2)  # ray-traced plant area
 ```
 
 ```python
-from sylva import coords, interpolate, masks
+from sylva.geo import coords, interpolate, masks
 
 cloud = coords.reproject(cloud, "EPSG:7855")                  # to GDA2020 / MGA zone 55
 trees_only = cloud.where("height > 1.3 & tree_id >= 0")       # attribute expression

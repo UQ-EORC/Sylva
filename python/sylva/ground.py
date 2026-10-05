@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import _core, interpolate
+from . import _core
+from .geo import interpolate
 from .pointcloud import PointCloud
 from .raster import Raster
 
@@ -156,7 +157,7 @@ def make_dtm(cloud: PointCloud, resolution: float = 0.5, bounds=None,
     method : {"lowest", "tin", "natural", "idw"}
         ``"lowest"`` (the default) is the per-cell minimum described above.
         The others interpolate the ground points at cell centres with
-        :func:`sylva.interpolate.grid` (a triangulation, natural neighbours
+        :func:`sylva.geo.interpolate.grid` (a triangulation, natural neighbours
         or inverse distance weighting with its defaults); cells outside the
         convex hull of the ground points are then filled from the nearest
         interpolated cell. Interpolation passes through every ground point,

@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 use crate::als::{catalog_grid, chunk_bounds, in_core, mosaic, output_path, plan, run, workers_for_estimates, write_like, Catalog, Chunk, Layout, BYTES_PER_POINT};
 use crate::error::{Error, Result};
 use crate::ground::{self, GROUND_CLASS};
-use crate::interpolate::{self, GridMethod, GridParams};
+use crate::geo::interpolate::{self, GridMethod, GridParams};
 use crate::raster::Raster;
 use crate::{Point, PointCloud};
 

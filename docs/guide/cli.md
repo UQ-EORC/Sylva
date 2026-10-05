@@ -74,7 +74,7 @@ that size (m).
 
 `sylva reproject INPUT OUTPUT --to CRS [--from CRS]`: transforms the points
 into another coordinate reference system with
-[`sylva.coords.reproject`](coordinates.md#reprojecting). A CRS is an EPSG code
+[`sylva.geo.coords.reproject`](coordinates.md#reprojecting). A CRS is an EPSG code
 (`EPSG:7855`, or a compound `EPSG:7855+5711`), a PROJ string or WKT (quote
 both on the command line). `--from` defaults to the CRS in the input's
 LAS/LAZ header; other formats carry none, so need it. A LAS/LAZ output stores
@@ -107,7 +107,7 @@ sylva transform plot.laz plot_turned.laz --rotate 12.5 --about 512025 5412025 0
 ```
 
 To put a whole survey in one frame with a `transforms.json` or a folder of
-`.DAT` files, use [`sylva.coords.apply_transforms`](coordinates.md#applying-registration-results).
+`.DAT` files, use [`sylva.geo.coords.apply_transforms`](coordinates.md#applying-registration-results).
 
 ### `ground`
 

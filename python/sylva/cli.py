@@ -18,7 +18,9 @@ from pathlib import Path
 
 import numpy as np
 
-from . import __version__, als, canopy, coreg, filters, ground, io, progress, qsm, riscan, trees, voxels
+from . import __version__
+from . import als, canopy, coreg, filters, ground, io, qsm, riscan, trees, voxels
+from .util import progress
 from .raster import Raster
 from .shots import Shots
 
@@ -39,7 +41,7 @@ def _cmd_info(args):
     print(f"{args.input}: {len(cloud):,} points")
     print(f"  min: {lo}\n  max: {hi}")
     if cloud.crs is not None:
-        from .coords import crs_info
+        from .geo.coords import crs_info
 
         try:
             info = crs_info(cloud.crs)
@@ -59,7 +61,7 @@ def _cmd_convert(args):
 
 
 def _cmd_reproject(args):
-    from . import coords
+    from .geo import coords
 
     cloud = io.read(args.input)
     src = args.src if args.src else cloud.crs
@@ -637,15 +639,14 @@ def main(argv=None):
     _als_common(s)
     s.set_defaults(func=_cmd_als_normalize)
 
-    from . import als_metrics
-    als_metrics._add_commands(sub, fmt, _als_common, _write_raster)
+    als.metrics._add_commands(sub, fmt, _als_common, _write_raster)
     from .change import als as change_als
     change_als._add_commands(sub, fmt, _als_common, _write_raster)
 
     from . import fusion
     fusion._add_commands(sub, fmt)
 
-    from . import tiles
+    from .als import tiles
     tiles._add_commands(sub, fmt)
 
     s = sub.add_parser("als-trees", help="tree tops and crowns over a directory of ALS tiles",

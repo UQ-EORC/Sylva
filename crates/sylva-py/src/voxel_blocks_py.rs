@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for block tracing (sylva.voxel_blocks): the blocked trace and
+//! Bindings for block tracing (sylva.voxels.blocks): the blocked trace and
 //! the grid it leaves on disk.
 
 use std::path::PathBuf;

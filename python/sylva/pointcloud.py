@@ -38,7 +38,7 @@ class PointCloud:
         through subsetting, :meth:`transform`, :meth:`translate`,
         :meth:`rotate`, :meth:`recentre` and :meth:`concatenate` unchanged,
         so after a local shift it describes the frame the offset returns
-        to; :func:`sylva.coords.reproject` changes it.
+        to; :func:`sylva.geo.coords.reproject` changes it.
 
     Raises
     ------
@@ -188,7 +188,7 @@ class PointCloud:
         expr
             A condition over the coordinates ``x``, ``y``, ``z`` and the
             attributes, e.g. ``"height > 2 & classification != 2"``; see
-            :func:`sylva.masks.expression` for the syntax.
+            :func:`sylva.geo.masks.expression` for the syntax.
 
         Returns
         -------
@@ -202,7 +202,7 @@ class PointCloud:
             On a syntax error or an unknown attribute; the message gives the
             position.
         """
-        from .masks import expression
+        from .geo.masks import expression
 
         return self[expression(self, expr)]
 
@@ -258,7 +258,7 @@ class PointCloud:
         --------
         >>> local = cloud.translate(-500_000, -6_900_000)
         """
-        from .coords import translation_matrix
+        from .geo.coords import translation_matrix
 
         return PointCloud(_core.coords_apply(self.xyz, translation_matrix(dx, dy, dz)),
                           dict(self.attrs), self.crs)
@@ -297,7 +297,7 @@ class PointCloud:
         --------
         >>> turned = cloud.rotate(30, about=cloud.xyz.mean(axis=0))
         """
-        from .coords import rotation_matrix
+        from .geo.coords import rotation_matrix
 
         return PointCloud(_core.coords_apply(self.xyz, rotation_matrix(angle_deg, axis, about)),
                           dict(self.attrs), self.crs)
@@ -370,12 +370,12 @@ class PointCloud:
         common = set.intersection(*(set(c.attrs) for c in clouds))
         crss = list(dict.fromkeys(c.crs for c in clouds if c.crs is not None))
         if len(crss) > 1:
-            from .coords import same_crs
+            from .geo.coords import same_crs
 
             crss = [c for i, c in enumerate(crss) if not any(same_crs(c, d) for d in crss[:i])]
         if len(crss) > 1:
             raise ValueError(f"cannot concatenate clouds in different CRSs: {crss}; "
-                             "reproject them first (sylva.coords.reproject)")
+                             "reproject them first (sylva.geo.coords.reproject)")
         return cls(
             np.vstack([c.xyz for c in clouds]),
             {k: np.concatenate([c.attrs[k] for c in clouds]) for k in sorted(common)},

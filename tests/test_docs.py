@@ -8,13 +8,10 @@ import numpy as np
 import pytest
 
 MODULES = ["pointcloud", "raster", "io", "shots", "riscan", "filters", "ground", "trees", "canopy",
-           "voxels", "registration", "coreg", "qsm", "leaves", "quality", "synthetic", "als",
-           "als_canopy"]
-MODULES += ["als_trees"]
-MODULES += ["fusion"]
-MODULES += ["change.als", "synthetic_als"]
-MODULES += ["tiles"]
-MODULES += ["synthetic_model"]
+           "voxels", "registration", "coreg", "qsm", "leaves", "quality", "fusion",
+           "synthetic", "synthetic.als", "synthetic.model", "als", "als.canopy", "als.metrics",
+           "als.tiles", "als.trees", "change.als", "geo.coords", "geo.interpolate", "geo.masks",
+           "util.limits", "util.progress"]
 
 
 def _public(mod):

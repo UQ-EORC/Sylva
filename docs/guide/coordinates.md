@@ -3,7 +3,7 @@
 TLS data changes frame several times on its way to a result: from the
 scanner's own frame to the project frame (the SOP), sometimes to a projected
 map grid, and often back to a local origin so that coordinates in the
-millions of metres keep their precision. `sylva.coords` and three
+millions of metres keep their precision. `sylva.geo.coords` and three
 `PointCloud` methods cover these steps:
 
 | Task | Use |
@@ -23,7 +23,7 @@ and longitude:
 ```python
 import numpy as np
 import sylva
-from sylva import coords
+from sylva.geo import coords
 
 rng = np.random.default_rng(0)
 xyz = rng.uniform([512_000, 5_412_000, 100], [512_050, 5_412_050, 130], (10_000, 3))

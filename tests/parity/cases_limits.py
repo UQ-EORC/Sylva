@@ -1,8 +1,8 @@
-"""Parity cases for sylva.limits."""
+"""Parity cases for sylva.util.limits."""
 
 import numpy as np
 
-from sylva import limits
+from sylva.util import limits
 
 
 def human():

@@ -23,7 +23,7 @@ use sylva_rs::change::als::metrics::{self, MetricChangeParams};
 use sylva_rs::change::als::surface::{self, DtmKind, EpochStats, Surface, SurfaceParams};
 use sylva_rs::change::als::trees::{self, AlsTree, CanopyChange, TreeChangeParams, TreeChangeRow};
 use sylva_rs::change::als::Harmonise;
-use sylva_rs::masks::Polygon;
+use sylva_rs::geo::masks::Polygon;
 use sylva_rs::Raster;
 
 use crate::als_py::{catalog_from_py, layout};

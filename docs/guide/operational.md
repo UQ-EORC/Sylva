@@ -168,7 +168,8 @@ while nobody is watching; ask to watch and a thread reads those counts a few
 times a second:
 
 ```python
-from sylva import progress, trees
+from sylva import trees
+from sylva.util import progress
 
 with progress.bar():
     labels = trees.segment_trees(cloud, stems)
@@ -222,10 +223,10 @@ splitting the plot into tiles. Set SYLVA_MEM_BUDGET (GB) to raise the limit.
 ```
 
 The budget is 80 % of what the system reports as free, or `SYLVA_MEM_BUDGET`
-in gigabytes, or whatever `sylva.limits.set_budget(gb)` was given:
+in gigabytes, or whatever `sylva.util.limits.set_budget(gb)` was given:
 
 ```python
-from sylva import limits
+from sylva.util import limits
 
 limits.available(), limits.budget()      # bytes, or None off Linux
 limits.set_budget(8)                     # 8 GB for this process
