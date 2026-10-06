@@ -13,7 +13,7 @@ use crate::error::{Error, Result};
 
 const EPS: f64 = 1e-10;
 
-/// Analytic leaf angle distribution (de Wit 1965 types and AMAPVox's parametric ones).
+/// Analytic leaf angle distribution (de Wit 1965 types and parametric ones).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Lad {
     Spherical,
@@ -155,7 +155,7 @@ fn fold_beam_angle(theta: f64) -> f64 {
 }
 
 /// Projection function `G(θ)` of a leaf angle distribution for a beam at
-/// zenith `theta` (rad). 180-step trapezoid, as AMAPVox; for the beta
+/// zenith `theta` (rad). 180-step trapezoid; for the beta
 /// distribution, the kernel at the middle of each of the 180 steps times the
 /// exact probability of the step.
 pub fn compute_g(theta: f64, lad: &Lad) -> f64 {
@@ -212,7 +212,7 @@ pub fn classify_de_wit(bin_centres: &[f64], hist: &[f64]) -> Option<&'static str
     best.1
 }
 
-/// `(beam diameter at exit [m], divergence [rad])` of a scanner known to AMAPVox.
+/// `(beam diameter at exit [m], divergence [rad])` of a known scanner.
 pub fn laser_spec(name: &str) -> Option<(f64, f64)> {
     Some(match name.to_ascii_uppercase().replace('_', "-").as_str() {
         "LMS-Q560" => (0.0003, 0.0005),

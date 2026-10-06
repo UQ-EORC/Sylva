@@ -4,10 +4,10 @@
 // see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Ray-traced voxel grid with AMAPVox-style Beer–Lambert statistics.
+//! Ray-traced voxel grid with Beer–Lambert statistics (Vincent et al. 2017).
 //!
-//! A port of `rayvoxel` (J. Rivory, unpublished), a reimplementation of
-//! AMAPVox on raycloudtools, working on [`Shots`] instead of ray-cloud files. Every pulse is
+//! A port of `rayvoxel` (J. Rivory, unpublished), a reimplementation of the
+//! method of Vincent et al. (2017) on raycloudtools, working on [`Shots`] instead of ray-cloud files. Every pulse is
 //! traced through the grid twice: once unweighted (beam counts, potential
 //! path length, sub-voxel exploration) and once per echo segment with the
 //! fraction of the beam still travelling (free path length, beam sections,
@@ -50,7 +50,7 @@ pub use write::WriteOptions;
 /// How the energy of a pulse is shared between its echoes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WeightMethod {
-    /// `1 / n` per echo (AMAPVox `EqualEchoWeight`).
+    /// `1 / n` per echo (equal echo weighting).
     Equal,
     /// The last echo carries the whole pulse.
     Full,
@@ -213,7 +213,7 @@ impl<'a> VoxelInputs<'a> {
 pub enum F {
     /// Σ beam fraction entering the voxel (observed traversals).
     NumBeamsWeighted,
-    /// Potential path length: Σ full voxel chord (AMAPVox `lgTotal`).
+    /// Potential path length: Σ full voxel chord.
     PathLength,
     PathLengthSq,
     /// Σ fraction × free path (entry → echo, or the full chord on a miss).

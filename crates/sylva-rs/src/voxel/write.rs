@@ -4,7 +4,7 @@
 // see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! AMAPVox `.vox`, plain text and per-tree inclination CSV writers.
+//! `.vox` voxel-space, plain text and per-tree inclination CSV writers.
 
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -174,7 +174,7 @@ impl RayVoxels {
         Ok(written)
     }
 
-    /// Write an AMAPVox voxel-space file. Returns the number of voxels written.
+    /// Write a `.vox` voxel-space file. Returns the number of voxels written.
     pub fn write_vox(&self, path: impl AsRef<Path>, opts: WriteOptions) -> Result<usize> {
         let path = path.as_ref();
         let file = std::fs::File::create(path).map_err(|e| Error::file(path, e.to_string()))?;

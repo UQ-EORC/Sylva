@@ -555,7 +555,7 @@ impl BlockedGrid {
         Ok(tree_sampling_with(points, labels, self.origin, self.voxel_size, self.shape, &state, &|i| beams[i] as f64, min_beams, above))
     }
 
-    /// Write an AMAPVox `.vox` file (`text = false`) or a table with voxel
+    /// Write a `.vox` file (`text = false`) or a table with voxel
     /// centres, a slab at a time; the same rows as the whole grid's writer.
     pub fn write(&self, path: impl AsRef<Path>, text: bool, opts: WriteOptions) -> Result<usize> {
         let path = path.as_ref();

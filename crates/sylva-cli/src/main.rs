@@ -75,7 +75,7 @@ enum Command {
         #[arg(long)]
         double: bool,
     },
-    /// Ray-traced voxel grid (AMAPVox-style) from a shots file (.parquet,
+    /// Ray-traced voxel grid from a shots file (.parquet,
     /// streamed) or a ray cloud. Writes .vox, or a text table otherwise.
     Voxel {
         input: PathBuf,

@@ -466,7 +466,7 @@ impl Tracer<'_> {
             a.addf(F::SumOfAngles, idx, zenith * w);
             a.addf(F::SumSinAzimuth, idx, sin_az * w);
             a.addf(F::SumCosAzimuth, idx, cos_az * w);
-            // Distance from the scanner, not from the previous echo (as AMAPVox).
+            // Distance from the scanner, not from the previous echo.
             a.addf(F::SumOfLaserDistances, idx, norm(&sub(&self.geom.center(cell), &ray.beam_origin)) * w);
             if self.params.beam.is_some() {
                 let bs = self.section(&ray.beam_origin, cell) * w;
@@ -661,7 +661,7 @@ impl Tracer<'_> {
 }
 
 /// Per voxel, solve `Σ_hits bs·L / (e^{kL} − 1) = ppl_miss_wl` for `k`
-/// (AMAPVox's exact PPL maximum-likelihood estimate, capped at 20 m⁻¹).
+/// (the exact PPL maximum-likelihood estimate, capped at 20 m⁻¹).
 fn solve_ppl(hits: Vec<PplHit>, miss: &[f32], n: usize) -> Vec<f32> {
     const K_MAX: f64 = 20.0;
     const EPS: f64 = 1e-12;

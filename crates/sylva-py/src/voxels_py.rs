@@ -115,7 +115,7 @@ impl PyRayVoxels {
         Ok(())
     }
 
-    /// Write `.vox` (AMAPVox) or `.txt`; returns the number of voxels written.
+    /// Write `.vox` or `.txt`; returns the number of voxels written.
     #[pyo3(signature = (path, format="vox", include_unobserved=false, filled_only=false))]
     fn write(&self, py: Python<'_>, path: PathBuf, format: &str, include_unobserved: bool, filled_only: bool) -> PyResult<usize> {
         let opts = voxel::WriteOptions { include_unobserved, filled_only };
@@ -285,7 +285,7 @@ fn ray_voxelize(py: Python<'_>, shots: &Bound<'_, PyDict>, voxel_size: f64, boun
     Ok(PyRayVoxels { inner })
 }
 
-/// `(beam diameter at exit [m], divergence [rad])` of a scanner known to AMAPVox.
+/// `(beam diameter at exit [m], divergence [rad])` of a known scanner.
 #[pyfunction]
 fn laser_spec(name: &str) -> Option<(f64, f64)> {
     voxel::laser_spec(name)
