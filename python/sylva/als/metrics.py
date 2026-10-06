@@ -4,7 +4,7 @@
 # see the LICENSE file. There is no warranty, to the extent permitted by law.
 """Area-based metrics of airborne lidar: grids, plots and single clouds.
 
-The standard set follows lidR's ``stdmetrics`` (Roussel et al. 2020):
+The standard set follows the area-based metrics of Roussel et al. (2020):
 height statistics, quantiles, cumulative deciles and the normalised
 Shannon entropy of the heights, with intensity and return metrics, plus
 canopy cover and gap fraction from first returns. :func:`grid_metrics`
@@ -12,8 +12,8 @@ computes them on a raster over a whole catalogue, chunk by chunk, so that
 a cell on a tile edge has the value it would have in a single-tile run;
 :func:`plot_metrics` computes them for circular or polygon plots, reading
 only the tiles each plot overlaps; :func:`cloud_metrics` for one cloud in
-memory. A Python function of the points can replace the standard set, as
-lidR's ``~f(Z, Intensity)``, at the cost of speed.
+memory. A Python function of the points can replace the standard set, at
+the cost of speed.
 
 These functions are also available from :mod:`sylva.als`.
 
@@ -132,7 +132,7 @@ def cloud_metrics(cloud: PointCloud, height=None, threshold: float = 2.0,
                   entropy_bin: float = 1.0, cover_break: float = 2.0,
                   min_height: float | None = None, drop_noise: bool = True,
                   clamp_negative: bool = False) -> dict[str, float]:
-    """The standard metrics of one cloud (lidR's ``cloud_metrics(las, .stdmetrics)``).
+    """The standard metrics of one cloud.
 
     Parameters
     ----------
@@ -152,14 +152,13 @@ def cloud_metrics(cloud: PointCloud, height=None, threshold: float = 2.0,
         Height (m) above which a first return counts as canopy for
         ``cover`` and ``gap_fraction``.
     min_height
-        Returns lower than this are left out of every metric (lidR users
-        often drop heights below 0 first, since ``zentropy`` is NaN with a
-        negative height).
+        Returns lower than this are left out of every metric (heights below 0 are
+        often dropped first, since ``zentropy`` is NaN with a negative height).
     drop_noise
         Leave out returns classified as noise (7 or 18).
     clamp_negative
-        Set heights below 0 to 0 before anything else (lidR users' other
-        habit, ``Z[Z < 0] <- 0``). Ground returns a few centimetres below
+        Set heights below 0 to 0 before anything else (the other usual
+        habit). Ground returns a few centimetres below
         the DTM are in nearly every cell of a survey, and make ``zentropy``
         NaN there; clamping keeps them, as ground, where ``min_height=0``
         would leave out the ones below it.
@@ -199,7 +198,7 @@ def grid_metrics(catalog, resolution: float = 20.0, metrics=None, func: Callable
                  min_height: float | None = None, drop_noise: bool = True,
                  clamp_negative: bool = False, chunk_size: float | None = None,
                  buffer: float = 20.0, workers: int | None = None):
-    """Rasters of area-based metrics over a whole catalogue (lidR's ``pixel_metrics``).
+    """Rasters of area-based metrics over a whole catalogue.
 
     Every return is assigned to the cell of the catalogue grid that holds
     it (cells are half-open, ``[x0, x0 + resolution)``), and the metrics of
@@ -307,7 +306,7 @@ def _warn_entropy(out: dict) -> None:
         import warnings
 
         warnings.warn(f"zentropy is NaN in {100 * nan.sum() / has.sum():.0f} % of the cells with "
-                      "returns: as in lidR it is NaN for any cell with a height below 0, and "
+                      "returns: it is NaN for any cell with a height below 0, and "
                       "ground returns just under the DTM are in most cells; pass "
                       "clamp_negative=True (or min_height=0)", stacklevel=3)
 
@@ -438,7 +437,7 @@ def plot_metrics(catalog, plots, radius=None, metrics=None, func: Callable | Non
                  min_height: float | None = None, drop_noise: bool = True,
                  clamp_negative: bool = False, ids=None, buffer: float = 20.0,
                  workers: int | None = None) -> PlotMetrics:
-    """Area-based metrics of field plots from a catalogue (lidR's ``plot_metrics``).
+    """Area-based metrics of field plots from a catalogue.
 
     Plots are grouped by the tiles they overlap; each group reads only
     those tiles, and only the points in the group's box (grown by

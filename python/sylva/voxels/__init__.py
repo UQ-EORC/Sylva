@@ -1,13 +1,11 @@
 # Sylva: LiDAR processing for forest ecology and remote sensing research.
 # Copyright (C) 2026 Tim Devereux, The University of Queensland.
-# Adapted from rayvoxel (Josh Rivory, unpublished), a port of AMAPVox (UMR AMAP);
-# see THIRD_PARTY_NOTICES.md.
+# Adapted from rayvoxel (Josh Rivory, unpublished); see THIRD_PARTY_NOTICES.md.
 # Free software under the GNU General Public License v3.0 or later;
 # see the LICENSE file. There is no warranty, to the extent permitted by law.
-"""Ray-traced voxel grids with AMAPVox-style Beer-Lambert statistics.
+"""Ray-traced voxel grids with Beer-Lambert statistics.
 
-A port of ``rayvoxel`` (J. Rivory, unpublished), a reimplementation of AMAPVox
-on raycloudtools.
+A port of ``rayvoxel`` (J. Rivory, unpublished), built on raycloudtools.
 Every pulse is traced through the grid, and each voxel accumulates beam
 counts, potential and free path lengths, beam sections and mean beam angles.
 From these the attenuation coefficient is estimated by free path length
@@ -45,7 +43,7 @@ EXCLUDED, PLANT, LEAF, WOOD = 0, 1, 2, 3
 
 
 def laser_spec(name: str) -> tuple[float, float]:
-    """Beam geometry of a scanner known to AMAPVox.
+    """Beam geometry of a known scanner.
 
     Parameters
     ----------
@@ -346,7 +344,7 @@ class RayVoxelGrid:
 
     def write(self, path: str | Path, format: str | None = None, include_unobserved: bool = False,
               filled_only: bool = False) -> int:
-        """Write an AMAPVox ``.vox`` file, or a space-delimited ``.txt`` table
+        """Write a ``.vox`` voxel-space file, or a space-delimited ``.txt`` table
         with voxel centres (``format`` ``"vox"`` / ``"text"``, by default from
         the extension). Observed and occluded voxels are written unless
         ``filled_only`` or ``include_unobserved``.
@@ -356,7 +354,7 @@ class RayVoxelGrid:
         path
             Output file; overwritten.
         format : {"vox", "text"}, optional
-            From the extension if None (``.vox`` is AMAPVox, anything else text).
+            From the extension if None (``.vox`` is a voxel-space file, anything else text).
         include_unobserved
             Also write voxels no pulse reached.
         filled_only
@@ -464,8 +462,7 @@ def ray_voxelize(
         Echo attribute grouping echoes into trees for the inclination
         distributions; all echoes are pooled as tree 0 when it is missing.
     weighting
-        Share of a pulse carried by each echo: ``equal`` (``1 / n``, as
-        AMAPVox's ``EqualEchoWeight``), ``full`` (last),
+        Share of a pulse carried by each echo: ``equal`` (``1 / n``), ``full`` (last),
         ``first``, ``relative`` or ``strongest`` (by ``intensity_attr``).
     attenuation
         One or more of ``fpl``, ``ppl``, ``transmittance``, ``bailey``; the

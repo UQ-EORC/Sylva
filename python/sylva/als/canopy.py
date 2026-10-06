@@ -126,7 +126,7 @@ class ALSProfile:
         the mean extinction of the returns at or below it (MacArthur & Horn
         1969, with the beam angle of each return). A layer nothing passed
         gets ``T = 0.5 / max(E, 1)`` (half a pulse of the ``E`` that
-        entered), a lower bound; lidR's ``LAD()`` gives NA there.
+        entered), a lower bound (not NaN).
 
         Returns
         -------
@@ -440,8 +440,8 @@ def gap_profile(source, trajectory=None, resolution: float = 10.0, bin_size: flo
     below ``z`` (Armston et al. 2013), and the transmittance of a layer the
     weight below it over the weight at or below it. Inverting Beer-Lambert
     layer by layer gives the plant area density profile of MacArthur & Horn
-    (1969), which is lidR's ``LAD()`` (Bouvier et al. 2015) with
-    ``weighting="all", angles="none", g=0.5``.
+    (1969), as computed by Bouvier et al. (2015); that is
+    ``weighting="all", angles="none", g=0.5`` here.
 
     **Scan angle.** A beam at zenith θ crosses ``dz / cos θ`` of a layer of
     thickness ``dz`` and meets foliage in proportion to ``G(θ)``, the
@@ -501,7 +501,7 @@ def gap_profile(source, trajectory=None, resolution: float = 10.0, bin_size: flo
     weighting : {"equal", "first", "all"}
         Share of a pulse each return stands for: ``1 / number_of_returns``,
         first returns only (the original MacArthur-Horn), or one per return
-        (as lidR's ``LAD()``).
+        (Bouvier et al. 2015).
     angles : {"auto", "trajectory", "scan_angle", "none"}
         Source of the beam zenith; ``"auto"`` uses the trajectory if given,
         else ``scan_angle``. ``"none"`` treats every beam as vertical.
@@ -509,8 +509,7 @@ def gap_profile(source, trajectory=None, resolution: float = 10.0, bin_size: flo
         Leaf angle distribution for ``G(θ)`` (see
         :func:`sylva.voxels.leaf_projection`).
     g
-        A constant ``G`` instead of ``lad`` (lidR's ``k``, 0.5 by default
-        there).
+        A constant ``G`` instead of ``lad`` (0.5 in Bouvier et al. 2015).
     max_zenith
         Returns whose beam is further than this from nadir (degrees) are
         left out.

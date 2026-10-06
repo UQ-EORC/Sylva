@@ -1,8 +1,8 @@
 # Ray-traced voxels
 
 `sylva.voxels` is a port of `rayvoxel`, J. Rivory's unpublished
-reimplementation of AMAPVox ([Vincent et al. 2017](../references.md)) on
-raycloudtools. Each pulse is traced through the grid voxel by
+ray-traced voxeliser built on raycloudtools, which follows the attenuation
+estimators of [Vincent et al. 2017](../references.md). Each pulse is traced through the grid voxel by
 voxel ([Amanatides & Woo 1987](../references.md)), twice: once whole, for
 beam counts and the potential path length (the full chord of every voxel it
 could have crossed), and once per echo segment carrying the share of the
@@ -26,7 +26,7 @@ grid.state                                               # 0 unobserved, 1 occlu
 pai = np.nansum(grid.profile("pad_ppl")) * grid.voxel_size
 
 grid.add_wood_volume(qsms)                           # QSM cylinders -> wood_volume (m3 per voxel)
-grid.write("plot.vox")                               # AMAPVox voxel space; "plot.txt" for a table
+grid.write("plot.vox")                               # voxel-space file; "plot.txt" for a table
 grid.write_iad_csv("plot_iad.csv")                   # per-tree inclination angle distributions
 ```
 

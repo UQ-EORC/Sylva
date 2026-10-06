@@ -109,11 +109,11 @@ PAD(layer) = -ln T / (k̄ dz),     k = G(θ) / cos θ for each return
 - **Weighting.** `"equal"` (the default) counts each return as
   `1 / number_of_returns` of its pulse; `"first"` uses first returns only,
   as MacArthur and Horn did; `"all"` counts every return as a pulse.
-  lidR's `LAD()` ([Bouvier et al. 2015](../references.md)) is
-  `weighting="all", angles="none", g=0.5` with lidR's `z0` as
+  The gap-fraction profile of [Bouvier et al. 2015](../references.md) is
+  `weighting="all", angles="none", g=0.5` with their `z0` as
   `min_height`; the test suite reproduces its definition to 1e-12, except
   that a layer nothing passed is given half a pulse (a lower bound on its
-  density) where lidR returns NA.
+  density) where the original leaves it undefined.
 - **Which cell.** An oblique pulse stopped in the canopy leaves its return
   to one side of where it would have met the ground. Counting returns where
   they are picks a cell's pulses partly by their outcome, and wherever the
@@ -242,9 +242,9 @@ the returns alone. The line through the first and last returns of a pulse
 passes through the scanner, and within a short window (`interval`, 0.5 s)
 the platform flies a nearly straight line at nearly constant speed, so a
 linear least-squares fit of a moving point `a + b (t - t_c)` to those lines
-gives its position. This is the idea of lidR's `track_sensor()`
-([Roussel et al. 2020](../references.md), after [Gatziolis & McGaughey
-2019](../references.md)), which fits a fixed point per window. Windows far
+gives its position. This is the idea of [Roussel et al. 2020](../references.md), after
+[Gatziolis & McGaughey 2019](../references.md), whose method fits a fixed
+point per window. Windows far
 off the straight line through the others of their flight line are dropped,
 and the ends of each line are extrapolated with the line's velocity, by at
 most `extend` seconds, to reach the pulses over open ground that have no

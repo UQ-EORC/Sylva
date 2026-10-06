@@ -4,9 +4,9 @@
 # see the LICENSE file. There is no warranty, to the extent permitted by law.
 """Individual trees from airborne lidar: tree tops, crowns and labelled points.
 
-The functions are re-exported from :mod:`sylva.als` and follow lidR's
-algorithms (Roussel et al. 2020), whose implementations are reproduced
-where the papers leave a detail open:
+The functions are re-exported from :mod:`sylva.als` and follow the
+algorithms collected by Roussel et al. (2020), whose implementations are
+reproduced where the papers leave a detail open:
 
 - :func:`locate_trees`: tree tops by the local maximum filter (``lmf``;
   Popescu and Wynne 2004) on a canopy height model or on points, with a
@@ -42,8 +42,9 @@ using lidar and multispectral data fusion with local filtering and variable
 window size for estimating tree height. Photogrammetric Engineering &
 Remote Sensing 70(5), 589-604.
 
-Roussel, J.-R. et al. (2020). lidR: an R package for analysis of airborne
-laser scanning (ALS) data. Remote Sensing of Environment 251, 112061.
+Roussel, J.-R. et al. (2020). Collected tree detection and segmentation
+algorithms for airborne laser scanning (ALS) data. Remote Sensing of
+Environment 251, 112061.
 """
 
 from __future__ import annotations
@@ -89,7 +90,7 @@ class LinearWindow:
 
     Examples
     --------
-    lidR's documentation uses ``function(x) {x * 0.1 + 3}``; bounded:
+    A window of ``x * 0.1 + 3`` m, bounded:
 
     >>> w = LinearWindow(3.0, 0.1, min=3.0, max=8.0)
     >>> float(w(20.0))
@@ -191,15 +192,14 @@ class TreeTops:
 
 def locate_trees(source, window=5.0, hmin: float = 2.0, shape: str = "circular",
                  heights=None) -> TreeTops:
-    """Tree tops by the local maximum filter (lidR's ``locate_trees(...,
-    lmf(ws, hmin, shape))``; Popescu and Wynne 2004).
+    """Tree tops by the local maximum filter (Popescu and Wynne 2004).
 
     A CHM cell (its centre, with the cell's value) or a point is a tree top
     when it is at least ``hmin`` high and nothing within its window is
     higher. The window is a disc of diameter ``ws`` (or a square of side
     ``ws``) centred on the site, and ``ws`` may depend on the site's height.
     Of equal-height maxima within each other's windows only the first, in
-    order of x then y, is kept (lidR keeps whichever it tags first).
+    order of x then y, is kept.
 
     Parameters
     ----------
@@ -288,8 +288,7 @@ def segment_crowns(chm: Raster, tops, method: str = "dalponte2016", th_tree: flo
     """Crowns on a canopy height model, grown from tree tops.
 
     ``"dalponte2016"`` is the region growing of Dalponte and Coomes (2016)
-    as lidR implements it (``dalponte2016(chm, ttops, th_tree, th_seed,
-    th_cr, max_cr)``): each crown adds, sweep after sweep, the 4-neighbours
+    (``th_tree``, ``th_seed``, ``th_cr``, ``max_cr``): each crown adds, sweep after sweep, the 4-neighbours
     of its cells that are higher than ``th_tree``, higher than ``th_seed``
     times the top's CHM value and than ``th_cr`` times the crown's mean
     height, at most 5 % above the top, and fewer than ``max_cr`` cells from
@@ -315,7 +314,7 @@ def segment_crowns(chm: Raster, tops, method: str = "dalponte2016", th_tree: flo
         Growing thresholds of Dalponte and Coomes (0-1).
     max_cr
         Largest crown extent, in cells from the top in x and in y
-        (``"dalponte2016"``; lidR's ``max_cr``).
+        (``"dalponte2016"``).
 
     Returns
     -------
@@ -342,8 +341,7 @@ def segment_crowns(chm: Raster, tops, method: str = "dalponte2016", th_tree: flo
 def li2012(cloud: PointCloud, dt1: float = 1.5, dt2: float = 2.0, R: float = 2.0,
            Zu: float = 15.0, hmin: float = 2.0, speed_up: float = 10.0,
            heights=None) -> np.ndarray:
-    """Point-based tree segmentation of Li et al. (2012), as lidR's
-    ``li2012(dt1, dt2, R, Zu, hmin, speed_up)`` implements it.
+    """Point-based tree segmentation of Li et al. (2012).
 
     Points are taken from the highest down. The highest point left starts
     a tree (its set P, with an empty set N); every point left within
@@ -363,8 +361,7 @@ def li2012(cloud: PointCloud, dt1: float = 1.5, dt2: float = 2.0, R: float = 2.0
     dt1, dt2
         Spacing thresholds (m) below and above ``Zu``.
     R
-        Diameter (m) of the local maximum window (lidR passes ``R`` as its
-        window size); 0 makes every point a local maximum.
+        Diameter (m) of the local maximum window; 0 makes every point a local maximum.
     Zu
         Height (m) above which ``dt2`` applies.
     hmin
@@ -601,8 +598,8 @@ def segment_trees(cloud: PointCloud, method: str = "dalponte2016", resolution: f
         points, which are taken first.)
     smooth
         Smooth the CHM with a mean filter over ``(2 * smooth + 1)`` squared
-        cells before finding tops and growing crowns (lidR's examples use a
-        3 x 3 focal mean, ``smooth=1``); 0 for none. A CHM top's height is
+        cells before finding tops and growing crowns (``smooth=1`` is a
+        3 x 3 focal mean); 0 for none. A CHM top's height is
         still the unsmoothed cell value.
     heights
         Height of each point (array or attribute name); z if None (a

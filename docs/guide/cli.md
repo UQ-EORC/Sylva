@@ -172,7 +172,7 @@ than stopping the run.
 ### `voxel`
 
 `sylva voxel INPUT OUTPUT [options]`: ray-traced voxel grid, written as
-AMAPVox `.vox` or a `.txt` table. `INPUT` is a shots file (streamed, so
+a `.vox` voxel-space file or a `.txt` table. `INPUT` is a shots file (streamed, so
 memory stays small) or a ray cloud.
 
 | Option | Default | Meaning |

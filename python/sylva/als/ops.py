@@ -149,8 +149,7 @@ def chm(catalog: Catalog, resolution: float = 0.5, dtm="auto", dtm_resolution: f
     """Canopy height model of a whole catalogue: the highest point per cell.
 
     Heights above ground are computed per chunk, then gridded as
-    :func:`sylva.ground.make_chm` grids them (the "point to raster" method,
-    ``p2r`` in lidR).
+    :func:`sylva.ground.make_chm` grids them (the "point to raster" method).
 
     Parameters
     ----------
@@ -211,7 +210,7 @@ def normalize(catalog: Catalog, out: str | Path, dtm="auto", dtm_resolution: flo
         Cell size (m) of the ``"auto"`` DTM.
     replace_z
         Replace z by the height and keep the elevation in an ``elevation``
-        attribute (as lidR's ``normalize_height`` does), rather than adding
+        attribute, rather than adding
         a ``height`` attribute. Replaced z is what :func:`chm` with
         ``dtm=None`` and the TLS functions that read z as height expect.
     chunk_size, buffer, workers

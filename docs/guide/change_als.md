@@ -137,7 +137,7 @@ block whatever `chunk_size` and `workers` are.
 highest return per cell, each normalised by a DTM of its own ground returns
 (`dtm_method="plane"`: at each DTM cell a plane fitted to the ground
 returns around it, with its standard error). `subcircle` replaces each
-return by eight points on a circle, as lidR's `p2r(subcircle)`, and
+return by eight points on a circle, and
 `first_returns=True` grids first returns only.
 
 **Sampling.** The highest of a cell's returns is a sample of its canopy: it

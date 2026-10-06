@@ -4,8 +4,8 @@ Airborne surveys (ALS from aircraft, UAV lidar from drones) cover whole
 landscapes and are delivered as hundreds of LAS/LAZ tiles. Together they are
 far larger than memory, and no tile can be processed on its own: a ground
 filter or a DTM cell at the edge of a tile needs the points on the other side
-of it. `sylva.als` handles such collections the way lidR's `LAScatalog`
-does (Roussel et al. 2020): a catalogue of the tiles is built from their
+of it. `sylva.als` handles such collections with a catalogue-and-chunks design
+([Roussel et al. 2020](../references.md)): a catalogue of the tiles is built from their
 headers alone, the area is processed in chunks that each carry a buffer of
 points from their neighbours, and the results are put back together so that
 the tile edges do not show.
@@ -305,28 +305,28 @@ sylva als-normalize ground/ normalised/ --replace-z
 Each takes `--chunk-size`, `--buffer` and `--workers`; see
 [Command line](cli.md).
 
-## Checked against lidR
+## Checked against a reference implementation
 
-lidR's bundled example files (`Megaplot.laz`, `Topography.laz`,
+The example files of an independent R lidar package (`Megaplot.laz`, `Topography.laz`,
 `MixedConifer.laz`) were cut into 50 m tiles with `als.retile` and processed
-as catalogues, and the results compared cell by cell with lidR 4.3 run on
+as catalogues, and the results compared cell by cell with that package (version 4.3) run on
 the whole files at 1 m:
 
 | File | Product | Agreement |
 |---|---|---|
 | Megaplot | DTM, `method="tin"` vs `rasterize_terrain(tin())` | identical |
 | Topography | DTM, TIN, 5 m in from the edge | median difference 0.1 mm, 96.8 % of cells within 1 mm |
-| MixedConifer | DTM, TIN, 5 m in from the edge | within 5 mm: lidR rounds its DTM to the files' 1 cm z resolution |
+| MixedConifer | DTM, TIN, 5 m in from the edge | within 5 mm: the reference rounds its DTM to the files' 1 cm z resolution |
 | all three | surface model, `chm(dtm=None)` vs `rasterize_canopy(p2r())` | identical where no point lies on a horizontal cell edge; 97 to 100 % of cells overall |
 
 The surface models differ only in which cell a point exactly on a
 horizontal cell edge belongs to: Sylva puts it in the cell to the north
-(the cell whose half-open range holds it), lidR (through terra) in the cell
+(the cell whose half-open range holds it), the reference (through terra) in the cell
 to the south. Moving such points by 0.1 µm makes every cell agree. Canopy
 height models from normalised clouds differ by a few centimetres more on
-steep ground, because lidR samples the DTM at each point differently (Sylva
-interpolates bilinearly between cell centres). lidR's TIN DTM
-(`use_class = 2`) was used; by default lidR also counts water (class 9) as
+steep ground, because the reference samples the DTM at each point differently (Sylva
+interpolates bilinearly between cell centres). The reference's TIN DTM
+(`use_class = 2`) was used; by default it also counts water (class 9) as
 ground.
 
 ## Limitations

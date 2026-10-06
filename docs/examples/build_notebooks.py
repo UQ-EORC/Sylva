@@ -945,7 +945,7 @@ NOTEBOOKS["09_voxels"] = [
 
 `sylva.voxels` traces every pulse through a voxel grid and estimates the
 attenuation coefficient λ of each voxel from how far pulses got, then plant area
-density as λ / G. It follows AMAPVox and the rayvoxel tool; see the
+density as λ / G. It follows [Vincent et al. 2017](../references.md) and the rayvoxel tool; see the
 [guide](../guide/voxels.md) for the estimators."""),
     SETUP + "\nfrom sylva import Shots, voxels",
     md("""## Tracing a real tile
@@ -1125,7 +1125,7 @@ the eucalypt leaves flatter. The normals are fitted to a few noisy echoes on
 each leaf, and their scatter flattens any distribution towards a uniform
 one. The wood is mostly stem and limbs, near-vertical surfaces whose normals
 lie close to 90 degrees from vertical, hence its peak there."""),
-    md("## Wood volume, files and streaming\n\nQSM cylinders can be rasterised into the same grid; `write` produces an AMAPVox `.vox` file or a text table; and a shots file is voxelised without being loaded. The cylinders here are the largest tree's own, from the generator."),
+    md("## Wood volume, files and streaming\n\nQSM cylinders can be rasterised into the same grid; `write` produces a `.vox` voxel-space file or a text table; and a shots file is voxelised without being loaded. The cylinders here are the largest tree's own, from the generator."),
     """\
 tid = int(p.trees["tree_id"][np.argmax(p.trees["dbh"])])
 model = p.qsm(tid)
@@ -2054,7 +2054,7 @@ through the ground returns (`method="tin"`) removes that bias.
 
 ## Area-based metrics
 
-`grid_metrics` computes lidR's standard metrics (height percentiles, cover,
+`grid_metrics` computes the standard set of metrics ([Roussel et al. 2020](../references.md): height percentiles, cover,
 entropy and the rest; `als.metric_names()` lists them) on a grid over the
 catalogue, and `plot_metrics` the same for plots, here four circles of 15 m
 radius. With `min_height=0` the returns below the DTM are left out."""),

@@ -7,7 +7,7 @@
 An airborne survey comes as hundreds of LAS/LAZ tiles, together far larger
 than memory, and no tile can be processed on its own: a ground filter or a
 DTM cell at a tile edge needs the points across it. This module follows
-lidR's ``LAScatalog`` (Roussel et al. 2020):
+the catalogue approach of Roussel et al. (2020):
 
 1. :func:`catalog` reads only the file headers (extent, point count, point
    format, CRS) and checks the tiling for overlaps, holes, mixed CRS and

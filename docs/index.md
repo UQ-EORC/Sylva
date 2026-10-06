@@ -32,13 +32,13 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 | [`sylva.geo.masks`](api/masks.md) | masks and crops by polygons, rasters, attribute expressions and distance to another cloud |
 | [`sylva.trees`](api/trees.md) | RANSAC circle fitting, stem detection & DBH, basal area, taper profiles, graph-based tree segmentation, tree heights, crown metrics |
 | [`sylva.canopy`](api/canopy.md) | voxel grids, contact-frequency PAD profiles, zenith-ring gap fraction, hinge/Miller LAI, ray-traced density grids from pulse data |
-| [`sylva.voxels`](api/voxels.md) | AMAPVox-style ray-traced voxels (port of raycloudtools `rayvoxel`): echo-weighted free / potential path lengths, FPL / PPL / transmittance / Bailey attenuation, analytic or estimated leaf-angle `G`, PAD / LAD / WAD, occlusion, sub-voxel exploration, QSM wood volume, `.vox` export |
+| [`sylva.voxels`](api/voxels.md) | ray-traced voxels (port of raycloudtools `rayvoxel`): echo-weighted free / potential path lengths, FPL / PPL / transmittance / Bailey attenuation, analytic or estimated leaf-angle `G`, PAD / LAD / WAD, occlusion, sub-voxel exploration, QSM wood volume, `.vox` export |
 | [`sylva.registration`](api/registration.md) | Kabsch, point-to-point / point-to-plane (trimmed) ICP, scan merging |
 | [`sylva.coreg`](api/coreg.md) | marker-free coregistration of scan positions from the trees and the ground, with reflectors where present, and a report of the stem agreement |
 | [`sylva.qsm`](api/qsm.md) | cylinder fitting, geodesic skeletonisation, cylinder QSMs with volumes and branch orders, a QSM for every tree of a plot, buttress meshes, `_trees.txt` export |
 | [`sylva.change`](api/change.md) | change between two epochs of a plot: alignment, tree matching and increments, plot summaries, point change (C2C, M3C2, DEM of difference, voxel occupancy), QSM change, each labelled trusted or not |
 | [`sylva.als`](api/als.md) | airborne lidar over tiled areas: catalogues and buffered chunks, ground, DTM, CHM, normalisation, filtering, retiling and thinning |
-| [`sylva.als.metrics`](api/als_metrics.md) | area-based metrics (the lidR standard set, cover, gap fraction) as rasters or plot tables |
+| [`sylva.als.metrics`](api/als_metrics.md) | area-based metrics (the standard height, intensity and return-number set, cover, gap fraction) as rasters or plot tables |
 | [`sylva.als.trees`](api/als_trees.md) | tree tops, crowns (watershed, Dalponte 2016, Li 2012), crown outlines and labelled tiles |
 | [`sylva.als.canopy`](api/als_canopy.md) | pulses from the flight trajectory, gap-fraction and PAD profiles corrected for beam angle, ray-traced voxels |
 | [`sylva.fusion`](api/fusion.md) | TLS and ALS together: a plot registered on a survey, stems linked to airborne trees, merged clouds and plant area profiles, plot values upscaled with leave-one-out checks |
@@ -59,7 +59,7 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
   reproducibility and what has been validated.
 - [Pulse data](guide/pulses.md): `Shots`, RiSCAN projects, gap fraction, and
   the Parquet shots file format.
-- [Ray-traced voxels](guide/voxels.md): AMAPVox-style attenuation and plant
+- [Ray-traced voxels](guide/voxels.md): echo-weighted attenuation and plant
   area density.
 - [QSMs](guide/qsm.md): wood filtering and cylinder models of single trees.
 - [Coordinates](guide/coordinates.md), [interpolation](guide/interpolation.md)

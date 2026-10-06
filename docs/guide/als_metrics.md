@@ -4,8 +4,8 @@ The area-based approach to forest inventory relates field plots to
 statistics of the airborne lidar returns over the same area (the height
 percentiles, the canopy cover, the spread of the heights) and then
 predicts across the whole survey from a raster of the same statistics.
-`sylva.als` computes the standard set of lidR's `stdmetrics`
-(Roussel et al. 2020) on a grid over a catalogue of tiles and for plots,
+`sylva.als` computes the standard set of area-based metrics
+([Roussel et al. 2020](../references.md)) on a grid over a catalogue of tiles and for plots,
 in the Rust core, with the chunks and buffers of the
 [catalogue engine](als.md):
 
@@ -19,7 +19,7 @@ plots = als.plot_metrics(cat, [(512.0, 330.0), (640.5, 402.0)], radius=11.28)
 plots.to_csv("plots.csv")
 ```
 
-`als.grid_metrics` (also named `als.pixel_metrics`, as in lidR) returns a
+`als.grid_metrics` (also named `als.pixel_metrics`) returns a
 dict of [`Raster`](../api/pointcloud.md), one per metric, on the grid
 that `als.dtm` and `als.chm` use at the same resolution.
 `als.plot_metrics` returns a table with one row per plot.
@@ -29,9 +29,10 @@ that `als.dtm` and `als.chm` use at the same resolution.
 
 The metrics are computed from the heights above ground `z` of the
 returns kept (see [Heights](#heights)); `n` is their number and `m` their
-mean. The definitions are those of lidR's `stdmetrics_z`, `stdmetrics_i`,
-`stdmetrics_rn` and `entropy` (lidR 4, `R/metrics_stdmetrics.R`),
-reproduced from the R code.
+mean. The definitions are those of the standard height, intensity and
+return-number metrics and of the entropy index
+([Roussel et al. 2020](../references.md)), reimplemented from the published
+definitions.
 
 | Metric | Definition |
 |---|---|
@@ -53,29 +54,29 @@ reproduced from the R code.
 | `p1th` .. `p5th` | percentage of returns that are first, second, .. fifth returns |
 | `pground` | percentage of ground returns (class 2) |
 
-**Entropy.** lidR's `entropy(z, by)` bins the heights from 0 to
+**Entropy.** `entropy(z, by)` bins the heights from 0 to
 `ceiling(zmax / by) * by` in steps of `by`, takes the proportion `p` of
 returns in each of the `k` bins and divides the Shannon index by that of a
 uniform distribution over the same bins: `-sum(p ln p) / ln(k)`, so it is
 between 0 (every return in one bin) and 1 (as many in each). It is NaN when
-`zmax < 2 by` or any height is negative, as in lidR. Ground returns a few
+`zmax < 2 by` or any height is negative. Ground returns a few
 centimetres below the DTM are in nearly every cell of a survey, so on real
 data it is NaN almost everywhere unless the negative heights are dealt
-with: `clamp_negative=True` sets them to 0 (lidR users' `Z[Z < 0] <- 0`,
-which keeps them as ground for every other metric), or `min_height=0`
+with: `clamp_negative=True` sets them to 0 (which keeps them as ground
+for every other metric), or `min_height=0`
 leaves them out. `grid_metrics` warns when `zentropy` is NaN in most cells
 and neither was given. The bins are half-open,
 `[a, b)`, as R's `findInterval` makes them, so a return exactly on the top
 edge (at `zmax` when it is a whole number of bins) is not counted.
 
-**Cumulative deciles.** `zpcum` uses lidR's breaks `seq(0, zmax, zmax / 10)`
+**Cumulative deciles.** `zpcum` uses the breaks `seq(0, zmax, zmax / 10)`
 with the same half-open bins, so returns at `zmax` itself, and any below 0,
 are left out of the percentages; with `zmax <= 0` they are all 0.
 
 **Cover and gap fraction.** These use first returns only
 (`return_number == 1`), the usual estimate of canopy cover from ALS: the
 share of pulses whose first return came from above the break. They are not
-part of lidR's `stdmetrics`.
+part of the standard set.
 
 In a cell or plot with no returns, `n` is 0 and every other metric NaN
 (grid cells without returns are NaN throughout). `als.metric_names()` lists
@@ -152,7 +153,7 @@ t = als.plot_metrics(cat, layer, ids=[f.properties["plot_id"] for f in layer],
 ## Your own metrics
 
 `func` replaces the built-in set with any Python function of a cell's or a
-plot's returns, as lidR's `pixel_metrics(las, ~f(Z, Intensity))` does. It
+plot's returns, e.g. a function of `Z` and `Intensity`. It
 receives a [`PointCloud`](../api/pointcloud.md) whose z is the height above
 ground, with the tiles' attributes, in the fixed order above, and returns a
 dict of name to number (or a single number, named `value`):
@@ -238,22 +239,22 @@ the table as CSV (empty cells for NaN). Both take `--dtm DTM.asc`,
   and classes, every metric agrees to 1e-12 with NumPy (`mean`, `std` with
   `ddof=1`, `quantile`) and SciPy (`stats.skew(bias=True)`,
   `stats.kurtosis(fisher=False, bias=True)`), and `zentropy` and `zpcum`
-  with a line-by-line transcription of lidR's R code (`seq`,
+  with a line-by-line transcription of the reference R code (`seq`,
   `findInterval`, `fast_table`). Analytic cases (heights 0, 1, ..., 10 have
   entropy 1, deciles 10, 20, ..., 90 % and kurtosis 1.78) are exact.
 - **The merged cloud.** Grid cells and plots on
   `synthetic.als_flight` tiles equal the metrics of the points of the
   merged cloud inside them, including cells and plots across tile edges.
-- **lidR itself** was not run for this page: R is not part of the test
-  environment. The definitions follow the lidR source; the quantiles use
+- **The reference implementation itself** was not run for this page: R is
+  not part of the test environment. The definitions follow its source; the quantiles use
   NumPy's interpolation, which differs from R's type 7 by at most a few
   units in the last place.
 
 ## Limitations
 
 - `func` runs one chunk at a time in Python and ignores `workers`.
-- Only the standard set is built in; lidR's `stdmetrics_pulse` (pulse
-  counts) and `stdshapemetrics` (eigenvalue shape of the points) are not.
+- Only the standard set is built in; the pulse-count metrics and the
+  eigenvalue shape metrics of the points are not.
 - Plots are not buffered for their own sake: a plot's metrics use exactly
   the returns inside it. A group of plots over the same tiles is read as
   one box, so plots scattered widely over the same few tiles read those

@@ -244,8 +244,7 @@ def surface_change(catalog_a, catalog_b, surface: str = "chm", resolution: float
     first_returns
         Grid first returns only.
     subcircle
-        Replace each return by eight points on a circle of this radius (m),
-        as lidR's ``p2r(subcircle)``; 0 for the returns themselves.
+        Replace each return by eight points on a circle of this radius (m); 0 for the returns themselves.
     dtm_method : {"plane", "tin", "lowest"}
         Each survey's DTM (for normalisation, and the surface of ``"dtm"``):
         at each cell a plane fitted to the ground returns around it (the

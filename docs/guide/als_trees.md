@@ -2,9 +2,9 @@
 
 `sylva.als` finds individual trees in airborne lidar: their tops, their
 crowns, and which points belong to which tree, for one cloud or for a whole
-catalogue of tiles. The algorithms are those of lidR (Roussel et al. 2020),
-reproduced from its implementations where the papers leave a detail open,
-and the catalogue runs through the same chunk engine as the rest of
+catalogue of tiles. The algorithms are the published ones (listed below),
+with the details the papers leave open fixed as described, and the
+catalogue runs through the same chunk engine as the rest of
 [`sylva.als`](als.md), so a crown that crosses a tile edge is found once and
 whole.
 
@@ -19,15 +19,15 @@ trees.to_csv("trees.csv")                         # id, x, y, height, crown_area
 trees.to_geojson("crowns.geojson")                # crown polygons
 ```
 
-| Sylva | lidR | What |
-|---|---|---|
-| `als.locate_trees(chm or cloud, window, hmin, shape)` | `locate_trees(x, lmf(ws, hmin, shape))` | tree tops |
-| `als.segment_crowns(chm, tops, "dalponte2016")` | `dalponte2016(chm, ttops, th_tree, th_seed, th_cr, max_cr)()` | crowns on a CHM by region growing |
-| `als.segment_crowns(chm, tops, "watershed")` | ForestTools' `mcws(treetops, CHM, minHeight)` | crowns by marker-controlled watershed |
-| `als.li2012(cloud, dt1, dt2, R, Zu, hmin, speed_up)` | `segment_trees(las, li2012(...))` | point-based segmentation |
-| `als.segment_trees(cloud, method=...)` | `segment_trees(las, ...)` then `crown_metrics(las, geom = "convex")` | all of it on one cloud |
-| `als.find_trees(catalog, out=..., method=...)` | the same on a `LAScatalog` | all of it on a catalogue |
-| `als.crown_hull(xy, "convex" or "concave")` | `st_convex_hull`, `concaveman` | crown outlines |
+| Sylva | What |
+|---|---|
+| `als.locate_trees(chm or cloud, window, hmin, shape)` | tree tops by local maximum filter |
+| `als.segment_crowns(chm, tops, "dalponte2016")` | crowns on a CHM by region growing |
+| `als.segment_crowns(chm, tops, "watershed")` | crowns by marker-controlled watershed |
+| `als.li2012(cloud, dt1, dt2, R, Zu, hmin, speed_up)` | point-based segmentation |
+| `als.segment_trees(cloud, method=...)` | tops, crowns, point labels and convex crown hulls on one cloud |
+| `als.find_trees(catalog, out=..., method=...)` | the same on a catalogue |
+| `als.crown_hull(xy, "convex" or "concave")` | crown outlines |
 
 ## A worked example
 
@@ -63,8 +63,8 @@ densities.
 
 ## Tree tops
 
-`als.locate_trees` is the local maximum filter of Popescu and Wynne (2004),
-lidR's `lmf`. A site, which is a CHM cell (its centre, with the cell's
+`als.locate_trees` is the local maximum filter of Popescu and Wynne (2004).
+A site, which is a CHM cell (its centre, with the cell's
 value) or a point (with its height), is a tree top when it is at least
 `hmin` high and no other site in its window is higher. The window is a disc
 of diameter `ws` centred on the site (`shape="circular"`, the default) or a
@@ -74,25 +74,24 @@ square of side `ws`. `ws` can be:
 - `als.LinearWindow(intercept, slope, min, max)`: `clip(intercept + slope
   h, min, max)` for a site `h` m high, evaluated in the Rust core;
 - any function of height taking and returning arrays, e.g. `lambda h: 0.1
-  * h + 3` as in lidR's documentation. For one cloud it is evaluated at
+  * h + 3`. For one cloud it is evaluated at
   every site; for a catalogue it is sampled every centimetre of height and
   interpolated linearly, which differs from the function only where it
   jumps.
 
 Of equal-height maxima that lie in each other's windows only one is kept:
-lidR keeps whichever it happens to tag first, which depends on its spatial
-index and threads; Sylva keeps the first in order of x, then y, so that
-results do not depend on the chunking or the thread count. On a CHM the
+Sylva keeps the first in order of x, then y, so that results do not depend
+on the chunking, the thread count or any spatial index. On a CHM the
 windows are measured in whole cells from the site, so they do not depend on
 where the raster starts.
 
 ## Crowns
 
 **Dalponte and Coomes (2016)**, `method="dalponte2016"`, grows each crown
-from its top on the CHM, as lidR's `C_dalponte2016` does, which is what
-Sylva follows line by line. The image is swept repeatedly (by columns from
-west to east and, within a column, from south to north, lidR's matrix
-order, skipping the outermost cells). Each crown cell adds any of its four
+from its top on the CHM, following the original implementation line by
+line. The image is swept repeatedly (by columns from
+west to east and, within a column, from south to north (matrix
+order), skipping the outermost cells). Each crown cell adds any of its four
 neighbours that is not in a crown at the start of the sweep and
 
 - is higher than `th_tree` (2 m),
@@ -103,7 +102,7 @@ neighbours that is not in a crown at the start of the sweep and
 
 Cells added in a sweep count from the next one; a cell claimed by two
 crowns in one sweep goes to the later claim, and the mean height counts it
-for both, as in lidR. Sweeps repeat until no crown grows. `max_cr` is in
+for both. Sweeps repeat until no crown grows. `max_cr` is in
 cells, not metres: at 0.5 m cells the default allows crowns up to about 5 m
 from the top.
 
@@ -115,18 +114,17 @@ reaches it first, ties in height taken in the order they were reached.
 This is the approach of ForestTools' `mcws`. Tops on cells not higher than
 `th_tree` grow nothing.
 
-**Li et al. (2012)**, `method="li2012"`, works on the points, as lidR's
-`LAS::segment_trees` does. The points are taken from the highest down; the
+**Li et al. (2012)**, `method="li2012"`, works on the points. The points are taken from the highest down; the
 highest left starts a tree (its set P, with an empty set N), and every
 point left within `speed_up` of that top, from the highest down, joins P or
 N by its smallest horizontal distances `d1` to P and `d2` to N. A local
-maximum (the highest point within a disc of diameter `R`: lidR passes `R`
-as its window size) joins N if `d1 > dt` or `d2 < d1 < dt`, P otherwise,
+maximum (the highest point within a disc of diameter `R`, used as the
+window size) joins N if `d1 > dt` or `d2 < d1 < dt`, P otherwise,
 with `dt = dt2` above `Zu` and `dt1` below; any other point joins P if `d1
 <= d2`. P becomes the tree and N is left for the next ones, until the
-highest point left is below `hmin`. lidR's "dummy" point in N lies 100 m
-beyond the cloud's corner, so no point within `speed_up` of a top is ever
-nearer to it; Sylva leaves N empty, which gives the same result for any
+highest point left is below `hmin`. The published method seeds N with a
+"dummy" point far beyond the cloud's corner, so that no point within
+`speed_up` of a top is ever nearer to it; Sylva leaves N empty, which gives the same result for any
 `speed_up` under 141 m. Equal heights are taken in order of x, then y.
 
 `als.segment_trees` puts it together for one cloud: a CHM at `resolution`
@@ -135,13 +133,13 @@ resolution, with two empty cells around the cloud so that the outermost
 crowns can grow), tops by `locate_trees` on it (or on the points with
 `tops_from="points"`), crowns by `segment_crowns`, and each point takes the
 crown of its cell. `smooth=k` mean-filters the CHM over `(2k + 1)²` cells
-first (lidR's examples smooth with a 3 x 3 mean, `smooth=1`); a top's
+first (a 3 x 3 mean is `smooth=1`); a top's
 reported height is still the unsmoothed cell value. `method="li2012"`
 labels the points directly and a tree's top is its highest point;
 `method="tops"` stops at the tops. Points lower than `min_point_height`
 (0.5 m) belong to no tree, so ground returns under a crown are not
-labelled with it (lidR's CHM methods label every point in a crown's
-cells); for `li2012` this cannot change the
+labelled with it (the CHM methods could label every point in a crown's
+cells, ground included); for `li2012` this cannot change the
 labels of higher points, which are all taken before them.
 
 Each tree comes back with its top (`x`, `y`, `height`), its crown outline
@@ -152,14 +150,14 @@ in order of the tops' x, then y.
 
 ### Crown outlines
 
-`hull="convex"` (the default) is the convex hull of a tree's points, as
-lidR's `crown_metrics(geom = "convex")`. `hull="concave"` is the
+`hull="convex"` (the default) is the convex hull of a tree's points.
+`hull="concave"` is the
 characteristic shape of Duckham et al. (2008): from the Delaunay
 triangulation of the points, the outline's edges longer than `concavity`
 metres (2 by default) are removed, longest first, as long as the outline
 stays a simple polygon. It follows notches in a crown that the convex hull
-bridges; its area is never larger. (lidR's `geom = "concave"` uses the
-`concaveman` algorithm, a different construction, so the outlines differ.)
+bridges; its area is never larger. (The `concaveman` algorithm is a different
+construction, so its outlines differ.)
 
 ## Catalogues
 
@@ -215,7 +213,7 @@ crowns of radius a quarter of the tree height and length half of it,
 heights 10 to 25 m, stems at least 3 m apart) flown by `als_flight` at
 three pulse rates, each 1 ha plot was segmented with fixed settings,
 `window=LinearWindow(0, 0.2, 2, 20)` (a window a fifth of the height) and
-`max_cr=20` for the CHM methods and lidR's defaults for `li2012`, chosen on
+`max_cr=20` for the CHM methods and the published defaults for `li2012`, chosen on
 a separate stand of 150 trees/ha; the CHM was at 0.5 m, or 1 m below 12
 returns/m². A detected top is matched to the tree of the highest return
 within 0.75 m of it; a tree is found if at least one top lies on it, and
@@ -278,8 +276,8 @@ shows:
 - **Crown areas** of the CHM methods are within 10 to 20 % of those of the
   trees' returns in the median, with a mean absolute error of 15 to 60 %;
   in dense stands the crowns found are larger, since the crowns of the
-  trees missed are shared among their neighbours. `li2012` with lidR's
-  default spacing thresholds (1.5 and 2 m) merges more crowns at high point
+  trees missed are shared among their neighbours. `li2012` with the
+  published default spacing thresholds (1.5 and 2 m) merges more crowns at high point
   densities.
 
 **Chunking and threads.** A 1 ha stand of 200 trees/ha at 106 returns/m²
@@ -332,7 +330,7 @@ See [Command line](cli.md) for every option.
   surface; overtopped trees are not found, and in dense stands they are
   most of the trees missed.
 - Every setting (window, thresholds, `max_cr`, resolution) interacts with
-  point density and crown size; the defaults are lidR's, and the settings
+  point density and crown size; the defaults are the published ones, and the settings
   of the validation suited its crowns. Tune them on a plot with known trees
   before a large run.
 - `li2012` compares every point near a top with the tree's points so far;

@@ -345,8 +345,8 @@ def estimate_trajectory(source, interval: float = 0.5, min_pulses: int = 30,
     window the platform flies a nearly straight line at nearly constant
     speed, so its position and velocity there follow from a linear least
     squares fit of a moving point ``a + b (t - t_c)`` to those lines. This
-    is the idea of lidR's ``track_sensor()`` (Roussel et al. 2020, after
-    Gatziolis & McGaughey 2019), which fits a fixed point per window; the
+    is the idea of Roussel et al. (2020), after Gatziolis & McGaughey
+    (2019), which fits a fixed point per window; the
     motion within the window is modelled here, so longer windows can be used
     without the position lagging.
 

@@ -493,10 +493,10 @@ def main(argv=None):
     s.add_argument("--double", action="store_true", help="double-precision angles and ranges")
     s.set_defaults(func=_cmd_shots)
 
-    s = sub.add_parser("voxel", help="ray-traced voxel grid (AMAPVox-style) from pulse data", **fmt)
+    s = sub.add_parser("voxel", help="ray-traced voxel grid from pulse data", **fmt)
     s.add_argument("input", help="shots file (.parquet, streamed) or ray cloud")
     s.add_argument("output", nargs="?", default=None,
-                   help=".vox (AMAPVox) or .txt (default: <input>.vox beside the input)")
+                   help=".vox or .txt (default: <input>.vox beside the input)")
     s.add_argument("--voxel", type=float, default=0.1, help="voxel size (m)")
     s.add_argument("--bounds", type=float, nargs=6, metavar=("X0", "Y0", "Z0", "X1", "Y1", "Z1"),
                    help="grid corners (default: extent of the echoes)")
