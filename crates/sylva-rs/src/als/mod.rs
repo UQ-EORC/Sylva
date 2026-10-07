@@ -8,7 +8,8 @@
 //! An airborne survey arrives as hundreds of tiles, each too small to be
 //! processed on its own (a DTM cell or a ground filter at a tile edge needs the
 //! points across it) and all of them together too large for memory. The
-//! approach is that of lidR's `LAScatalog` (Roussel et al. 2020):
+//! approach is that of a catalogue processed in buffered chunks (Roussel et
+//! al. 2020):
 //!
 //! 1. [`Catalog::open`] reads only the headers: extent, point count, point
 //!    format and CRS of every file, from which overlaps, gaps and mixed

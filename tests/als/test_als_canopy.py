@@ -328,14 +328,14 @@ def test_scan_angle_correction(slab_flight):
     assert las == pytest.approx(3.0, rel=0.06)
 
 
-def test_lidr_lad_definition():
-    """weighting='all', angles='none', g=0.5 is lidR's LAD(z, dz, k, z0), whose
-    definition (lidR 4.x, after Bouvier et al. 2015) is reproduced here."""
+def test_bouvier_lad_definition():
+    """weighting='all', angles='none', g=0.5 is the leaf area density profile
+    LAD(z, dz, k, z0) of Bouvier et al. (2015), reproduced here."""
     rng = np.random.default_rng(3)
     z = np.concatenate([rng.uniform(0, 0.5, 400), 20 - rng.exponential(4.0, 1600)])
     z = z[z > 0]
 
-    def lidr_lad(z, dz=1.0, k=0.5, z0=2.0):
+    def ref_lad(z, dz=1.0, k=0.5, z0=2.0):
         lo = np.floor((z.min() - z0) / dz) * dz + z0
         hi = np.ceil((z.max() - z0) / dz) * dz + z0
         bk = np.arange(lo, hi + dz / 2, dz)
@@ -352,7 +352,7 @@ def test_lidr_lad_definition():
     prof = als.gap_profile(PointCloud(xyz), resolution=1.0, bin_size=1.0, min_height=2.0,
                            weighting="all", angles="none", g=0.5, dtm=None)
     h, pad = prof.profile()
-    mids, want = lidr_lad(z)
+    mids, want = ref_lad(z)
     n = min(len(h), len(mids))
     np.testing.assert_allclose(h[:n] + 0.5, mids[:n])
     ok = np.isfinite(want[:n])

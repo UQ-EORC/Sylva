@@ -103,8 +103,8 @@ pub struct SurfaceParams {
     pub dtm: DtmKind,
     /// Grid first returns only (both surveys).
     pub first_returns: bool,
-    /// lidR's `p2r(subcircle)`: each return replaced by eight points on a
-    /// circle of this radius (m) around it; 0 for the returns themselves.
+    /// Each return replaced by eight points on a circle of this radius (m)
+    /// around it before gridding the highest; 0 for the returns themselves.
     pub subcircle: f64,
     /// Fewest returns in a cell of each survey.
     pub min_returns: usize,

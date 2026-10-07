@@ -16,8 +16,8 @@
 //! through the scanner, and within a short time window the scanner moves
 //! along a straight line, so its position and velocity follow from a linear
 //! least-squares intersection of those lines (the idea of Gatziolis &
-//! McGaughey 2019 and of lidR's `track_sensor`, Roussel et al. 2020, with
-//! the motion within the window modelled rather than ignored).
+//! McGaughey 2019 and of Roussel et al. 2020, with the motion within the
+//! window modelled rather than ignored).
 
 use std::io::Read;
 use std::path::Path;

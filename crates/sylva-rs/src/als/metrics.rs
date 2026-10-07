@@ -2,10 +2,10 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Area-based metrics of airborne lidar: the standard set of lidR's
-//! `stdmetrics` (Roussel et al. 2020) computed from heights above ground,
-//! on a grid over a whole catalogue ([`grid_metrics`]), for plots
-//! ([`plot_metrics`]) or for one cloud ([`cloud_metrics`]).
+//! Area-based metrics of airborne lidar: the standard set of height,
+//! intensity and return metrics (Roussel et al. 2020) computed from heights
+//! above ground, on a grid over a whole catalogue ([`grid_metrics`]), for
+//! plots ([`plot_metrics`]) or for one cloud ([`cloud_metrics`]).
 //!
 //! # Definitions
 //!
@@ -14,21 +14,22 @@
 //!
 //! - `zmax`, `zmean`; `zsd = sqrt(S_2 / (n - 1))` (NaN for one return);
 //!   `zskew = (S_3 / n) / (S_2 / n)^1.5` and `zkurt = n S_4 / S_2^2`, the
-//!   moment estimators lidR uses (SciPy's `skew` and `kurtosis(fisher=False)`
-//!   with `bias=True`; the kurtosis is not the excess).
-//! - `zentropy`: lidR's `entropy(z, by)`, the Shannon index of the heights
+//!   moment estimators (SciPy's `skew` and `kurtosis(fisher=False)` with
+//!   `bias=True`; the kurtosis is not the excess).
+//! - `zentropy`: `entropy(z, by)`, the Shannon index of the heights
 //!   in bins of `by` m from 0 to `ceiling(zmax / by) * by`, divided by that
 //!   of a uniform distribution over the same bins, `-sum(p ln p) / ln(k)`.
 //!   NaN when `zmax < 2 by` or a height is negative (see
-//!   [`MetricParams::clamp_negative`]). As in lidR the bins are
-//!   half-open `[a, b)`, so a return exactly at the top edge is not counted.
+//!   [`MetricParams::clamp_negative`]). The bins are half-open `[a, b)`,
+//!   so a return exactly at the top edge is not counted.
 //! - `pzabovezmean`, `pzabove<t>`: percentage of returns above the mean and
 //!   above `t` m.
 //! - `zq5` .. `zq95`: quantiles at 5 % steps, linear interpolation between
 //!   order statistics (R's type 7, NumPy's default).
 //! - `zpcum1` .. `zpcum9`: cumulative percentage of returns in the lower
-//!   `k` tenths of `[0, zmax)` (lidR's breaks `seq(0, zmax, zmax / 10)`;
-//!   returns at `zmax` or below 0 are not counted); all 0 when `zmax <= 0`.
+//!   `k` tenths of `[0, zmax)` (breaks `seq(0, zmax, zmax / 10)`, half-open
+//!   bins; returns at `zmax` or below 0 are not counted); all 0 when
+//!   `zmax <= 0`.
 //! - `cover`: percentage of first returns above the cover break;
 //!   `gap_fraction`: share (0-1) of first returns at or below it. Without
 //!   `return_number` every return counts as a first return.
@@ -69,9 +70,9 @@ const GROUND: f64 = 2.0;
 /// Settings of the metrics.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetricParams {
-    /// Height (m) of `pzabove<threshold>` (lidR's `th`, 2 m).
+    /// Height (m) of `pzabove<threshold>` (default 2 m).
     pub threshold: f64,
-    /// Bin width (m) of `zentropy` (lidR's `dz`, 1 m).
+    /// Bin width (m) of `zentropy` (default 1 m).
     pub entropy_bin: f64,
     /// Height (m) above which a first return is canopy for `cover` and `gap_fraction`.
     pub cover_break: f64,
@@ -79,9 +80,9 @@ pub struct MetricParams {
     pub min_height: Option<f64>,
     /// Leave out returns classified as noise (7 or 18).
     pub drop_noise: bool,
-    /// Set heights below 0 to 0 (before `min_height` is applied), as lidR
-    /// users do with `Z[Z < 0] <- 0`. Ground returns a few centimetres
-    /// below the DTM are in nearly every cell, and make `zentropy` NaN.
+    /// Set heights below 0 to 0 (before `min_height` is applied). Ground
+    /// returns a few centimetres below the DTM are in nearly every cell, and
+    /// make `zentropy` NaN.
     pub clamp_negative: bool,
 }
 
@@ -217,8 +218,8 @@ fn r_seq(to: f64, by: f64) -> Vec<f64> {
     (0..=n).map(|k| (k as f64 * by).min(to)).collect()
 }
 
-/// R's `fast_table(findInterval(z, breaks), breaks.len() - 1)` as lidR uses
-/// it: counts of the half-open intervals between consecutive breaks.
+/// Counts of the half-open intervals `[breaks[i], breaks[i + 1])` (R's
+/// `findInterval` binning); values outside every interval are not counted.
 fn interval_counts(z: &[f64], breaks: &[f64]) -> Vec<f64> {
     let k = breaks.len() - 1;
     let mut counts = vec![0.0; k];
@@ -231,8 +232,10 @@ fn interval_counts(z: &[f64], breaks: &[f64]) -> Vec<f64> {
     counts
 }
 
-/// lidR's `entropy(z, by)`: normalised Shannon index of the heights in bins
-/// of `by` from 0. `z` sorted ascending.
+/// `entropy(z, by)`: Shannon index of the heights in bins of `by` from 0 to
+/// `ceil(zmax / by) * by`, divided by that of a uniform distribution over the
+/// same bins. NaN when `zmax < 2 by` or a height is negative. `z` sorted
+/// ascending.
 pub fn entropy(z: &[f64], by: f64) -> f64 {
     let (Some(&lo), Some(&zmax)) = (z.first(), z.last()) else { return f64::NAN };
     if zmax < 2.0 * by || lo < 0.0 {
@@ -247,7 +250,8 @@ pub fn entropy(z: &[f64], by: f64) -> f64 {
     -s / -reference
 }
 
-/// lidR's cumulative height deciles `zpcum1` .. `zpcum9`. `z` sorted ascending.
+/// Cumulative height deciles `zpcum1` .. `zpcum9`: percentage of the returns
+/// in `[0, zmax)` that lie in its lowest 1 .. 9 tenths. `z` sorted ascending.
 fn zpcum(z: &[f64]) -> [f64; 9] {
     let zmax = *z.last().expect("non-empty");
     if zmax <= 0.0 {
@@ -835,8 +839,8 @@ mod tests {
     }
 
     #[test]
-    fn entropy_follows_lidr() {
-        // All in one bin of [0, 5): log(1) = 0.
+    fn entropy_of_known_bins() {
+        // Five bins [0, 1) .. [4, 5): three returns in the first, one in the last.
         assert_eq!(entropy(&[0.5, 0.6, 0.7, 4.5], 1.0), -(0.75f64 * 0.75f64.ln() + 0.25 * 0.25f64.ln()) / 5f64.ln());
         // Too low, or a negative height: NaN.
         assert!(entropy(&[0.1, 1.9], 1.0).is_nan());
@@ -853,9 +857,9 @@ mod tests {
             let (names, v) = cloud_metrics(&cloud, &h, p).unwrap();
             v[names.iter().position(|n| n == name).unwrap()]
         };
-        let lidr = MetricParams::default();
+        let unclamped = MetricParams::default();
         let clamp = MetricParams { clamp_negative: true, ..Default::default() };
-        assert!(get(&lidr, "zentropy").is_nan());
+        assert!(get(&unclamped, "zentropy").is_nan());
         let mut z = [0.0, 0.0, 0.0, 6.5, 12.2];
         z.sort_by(f64::total_cmp);
         assert_eq!(get(&clamp, "zentropy"), entropy(&z, 1.0));

@@ -206,15 +206,15 @@ def noisy_tile(tmp_path_factory):
 
 def test_zentropy_warns_until_negative_heights_are_clamped(noisy_tile):
     with pytest.warns(UserWarning, match="clamp_negative=True"):
-        lidr = als.grid_metrics(noisy_tile, 10.0, ["n", "zentropy"], dtm="height")
-    assert np.isnan(lidr["zentropy"].data).all()
+        unclamped = als.grid_metrics(noisy_tile, 10.0, ["n", "zentropy"], dtm="height")
+    assert np.isnan(unclamped["zentropy"].data).all()
     clamped = als.grid_metrics(noisy_tile, 10.0, ["n", "zentropy", "zq5"], dtm="height",
                                clamp_negative=True)
     assert np.isfinite(clamped["zentropy"].data).all()
-    np.testing.assert_array_equal(clamped["n"].data, lidr["n"].data)   # kept, as ground
+    np.testing.assert_array_equal(clamped["n"].data, unclamped["n"].data)   # kept, as ground
     assert np.nanmin(clamped["zq5"].data) == 0.0
     dropped = als.grid_metrics(noisy_tile, 10.0, ["n", "zentropy"], dtm="height", min_height=0.0)
-    assert (dropped["n"].data < lidr["n"].data).all()
+    assert (dropped["n"].data < unclamped["n"].data).all()
     one = als.cloud_metrics(io.read(noisy_tile.paths[0]), height="height", clamp_negative=True)
     assert np.isfinite(one["zentropy"])
 

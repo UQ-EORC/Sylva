@@ -301,7 +301,7 @@ def test_chm_of_tiles_equals_chm_of_the_merged_cloud(tiles, merged):
     dsm = als.chm(tiles, 1.0, dtm=None)
     assert np.nanmax(dsm.data) > np.nanmax(per_tile.data)
     with pytest.raises(ValueError, match="dtm must be"):
-        als.chm(tiles, 1.0, dtm="lidr")
+        als.chm(tiles, 1.0, dtm="bogus")
 
 
 def test_single_tile_results_equal_the_single_cloud_functions(tiles, tmp_path):

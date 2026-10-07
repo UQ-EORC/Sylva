@@ -222,7 +222,7 @@ def test_tile_xy_bounds_are_the_header_extent(tmp_path):
     assert tile.xy_bounds == (tile.bounds[0], tile.bounds[1], tile.bounds[3], tile.bounds[4])
 
 
-def test_pixel_metrics_is_lidr_name_for_grid_metrics():
+def test_pixel_metrics_is_an_alias_of_grid_metrics():
     assert als_metrics.pixel_metrics is als_metrics.grid_metrics
     assert als.pixel_metrics is als_metrics.grid_metrics
 

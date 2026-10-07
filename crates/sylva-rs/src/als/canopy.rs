@@ -18,7 +18,7 @@
 //!   accumulate, per grid cell and height layer, the share of the pulses
 //!   stopped there, and turn it into plant area density by inverting the
 //!   Beer-Lambert law layer by layer: the method of MacArthur & Horn
-//!   (1969), as lidR's `LAD()` (Bouvier et al. 2015), with each return's
+//!   (1969), as in Bouvier et al. (2015), with each return's
 //!   extinction `G(θ) / cos θ` at its own beam zenith θ, so that oblique
 //!   pulses, which cross more foliage per metre of height, are not read as
 //!   denser canopy.
@@ -338,7 +338,7 @@ pub enum ReturnWeight {
     Equal,
     /// First returns only, each a whole pulse (MacArthur & Horn 1969).
     First,
-    /// Every return a whole pulse, as lidR's `LAD()` counts them.
+    /// Every return a whole pulse (the profile of Bouvier et al. 2015).
     All,
 }
 
@@ -358,7 +358,7 @@ impl ReturnWeight {
 pub enum Projection {
     /// `G(θ)` of a leaf angle distribution.
     Lad(Lad),
-    /// A constant `G` (lidR's `k`).
+    /// A constant `G` (the extinction coefficient `k`).
     Constant(f64),
 }
 

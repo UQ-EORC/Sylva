@@ -5,7 +5,7 @@
 //! Individual trees from airborne lidar: tree tops, crowns and labelled
 //! points, for one cloud or a whole catalogue.
 //!
-//! The algorithms are those of lidR (Roussel et al. 2020), whose
+//! The algorithms are those collected by Roussel et al. (2020), whose
 //! implementations are followed line by line where the papers leave a
 //! detail open:
 //!
@@ -15,18 +15,18 @@
 //!   site within its window is higher. The window is a circle of diameter
 //!   `ws` (or a square of side `ws`) centred on the site, and `ws` may
 //!   depend on the site's height ([`Window`]). Of equal-height maxima that
-//!   lie in each other's windows only the first is kept; lidR keeps the
-//!   first it happens to tag, here the first in order of x, then y.
+//!   lie in each other's windows only the first is kept, the first in
+//!   order of x, then y.
 //! - **Marker-controlled watershed** ([`watershed`]): Meyer's flooding
 //!   (Meyer and Beucher 1990; Meyer 1991) of the CHM from the tree tops,
 //!   highest cells first, over 8-connected cells higher than `th_tree`,
 //!   without watershed lines.
 //! - **Dalponte and Coomes (2016)** ([`dalponte2016`]): seeded region
-//!   growing on the CHM, a port of lidR's `C_dalponte2016` (thresholds
-//!   `th_tree`, `th_seed`, `th_cr`, the 5 % rule above the seed and the
-//!   `max_cr` window, with its sweep order and bookkeeping).
+//!   growing on the CHM from the tree tops (thresholds `th_tree`,
+//!   `th_seed`, `th_cr`, the 5 % rule above the seed and the `max_cr`
+//!   window, with a fixed sweep order and bookkeeping).
 //! - **Li et al. (2012)** ([`li2012`]): point-based region growing from the
-//!   highest point down, a port of lidR's `LAS::segment_trees`.
+//!   highest point down.
 //!
 //! [`segment_cloud`] runs a whole segmentation on one cloud and
 //! [`catalog_trees`] on a catalogue through the chunk engine of
@@ -493,7 +493,7 @@ pub fn watershed(chm: &Raster, seeds: &[u32], th_tree: f64) -> Result<Vec<u32>> 
     Ok(label)
 }
 
-/// Settings of [`dalponte2016`], with lidR's defaults.
+/// Settings of [`dalponte2016`], with the usual defaults.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Dalponte {
     /// Cells not higher than this are never added to a crown (m).
@@ -524,17 +524,16 @@ impl Dalponte {
     }
 }
 
-/// Region growing of Dalponte and Coomes (2016), as lidR's
-/// `C_dalponte2016` does it. The image is scanned by columns from west to
-/// east and, within a column, by rows from south to north (lidR's matrix
-/// order), skipping the outermost cells; each crown cell adds a 4-neighbour
+/// Region growing of Dalponte and Coomes (2016). The image is scanned by
+/// columns from west to east and, within a column, by rows from south to
+/// north (column-major order), skipping the outermost cells; each crown cell adds a 4-neighbour
 /// that is not yet in a crown (at the start of the sweep), is higher than
 /// `th_tree`, than `th_seed` times the seed's CHM value and than `th_cr`
 /// times the crown's mean height, is at most 5 % above the seed, and lies
 /// fewer than `max_cr` cells from the seed in x and in y. Additions made in
 /// a sweep take effect for the next one (a cell claimed twice in a sweep
 /// goes to the later claim); the mean heights are updated as cells are
-/// added, counting a cell each time it is claimed, as lidR does. Sweeps
+/// added, counting a cell each time it is claimed. Sweeps
 /// repeat until nothing grows. NaN cells are `-inf`. Returns an id per
 /// cell, 0 for none.
 pub fn dalponte2016(chm: &Raster, seeds: &[u32], p: &Dalponte) -> Result<Vec<u32>> {
@@ -555,7 +554,7 @@ pub fn dalponte2016(chm: &Raster, seeds: &[u32], p: &Dalponte) -> Result<Vec<u32
     let mut seed_at = vec![(0usize, 0usize); n_ids + 1];
     let mut sum = vec![0.0; n_ids + 1];
     let mut npix = vec![0.0; n_ids + 1];
-    // lidR records the last cell of each id in its (column-major) scan of the seed matrix.
+    // Each id's seed is the last cell of that id in a column-major scan of the seeds.
     for col in 0..nc {
         for row in 0..nr {
             let id = seeds[row * nc + col] as usize;
@@ -602,16 +601,16 @@ pub fn dalponte2016(chm: &Raster, seeds: &[u32], p: &Dalponte) -> Result<Vec<u32
 
 // ------------------------------------------------------------------ Li et al. 2012
 
-/// Settings of [`li2012`], with lidR's defaults.
+/// Settings of [`li2012`], with the usual defaults.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Li2012 {
     /// Spacing threshold (m) for points up to `zu` high.
     pub dt1: f64,
     /// Spacing threshold (m) for points higher than `zu`.
     pub dt2: f64,
-    /// Diameter (m) of the local maximum window (lidR passes `R` as the
-    /// window size of its local maximum filter); 0 makes every point a
-    /// local maximum.
+    /// Diameter (m) of the local maximum window (`R` is used as the window
+    /// size of the local maximum filter); 0 makes every point a local
+    /// maximum.
     pub r: f64,
     /// Height (m) above which `dt2` applies.
     pub zu: f64,
@@ -716,11 +715,10 @@ impl NearSet {
     }
 }
 
-/// Point-based segmentation of Li et al. (2012), as lidR's
-/// `LAS::segment_trees` does it. Points are taken from the highest down
+/// Point-based segmentation of Li et al. (2012). Points are taken from the highest down
 /// (ties by x, then y, then index); the highest point left starts tree `k`
-/// (its set P) with an empty set N (lidR's dummy point, which no point
-/// within `speed_up` of the top can be nearer than). Every point left
+/// (its set P) with an empty set N (a dummy point, which no point within
+/// `speed_up` of the top can be nearer than). Every point left
 /// within `speed_up` of that top, from the highest down, joins P or N by
 /// its smallest distances `d1` to P and `d2` to N (in x, y): a local
 /// maximum (within a window of diameter `r`, [`local_maxima_points`] with
@@ -740,7 +738,7 @@ pub fn li2012(xy: &[[f64; 2]], h: &[f64], p: &Li2012) -> Result<Vec<u32>> {
     // labelled 0; `valid` indexes the rest.
     let valid: Vec<usize> = (0..n).filter(|&i| h[i].is_finite() && xy[i][0].is_finite() && xy[i][1].is_finite()).collect();
     // Which points are local maxima, since the rule for them is the stricter
-    // one. Without a window radius every point is treated as one, as lidR does.
+    // one. Without a window radius every point is treated as one.
     let mut is_lm = vec![false; n];
     if p.r > 0.0 {
         for i in local_maxima_points(xy, h, &Window::Fixed(p.r), 0.0, Shape::Circular)? {
@@ -750,8 +748,7 @@ pub fn li2012(xy: &[[f64; 2]], h: &[f64], p: &Li2012) -> Result<Vec<u32>> {
         is_lm.iter_mut().for_each(|v| *v = true);
     }
     // Highest point first; the tie-breaks on x, then y, then index make the
-    // result reproducible, and match lidR's order so the two agree point for
-    // point. `rank` is the position of each point in that order.
+    // result reproducible, independent of the input order. `rank` is the position of each point in that order.
     let mut order = valid.clone();
     order.sort_by(|&a, &b| h[b].total_cmp(&h[a]).then(xy[a][0].total_cmp(&xy[b][0])).then(xy[a][1].total_cmp(&xy[b][1])).then(a.cmp(&b)));
     let mut rank = vec![u32::MAX; n];

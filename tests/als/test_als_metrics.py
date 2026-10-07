@@ -5,8 +5,8 @@
 """Area-based ALS metrics: definitions, grids and plots.
 
 The definitions are checked against NumPy and SciPy on random data, and
-against a direct transcription of lidR's R code for ``entropy`` and the
-cumulative deciles (lidR itself is not needed). Grids and plots from a
+against an independent NumPy implementation of ``entropy`` and the
+cumulative deciles (R-style ``seq`` breaks and half-open bins). Grids and plots from a
 catalogue are checked against the metrics of the merged cloud's points,
 and for independence from the chunking and the number of workers.
 """
@@ -30,14 +30,15 @@ def r_seq(to, by):
 
 
 def find_interval_table(z, breaks):
-    """lidR's ``fast_table(findInterval(z, breaks), length(breaks) - 1)``."""
+    """Counts of ``z`` in the half-open bins ``[breaks[i], breaks[i + 1])``."""
     k = len(breaks) - 1
     idx = np.searchsorted(breaks, z, side="right")
     return np.bincount(idx, minlength=k + 2)[1:k + 1].astype(float)
 
 
-def lidr_entropy(z, by=1.0):
-    """lidR ``entropy(z, by)`` (R/metrics_stdmetrics.R)."""
+def ref_entropy(z, by=1.0):
+    """Shannon index of the heights in bins of ``by`` from 0 to
+    ``ceil(zmax / by) * by``, over that of a uniform distribution."""
     zmax = z.max()
     if zmax < 2 * by or z.min() < 0:
         return np.nan
@@ -47,8 +48,8 @@ def lidr_entropy(z, by=1.0):
     return -(p * np.log(p)).sum() / np.log(len(hist))
 
 
-def lidr_zpcum(z):
-    """lidR ``stdmetrics_z`` cumulative deciles ``zpcum1`` .. ``zpcum9``."""
+def ref_zpcum(z):
+    """Cumulative deciles ``zpcum1`` .. ``zpcum9`` of ``[0, zmax)``."""
     zmax = z.max()
     if zmax <= 0:
         return np.zeros(9)
@@ -64,9 +65,9 @@ def reference(z, i, rn, cls, th=2.0, cover_break=2.0):
     ref = {
         "n": n, "zmax": z.max(), "zmean": z.mean(), "zsd": z.std(ddof=1),
         "zskew": stats.skew(z, bias=True), "zkurt": stats.kurtosis(z, fisher=False, bias=True),
-        "zentropy": lidr_entropy(z), "pzabovezmean": (z > z.mean()).mean() * 100,
+        "zentropy": ref_entropy(z), "pzabovezmean": (z > z.mean()).mean() * 100,
         "pzabove2": (z > th).mean() * 100, **zq,
-        **{f"zpcum{k + 1}": v for k, v in enumerate(lidr_zpcum(z))},
+        **{f"zpcum{k + 1}": v for k, v in enumerate(ref_zpcum(z))},
         "cover": (z[first] > cover_break).mean() * 100,
         "gap_fraction": (z[first] <= cover_break).mean(),
         "itot": i.sum(), "imax": i.max(), "imean": i.mean(), "isd": i.std(ddof=1),
@@ -93,7 +94,7 @@ def random_cloud(seed, n=2000):
 # ------------------------------------------------------------------ definitions
 
 @pytest.mark.parametrize("seed", [0, 1, 2])
-def test_definitions_match_numpy_scipy_and_lidr(seed):
+def test_definitions_match_numpy_and_scipy(seed):
     c = random_cloud(seed)
     got = als.cloud_metrics(c)
     a = c.attrs
@@ -112,12 +113,12 @@ def test_entropy_and_deciles_on_analytic_samples():
     np.testing.assert_allclose([m[f"zpcum{k}"] for k in range(1, 10)], np.arange(10, 100, 10))
     assert m["zkurt"] == pytest.approx(1.78)   # Pearson kurtosis, not the excess
     assert m["zskew"] == pytest.approx(0.0, abs=1e-15)
-    # Everything in one bin: no diversity.
+    # Four returns in the first of three bins, one in the last.
     z = np.array([0.1, 0.2, 0.3, 0.4, 2.5])
     m = als.cloud_metrics(PointCloud(np.column_stack([z, z, z])))
     p = np.array([0.8, 0.2])
     assert m["zentropy"] == pytest.approx(-(p * np.log(p)).sum() / np.log(3))
-    # Too low for entropy, or a negative height: NaN, as in lidR.
+    # Too low for entropy, or a negative height: NaN.
     for z in (np.array([0.1, 1.9]), np.array([-0.1, 5.0])):
         assert np.isnan(als.cloud_metrics(PointCloud(np.column_stack([z, z, z])))["zentropy"])
 
@@ -144,7 +145,7 @@ def test_cloud_metrics_options_and_edge_cases():
     assert als.cloud_metrics(c, height=h)["n"] == 490
     other = als.cloud_metrics(c, threshold=5.5, cover_break=10.0, entropy_bin=2.0)
     assert other["pzabove5.5"] == pytest.approx((c.z > 5.5).mean() * 100)
-    assert other["zentropy"] == pytest.approx(lidr_entropy(c.z, 2.0))
+    assert other["zentropy"] == pytest.approx(ref_entropy(c.z, 2.0))
     # Empty and single-point clouds.
     empty = als.cloud_metrics(PointCloud(np.zeros((0, 3))))
     assert empty["n"] == 0 and all(np.isnan(v) for k, v in empty.items() if k != "n")

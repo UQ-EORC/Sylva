@@ -57,7 +57,7 @@ Bouvier, M., Durrieu, S., Fournier, R. A., & Renaud, J.-P. (2015). Generalizing
 predictive models of forest inventory attributes using an area-based approach
 with airborne LiDAR data. *Remote Sensing of Environment*, *156*, 322–334.
 <https://doi.org/10.1016/j.rse.2014.10.004>
-Used by: the gap-fraction profile of lidR's `LAD()`, which
+Used by: the gap-fraction profile of leaf area density, which
 [`als.gap_profile`](guide/als_canopy.md) reproduces with `weighting="all"`.
 
 Calders, K., Armston, J., Newnham, G., Herold, M., & Goodwin, N. (2014).
