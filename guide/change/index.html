@@ -1,0 +1,4326 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="LiDAR processing for forest ecology and remote sensing research, with a Rust core">
+      
+      
+        <meta name="author" content="Tim Devereux, The University of Queensland">
+      
+      
+      
+        <link rel="prev" href="../als_trees/">
+      
+      
+        <link rel="next" href="../fusion/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Change detection - Sylva</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#change-detection" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Sylva" class="md-header__button md-logo" aria-label="Sylva" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Sylva
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Change detection
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="indigo"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="indigo"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/UQ-EORC/Sylva" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    UQ-EORC/Sylva
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Sylva" class="md-nav__button md-logo" aria-label="Sylva" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Sylva
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/UQ-EORC/Sylva" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    UQ-EORC/Sylva
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plot workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Point clouds and files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../preprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filtering and registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../masking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Masking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../coordinates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coordinates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trees and crowns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pulses/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pulse data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ray-traced voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interpolation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interpolation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plots in tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne lidar tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Area-based ALS metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full waveforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne canopy structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change detection
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#trees-and-plots" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trees and plots
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Trees and plots">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worked example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#aligning-epochs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aligning epochs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#matching-trees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Matching trees
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#increments-and-the-minimum-detectable-increment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Increments and the minimum detectable increment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plot-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plot summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provenance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#surface-change-m3c2-and-c2c" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Surface change: M3C2 and C2C
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rasters-of-difference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rasters of difference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#voxel-occupancy-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Voxel occupancy change
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#qsm-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        QSM change
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fusion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TLS and ALS together
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne change
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QSMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../leaves/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Leaves on a QSM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scan quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Synthetic data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operational/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operational use
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/01_pointclouds_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    1. Point clouds and I/O
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/02_filtering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2. Filtering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/03_registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3. Registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/04_ground/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    4. Ground and height
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/05_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    5. Trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/06_qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    6. Quantitative structure models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/07_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    7. Canopy structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/08_shots/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    8. Pulses and shots files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/09_voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    9. Ray-traced voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/10_riscan_pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10. A RIEGL project, end to end
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/11_coordinates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11. Coordinates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/12_interpolation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12. Interpolation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/13_masking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    13. Masking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/14_change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    14. Change detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/15_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    15. Airborne lidar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/16_waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    16. Full waveforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/17_synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    17. Synthetic trees, plots and scans
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/18_buttress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    18. Buttresses
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tree detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QSMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Canopy gap profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_2" id="__nav_6_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/pointcloud/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PointCloud, Raster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/shots/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shots, RiSCAN
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Point clouds
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Point clouds
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.filters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/ground/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.ground
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/coreg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.coreg
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_4" id="__nav_6_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forest structure
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Forest structure
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.qsm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/leaves/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.leaves
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.canopy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/voxel_blocks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.voxels.blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/quality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.waveform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_5" id="__nav_6_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne lidar
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Airborne lidar
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.als
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/tiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.als.tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.als.metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.als.canopy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.als.trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_6" id="__nav_6_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change and fusion
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Change and fusion
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.change
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/change_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.change.als
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/fusion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.fusion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_7" id="__nav_6_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Geospatial
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Geospatial
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/coords/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.geo.coords
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/interpolate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.geo.interpolate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/masks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.geo.masks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.synthetic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_9" id="__nav_6_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.util
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    sylva.util
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/progress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.util.progress
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/limits/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.util.limits
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/rust-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Rust core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/reading-the-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reading the core without Rust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#trees-and-plots" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trees and plots
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Trees and plots">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worked example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#aligning-epochs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aligning epochs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#matching-trees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Matching trees
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#increments-and-the-minimum-detectable-increment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Increments and the minimum detectable increment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plot-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plot summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provenance
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#surface-change-m3c2-and-c2c" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Surface change: M3C2 and C2C
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rasters-of-difference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rasters of difference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#voxel-occupancy-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Voxel occupancy change
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#qsm-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        QSM change
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="change-detection">Change detection<a class="headerlink" href="#change-detection" title="Permanent link">&para;</a></h1>
+<p><code>sylva.change</code> compares two epochs of one plot. Throughout, real change is
+kept apart from noise and from not having seen something: every change
+carries an uncertainty or a level of detection, and what the data cannot
+support is labelled (for example <em>unobserved</em>) rather than reported as
+change.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Compares</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>distances(a, b, "m3c2")</code></td>
+<td>two point clouds</td>
+<td>signed distance per core point with its 95 % level of detection</td>
+</tr>
+<tr>
+<td><code>distances(a, b, "c2c")</code></td>
+<td>two point clouds</td>
+<td>distance from each point of <code>b</code> to the nearest point of <code>a</code></td>
+</tr>
+<tr>
+<td><code>dod(raster_a, raster_b)</code></td>
+<td>two DTMs or CHMs</td>
+<td>raster of difference, significance mask, volumes</td>
+</tr>
+<tr>
+<td><code>occupancy(grid_a, grid_b)</code></td>
+<td>two ray-traced voxel grids</td>
+<td>gained, lost, stable and unobserved voxels; PAD change</td>
+</tr>
+<tr>
+<td><code>align_epochs(a, b)</code></td>
+<td>two epochs</td>
+<td>transform on stems and ground, with its uncertainty</td>
+</tr>
+<tr>
+<td><code>match_trees</code>, <code>tree_increments</code></td>
+<td>two stem maps and clouds</td>
+<td>survivors, deaths, recruits; increments with a minimum detectable increment</td>
+</tr>
+<tr>
+<td><code>plot_summary(increments)</code></td>
+<td>one tree comparison</td>
+<td>growth, mortality, recruitment with 95 % intervals</td>
+</tr>
+<tr>
+<td><code>compare_qsms(qsm_a, qsm_b)</code></td>
+<td>two QSMs of a tree</td>
+<td>taper increment, branches lost, new and grown; volume change where both were measured</td>
+</tr>
+</tbody>
+</table>
+<h2 id="trees-and-plots">Trees and plots<a class="headerlink" href="#trees-and-plots" title="Permanent link">&para;</a></h2>
+<h3 id="worked-example">Worked example<a class="headerlink" href="#worked-example" title="Permanent link">&para;</a></h3>
+<p>The synthetic plot is 30 m square with 16 trees, scanned from five
+positions in each epoch; the second epoch has its own range noise (5 mm
+against 3 mm), scanners displaced by about 0.5 m, and is delivered in a
+frame rotated by 1.5 degrees and shifted by almost a metre, as an
+independently registered revisit would be.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">change</span><span class="p">,</span> <span class="n">ground</span><span class="p">,</span> <span class="n">synthetic</span><span class="p">,</span> <span class="n">trees</span>
+
+<span class="n">ep</span> <span class="o">=</span> <span class="n">synthetic</span><span class="o">.</span><span class="n">forest_epochs</span><span class="p">(</span><span class="n">seed</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">cloud_a</span><span class="p">,</span> <span class="n">cloud_b</span> <span class="o">=</span> <span class="n">ep</span><span class="o">.</span><span class="n">clouds</span>                 <span class="c1"># 652,715 and 605,454 echoes</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">inventory</span><span class="p">(</span><span class="n">cloud</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""The operational sequence of the trees guide."""</span>
+    <span class="n">cloud</span> <span class="o">=</span> <span class="n">ground</span><span class="o">.</span><span class="n">normalize_height</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">ground</span><span class="o">.</span><span class="n">make_dtm</span><span class="p">(</span><span class="n">cloud</span><span class="p">))</span>
+    <span class="n">stems</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">detect_stems</span><span class="p">(</span><span class="n">cloud</span><span class="p">)</span>
+    <span class="n">stems</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">merge_branches</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">stems</span><span class="p">)</span>
+    <span class="n">labels</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">segment_trees</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">stems</span><span class="p">)</span>
+    <span class="n">trees</span><span class="o">.</span><span class="n">tree_heights</span><span class="p">(</span><span class="n">cloud</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">stems</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">trees</span><span class="o">.</span><span class="n">prune_trees</span><span class="p">(</span><span class="n">stems</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="n">cloud</span><span class="p">,)</span>
+
+
+<span class="n">stems_a</span><span class="p">,</span> <span class="n">labels_a</span><span class="p">,</span> <span class="n">cloud_a</span> <span class="o">=</span> <span class="n">inventory</span><span class="p">(</span><span class="n">cloud_a</span><span class="p">)</span>
+<span class="n">stems_b</span><span class="p">,</span> <span class="n">labels_b</span><span class="p">,</span> <span class="n">cloud_b</span> <span class="o">=</span> <span class="n">inventory</span><span class="p">(</span><span class="n">cloud_b</span><span class="p">)</span>
+
+<span class="n">al</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">align_epochs</span><span class="p">(</span><span class="o">*</span><span class="n">ep</span><span class="o">.</span><span class="n">clouds</span><span class="p">)</span>         <span class="c1"># epoch 2 onto epoch 1</span>
+<span class="n">m</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">match_trees</span><span class="p">(</span><span class="n">stems_a</span><span class="p">,</span> <span class="n">stems_b</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">al</span><span class="p">)</span>
+<span class="n">inc</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">tree_increments</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">cloud_a</span><span class="p">,</span> <span class="n">cloud_b</span><span class="p">,</span> <span class="n">labels_a</span><span class="p">,</span> <span class="n">labels_b</span><span class="p">,</span>
+                             <span class="n">noise_a</span><span class="o">=</span><span class="mf">0.003</span><span class="p">,</span> <span class="n">noise_b</span><span class="o">=</span><span class="mf">0.005</span><span class="p">)</span>
+<span class="n">summary</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">plot_summary</span><span class="p">(</span><span class="n">inc</span><span class="p">,</span> <span class="n">area</span><span class="o">=</span><span class="mi">30</span> <span class="o">*</span> <span class="mi">30</span><span class="p">,</span> <span class="n">years</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">al</span><span class="o">.</span><span class="n">report</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">summary</span><span class="o">.</span><span class="n">report</span><span class="p">())</span>
+</code></pre></div>
+<p>The alignment matches the 14 surviving stems and 1,448 terrain samples; its
+registration sigma is 1.3 mm, and the transform differs from the true one
+by 0.1 mm horizontally and 0.9 mm vertically at the plot centre, 1.4 times
+its vertical sigma of 0.6 mm. <code>m.counts()</code> gives 14 survivors, 2 deaths and
+2 recruits, which are exactly the trees that died and grew in; one recruit
+stands 0.37 m from the stump of a dead tree and is not mistaken for it. Some rows of <code>inc.to_pandas()</code>, with the true
+increments beside them:</p>
+<table>
+<thead>
+<tr>
+<th>True tree</th>
+<th>ΔDBH (mm)</th>
+<th>true</th>
+<th>MDI (mm)</th>
+<th><code>dbh_change</code></th>
+<th>Δheight (m)</th>
+<th>true</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>12</td>
+<td>6.6</td>
+<td>6.2</td>
+<td>1.3</td>
+<td>growth</td>
+<td>0.91</td>
+<td>0.91</td>
+</tr>
+<tr>
+<td>6</td>
+<td>15.9</td>
+<td>16.0</td>
+<td>1.3</td>
+<td>growth</td>
+<td>0.34</td>
+<td>0.31</td>
+</tr>
+<tr>
+<td>16</td>
+<td>18.4</td>
+<td>18.0</td>
+<td>2.3</td>
+<td>growth</td>
+<td>0.64</td>
+<td>0.62</td>
+</tr>
+<tr>
+<td>11</td>
+<td>5.6</td>
+<td>5.8</td>
+<td>1.1</td>
+<td>growth</td>
+<td>0.13</td>
+<td>0.53</td>
+</tr>
+<tr>
+<td>1</td>
+<td>0.2</td>
+<td>0.5</td>
+<td>2.9</td>
+<td>below_detection</td>
+<td>0.01</td>
+<td>0.01</td>
+</tr>
+<tr>
+<td>10</td>
+<td>1.0</td>
+<td>0.5</td>
+<td>3.0</td>
+<td>below_detection</td>
+<td>0.01</td>
+<td>0.01</td>
+</tr>
+</tbody>
+</table>
+<p>Trees 1 and 10 grew by only 0.5 mm, less than a scan can resolve, and are
+reported as below detection rather than as growth. Every height increment
+here is below its detection level of about 1 m (tree 11 shows why: one epoch
+missed its top by 0.4 m), so the table does not claim height growth even
+where the measurement happens to be right. The plot summary gives, per
+hectare and year, a basal-area growth of 0.184 m² (95 % interval 0.177 to
+0.191; true 0.184), a mortality of 0.405 m² (0.399 to 0.412; true 0.405) and
+a net change of −0.187 m² (−0.196 to −0.177; true −0.187). The whole example runs in about
+8 s.</p>
+<h3 id="aligning-epochs">Aligning epochs<a class="headerlink" href="#aligning-epochs" title="Permanent link">&para;</a></h3>
+<p>Between surveys crowns grow, lose limbs and move in the wind, so a
+registration over all points is pulled by the change it should reveal.
+<code>align_epochs</code> takes a coarse transform from the coregistration pipeline
+(<code>sylva.coreg.register_pair</code>: a global stem-map match refined by ICP) and
+refines it on stable features only:</p>
+<ul>
+<li><strong>stems</strong>: the horizontal position of every stem found in both epochs
+  within <code>stem_tolerance</code> (a stem thickens, but its axis stays where it
+  was), which fixes x, y and the rotation about z;</li>
+<li><strong>terrain</strong>: the height of the new terrain model above the reference one,
+  which fixes z and the two tilts.</li>
+</ul>
+<p>Robust Gauss-Newton with Huber (1964) weights, each feature type weighted by
+its own spread, gives the transform and the covariance of its six
+parameters. <code>registration_sigma</code> is the RMS, over the reference stems, of the
+3-D displacement uncertainty this covariance implies: the uncertainty of the
+transform, not the residual of one feature (15 stems with 5 mm residuals fix
+the translation to about 1.3 mm). Two choices keep it honest. Terrain errors
+are spatially coherent, so all terrain samples together weigh as much as one
+independent sample per <code>ground_block</code> (5 m); and no stem centre is taken as
+better than <code>stem_floor</code> (2 mm) nor a terrain sample as better than
+<code>ground_floor</code> (5 mm), whatever an unusually clean plot suggests. Without
+these, the synthetic alignment errors exceeded their sigma by factors of two
+to eight. <code>stable="stems"</code> or <code>"ground"</code> uses one kind alone; the other
+parameters then stay at the coarse transform and their sigma is NaN.</p>
+<p>A project of several scans per epoch is aligned through its registered,
+merged cloud (<code>sylva.coreg.merge_clouds</code>), or through scans already prepared
+with <code>sylva.coreg.prepare_scan</code>. <code>al.apply(cloud)</code> moves any cloud of the new
+epoch into the reference frame.</p>
+<h3 id="matching-trees">Matching trees<a class="headerlink" href="#matching-trees" title="Permanent link">&para;</a></h3>
+<p><code>match_trees</code> moves the second epoch's stems into the first epoch's frame
+and pairs them by an optimal assignment (Kuhn 1955; Munkres 1957) that first
+matches as many trees as it can and then minimises the summed cost of
+distance and relative DBH and height differences. Unlike nearest-neighbour
+matching, a stem cannot take its neighbour's partner when that would leave
+the neighbour unmatched. A pair is allowed only within <code>max_distance</code> (1 m)
+and when the DBH grew by at most <code>dbh_tolerance</code> (35 %) or shrank by at most
+<code>max_shrink</code> (15 %): stems do not shrink, so a felled tree and the sapling
+beside it are a death and a recruit, not one tree that lost half its
+diameter.</p>
+<p>Stems left over are checked for merges and splits before they are called
+deaths or recruits. When a stem of the second epoch is wide enough to stand
+for an unmatched neighbour as well as its own partner (its DBH at least
+<code>merge_factor</code> times the quadratic sum of theirs), the neighbour is <code>merged</code>
+into it: the detector saw two touching stems as one. Splits are the mirror
+image. <code>TreeMatch.ambiguous_pairs()</code> marks survivor pairs involved in either,
+whose increments compare a stem with more or less than itself; the plot
+summary leaves them out and counts them.</p>
+<h3 id="increments-and-the-minimum-detectable-increment">Increments and the minimum detectable increment<a class="headerlink" href="#increments-and-the-minimum-detectable-increment" title="Permanent link">&para;</a></h3>
+<p>A DBH increment is measured on the stem profile rather than as the
+difference of two DBHs. Both epochs' stems are cut into slices from 1 to 3 m
+every 0.25 m, a circle is fitted to each with the same inlier distance in
+both epochs, and slices far off the taper line of the others (a branch
+junction) are dropped. The increment is the weighted mean of the paired
+differences at the same heights, which cancels the stem's own shape: a
+flattened or fluted stem has the same shape in both epochs.</p>
+<p>Its standard error has four parts: the precision of each slice's circle,
+<code>2 s / sqrt(n) / sqrt(c)</code> (fit residual <code>s</code>, at least the epoch's range noise;
+<code>n</code> inlier points; share <code>c</code> of the circumference seen); any excess scatter
+of the differences between slices (Birge ratio); a share
+<code>slice_correlation</code> (0.3) of the slice errors that does not average out,
+because the same scanners see every slice of a stem from the same
+directions; and the vertical registration uncertainty times the stem taper.
+The minimum detectable increment (MDI) is that error times 1.96 (at the
+default 95 % confidence). An increment within ±MDI is <code>below_detection</code>; a
+decrease beyond it is <code>decrease</code> and flagged <code>implausible</code>, as is an increase
+above <code>max_dbh_increment</code> when one is given. Range noise can be given per
+epoch as a number or as a <code>sylva.quality.stem_noise</code> result.</p>
+<p>Height is the highest point of the tree above its own epoch's terrain (so
+vertical misregistration cancels), continued upwards through unassigned
+points within 0.3 m of the stem, because segmentation often loses a thin
+leader. Its uncertainty adds <code>height_error</code> (2 % of the height) to the
+spread of the highest points: a top that no pulse hit leaves no trace in the
+epoch's own data. With multiple scans the measured tops are usually right to
+a few centimetres, but not always, so a height increment of less than about
+a metre on a 20 m tree is reported as below detection. Crown area and
+volume increments are given as measured, without a detection level:
+occlusion changes them as much as growth does.</p>
+<h3 id="plot-summary">Plot summary<a class="headerlink" href="#plot-summary" title="Permanent link">&para;</a></h3>
+<p><code>plot_summary</code> sums the trees per hectare and year: survivors' basal-area
+and stem-volume growth, the basal area and volume of the dead trees (first
+epoch) and of the recruits (second epoch), their net, annual mortality and
+recruitment rates (Sheil et al. 1995), and biomass when a wood density is
+given. Stem volume is <code>form_factor</code> (0.5) times basal area times height.
+Intervals come from Monte Carlo draws in which every tree's DBH, height and
+increments are perturbed by their standard errors; a survivor without a
+measured increment takes a measured survivor's increment. They cover
+measurement noise and registration only: the counts are taken as exact and
+the sampling error of a plot as a sample of a stand is not included.</p>
+<h3 id="provenance">Provenance<a class="headerlink" href="#provenance" title="Permanent link">&para;</a></h3>
+<p>A difference between epochs is change only if both epochs were measured the
+same way; a different stem-detection setting or software version can move a
+DBH by more than a year's growth. Record each epoch when it is processed and
+compare the records before comparing the epochs:</p>
+<div class="highlight"><pre><span></span><code><span class="n">settings</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"detect_stems"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"segment_trees"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"power"</span><span class="p">:</span> <span class="mf">6.0</span><span class="p">},</span>
+            <span class="s2">"increments"</span><span class="p">:</span> <span class="n">inc</span><span class="o">.</span><span class="n">settings</span><span class="p">,</span> <span class="s2">"alignment"</span><span class="p">:</span> <span class="n">al</span><span class="o">.</span><span class="n">settings</span><span class="p">}</span>
+<span class="n">record</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">provenance</span><span class="p">(</span><span class="n">settings</span><span class="p">)</span><span class="o">.</span><span class="n">records</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>   <span class="c1"># store it with the epoch's products</span>
+<span class="o">...</span>
+<span class="n">change</span><span class="o">.</span><span class="n">provenance</span><span class="p">(</span><span class="n">record_2019</span><span class="p">,</span> <span class="n">record_2024</span><span class="p">)</span>         <span class="c1"># warns: ProvenanceWarning</span>
+</code></pre></div>
+<p>Each record holds the Sylva version and the settings; the comparison
+flattens nested settings (dataclasses such as <code>CoregConfig</code> included) to
+dotted keys and lists every key whose value differs, with numbers equal
+within <code>rtol</code>.</p>
+<h3 id="validation">Validation<a class="headerlink" href="#validation" title="Permanent link">&para;</a></h3>
+<p>Twenty <code>forest_epochs</code> plots (seeds 0 to 19, 280 surviving trees) went
+through the workflow above:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Deaths and recruits</td>
+<td>recovered exactly in 20 of 20 plots, felled-and-replaced trees included</td>
+</tr>
+<tr>
+<td>DBH increment within its MDI</td>
+<td>280 of 280 trees (median MDI 1.4 mm, largest 3.2 mm)</td>
+</tr>
+<tr>
+<td>0.5 mm increments reported as below detection</td>
+<td>40 of 40</td>
+</tr>
+<tr>
+<td>Height increment within its MDI (crowns left intact)</td>
+<td>204 of 216 (94 %)</td>
+</tr>
+<tr>
+<td>Alignment error at the plot centre</td>
+<td>RMS 0.11, 0.09 and 1.18 sigma in x, y, z; largest 1.7 sigma</td>
+</tr>
+<tr>
+<td>95 % intervals covering the true plot values</td>
+<td>basal-area growth, mortality and net change 20, 20 and 19 of 20; volume growth and net change 20 and 19; mean DBH increment 20</td>
+</tr>
+</tbody>
+</table>
+<p>The synthetic scanner places every echo of a pulse along the direction of
+its last one, so with two echoes per pulse the first echoes at a stem's
+silhouette are displaced sideways and circles come out a few millimetres
+wide, differently in each epoch, much like the mixed-pixel edges of a real
+scanner. With <code>max_echoes=2</code>, 260 of 280 increments (93 %) lay within their
+MDI, and the plot intervals covered the truth in 16 to 20 of 20 plots. The
+MDI is therefore not conservative for data with pronounced edge effects:
+filter mixed pixels first, or raise <code>slice_correlation</code>.</p>
+<p><code>tests/test_change_trees.py</code> repeats these checks on smaller plots, and
+covers the failure modes: stems that moved by 0.3 m, two stems merged into
+one and split again, a tree felled with a new one grown beside it, epochs
+processed with different settings, and increments too small to detect.</p>
+<h2 id="surface-change-m3c2-and-c2c">Surface change: M3C2 and C2C<a class="headerlink" href="#surface-change-m3c2-and-c2c" title="Permanent link">&para;</a></h2>
+<p><code>distances(a, b, "m3c2", core_points, normal_scale, projection_scale,
+max_depth, registration_sigma)</code> implements the Multiscale Model to Model
+Cloud Comparison of Lague, Brodu and Leroux (2013). At each core point a
+plane is fitted to the points of the reference epoch <code>a</code> within
+<code>normal_scale / 2</code>; the points of both epochs inside a cylinder of diameter
+<code>projection_scale</code> along that normal (reaching <code>max_depth</code> either way) are
+projected onto it, and the distance is the difference of their mean
+positions. Its 95 % level of detection is</p>
+<div class="highlight"><pre><span></span><code>LoD95 = 1.96 * (sqrt(s_a² / n_a + s_b² / n_b) + reg)
+</code></pre></div>
+<p>where <code>s</code> is the spread of each epoch's positions along the normal (surface
+roughness plus range noise), <code>n</code> their number and <code>reg</code> the registration
+error, and a distance is significant when it exceeds it. On an unchanged
+surface about 5 % of the core points are therefore significant by chance
+when <code>registration_sigma</code> is 0, and fewer when it is not. The scales are
+diameters, as in the paper; <code>normal_scale</code> should span the surface's
+roughness (Lague et al. suggest 20 to 25 times it) and <code>projection_scale</code>
+should hold at least about 30 points of each epoch.</p>
+<p>Normals are oriented upwards by default, which suits ground and other
+near-horizontal surfaces. For stems, orient them towards the scanner
+(<code>orientation=("towards", scanner_xyz)</code>) or pass radial <code>normals</code>, so that
+radial growth comes out positive.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sylva</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">PointCloud</span><span class="p">,</span> <span class="n">change</span><span class="p">,</span> <span class="n">filters</span><span class="p">,</span> <span class="n">synthetic</span>
+
+<span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">terrain</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">deposit</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+    <span class="n">xy</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="n">synthetic</span><span class="o">.</span><span class="n">terrain_height</span><span class="p">(</span><span class="n">xy</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">xy</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">])</span> <span class="o">+</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mf">0.005</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+    <span class="n">z</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">xy</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">10</span><span class="p">,</span> <span class="n">xy</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">10</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">]</span> <span class="o">+=</span> <span class="n">deposit</span>  <span class="c1"># a disc of deposition</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">xy</span><span class="p">,</span> <span class="n">z</span><span class="p">])</span>
+
+<span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">terrain</span><span class="p">(</span><span class="mi">500_000</span><span class="p">),</span> <span class="n">terrain</span><span class="p">(</span><span class="mi">500_000</span><span class="p">,</span> <span class="n">deposit</span><span class="o">=</span><span class="mf">0.03</span><span class="p">)</span>
+<span class="n">core</span> <span class="o">=</span> <span class="n">filters</span><span class="o">.</span><span class="n">voxel_downsample</span><span class="p">(</span><span class="n">PointCloud</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="mf">0.5</span><span class="p">)</span>          <span class="c1"># 1,782 core points</span>
+<span class="n">d</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">distances</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="s2">"m3c2"</span><span class="p">,</span> <span class="n">core</span><span class="p">,</span> <span class="n">normal_scale</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">projection_scale</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>
+                     <span class="n">max_depth</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">registration_sigma</span><span class="o">=</span><span class="mf">0.002</span><span class="p">)</span>
+<span class="n">np</span><span class="o">.</span><span class="n">nanmedian</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">lod</span><span class="p">)</span>                    <span class="c1"># 0.0054 m</span>
+<span class="n">d</span><span class="o">.</span><span class="n">distance</span><span class="p">[</span><span class="n">d</span><span class="o">.</span><span class="n">significant</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>       <span class="c1"># 0.030 m: the 3 cm deposit, and nothing else</span>
+<span class="n">sylva</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">to_cloud</span><span class="p">(),</span> <span class="s2">"m3c2.laz"</span><span class="p">)</span>  <span class="c1"># distance, lod, significant, normals, counts</span>
+</code></pre></div>
+<p>Inside the disc every core point is significant with a mean distance of
+30.0 mm; outside it none is (the registration error of 2 mm raises the level
+of detection above the chance fluctuations).</p>
+<p><code>distances(a, b, "c2c")</code> returns, for each point of <code>b</code>, the distance to the
+nearest point of <code>a</code>. It needs no parameters, but it is unsigned and biased
+upwards by point spacing and noise, so it serves as a first look rather than
+as a test of change.</p>
+<p>Every core point is computed on its own, in parallel, with k-d trees on both
+epochs. Two clouds of 20 million points with a million core points take
+about half a minute on eight cores, and the results do not depend on the
+number of threads.</p>
+<p>Agreement with an independent implementation: on a rough synthetic surface
+(900 core points, about 120 points per cylinder), the distances match those
+of py4dgeo 1.2.0 to 1e-15 m, the levels of detection to 3e-8 m, and the point
+counts exactly.</p>
+<h2 id="rasters-of-difference">Rasters of difference<a class="headerlink" href="#rasters-of-difference" title="Permanent link">&para;</a></h2>
+<p><code>dod(raster_a, raster_b, min_detectable=None, sigma_a=None, sigma_b=None)</code>
+subtracts two surfaces on the same lattice (a DTM or CHM of difference) and
+marks the cells whose change exceeds the level of detection: either
+<code>min_detectable</code>, or <code>1.96 * sqrt(sigma_a² + sigma_b²)</code> from the standard
+deviations of the two surfaces (numbers or rasters). Include the vertical
+registration error in the sigmas. The result also gives the volumes raised
+and lowered over the significant cells.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">sylva.geo</span><span class="w"> </span><span class="kn">import</span> <span class="n">interpolate</span>
+
+<span class="n">dtm_a</span> <span class="o">=</span> <span class="n">interpolate</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">PointCloud</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">"tin"</span><span class="p">,</span> <span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">))</span>
+<span class="n">dtm_b</span> <span class="o">=</span> <span class="n">interpolate</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">PointCloud</span><span class="p">(</span><span class="n">b</span><span class="p">),</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">"tin"</span><span class="p">,</span> <span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">20</span><span class="p">))</span>
+<span class="n">dd</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">dod</span><span class="p">(</span><span class="n">dtm_a</span><span class="p">,</span> <span class="n">dtm_b</span><span class="p">,</span> <span class="n">sigma_a</span><span class="o">=</span><span class="mf">0.005</span><span class="p">)</span>   <span class="c1"># sigma_b defaults to sigma_a</span>
+<span class="n">dd</span><span class="o">.</span><span class="n">net_volume</span><span class="p">,</span> <span class="n">dd</span><span class="o">.</span><span class="n">area_changed</span>                 <span class="c1"># 0.83 m³ (true 0.85), 30.0 m² (true 28.3)</span>
+<span class="n">dd</span><span class="o">.</span><span class="n">thresholded</span><span class="p">()</span><span class="o">.</span><span class="n">to_geotiff</span><span class="p">(</span><span class="s2">"dod.tif"</span><span class="p">)</span>         <span class="c1"># change where significant, 0 elsewhere</span>
+</code></pre></div>
+<h2 id="voxel-occupancy-change">Voxel occupancy change<a class="headerlink" href="#voxel-occupancy-change" title="Permanent link">&para;</a></h2>
+<p>A voxel that holds no echoes in the later epoch has only lost its contents
+if pulses went through it. <code>occupancy(grid_a, grid_b)</code> compares two grids
+from <code>sylva.voxels.ray_voxelize</code> (pulses of both epochs in one frame, traced
+with the same <code>voxel_size</code> and <code>bounds</code>) and classes every voxel:</p>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Epoch a</th>
+<th>Epoch b</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stable_empty</code></td>
+<td>empty</td>
+<td>empty</td>
+</tr>
+<tr>
+<td><code>stable_occupied</code></td>
+<td>occupied</td>
+<td>occupied</td>
+</tr>
+<tr>
+<td><code>gained</code></td>
+<td>empty</td>
+<td>occupied</td>
+</tr>
+<tr>
+<td><code>lost</code></td>
+<td>occupied</td>
+<td>empty</td>
+</tr>
+<tr>
+<td><code>unobserved</code></td>
+<td>not observed in one or both epochs, or too few pulses to tell</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>A voxel is occupied with at least <code>min_hits</code> echoes, and empty with none and
+at least <code>min_pulses</code> pulses entering it; otherwise it was not observed (no
+pulse reached it, or only pulses already stopped did). A change between
+occupied and empty must also pass a test: if the occupied epoch saw a share
+<code>p</code> of the entering pulses stopped, the <code>n</code> pulses of the empty epoch would
+all have missed contents as dense with probability <code>(1 - p) ** n</code>, which must
+not exceed <code>alpha</code> (0.05). Sparse contents grazed by a few pulses are thus
+unobserved rather than lost. Plant area density change is given per voxel
+and, in <code>layers</code>, as the mean per layer over the voxels both epochs sampled
+with at least <code>min_pulses</code> pulses, so that what one epoch did not see does
+not bias the comparison.</p>
+<div class="highlight"><pre><span></span><code><span class="n">scene</span> <span class="o">=</span> <span class="n">synthetic</span><span class="o">.</span><span class="n">forest</span><span class="p">(</span><span class="n">seed</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">box</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">((</span><span class="n">scene</span><span class="o">.</span><span class="n">xyz</span> <span class="o">&gt;=</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">9</span><span class="p">])</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">scene</span><span class="o">.</span><span class="n">xyz</span> <span class="o">&lt;=</span> <span class="p">[</span><span class="mi">7</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">12</span><span class="p">]),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">later</span> <span class="o">=</span> <span class="n">scene</span><span class="p">[</span><span class="o">~</span><span class="p">(</span><span class="n">box</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">scene</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">"classification"</span><span class="p">]</span> <span class="o">==</span> <span class="mi">4</span><span class="p">))]</span>   <span class="c1"># a block of foliage falls</span>
+
+<span class="n">bounds</span> <span class="o">=</span> <span class="p">((</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">22</span><span class="p">,</span> <span class="mi">22</span><span class="p">,</span> <span class="mi">19</span><span class="p">))</span>
+<span class="n">grids</span> <span class="o">=</span> <span class="p">[</span><span class="n">sylva</span><span class="o">.</span><span class="n">voxels</span><span class="o">.</span><span class="n">ray_voxelize</span><span class="p">(</span><span class="n">synthetic</span><span class="o">.</span><span class="n">scan</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">origin</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="n">max_echoes</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">bounds</span><span class="p">,</span>
+                                   <span class="n">ground_class</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">occlusion</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+         <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">origin</span> <span class="ow">in</span> <span class="p">((</span><span class="n">scene</span><span class="p">,</span> <span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mf">1.5</span><span class="p">)),</span> <span class="p">(</span><span class="n">later</span><span class="p">,</span> <span class="p">(</span><span class="mf">10.15</span><span class="p">,</span> <span class="mf">9.9</span><span class="p">,</span> <span class="mf">1.5</span><span class="p">)))]</span>
+<span class="n">occ</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">occupancy</span><span class="p">(</span><span class="o">*</span><span class="n">grids</span><span class="p">,</span> <span class="n">min_pulses</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="c1"># Occupancy(48x48x40 @ 0.5 m: unobserved=740, stable_empty=86,756,</span>
+<span class="c1">#           stable_occupied=4,575, gained=6, lost=83)</span>
+<span class="n">occ</span><span class="o">.</span><span class="n">centers</span><span class="p">(</span><span class="s2">"lost"</span><span class="p">)</span>                    <span class="c1"># almost all inside the 3 x 3 x 3 m block</span>
+<span class="n">occ</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="s2">"pad_change"</span><span class="p">]</span>               <span class="c1"># -0.002 to -0.003 m² m⁻³ in the layers from 9 to 12 m</span>
+</code></pre></div>
+<p>In a test where the later epoch also has an opaque screen between the
+scanner and part of a crown, none of the hidden crown voxels is called lost:
+220 of 222 are unobserved and the other two, at the edge of the shadow, are
+stable. Of the voxels the fallen block emptied, 75 of 98 are lost and the
+rest, holding one to three echoes of 150 or more pulses in the earlier
+epoch, are unobserved; none is called stable. In unchanged vegetation 0.3 %
+of the occupied voxels come out lost (4 % without the miss-probability
+test).</p>
+<h2 id="qsm-change">QSM change<a class="headerlink" href="#qsm-change" title="Permanent link">&para;</a></h2>
+<p><code>compare_qsms</code> compares two cylinder models of one tree, the earlier <code>a</code>
+and the later <code>b</code>, in one frame (align the epochs first). It reports the
+stem radius change by height, branch matching with lost, new and grown
+branches, volume change by branch order, and height, DBH and crown change.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">change</span><span class="p">,</span> <span class="n">qsm</span><span class="p">,</span> <span class="n">voxels</span>
+
+<span class="n">model_a</span> <span class="o">=</span> <span class="n">qsm</span><span class="o">.</span><span class="n">build_qsm</span><span class="p">(</span><span class="n">wood_2020</span><span class="p">,</span> <span class="n">base_xy</span><span class="o">=</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">y</span><span class="p">))</span>
+<span class="n">model_b</span> <span class="o">=</span> <span class="n">qsm</span><span class="o">.</span><span class="n">build_qsm</span><span class="p">(</span><span class="n">wood_2025</span><span class="p">,</span> <span class="n">base_xy</span><span class="o">=</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">y</span><span class="p">))</span>       <span class="c1"># already aligned to 2020</span>
+<span class="n">grid_b</span> <span class="o">=</span> <span class="n">voxels</span><span class="o">.</span><span class="n">ray_voxelize</span><span class="p">(</span><span class="n">shots_2025</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="n">occlusion</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># every 2025 pulse, misses included</span>
+
+<span class="n">c</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">compare_qsms</span><span class="p">(</span><span class="n">model_a</span><span class="p">,</span> <span class="n">model_b</span><span class="p">,</span> <span class="n">grid_b</span><span class="o">=</span><span class="n">grid_b</span><span class="p">)</span>
+<span class="n">c</span><span class="o">.</span><span class="n">taper_increment</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">taper_sigma</span>          <span class="c1"># mean stem radius increment (m) and its uncertainty</span>
+<span class="n">c</span><span class="o">.</span><span class="n">taper</span><span class="p">[</span><span class="s2">"increment"</span><span class="p">],</span> <span class="n">c</span><span class="o">.</span><span class="n">taper</span><span class="p">[</span><span class="s2">"trusted"</span><span class="p">]</span>  <span class="c1"># the increment profile, one value per 1 m of height</span>
+<span class="n">c</span><span class="o">.</span><span class="n">trusted_change</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">untrusted_change</span>      <span class="c1"># volume change (m3) both models measured, and the rest</span>
+<span class="n">c</span><span class="o">.</span><span class="n">orders</span>                                  <span class="c1"># the same split for the stem and each branch order</span>
+<span class="n">c</span><span class="o">.</span><span class="n">branches</span><span class="p">(</span><span class="s2">"lost"</span><span class="p">)[</span><span class="s2">"volume"</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>        <span class="c1"># branches gone, their space seen empty in 2025</span>
+<span class="n">c</span><span class="o">.</span><span class="n">branches</span><span class="p">(</span><span class="s2">"unobserved"</span><span class="p">)</span>                  <span class="c1"># missing from the 2025 model, but 2025 did not see there</span>
+<span class="n">c</span><span class="o">.</span><span class="n">summary</span><span class="p">()</span>
+</code></pre></div>
+<p><strong>Trust.</strong> A cylinder is measured when its radius was fitted to points
+(<code>n_points &gt; 0</code>); the rest of a model comes from the taper and pipe-model
+priors of <a href="../qsm/"><code>build_qsm</code></a> and says little about change. A stem bin is
+trusted when both models fitted at least <code>min_fits</code> cylinders and
+<code>min_measured</code> of its length, and when its increment is in line with the
+other bins (within <code>clip</code> of its own uncertainty from the mean); a branch
+pair is trusted when both models measured <code>min_measured</code> of its length. The
+volume change of every trusted part is <code>trusted_change</code>, the rest
+<code>untrusted_change</code>; they add up to the total, per branch order as well.</p>
+<p><strong>Stem.</strong> In each height bin a line through each model's measured stem
+radii gives the radius at the bin centre; their difference is the radius
+increment. Its uncertainty is the scatter about both lines plus
+<code>radius_sigma</code> (1 mm per fit by default), not divided by the number of
+cylinders, since the QSM smooths neighbouring radii together. The taper
+increment is the weighted mean over the trusted bins, its uncertainty
+scaled up by the Birge ratio when the bins scatter more than their
+uncertainties allow. A fitted bin far out of line is almost always a
+radius the QSM regularised, typically the stem tip tapered to its apex;
+it is reported, left out of the mean and counted as untrusted volume.</p>
+<p><strong>Branches.</strong> Branches are matched one order at a time, parents first. A
+pair is admissible when the bases lie within <code>max_base_distance</code> (0.5 m)
+and the directions over the first metre within <code>max_angle</code> (35 degrees);
+cheaper pairs (distance and angle, each over its limit, plus
+<code>parent_penalty</code> when the parents are not matched to each other) are taken
+first. A matched pair reports its length, volume and radius change and the
+shift of its tip. An unmatched branch of the earlier model is lost, one of
+the later model new.</p>
+<p><strong>Lost or unobserved.</strong> A branch missing from the later model has either
+gone or was not seen. With a ray-traced grid of the later epoch
+(<a href="../voxels/"><code>ray_voxelize</code></a>, <code>occlusion=True</code>) each lost branch is
+sampled every half voxel along its axis, leaving out the part inside its
+parent: when fewer than <code>min_observed</code> of the samples lie in voxels the
+later pulses crossed or ended in, the branch is <code>"unobserved"</code>; when more
+than <code>max_filled</code> of the observed samples hold returns, the branch is
+<code>"present"</code> (still there, but not in the later model); otherwise it is
+<code>"lost"</code>, and only then does its volume count as trusted loss. A grid of
+the earlier epoch (<code>grid_a</code>) checks new branches the same way. An
+unobserved branch also leaves the crown change untrusted, since the crown
+is outlined by the branches.</p>
+<p>For a plot, <code>compare_plot_qsms</code> pairs the models of matched trees and
+tabulates the changes. The tree match is plain data: survivor pairs of tree
+ids, and lists of dead and recruited trees.</p>
+<div class="highlight"><pre><span></span><code><span class="n">plot</span> <span class="o">=</span> <span class="n">change</span><span class="o">.</span><span class="n">compare_plot_qsms</span><span class="p">(</span>
+    <span class="n">qsms_2020</span><span class="p">,</span> <span class="n">qsms_2025</span><span class="p">,</span>                  <span class="c1"># PlotQSMs or {tree_id: QSM}</span>
+    <span class="n">pairs</span><span class="o">=</span><span class="p">[(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">7</span><span class="p">)],</span>        <span class="c1"># survivors: (id in 2020, id in 2025)</span>
+    <span class="n">deaths</span><span class="o">=</span><span class="p">[</span><span class="mi">6</span><span class="p">],</span> <span class="n">recruits</span><span class="o">=</span><span class="p">[</span><span class="mi">9</span><span class="p">],</span>
+    <span class="n">grid_b</span><span class="o">=</span><span class="n">grid_2025</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">plot</span><span class="o">.</span><span class="n">totals</span>                                <span class="c1"># growth (and its trusted part), mortality, recruitment, net</span>
+<span class="n">plot</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s2">"qsm_change.csv"</span><span class="p">)</span>              <span class="c1"># one row per tree</span>
+<span class="n">plot</span><span class="o">.</span><span class="n">changes</span><span class="p">[(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">)]</span><span class="o">.</span><span class="n">taper</span>                 <span class="c1"># the full comparison of a survivor</span>
+</code></pre></div>
+<p>A dead tree counts its whole earlier volume as mortality and a recruit its
+whole later volume as recruitment, the measured part as trusted.</p>
+<p><strong>Validation.</strong> A synthetic tree (a 10 m tapered stem and five limbs as
+point surfaces) was scanned from three positions in each epoch with
+<code>synthetic.scan</code> (single returns, so foliage is opaque). Between the
+epochs the stem thickened by 10 mm along its length, one limb was cut, one
+grew 1 m longer, and one was wrapped in a sleeve of foliage that hid it
+from every later scan. Over five noise draws:</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Truth</th>
+<th>Recovered</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Taper increment</td>
+<td>10 mm</td>
+<td>10.1 to 10.3 mm, stated uncertainty 0.6 mm</td>
+</tr>
+<tr>
+<td>DBH change</td>
+<td>20 mm</td>
+<td>20.1 to 20.8 mm</td>
+</tr>
+<tr>
+<td>Cut limb</td>
+<td>lost</td>
+<td>lost in every draw; volume +8 % (the QSM's own bias)</td>
+</tr>
+<tr>
+<td>Extended limb</td>
+<td>+1.00 m</td>
+<td>matched, +0.95 to +1.00 m</td>
+</tr>
+<tr>
+<td>Hidden limb</td>
+<td>unobserved</td>
+<td>unobserved in every draw; its volume untrusted</td>
+</tr>
+<tr>
+<td>Stem volume change over the trusted bins</td>
+<td>0.061 to 0.065 m³</td>
+<td>within 6 %</td>
+</tr>
+<tr>
+<td>Trusted volume change</td>
+<td>0.051 to 0.056 m³</td>
+<td>within 0.93 of the stated uncertainty (4 to 6 L)</td>
+</tr>
+</tbody>
+</table>
+<p>A cylinder whose own circle the QSM replaced by its allometric prior
+reports no points (<code>n_points</code> 0), so a limb fitted in one epoch and
+filled in by the prior in the other is untrusted rather than read as
+growth.</p>
+<p>Limitations: both models must be in one frame, and the matching is greedy
+rather than a global assignment, so a branch that forked differently in
+the two models can show as one lost and two new branches. Heights, lengths
+and crowns come from the skeleton, which always follows points; the
+measured label concerns radii, and so volumes and the taper increment.
+Height is trusted when a measured cylinder reaches within <code>top_band</code> of the
+top in both models, the crown when both models measured most of their
+branch length and no unmatched branch went unobserved.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      &copy; 2026 Tim Devereux, The University of Queensland &middot; GPL-3.0-or-later
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

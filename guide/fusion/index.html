@@ -1,0 +1,4325 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="LiDAR processing for forest ecology and remote sensing research, with a Rust core">
+      
+      
+        <meta name="author" content="Tim Devereux, The University of Queensland">
+      
+      
+      
+        <link rel="prev" href="../change/">
+      
+      
+        <link rel="next" href="../change_als/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>TLS and ALS together - Sylva</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#tls-and-als-together" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Sylva" class="md-header__button md-logo" aria-label="Sylva" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Sylva
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              TLS and ALS together
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="indigo"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="indigo"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/UQ-EORC/Sylva" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    UQ-EORC/Sylva
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Sylva" class="md-nav__button md-logo" aria-label="Sylva" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Sylva
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/UQ-EORC/Sylva" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    UQ-EORC/Sylva
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plot workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Point clouds and files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../preprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filtering and registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../masking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Masking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../coordinates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coordinates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trees and crowns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pulses/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pulse data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ray-traced voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interpolation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interpolation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plots in tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne lidar tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Area-based ALS metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full waveforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne canopy structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../als_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TLS and ALS together
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TLS and ALS together
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#registration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Registration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tree-linking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tree linking
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-cloud-one-profile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One cloud, one profile
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#upscaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upscaling
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#synthetic-scenes-seen-by-both" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Synthetic scenes seen by both
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A worked example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command line
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne change
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QSMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../leaves/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Leaves on a QSM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scan quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Synthetic data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operational/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operational use
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/01_pointclouds_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    1. Point clouds and I/O
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/02_filtering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    2. Filtering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/03_registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    3. Registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/04_ground/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    4. Ground and height
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/05_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    5. Trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/06_qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    6. Quantitative structure models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/07_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    7. Canopy structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/08_shots/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    8. Pulses and shots files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/09_voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    9. Ray-traced voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/10_riscan_pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    10. A RIEGL project, end to end
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/11_coordinates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    11. Coordinates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/12_interpolation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    12. Interpolation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/13_masking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    13. Masking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/14_change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    14. Change detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/15_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    15. Airborne lidar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/16_waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    16. Full waveforms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/17_synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    17. Synthetic trees, plots and scans
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/18_buttress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    18. Buttresses
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tree detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QSMs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Canopy gap profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_2" id="__nav_6_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/pointcloud/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PointCloud, Raster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/shots/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shots, RiSCAN
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Point clouds
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Point clouds
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/filters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.filters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/ground/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.ground
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.registration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/coreg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.coreg
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_4" id="__nav_6_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forest structure
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Forest structure
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/qsm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.qsm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/leaves/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.leaves
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.canopy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/voxels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.voxels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/voxel_blocks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.voxels.blocks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/quality/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/waveform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.waveform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_5" id="__nav_6_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Airborne lidar
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Airborne lidar
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.als
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/tiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.als.tiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.als.metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_canopy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.als.canopy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/als_trees/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.als.trees
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_6" id="__nav_6_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change and fusion
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Change and fusion
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/change/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.change
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/change_als/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.change.als
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/fusion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.fusion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_7" id="__nav_6_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Geospatial
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Geospatial
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/coords/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.geo.coords
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/interpolate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.geo.interpolate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/masks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.geo.masks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/synthetic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.synthetic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_9" id="__nav_6_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.util
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    sylva.util
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/progress/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.util.progress
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/limits/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sylva.util.limits
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/rust-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Rust core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/reading-the-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reading the core without Rust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../release/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releasing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#registration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Registration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tree-linking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tree linking
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-cloud-one-profile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One cloud, one profile
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#upscaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upscaling
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#synthetic-scenes-seen-by-both" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Synthetic scenes seen by both
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A worked example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command line
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limitations
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="tls-and-als-together">TLS and ALS together<a class="headerlink" href="#tls-and-als-together" title="Permanent link">&para;</a></h1>
+<p>A terrestrial scan measures a plot from below: every stem, its diameter,
+the understorey and the lower crowns, in millimetre detail but over a
+hectare at most, and with the tops of tall trees often hidden. An airborne
+survey measures the same forest from above: the upper canopy and the
+terrain over the whole landscape, but hardly a stem. <code>sylva.fusion</code> puts
+the two in one frame and combines them:</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Function</th>
+<th>What it gives</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Registration</td>
+<td><code>fusion.register</code></td>
+<td>the TLS plot placed on the ALS survey, with its residuals and uncertainty</td>
+</tr>
+<tr>
+<td>Tree linking</td>
+<td><code>fusion.link_trees</code></td>
+<td>TLS stems linked to ALS trees, the trees under each crown, and one table of TLS diameters and ALS heights</td>
+</tr>
+<tr>
+<td>Merged clouds</td>
+<td><code>fusion.merge_clouds</code></td>
+<td>one point cloud, TLS below and ALS above, with the source of every point</td>
+</tr>
+<tr>
+<td>Merged profiles</td>
+<td><code>fusion.fuse_profiles</code></td>
+<td>one plant area density profile, each height taken from the instrument that sampled it better</td>
+</tr>
+<tr>
+<td>Upscaling</td>
+<td><code>fusion.plot_values</code>, <code>fit_model</code>, <code>upscale</code></td>
+<td>plot values from the TLS regressed on ALS metrics and predicted over the survey, with leave-one-out checks and prediction intervals</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">als</span><span class="p">,</span> <span class="n">fusion</span><span class="p">,</span> <span class="n">ground</span><span class="p">,</span> <span class="n">read</span><span class="p">,</span> <span class="n">registration</span><span class="p">,</span> <span class="n">trees</span><span class="p">,</span> <span class="n">voxels</span>
+
+<span class="n">tls</span> <span class="o">=</span> <span class="n">ground</span><span class="o">.</span><span class="n">classify_ground_csf</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="s2">"plot.laz"</span><span class="p">))</span>           <span class="c1"># the plot, in its scanner frame</span>
+<span class="n">cat</span> <span class="o">=</span> <span class="n">als</span><span class="o">.</span><span class="n">catalog</span><span class="p">(</span><span class="s2">"tiles/"</span><span class="p">)</span>                                  <span class="c1"># the survey, ground classified</span>
+<span class="n">gnss</span> <span class="o">=</span> <span class="n">registration</span><span class="o">.</span><span class="n">translation</span><span class="p">(</span><span class="mf">512_340.0</span><span class="p">,</span> <span class="mf">6_912_870.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="c1"># the plot centre, to a few metres</span>
+
+<span class="n">reg</span> <span class="o">=</span> <span class="n">fusion</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">tls</span><span class="p">,</span> <span class="n">cat</span><span class="p">,</span> <span class="n">gnss</span><span class="p">,</span> <span class="n">search_radius</span><span class="o">=</span><span class="mf">10.0</span><span class="p">)</span>    <span class="c1"># heading searched over 360 degrees</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">reg</span><span class="o">.</span><span class="n">report</span><span class="p">())</span>
+<span class="n">tls_map</span> <span class="o">=</span> <span class="n">reg</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">tls</span><span class="p">)</span>                                     <span class="c1"># the plot in the survey's frame</span>
+
+<span class="n">links</span> <span class="o">=</span> <span class="n">fusion</span><span class="o">.</span><span class="n">link_trees</span><span class="p">(</span><span class="n">stems</span><span class="p">,</span> <span class="n">als_trees</span><span class="p">,</span> <span class="n">reg</span><span class="p">,</span> <span class="n">volumes</span><span class="o">=</span><span class="n">qsms</span><span class="p">)</span>
+<span class="n">links</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s2">"trees.csv"</span><span class="p">)</span>                                    <span class="c1"># TLS DBH, ALS height, flags</span>
+</code></pre></div>
+<p>The computations are in the Rust core (<code>sylva_rs::fusion</code>); results do not
+depend on the number of threads.</p>
+<h2 id="registration">Registration<a class="headerlink" href="#registration" title="Permanent link">&para;</a></h2>
+<p>A TLS plot arrives in one of two states: in a local frame (a scanner or
+project frame, placed roughly by a hand-held GNSS position and perhaps a
+compass heading), or already georeferenced, with the metre-level error of
+the GNSS antenna on the scanner. <code>fusion.register</code> handles both; they
+differ only in how wide a search they need (<code>search_radius</code>,
+<code>heading_range</code>).</p>
+<p><strong>Search.</strong> Each cloud gets a canopy height model (CHM, the highest point
+of each cell above a DTM made from its own ground points) and a terrain
+model (DTM, the lowest ground point of each cell). The cells of the TLS
+plot form a template that is turned by a heading and shifted over the ALS
+rasters, and each pose is scored by Pearson's correlation of the two CHMs,
+plus <code>dtm_weight</code> (0.5) times that of the two DTMs, over the cells both
+measured. A correlation is blind to a vertical offset between the terrains
+and to a TLS canopy that reads low where the scanner saw less of the
+crowns. The whole window is scored at <code>coarse_resolution</code> (2 m): every
+heading within <code>heading_range</code> of the initial one, <code>heading_step</code> (3°)
+apart, and every shift within <code>search_radius</code>. The <code>n_candidates</code> (3) best
+separated peaks are searched again at <code>resolution</code> (0.5 m), with bilinear
+sampling and a parabola through the best score in heading, x and y. For a
+sparse survey the fine cells are widened to hold about <code>returns_per_cell</code>
+(10) returns each: 1 m at 10 returns per m². The height comes from the
+median difference of the two DTMs.</p>
+<p><strong>Refinement.</strong> From each peak, a robust point-to-plane ICP (the ICP of
+<a href="../preprocessing/#coregistering-a-survey"><code>sylva.coreg</code></a>: Huber weights,
+a trimmed tail, a voxel pyramid of 1, 0.5 and 0.25 m) moves the TLS points
+onto the ALS points: ground, stems and crowns (<code>refine="all"</code>), the ground
+alone (<code>"ground"</code>), or nothing (<code>"none"</code>). A run counts only if it stays
+within <code>max_refine_shift</code> (3 m) and <code>max_refine_turn</code> (8°) of its peak;
+of those, the one that fits best is kept (the most TLS points within the
+last cut-off of an ALS point, the higher peak when two fit within half a
+percent). The 3-D fit of ground and crowns separates poses the canopy
+models cannot: a TLS canopy model reads the crowns from below and to the
+side, so with one or two scan positions its best correlation can lie a few
+degrees or metres from the truth (the validation below has cases of 2 m
+and 7°), and the ICP from that peak recovers it.</p>
+<p><strong>Checks and uncertainty.</strong> <code>reg.report()</code> lists what can be checked
+without a reference:</p>
+<div class="highlight"><pre><span></span><code>TLS to ALS registration
+  pose       heading +35.00 deg, shift x +1.146 y -3.525 z +1.904 m about (48.86, 53.76, 0.60)
+  search     score 0.988 (CHM r 0.983, DTM r 1.000), 11444 cells of 0.5 m, ambiguity 0.07
+  icp        accepted: fitness 0.939, rmse 0.268 m, 187886 pairs, moved 0.034 m and 0.03 deg from peak 1
+  ground     TLS minus ALS DTM: median +0.040 m, NMAD 0.008 m (204735 points)
+  canopy     to the nearest ALS return: median 0.201 m, 90 % 0.353 m (195001 points)
+  std error  x 0.008 m, y 0.010 m, z 0.001 m, heading 0.017 deg
+</code></pre></div>
+<ul>
+<li><em>ambiguity</em> is the misfit (1 minus the score) of the best peak over that
+  of the second: 0 for a clear answer, near 1 when another pose fits about
+  as well (a warning is printed above 0.8). It is high in uniform stands,
+  where the canopy repeats itself.</li>
+<li><em>ground</em> compares the TLS ground points with the ALS DTM: the median is
+  the vertical offset left (here the 4 cm by which a DTM of the lowest
+  return per cell sits below the surface), the NMAD its spread.</li>
+<li><em>canopy</em> is the distance of TLS canopy points to the nearest ALS return.</li>
+<li><em>std error</em> is the larger, for each of x, y, z and the heading, of two
+  estimates. The formal one, <code>sigma² H⁻¹</code> from the ICP's point-to-plane
+  information (<code>reg.covariance</code>, 6 x 6 about the pivot), treats every
+  residual as independent and is a lower bound. The jackknife
+  (<code>reg.jackknife</code>) runs the ICP four more times, each with one quadrant
+  of the plot left out, and shows how much the answer depends on which
+  part of the plot is used.</li>
+</ul>
+<p>Everything is computed about a pivot near the plot (the centre of its
+ground), so map coordinates of any size lose no precision; the shifts and
+uncertainties refer to that pivot. The TLS is thinned to a tenth of a
+fine cell first, so plots of tens of millions of points take seconds: a
+plot of 20.6 million points was registered onto 9.6 million ALS returns
+in 8 s on eight cores.</p>
+<p>Two settings matter most in practice:</p>
+<ul>
+<li><strong>The search window.</strong> For a plot in a scanner frame, give its centre to
+  within <code>search_radius</code> in <code>initial</code> and leave <code>heading_range</code> at 180 (a
+  full turn). For a georeferenced plot, <code>search_radius</code> a few metres and
+  <code>heading_range</code> a few degrees (with <code>heading_step</code> of 1) are faster and
+  leave less room for a wrong peak.</li>
+<li><strong>The plot's extent.</strong> Crop the TLS to the plot (the stand the scanners
+  saw well) rather than every distant return; at least half of its canopy
+  cells must fall on ALS data (<code>min_overlap</code>).</li>
+</ul>
+<h2 id="tree-linking">Tree linking<a class="headerlink" href="#tree-linking" title="Permanent link">&para;</a></h2>
+<p><code>fusion.link_trees</code> links the TLS trees (stem positions, DBH, heights,
+volumes) to the ALS trees (tops, heights, crown outlines, from
+<a href="../als_trees/"><code>als.segment_trees</code> or <code>als.find_trees</code></a>). A stem and an
+ALS tree can be one tree when the stem lies inside the crown (or within
+<code>crown_buffer</code>, 0.5 m, of its outline) or within <code>max_distance</code> (3 m) of
+the top. Among these pairs an optimal assignment (Kuhn 1955; Munkres 1957)
+minimises the total cost, a stem left without an ALS tree costing
+<code>max_cost</code> (2). A pair costs</p>
+<div class="highlight"><pre><span></span><code>(d / D)² + height_weight * dh² + dbh_weight * (1 - dbh / dbh_max)²
+</code></pre></div>
+<p>with <code>d</code> the stem-to-top distance, <code>D</code> the larger of <code>max_distance</code> and
+the crown's equivalent radius, <code>dh = (h_als - h_tls) / h_als</code> (0.3 for a
+stem without a TLS height), and <code>dbh_max</code> the largest DBH among the stems
+that could be that tree (both weights 2). The stem that is tallest by the
+TLS and thickest under a crown is therefore its tree, as the dominant tree
+of a crown usually is both; the diameter term matters because TLS heights
+are unreliable exactly where it matters, in the upper crowns. Each ALS
+tree gets at most one stem.</p>
+<p>The stems under a crown that are not its tree are reported explicitly:</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>matched</code></td>
+<td>the stem is this ALS tree</td>
+</tr>
+<tr>
+<td><code>suppressed</code></td>
+<td>under the crown of a taller ALS tree (by more than <code>top_tolerance</code>, 1 m, and 10 %): an understorey or overtopped tree the ALS cannot see</td>
+</tr>
+<tr>
+<td><code>codominant</code></td>
+<td>under an ALS crown whose tree is another stem of about the same height: the ALS saw two canopy trees as one</td>
+</tr>
+<tr>
+<td><code>unlinked</code></td>
+<td>under no ALS crown and near no top</td>
+</tr>
+</tbody>
+</table>
+<p><code>links.one_to_many()</code> gives each ALS crown that holds two stems or more,
+with the TLS ids under it (its own stem first), and <code>links.als_table()</code>
+every ALS tree with its stems.</p>
+<p><strong>The combined table.</strong> <code>links.table()</code> has one row per TLS tree: its DBH,
+TLS height and volume, its status and ALS tree, and a combined <code>height</code>
+with its <code>height_source</code> and a <code>flag</code>:</p>
+<ul>
+<li>a matched tree takes the ALS height, which sees the top from above;
+  unless the TLS is known to have seen the top too and measured it
+  taller (both are lower bounds, but a TLS height can also be too tall
+  where the segmentation gave a tree part of a neighbour's crown);</li>
+<li>other trees keep the TLS height, flagged <code>top_not_seen</code> when the TLS
+  did not see the top, so that the height is a lower bound.</li>
+</ul>
+<p>Whether the TLS saw a top comes from <code>top_seen</code>, or from <code>sampling</code>, the
+output of <a href="../voxels/#what-the-scan-saw"><code>voxels.tree_sampling</code></a>: a top
+counts as seen when <code>above_observed_fraction</code>, the share of the space just
+above the tree's highest point that the scan observed, is at least
+<code>min_above_observed</code> (0.5). Without either, a matched tree's top counts as
+seen when its TLS height reaches the ALS height within <code>top_tolerance</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="n">g</span> <span class="o">=</span> <span class="n">voxels</span><span class="o">.</span><span class="n">ray_voxelize</span><span class="p">(</span><span class="n">shots</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="n">dtm</span><span class="o">=</span><span class="n">dtm</span><span class="p">,</span> <span class="n">occlusion</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">sampling</span> <span class="o">=</span> <span class="n">voxels</span><span class="o">.</span><span class="n">tree_sampling</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">tls</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span>
+<span class="n">links</span> <span class="o">=</span> <span class="n">fusion</span><span class="o">.</span><span class="n">link_trees</span><span class="p">(</span><span class="n">stems</span><span class="p">,</span> <span class="n">als_trees</span><span class="p">,</span> <span class="n">reg</span><span class="p">,</span> <span class="n">volumes</span><span class="o">=</span><span class="n">qsms</span><span class="p">,</span> <span class="n">sampling</span><span class="o">=</span><span class="n">sampling</span><span class="p">)</span>
+<span class="n">links</span><span class="o">.</span><span class="n">one_to_many</span><span class="p">()</span>            <span class="c1"># {als id: [tls ids]}</span>
+</code></pre></div>
+<h2 id="one-cloud-one-profile">One cloud, one profile<a class="headerlink" href="#one-cloud-one-profile" title="Permanent link">&para;</a></h2>
+<p><code>fusion.merge_clouds(tls, als, dtm, split)</code> keeps the TLS points below a
+split height above ground and the ALS returns above it, and marks each
+point's <code>source</code> (1 TLS, 2 ALS) and <code>height</code>. The split is a height, a
+raster of heights (one per column), or a fused profile, whose
+<code>split_height</code> is the lowest height above which the ALS carries at least
+half the weight.</p>
+<p><code>fusion.fuse_profiles(tls_grid, als_grid, dtm, area)</code> combines the
+ray-traced voxels of both instruments (a TLS
+<a href="../voxels/"><code>RayVoxelGrid</code></a> and an ALS
+<a href="../als_canopy/#ray-traced-voxels"><code>ALSVoxels</code></a>) into one plant area density
+(PAD) profile over the same area (a box, a circle or a polygon). Each grid
+is summarised per bin of height above the DTM: the PAD of the bin, the mean
+number of pulses entering its voxels (voxels no pulse reached count 0, so
+occlusion lowers it) and the share of its voxels crossed by at least
+<code>min_beams</code> (5) pulses. Each bin then takes its PAD from both instruments,
+weighted by</p>
+<ul>
+<li><code>"beams"</code> (the default): the pulses, since the variance of a
+  gap-fraction estimate falls in proportion to the pulses that sampled it;</li>
+<li><code>"observed"</code>: the share of the bin each instrument saw;</li>
+<li><code>"best"</code>: the one with more pulses alone.</li>
+</ul>
+<p>The weights are part of the result (<code>weight_tls</code>, <code>weight_als</code>, and each
+instrument's own profile in <code>tls</code> and <code>als</code>). The TLS pulses must first be
+moved into the survey's frame, with the registration, and both grids should
+share the voxel size:</p>
+<div class="highlight"><pre><span></span><code><span class="n">g_tls</span> <span class="o">=</span> <span class="n">voxels</span><span class="o">.</span><span class="n">ray_voxelize</span><span class="p">(</span><span class="n">shots</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">reg</span><span class="o">.</span><span class="n">transform</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">box</span><span class="p">,</span> <span class="n">ground_class</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">g_als</span> <span class="o">=</span> <span class="n">als</span><span class="o">.</span><span class="n">ray_voxelize</span><span class="p">(</span><span class="n">cat</span><span class="p">,</span> <span class="n">traj</span><span class="p">,</span> <span class="n">voxel_size</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">z_range</span><span class="o">=</span><span class="p">(</span><span class="n">zmin</span><span class="p">,</span> <span class="n">zmax</span><span class="p">))</span>
+<span class="n">prof</span> <span class="o">=</span> <span class="n">fusion</span><span class="o">.</span><span class="n">fuse_profiles</span><span class="p">(</span><span class="n">g_tls</span><span class="p">,</span> <span class="n">g_als</span><span class="p">,</span> <span class="n">dtm</span><span class="p">,</span> <span class="n">area</span><span class="o">=</span><span class="p">(</span><span class="n">x0</span><span class="p">,</span> <span class="n">y0</span><span class="p">,</span> <span class="mf">15.0</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">prof</span><span class="o">.</span><span class="n">pai</span><span class="p">(</span><span class="s2">"tls"</span><span class="p">),</span> <span class="n">prof</span><span class="o">.</span><span class="n">pai</span><span class="p">(</span><span class="s2">"als"</span><span class="p">),</span> <span class="n">prof</span><span class="o">.</span><span class="n">pai</span><span class="p">())</span>
+<span class="n">prof</span><span class="o">.</span><span class="n">table</span><span class="p">()</span>                   <span class="c1"># height, pad, weights, and each instrument's profile</span>
+</code></pre></div>
+<p><strong>The estimator.</strong> By default a bin's PAD is the mean of the voxels' own
+estimates (<code>estimator="mean"</code>, the field <code>pad_fpl</code>), over the voxels
+observed, so a crown and the gap beside it count by their volume. The
+alternative, <code>"pooled"</code>, divides the bin's weighted hits by its free path
+length; that ratio of sums is not biased upwards by poorly sampled voxels,
+but it weights each voxel by the pulses that reached it, and in a clumped
+canopy the shadowed crowns receive fewer pulses than the gaps between them.
+On an open stand of 90 trees like those of the validation below, the
+pooled estimate read the plant area 36 % low from the TLS and 25 % low
+from the ALS, the mean 4 % low and within 1 %; use <code>"pooled"</code> only for
+horizontally uniform layers.</p>
+<h2 id="upscaling">Upscaling<a class="headerlink" href="#upscaling" title="Permanent link">&para;</a></h2>
+<p>The area-based approach (Næsset 2002) relates plot values measured on the
+ground to ALS metrics of the same plots, and predicts across the survey
+from a raster of the same metrics:</p>
+<div class="highlight"><pre><span></span><code><span class="n">values</span> <span class="o">=</span> <span class="p">[</span><span class="n">fusion</span><span class="o">.</span><span class="n">plot_values</span><span class="p">(</span><span class="n">plot_trees</span><span class="p">,</span> <span class="n">area</span><span class="o">=</span><span class="mf">706.9</span><span class="p">,</span> <span class="n">wood_density</span><span class="o">=</span><span class="mf">600.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">plot_trees</span> <span class="ow">in</span> <span class="n">plots</span><span class="p">]</span>
+<span class="n">agb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">v</span><span class="p">[</span><span class="s2">"agb"</span><span class="p">]</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">values</span><span class="p">])</span>                       <span class="c1"># Mg/ha</span>
+<span class="n">pm</span> <span class="o">=</span> <span class="n">als</span><span class="o">.</span><span class="n">plot_metrics</span><span class="p">(</span><span class="n">cat</span><span class="p">,</span> <span class="n">centres</span><span class="p">,</span> <span class="n">radius</span><span class="o">=</span><span class="mf">15.0</span><span class="p">,</span> <span class="n">metrics</span><span class="o">=</span><span class="p">[</span><span class="s2">"zq95"</span><span class="p">,</span> <span class="s2">"cover"</span><span class="p">],</span> <span class="n">min_height</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+<span class="n">grid</span> <span class="o">=</span> <span class="n">als</span><span class="o">.</span><span class="n">grid_metrics</span><span class="p">(</span><span class="n">cat</span><span class="p">,</span> <span class="mf">25.0</span><span class="p">,</span> <span class="p">[</span><span class="s2">"zq95"</span><span class="p">,</span> <span class="s2">"cover"</span><span class="p">],</span> <span class="n">min_height</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+<span class="n">up</span> <span class="o">=</span> <span class="n">fusion</span><span class="o">.</span><span class="n">upscale</span><span class="p">(</span><span class="n">agb</span><span class="p">,</span> <span class="n">pm</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="p">[</span><span class="s2">"zq95"</span><span class="p">,</span> <span class="s2">"cover"</span><span class="p">],</span> <span class="n">model</span><span class="o">=</span><span class="s2">"loglog"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">up</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>
+<span class="n">up</span><span class="o">.</span><span class="n">mean</span><span class="o">.</span><span class="n">to_geotiff</span><span class="p">(</span><span class="s2">"agb.tif"</span><span class="p">);</span> <span class="n">up</span><span class="o">.</span><span class="n">se</span><span class="o">.</span><span class="n">to_geotiff</span><span class="p">(</span><span class="s2">"agb_se.tif"</span><span class="p">)</span>
+</code></pre></div>
+<ul>
+<li><code>fusion.plot_values</code> sums a plot's trees per hectare: above-ground
+  biomass (wood volume, e.g. from QSMs, times the wood density; there is no
+  default density), volume, basal area and stem density, above an
+  inventory <code>min_dbh</code>.</li>
+<li><code>fusion.fit_model</code> fits ordinary least squares, <code>"loglog"</code> (`ln y = b0</li>
+<li>Σ bk ln xk<code>, a power law, the usual form for biomass) or</code>"linear"<code>.
+  Log-log predictions are taken back as</code>exp(ŷ + σ²/2)` (Baskerville
+  1972), which estimates the mean rather than the median.</li>
+<li>Leave-one-out predictions come from the hat matrix in closed form
+  (equal to refitting without each plot, which the tests check), and give
+  the RMSE, bias and R² a new plot can expect (<code>model.loo_rmse</code>,
+  <code>loo_bias</code>, <code>loo_r2</code>, <code>loo_rrmse</code>). Prefer them to the in-sample R²
+  when choosing predictors.</li>
+<li><code>fusion.upscale</code> predicts every cell: the mean, the standard error of
+  a new observation, <code>σ √(1 + x₀ᵀ (XᵀX)⁻¹ x₀)</code>, and the Student t interval
+  at <code>level</code> (for log-log, the interval of <code>ln y</code> taken back and the
+  standard error of the log-normal distribution it implies). Cells whose
+  metrics lie outside the range of the plots are marked in
+  <code>up.extrapolated</code>.</li>
+</ul>
+<p>Keep the model small: one or two metrics for ten or twenty plots, since
+each costs a degree of freedom and correlated metrics (<code>zq95</code> and <code>zmax</code>)
+add little; and compute the grid at cells of the plots' area, since height
+percentiles depend on the area they summarise.</p>
+<h2 id="synthetic-scenes-seen-by-both">Synthetic scenes seen by both<a class="headerlink" href="#synthetic-scenes-seen-by-both" title="Permanent link">&para;</a></h2>
+<p><code>fusion.synthetic_scan</code> is a terrestrial scanner for the synthetic scenes
+that sees them as <a href="../als/#the-synthetic-scanner"><code>synthetic.als_flight</code></a>
+does: every scene point is a sphere of <code>target_radius</code> and the ground is
+the analytic terrain, and each pulse is a thin ray that stops at the first
+sphere or the terrain. A layer of spheres of <code>n</code> per m³ is then a turbid
+medium of plant area density <code>2 π r² n</code> for both scanners, so the TLS and
+ALS estimates can be checked against the same known foliage.
+(<a href="../../api/synthetic/"><code>synthetic.scan</code></a> instead lets any point in a
+pulse's angular cell be hit, which suits geometry but not densities.)</p>
+<h2 id="a-worked-example">A worked example<a class="headerlink" href="#a-worked-example" title="Permanent link">&para;</a></h2>
+<p>One forest, flown over at about 95 returns per m² and scanned from five
+positions; the TLS is given in a frame turned by 35° whose centre is known
+to within 4 m.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sylva</span><span class="w"> </span><span class="kn">import</span> <span class="n">PointCloud</span><span class="p">,</span> <span class="n">Shots</span><span class="p">,</span> <span class="n">als</span><span class="p">,</span> <span class="n">filters</span><span class="p">,</span> <span class="n">fusion</span><span class="p">,</span> <span class="n">ground</span><span class="p">,</span> <span class="n">registration</span><span class="p">,</span> <span class="n">synthetic</span><span class="p">,</span> <span class="n">trees</span>
+
+<span class="n">stand</span> <span class="o">=</span> <span class="n">synthetic</span><span class="o">.</span><span class="n">stand</span><span class="p">(</span><span class="mi">90</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">100.0</span><span class="p">,</span> <span class="n">min_spacing</span><span class="o">=</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">heights</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">25</span><span class="p">),</span> <span class="n">seed</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="n">scene</span> <span class="o">=</span> <span class="n">synthetic</span><span class="o">.</span><span class="n">crown_forest</span><span class="p">(</span><span class="n">stand</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">100.0</span><span class="p">,</span> <span class="n">ground_points</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">margin</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="n">flight</span> <span class="o">=</span> <span class="n">synthetic</span><span class="o">.</span><span class="n">als_flight</span><span class="p">(</span><span class="n">scene</span><span class="p">,</span> <span class="n">pulse_rate</span><span class="o">=</span><span class="mi">20_000</span><span class="p">,</span> <span class="n">line_spacing</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">bounds</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">100</span><span class="p">),</span> <span class="n">seed</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<span class="n">origins</span> <span class="o">=</span> <span class="p">[(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">synthetic</span><span class="o">.</span><span class="n">terrain_height</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">))</span> <span class="o">+</span> <span class="mf">1.5</span><span class="p">)</span>
+           <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="p">[(</span><span class="mi">50</span><span class="p">,</span> <span class="mi">50</span><span class="p">),</span> <span class="p">(</span><span class="mi">38</span><span class="p">,</span> <span class="mi">38</span><span class="p">),</span> <span class="p">(</span><span class="mi">62</span><span class="p">,</span> <span class="mi">38</span><span class="p">),</span> <span class="p">(</span><span class="mi">38</span><span class="p">,</span> <span class="mi">62</span><span class="p">),</span> <span class="p">(</span><span class="mi">62</span><span class="p">,</span> <span class="mi">62</span><span class="p">)]]</span>
+<span class="n">shots</span> <span class="o">=</span> <span class="n">fusion</span><span class="o">.</span><span class="n">synthetic_scan</span><span class="p">(</span><span class="n">scene</span><span class="p">,</span> <span class="n">origins</span><span class="p">,</span> <span class="n">resolution_deg</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
+
+<span class="n">truth</span> <span class="o">=</span> <span class="n">registration</span><span class="o">.</span><span class="n">rotation_z</span><span class="p">(</span><span class="mf">35.0</span><span class="p">)</span>
+<span class="n">truth</span><span class="p">[:</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mf">53.1</span><span class="p">,</span> <span class="mf">47.8</span><span class="p">,</span> <span class="mf">1.9</span><span class="p">]</span>
+<span class="n">local</span> <span class="o">=</span> <span class="n">Shots</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">shots</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">truth</span><span class="p">))</span>   <span class="c1"># what the scanners recorded</span>
+<span class="n">tls</span> <span class="o">=</span> <span class="n">local</span><span class="o">.</span><span class="n">to_pointcloud</span><span class="p">()</span>
+<span class="n">c</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">truth</span><span class="p">)</span> <span class="o">@</span> <span class="p">[</span><span class="mi">50</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
+<span class="n">tls</span> <span class="o">=</span> <span class="n">tls</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">tls</span><span class="o">.</span><span class="n">x</span> <span class="o">-</span> <span class="n">c</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">tls</span><span class="o">.</span><span class="n">y</span> <span class="o">-</span> <span class="n">c</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="o">&lt;</span> <span class="mi">30</span><span class="p">]</span>                <span class="c1"># the plot</span>
+
+<span class="n">reg</span> <span class="o">=</span> <span class="n">fusion</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">tls</span><span class="p">,</span> <span class="n">flight</span><span class="o">.</span><span class="n">points</span><span class="p">,</span> <span class="n">registration</span><span class="o">.</span><span class="n">translation</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">search_radius</span><span class="o">=</span><span class="mf">8.0</span><span class="p">)</span>
+<span class="n">err</span> <span class="o">=</span> <span class="n">reg</span><span class="o">.</span><span class="n">transform</span> <span class="o">@</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">truth</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">((</span><span class="n">err</span> <span class="o">@</span> <span class="p">[</span><span class="mi">50</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])[:</span><span class="mi">3</span><span class="p">]</span> <span class="o">-</span> <span class="p">[</span><span class="mi">50</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>                    <span class="c1"># [-0.002  0.008  0.004]</span>
+
+<span class="n">tl</span> <span class="o">=</span> <span class="n">filters</span><span class="o">.</span><span class="n">voxel_downsample</span><span class="p">(</span><span class="n">tls</span><span class="p">,</span> <span class="mf">0.02</span><span class="p">)</span>
+<span class="n">tl</span> <span class="o">=</span> <span class="n">ground</span><span class="o">.</span><span class="n">normalize_height</span><span class="p">(</span><span class="n">tl</span><span class="p">,</span> <span class="n">ground</span><span class="o">.</span><span class="n">make_dtm</span><span class="p">(</span><span class="n">tl</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
+<span class="n">stems</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">detect_stems</span><span class="p">(</span><span class="n">tl</span><span class="p">)</span>
+<span class="n">stems</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">merge_branches</span><span class="p">(</span><span class="n">tl</span><span class="p">,</span> <span class="n">stems</span><span class="p">)</span>
+<span class="n">labels</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">segment_trees</span><span class="p">(</span><span class="n">tl</span><span class="p">,</span> <span class="n">stems</span><span class="p">)</span>
+<span class="n">trees</span><span class="o">.</span><span class="n">tree_heights</span><span class="p">(</span><span class="n">tl</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">stems</span><span class="p">)</span>
+<span class="n">stems</span><span class="p">,</span> <span class="n">labels</span> <span class="o">=</span> <span class="n">trees</span><span class="o">.</span><span class="n">prune_trees</span><span class="p">(</span><span class="n">stems</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">min_height</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>
+<span class="n">pts</span> <span class="o">=</span> <span class="n">flight</span><span class="o">.</span><span class="n">points</span>
+<span class="n">dtm</span> <span class="o">=</span> <span class="n">ground</span><span class="o">.</span><span class="n">make_dtm</span><span class="p">(</span><span class="n">pts</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+<span class="n">tops</span> <span class="o">=</span> <span class="n">als</span><span class="o">.</span><span class="n">segment_trees</span><span class="p">(</span><span class="n">pts</span><span class="p">,</span> <span class="n">heights</span><span class="o">=</span><span class="n">ground</span><span class="o">.</span><span class="n">normalize_height</span><span class="p">(</span><span class="n">pts</span><span class="p">,</span> <span class="n">dtm</span><span class="p">)</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">"height"</span><span class="p">],</span>
+                         <span class="n">window</span><span class="o">=</span><span class="n">als</span><span class="o">.</span><span class="n">LinearWindow</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">20.0</span><span class="p">),</span> <span class="n">max_cr</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">links</span> <span class="o">=</span> <span class="n">fusion</span><span class="o">.</span><span class="n">link_trees</span><span class="p">(</span><span class="n">stems</span><span class="p">,</span> <span class="n">tops</span><span class="p">,</span> <span class="n">reg</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">links</span><span class="p">)</span>      <span class="c1"># TreeLinks(32 TLS trees: 20 matched, 10 suppressed, 2 codominant, 0 unlinked)</span>
+<span class="n">merged</span> <span class="o">=</span> <span class="n">fusion</span><span class="o">.</span><span class="n">merge_clouds</span><span class="p">(</span><span class="n">reg</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">tls</span><span class="p">),</span> <span class="n">pts</span><span class="p">,</span> <span class="n">dtm</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="mf">10.0</span><span class="p">)</span>
+</code></pre></div>
+<p>The report of this registration is the one shown above; the whole example
+runs in about 15 s.</p>
+<h2 id="validation">Validation<a class="headerlink" href="#validation" title="Permanent link">&para;</a></h2>
+<p>All of it on <code>synthetic.crown_forest</code> stands (ellipsoidal crowns of radius
+a quarter of the tree height, filled with leaf points; heights 8 to 25 m)
+flown by <code>synthetic.als_flight</code> and scanned by <code>fusion.synthetic_scan</code>, so
+that the trees, the pose and the plant area are known.</p>
+<p><strong>Registration.</strong> One hectare with 90 trees, scanned from five positions
+at 0.2° (with 1 cm noise added to the TLS points, cropped to 30 m around
+the plot centre) and flown at three pulse rates. The local frame was
+turned by a random heading (full circle searched) and the plot centre given
+to within 4 m; the georeferenced plot was off by up to 3 m and 3° (searched
+within 5 m and 5°). Three stands per density; the errors are at the plot
+centre after the search alone and after the ICP, and the standard errors
+are those <code>reg.std</code> reports.</p>
+<table>
+<thead>
+<tr>
+<th>ALS returns/m²</th>
+<th>Case</th>
+<th>Search error: horizontal (m), heading (°)</th>
+<th>Final error: horizontal (m), vertical (m), heading (°)</th>
+<th>Reported std error x, y (m)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>95</td>
+<td>local</td>
+<td>0.01 to 0.06, 0.05 to 0.15</td>
+<td>0.005 to 0.012, 0.003 to 0.004, 0.001 to 0.015</td>
+<td>0.003 to 0.009</td>
+</tr>
+<tr>
+<td>95</td>
+<td>georeferenced</td>
+<td>0.04 to 0.06, 0.02 to 0.18</td>
+<td>0.005 to 0.009, 0.002 to 0.006, 0.004 to 0.015</td>
+<td>0.004 to 0.009</td>
+</tr>
+<tr>
+<td>10</td>
+<td>local</td>
+<td>0.02 to 0.13, 0.29 to 0.44</td>
+<td>0.004 to 0.042, 0.000 to 0.003, 0.03 to 0.14</td>
+<td>0.011 to 0.034</td>
+</tr>
+<tr>
+<td>10</td>
+<td>georeferenced</td>
+<td>0.10 to 0.16, 0.04 to 0.62</td>
+<td>0.019 to 0.031, 0.000 to 0.003, 0.003 to 0.14</td>
+<td>0.009 to 0.041</td>
+</tr>
+<tr>
+<td>2</td>
+<td>local</td>
+<td>0.25 to 0.92, 0.28 to 1.19</td>
+<td>0.052 to 0.067, 0.001 to 0.002, 0.01 to 0.05</td>
+<td>0.034 to 0.073</td>
+</tr>
+<tr>
+<td>2</td>
+<td>georeferenced</td>
+<td>0.15 to 1.13, 0.10 to 2.72</td>
+<td>0.069 to 0.145, 0.002 to 0.005, 0.03 to 0.25</td>
+<td>0.030 to 0.110</td>
+</tr>
+</tbody>
+</table>
+<p>The ICP brings every case to within 15 cm, and to a centimetre at dense
+point spacing; the reported standard errors are of the size of the actual
+errors, within a factor of about three either way. On smaller stands (0.36
+ha, 30 trees, two scan positions at 0.4°, three stands, the TLS cropped to
+18 m and to 25 m), the search alone was 1.5 to 2.7 m and 2 to 7.6° off in
+all six runs, the TLS canopy model being read from so few positions; the
+ICP from the peaks still ended within 1.5 cm in all six. The ground-only
+ICP (<code>refine="ground"</code>) fixes the height and tilt but can drift sideways on
+gentle terrain (6 cm and 29 cm in two runs on the first stand above), so it
+is best kept for bare plots.</p>
+<p><strong>Tree linking.</strong> Three such stands, registered as above, with the TLS
+trees from <code>trees.detect_stems</code>, <code>merge_branches</code>, <code>segment_trees</code>,
+<code>tree_heights</code> and <code>prune_trees</code>, and the ALS trees from
+<code>als.segment_trees</code> (Dalponte 2016, a window of a fifth of the height,
+<code>max_cr=20</code>). Of the 44 TLS trees within 25 m of the plot centres, 30 had
+their own ALS tree (the others are overtopped and form no local maximum in
+the canopy surface):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Count</th>
+<th>Right</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TLS trees linked to their own ALS tree</td>
+<td>30 of 30</td>
+<td>30</td>
+</tr>
+<tr>
+<td>Links to another tree's ALS crown</td>
+<td>0</td>
+<td></td>
+</tr>
+<tr>
+<td>Reported <code>suppressed</code> or <code>codominant</code></td>
+<td>13</td>
+<td>13 (none had its own ALS tree)</td>
+</tr>
+<tr>
+<td><code>unlinked</code></td>
+<td>1</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>The heights of the linked trees against the truth: the TLS alone had a
+mean error of -1.19 m and an RMSE of 3.46 m (its segmentation gives crowns
+wrongly in these closed canopies, and misses tops); the combined height a
+mean error of +0.03 m and an RMSE of 0.07 m. The TLS DBH was within 1.5 cm
+(RMSE).</p>
+<p><strong>Profiles.</strong> The same kind of stands, of leaves alone (the stems of the
+scene are points on a surface, not a turbid medium, and are left out of the
+truth), their true PAD from the number of spheres per height bin; voxels of
+1 m, PAD by height within 15 m of the plot centre. PAI and the RMSE of the
+PAD bins against the truth:</p>
+<table>
+<thead>
+<tr>
+<th>Stand</th>
+<th>True PAI</th>
+<th>TLS (five scans)</th>
+<th>ALS (7 sub-beams)</th>
+<th>Fused, beams</th>
+<th>Fused, observed</th>
+<th>Fused, best</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>open, 90 trees, seed 1</td>
+<td>0.42</td>
+<td>0.42 (0 %, 0.001)</td>
+<td>0.47 (+12 %, 0.004)</td>
+<td>0.42 (0 %, 0.001)</td>
+<td>0.44 (+6 %, 0.002)</td>
+<td>0.42 (0 %, 0.001)</td>
+</tr>
+<tr>
+<td>open, 90 trees, seed 2</td>
+<td>0.77</td>
+<td>0.76 (-1 %, 0.001)</td>
+<td>0.79 (+3 %, 0.003)</td>
+<td>0.76 (-1 %, 0.001)</td>
+<td>0.77 (+1 %, 0.002)</td>
+<td>0.76 (-1 %, 0.001)</td>
+</tr>
+<tr>
+<td>dense, 200 trees, seed 1</td>
+<td>5.80</td>
+<td>5.57 (-4 %, 0.017)</td>
+<td>4.70 (-19 %, 0.091)</td>
+<td>5.52 (-5 %, 0.018)</td>
+<td>5.16 (-11 %, 0.049)</td>
+<td>5.57 (-4 %, 0.017)</td>
+</tr>
+<tr>
+<td>dense, 200 trees, seed 2</td>
+<td>5.67</td>
+<td>5.40 (-5 %, 0.022)</td>
+<td>4.42 (-22 %, 0.092)</td>
+<td>5.37 (-5 %, 0.023)</td>
+<td>4.93 (-13 %, 0.053)</td>
+<td>5.40 (-5 %, 0.022)</td>
+</tr>
+<tr>
+<td>dense, with stems</td>
+<td>6.01</td>
+<td>5.66 (-6 %, 0.020)</td>
+<td>4.73 (-21 %, 0.083)</td>
+<td>5.61 (-7 %, 0.021)</td>
+<td>5.22 (-13 %, 0.046)</td>
+<td>5.66 (-6 %, 0.020)</td>
+</tr>
+<tr>
+<td>dense, one TLS scan, 20 m</td>
+<td>6.01</td>
+<td>5.06 (-16 %, 0.061)</td>
+<td>4.97 (-17 %, 0.073)</td>
+<td>5.16 (-14 %, 0.052)</td>
+<td>5.06 (-16 %, 0.057)</td>
+<td>5.10 (-15 %, 0.060)</td>
+</tr>
+<tr>
+<td>the same, ALS one ray per pulse</td>
+<td>6.01</td>
+<td>5.06 (-16 %, 0.061)</td>
+<td>4.90 (-18 %, 0.105)</td>
+<td>5.21 (-13 %, 0.049)</td>
+<td>5.09 (-15 %, 0.061)</td>
+<td>5.12 (-15 %, 0.061)</td>
+</tr>
+</tbody>
+</table>
+<p>With five scan positions the TLS samples every bin with hundreds to
+thousands of pulses per voxel, the pulse weighting follows it, and the
+fused profile is as good as the better instrument. From a single scan
+position the TLS reads the upper crowns low (by 30 % at 18 m and by more
+than half above 21 m: it sees them through the lower ones) while the ALS
+reads them 13 to 16 % low; there the ALS takes 37 to 51 % of the weight
+above 18 m, and the fused profile has the lowest RMSE of the three. The
+ALS reads the lower half of dense crowns 30 to 55 % low, because the
+voxels deep in a crown are reached by few pulses from above. None of the
+weightings can remove a bias both instruments share.</p>
+<p><strong>Upscaling.</strong> A 4 ha landscape of 16 stands of 50 m with 8 to 50 trees
+and height ranges between 6 and 26 m, flown at about 20 returns per m²;
+15 plots of 625 m² at random, their biomass from the true trees (a stem
+volume of half the cylinder of DBH and height, times 600 kg/m³), fitted on
+the metrics of <code>als.plot_metrics</code> and predicted on a 25 m grid of
+<code>als.grid_metrics</code>; then compared with the true biomass of every cell.</p>
+<table>
+<thead>
+<tr>
+<th>Stand</th>
+<th>Model</th>
+<th>LOO RMSE (plots)</th>
+<th>Cells: RMSE, bias (Mg/ha)</th>
+<th>Cells: R²</th>
+<th>95 % interval covers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>loglog, zq95</td>
+<td>42 %</td>
+<td>29.5 (69 %), +9.9</td>
+<td>0.24</td>
+<td>82 %</td>
+</tr>
+<tr>
+<td>1</td>
+<td>loglog, zq95 + cover</td>
+<td>12 %</td>
+<td>9.4 (22 %), +3.1</td>
+<td>0.92</td>
+<td>77 %</td>
+</tr>
+<tr>
+<td>1</td>
+<td>linear, zmean</td>
+<td>25 %</td>
+<td>17.1 (40 %), +3.5</td>
+<td>0.74</td>
+<td>97 %</td>
+</tr>
+<tr>
+<td>2</td>
+<td>loglog, zq95</td>
+<td>72 %</td>
+<td>23.4 (54 %), +6.1</td>
+<td>0.25</td>
+<td>100 %</td>
+</tr>
+<tr>
+<td>2</td>
+<td>loglog, zq95 + cover</td>
+<td>32 %</td>
+<td>8.2 (19 %), +0.1</td>
+<td>0.91</td>
+<td>95 %</td>
+</tr>
+<tr>
+<td>2</td>
+<td>linear, zmean</td>
+<td>43 %</td>
+<td>12.8 (29 %), 0.0</td>
+<td>0.78</td>
+<td>100 %</td>
+</tr>
+<tr>
+<td>3</td>
+<td>loglog, zq95</td>
+<td>46 %</td>
+<td>15.3 (40 %), -4.0</td>
+<td>0.61</td>
+<td>91 %</td>
+</tr>
+<tr>
+<td>3</td>
+<td>loglog, zq95 + cover</td>
+<td>30 %</td>
+<td>7.0 (17 %), -0.8</td>
+<td>0.91</td>
+<td>98 %</td>
+</tr>
+<tr>
+<td>3</td>
+<td>linear, zmean</td>
+<td>25 %</td>
+<td>7.7 (20 %), -2.4</td>
+<td>0.90</td>
+<td>99 %</td>
+</tr>
+</tbody>
+</table>
+<p>Height alone cannot tell a sparse stand of tall trees from a dense one;
+height and cover together recover the landscape's biomass cell by cell
+(R² 0.91 to 0.92), and the leave-one-out RMSE of the plots ranks the
+models as the cells do. With 15 plots the intervals cover 77 to 100 % of
+the cells. On an exact power law the fit recovers the coefficients to
+1e-9, and with noise its leave-one-out predictions, coefficients and
+standard errors equal refitting and NumPy's least squares (tests).</p>
+<h2 id="command-line">Command line<a class="headerlink" href="#command-line" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>sylva<span class="w"> </span>fusion-register<span class="w"> </span>plot.laz<span class="w"> </span>tiles/<span class="w"> </span>reg.json<span class="w"> </span>--initial<span class="w"> </span>gnss.txt<span class="w"> </span>--search-radius<span class="w"> </span><span class="m">10</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--transformed<span class="w"> </span>plot_map.laz
+sylva<span class="w"> </span>fusion-trees<span class="w"> </span>tls_trees.csv<span class="w"> </span>als_trees.csv<span class="w"> </span>linked.csv<span class="w"> </span>--crowns<span class="w"> </span>crowns.geojson<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--registration<span class="w"> </span>reg.json<span class="w"> </span>--als-output<span class="w"> </span>als_linked.csv
+sylva<span class="w"> </span>fusion-upscale<span class="w"> </span>plots.csv<span class="w"> </span>metrics/<span class="w"> </span>agb/<span class="w"> </span>--response<span class="w"> </span>agb<span class="w"> </span>--predictors<span class="w"> </span>zq95,cover
+</code></pre></div>
+<p><code>fusion-register</code> reads the TLS cloud (ground classified) and a directory
+of ALS tiles or one file, writes the registration as JSON (and with
+<code>--transformed</code> the moved cloud) and prints the report; <code>--initial</code> is a
+text file of the 4 x 4 matrix. <code>fusion-trees</code> links a CSV of TLS trees
+(<code>x</code>, <code>y</code> and optionally <code>tree_id</code>, <code>dbh</code>, <code>height</code>, <code>volume</code>) to the CSV
+and GeoJSON written by <code>als-trees</code>. <code>fusion-upscale</code> reads a CSV of plots
+(the value and the metrics, e.g. the output of <code>als-plot-metrics</code> with a
+column added) and the rasters of <code>als-metrics</code>, and writes the prediction
+rasters. See <a href="../cli/">Command line</a>.</p>
+<h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Permanent link">&para;</a></h2>
+<ul>
+<li>The search needs canopy or terrain structure: in a uniform plantation
+  or on flat ground under a closed, even canopy, poses a row apart score
+  alike (<code>ambiguity</code> near 1); give a tighter <code>search_radius</code> there.</li>
+<li>Only a rigid transform is estimated; a TLS project that is itself
+  deformed (a poorly registered multi-scan plot) will not fit everywhere.</li>
+<li>The formal covariance is a lower bound, and the jackknife over four
+  quadrants is a coarse estimate; neither includes an error the ALS itself
+  carries (its own georeferencing).</li>
+<li>Tree linking can only be as good as the two segmentations: ALS crowns
+  that merge trees make <code>codominant</code> stems, and a TLS tree whose height is
+  badly wrong can be left <code>suppressed</code> under its own crown.</li>
+<li>The profiles weight by sampling, not by bias: where both instruments
+  underestimate a layer (the lower half of dense crowns from the air, the
+  upper crowns from a single scan position) the fused profile does too.</li>
+<li>The upscaling models are deliberately simple (ordinary least squares,
+  no variable selection, no spatial correlation); the prediction interval
+  is that of a single cell, not of a total over many cells.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      &copy; 2026 Tim Devereux, The University of Queensland &middot; GPL-3.0-or-later
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
