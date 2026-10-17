@@ -10,6 +10,7 @@
 //! | `.ply` (ascii/binary)     | yes  | yes   |
 //! | `.xyz` `.txt` `.csv` `.pts` | yes | yes  |
 //! | `.rxp` (RIEGL, RiVLib)    | yes  | no    |
+//! | `.rdbx` (RIEGL, librdb)   | yes  | no    |
 //!
 //! Pulse data ([`crate::Shots`]) has its own Parquet-based format, see [`shots`].
 
@@ -18,6 +19,7 @@ pub mod geotiff;
 pub mod las;
 pub mod mesh;
 pub mod ply;
+pub mod rdb;
 pub mod riegl;
 pub mod shots;
 
@@ -38,6 +40,7 @@ pub fn read(path: impl AsRef<Path>) -> Result<PointCloud> {
         "ply" => ply::read_ply(path),
         "xyz" | "txt" | "csv" | "asc" | "pts" => ascii::read_ascii(path, None),
         "rxp" => riegl::read_rxp(path, &riegl::RxpOptions::default()),
+        "rdbx" => rdb::read_rdbx(path, &rdb::RdbxOptions::default()),
         other => Err(Error::UnsupportedFormat(other.to_string())),
     }
 }

@@ -35,7 +35,26 @@ def _beside(path: str, suffix: str, ext: str | None = None) -> str:
     return str(p.with_name(p.stem + suffix + (ext if ext is not None else p.suffix)))
 
 
+def _rdbx_info(path):
+    """``info`` for an RDB database: from its index and schema, without reading the points."""
+    info = io.rdbx_info(path)
+    version = info.library_version.split()[0]
+    print(f"{path}: {info.point_count:,} points (RDB 2, librdb {version})")
+    if info.bounds is not None:
+        lo, hi = info.bounds
+        print(f"  min: {lo}\n  max: {hi}")
+    print(f"  attributes ({len(info.attributes)}, declared ranges):")
+    for a in info.attributes.values():
+        vector = f"[{a.length}]" if a.length > 1 else ""
+        unit = f" {a.unit}" if a.unit else ""
+        print(f"    {a.name}{vector}: {a.dtype} [{a.minimum:g} .. {a.maximum:g}]{unit}")
+    print(f"  metadata: {', '.join(info.metadata)}")
+
+
 def _cmd_info(args):
+    if Path(args.input).suffix.lower() == ".rdbx":
+        _rdbx_info(args.input)
+        return
     cloud = io.read(args.input)
     lo, hi = cloud.bounds
     print(f"{args.input}: {len(cloud):,} points")
@@ -384,7 +403,7 @@ def main(argv=None):
     fmt = {"formatter_class": argparse.ArgumentDefaultsHelpFormatter}
 
     s = sub.add_parser("info", help="print point count, bounds and attributes", **fmt)
-    s.add_argument("input", help="point cloud (.las .laz .ply .xyz .txt .csv .pts .rxp)")
+    s.add_argument("input", help="point cloud (.las .laz .ply .xyz .txt .csv .pts .rxp .rdbx)")
     s.set_defaults(func=_cmd_info)
 
     s = sub.add_parser("convert", help="convert between formats, optionally voxel-thinning", **fmt)
@@ -543,7 +562,7 @@ def main(argv=None):
                        **fmt)
     s.add_argument("inputs", nargs="+",
                    help="a RiSCAN / scanner .PROJ project directory, or scan files "
-                        "(.rxp, .laz, ...)")
+                        "(.rxp, .rdbx, .laz, ...)")
     s.add_argument("-o", "--output", help="output folder (default: <project>_coreg beside it)")
     s.add_argument("--reference", help="scan name or index whose frame is the world frame")
     s.add_argument("--level", choices=["auto", "attitude", "sop", "none"], default="auto",

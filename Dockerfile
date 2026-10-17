@@ -12,6 +12,8 @@
 # Reading .rxp needs RiVLib's libscanifc, which RIEGL does not allow to be
 # shipped: mount the extracted RiVLib at /opt/rivlib (RIVLIB_PATH), e.g.
 #   docker run --rm -v ~/.local/lib/rivlib:/opt/rivlib:ro -v "$PWD":/data sylva coreg survey.PROJ
+# Reading .rdbx likewise needs librdb from RIEGL's RDB SDK: mount the extracted
+# SDK at /opt/rdblib (RDBLIB_PATH).
 
 ARG PYTHON=3.12
 
@@ -20,7 +22,8 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:/usr/local/cargo/bin:$PATH \
-    RIVLIB_PATH=/opt/rivlib
+    RIVLIB_PATH=/opt/rivlib \
+    RDBLIB_PATH=/opt/rdblib
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential ca-certificates curl git \
     && rm -rf /var/lib/apt/lists/*
@@ -39,13 +42,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     maturin build --release --out /dist
 
 FROM python:${PYTHON}-slim-bookworm AS runtime
-# libstdc++ for RiVLib when it is mounted; the wheel itself needs only libc.
+# libstdc++ for RiVLib and librdb when they are mounted; the wheel itself needs only libc.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=bind,from=build,source=/dist,target=/dist \
     pip install --no-cache-dir "$(ls /dist/*.whl)[geotiff]"
-ENV RIVLIB_PATH=/opt/rivlib
+ENV RIVLIB_PATH=/opt/rivlib RDBLIB_PATH=/opt/rdblib
 RUN useradd --create-home sylva
 USER sylva
 WORKDIR /data

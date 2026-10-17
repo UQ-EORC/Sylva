@@ -12,13 +12,16 @@
 | ``.ply`` (ascii / binary, incl. raycloudtools ray clouds) | yes | yes |
 | ``.xyz`` ``.txt`` ``.csv`` ``.pts`` | yes | yes |
 | ``.rxp`` (RIEGL, needs RiVLib) | yes | no |
+| ``.rdbx`` (RIEGL RDB 2, needs librdb) | yes | no |
 
 Pulse data has its own format, see :meth:`sylva.Shots.save`.
 """
 
 from __future__ import annotations
 
+import json
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +32,7 @@ from .shots import Shots
 
 __all__ = [
     "read", "write", "read_ascii", "read_rxp", "read_rxp_shots", "find_rivlib",
+    "read_rdbx", "rdbx_info", "find_rdblib", "RdbxInfo", "RdbxAttribute",
     "read_matrix_file",
 ]
 
@@ -40,13 +44,15 @@ def read(path: str | Path) -> PointCloud:
     ----------
     path
         ``.las``, ``.laz``, ``.ply``, ``.xyz``, ``.txt``, ``.csv``, ``.asc``,
-        ``.pts`` or ``.rxp``. The extension is matched case-insensitively.
+        ``.pts``, ``.rxp`` or ``.rdbx``. The extension is matched
+        case-insensitively.
 
     Returns
     -------
     PointCloud
-        Coordinates in the file's frame (``.rxp``: scanner frame, see
-        :func:`read_rxp`). Attributes depend on the format:
+        Coordinates in the file's frame (``.rxp`` and a scan position's
+        ``.rdbx``: scanner frame, see :func:`read_rxp` and
+        :func:`read_rdbx`). Attributes depend on the format:
 
         - LAS/LAZ: ``intensity``, ``return_number``, ``number_of_returns``,
           ``classification``, ``scan_angle``, ``user_data``,
@@ -60,6 +66,7 @@ def read(path: str | Path) -> PointCloud:
           sensor) and ``alpha``; see :meth:`sylva.Shots.from_ray_cloud`.
         - Text: see :func:`read_ascii`.
         - RXP: see :func:`read_rxp` (default options).
+        - RDBX: every attribute of the database, see :func:`read_rdbx`.
 
     Raises
     ------
@@ -262,6 +269,185 @@ def find_rivlib(hint: str | Path | None = None) -> Path:
         RiVLib directory.
     """
     return Path(_core.find_rivlib(str(hint) if hint else None))
+
+
+def read_rdbx(path: str | Path, **options) -> PointCloud:
+    """Read a RIEGL ``.rdbx`` database (RDB 2) as points.
+
+    RiSCAN PRO writes one when it imports a scan: the echoes of the ``.rxp``
+    after MTA resolution and the import filters, with the processing
+    settings stored beside them as metadata (see :func:`rdbx_info`). Needs
+    RIEGL's ``librdb`` from the RDB SDK, which RIEGL does not allow to be
+    redistributed; see :func:`find_rdblib` for where it is looked for.
+
+    Parameters
+    ----------
+    path
+        The ``.rdbx`` file, e.g.
+        ``project.rdb/SCANS/ScanPos001/SINGLESCANS/<scan>/<scan>.rdbx``.
+    **options
+        Keyword options:
+
+        - ``library`` (path): ``librdb`` or a directory containing it.
+        - ``attributes`` (None): names of the attributes to read besides
+          the coordinates, by RDB name (``"riegl.reflectance"``), without
+          the namespace (``"reflectance"``) or by the name used here
+          (``"return_number"``). Everything by default.
+        - ``filter`` (None): a filter in RDB's own syntax, with RDB names,
+          for example ``"riegl.reflectance > -10 && riegl.deviation < 20"``;
+          the library evaluates it while reading.
+        - ``stride`` (1): keep every n-th point.
+        - ``max_points`` (None): stop after this many points.
+
+    Returns
+    -------
+    PointCloud
+        Points of ``riegl.xyz`` in the frame the database stores (a scan
+        position's own database: the scanner's coordinate system, like
+        :func:`read_rxp`). Every other attribute is a column, in the type
+        the database suggests for it, except that ``int16`` is widened to
+        ``int32`` and ``uint64`` to ``int64``. Names: ``riegl.target_index``
+        is ``return_number``, ``riegl.target_count`` ``number_of_returns``,
+        ``riegl.timestamp`` ``gps_time`` (s), ``riegl.class``
+        ``classification`` and ``riegl.id`` ``id``, so a LAS/LAZ written
+        from the cloud carries them as standard dimensions; ``riegl.rgba``
+        gives ``red``, ``green``, ``blue``, ``alpha``; any other attribute
+        keeps its name without the ``riegl.`` namespace, dots replaced by
+        underscores, and a vector attribute of length n gives ``name_0`` ..
+        ``name_{n-1}``. The usual scan attributes are therefore
+        ``amplitude``, ``reflectance`` (dB), ``deviation``, ``mta_zone``,
+        ``mta_uncertain_point``, ``dyntrig_uncertain_point`` and so on.
+
+    Raises
+    ------
+    ValueError
+        If ``librdb`` cannot be found, the database cannot be opened, an
+        attribute is unknown or the filter does not parse (the message
+        carries the library's reason).
+    """
+    xyz, attrs = _core.read_rdbx(str(path), **options)
+    return PointCloud(xyz, attrs)
+
+
+@dataclass(frozen=True)
+class RdbxAttribute:
+    """One point attribute of an ``.rdbx`` database, as the database describes it.
+
+    ``dtype`` is the type the database suggests for a buffer (numpy style);
+    :func:`read_rdbx` widens ``int16`` to ``int32`` and ``uint64`` to
+    ``int64``. ``named_values`` maps the values of an enumerated attribute
+    (``riegl.class``, ``riegl.fwa``, ...) to their names.
+    """
+
+    name: str
+    title: str
+    unit: str
+    length: int
+    dtype: str
+    resolution: float
+    minimum: float
+    maximum: float
+    invalid: float | None
+    named_values: dict[str, str]
+
+
+@dataclass(frozen=True)
+class RdbxInfo:
+    """What an ``.rdbx`` database holds besides its points, see :func:`rdbx_info`."""
+
+    point_count: int
+    primary_attribute: str
+    attributes: dict[str, RdbxAttribute]
+    metadata: dict[str, str]
+    bounds: tuple[np.ndarray, np.ndarray] | None
+    library_version: str
+
+    def json(self, name: str):
+        """A metadata entry parsed as JSON (RIEGL's entries all are).
+
+        Parameters
+        ----------
+        name
+            The entry, a key of ``metadata``. For example
+            ``"riegl.mta_settings"`` holds the MTA zone width, modulation
+            depth and zone count the scan was resolved with,
+            ``"riegl.notch_filter"`` the near-range notch and
+            ``"riegl.device"`` the scanner type and serial number.
+
+        Returns
+        -------
+        object
+            The parsed value: usually a dict, as ``json.loads`` returns it.
+
+        Raises
+        ------
+        KeyError
+            If the database has no entry of that name.
+        ValueError
+            If the entry is not JSON (user-written entries may be plain text).
+        """
+        return json.loads(self.metadata[name])
+
+
+def rdbx_info(path: str | Path, library: str | Path | None = None) -> RdbxInfo:
+    """Describe an ``.rdbx`` database without reading its points.
+
+    Parameters
+    ----------
+    path
+        The ``.rdbx`` file.
+    library
+        ``librdb`` or a directory containing it, if not found on its own.
+
+    Returns
+    -------
+    RdbxInfo
+        The point count, the attribute the index is built on (usually
+        ``riegl.xyz``), every attribute by RDB name with its type, length,
+        unit and declared range, every metadata entry as text (``json()``
+        parses one), the extent of the coordinates from the index, and the
+        version of the ``librdb`` used.
+
+    Raises
+    ------
+    ValueError
+        If ``librdb`` cannot be found or the database cannot be opened.
+    """
+    d = _core.rdbx_info(str(path), str(library) if library else None)
+    attributes = {a["name"]: RdbxAttribute(**{**a, "named_values": dict(a["named_values"])})
+                  for a in d["attributes"]}
+    bounds = d["bounds"]
+    if bounds is not None:
+        bounds = (np.asarray(bounds[0]), np.asarray(bounds[1]))
+    return RdbxInfo(d["point_count"], d["primary_attribute"], attributes, d["metadata"], bounds,
+                    d["library_version"])
+
+
+def find_rdblib(hint: str | Path | None = None) -> Path:
+    """Locate RIEGL's ``librdb`` shared library (the RDB SDK).
+
+    Parameters
+    ----------
+    hint
+        A file, or a directory to search (three levels deep) first.
+
+    Returns
+    -------
+    Path
+        The library found. After ``hint``, the search order is
+        ``$RDBLIB_PATH``, ``$RDBLIB_HOME``, ``~/.local/lib``, ``~/.local``,
+        ``~/lib``, ``~/opt``, ``~``, ``/opt``, ``/usr/local/lib``,
+        ``/usr/local`` and ``/usr/lib``, looking in subdirectories whose
+        name contains "rdb" (the SDK unpacks to
+        ``rdblib-<version>-<platform>/library/librdb.so``).
+
+    Raises
+    ------
+    ValueError
+        If no ``librdb`` is found. Set ``RDBLIB_PATH`` to the extracted
+        RDB SDK directory.
+    """
+    return Path(_core.find_rdblib(str(hint) if hint else None))
 
 
 def read_matrix_file(path: str | Path) -> np.ndarray:

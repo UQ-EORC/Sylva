@@ -44,6 +44,7 @@ are already flattened with `ground.flatten`.
 | `.ply` | yes | yes | ASCII or binary; every vertex property becomes an attribute. raycloudtools ray clouds (Lowe & Stepanas 2021) read as ordinary clouds with `nx ny nz`. |
 | `.xyz` `.txt` `.asc` `.pts` `.csv` | yes | yes | Delimiter detected; header line gives names; PTS count line skipped. Written with a header, 0.1 mm precision. |
 | `.rxp` | yes | no | RIEGL, needs RiVLib (below). Points in the scanner frame. |
+| `.rdbx` | yes | no | RIEGL RDB 2, the database RiSCAN PRO makes of an imported scan; needs librdb (below). Every attribute as a column; the processing settings as metadata. |
 | `.parquet` | `Shots.load` | `Shots.save` | Pulse data, see [Pulse data](pulses.md). |
 
 Rasters (DTM, CHM) are `sylva.Raster` objects, written with
@@ -77,6 +78,39 @@ pts.attrs.keys()        # amplitude, reflectance, deviation, echo_type, gps_time
   mark mixed pixels and edge hits. Filtering on it, for example
   `pts[pts.attrs["deviation"] < 20]`, is a common clean-up. The right
   threshold depends on the scanner, so look at the histogram first.
+
+### RDB databases
+
+When RiSCAN PRO imports a scan it writes an RDB 2 database
+(`project.rdb/SCANS/ScanPos001/SINGLESCANS/<scan>/<scan>.rdbx`): the echoes
+of the `.rxp` after MTA resolution and the import filters, as typed columns,
+with the settings used stored beside them as JSON metadata. Sylva reads these
+through RIEGL's `librdb`, loaded at run time like RiVLib. Download the RDB SDK
+("rdblib") from RIEGL, point `RDBLIB_PATH` at the extracted folder, and
+`sylva.io.find_rdblib()` shows what will be used.
+
+```python
+path = "project.rdb/SCANS/ScanPos001/SINGLESCANS/200101_120000/200101_120000.rdbx"
+info = io.rdbx_info(path)
+info.point_count, list(info.attributes)       # 50_862_352, ['riegl.xyz', 'riegl.reflectance', ...]
+info.json("riegl.mta_settings")               # {'zone_width': 68.1, 'modulation_depth': 19.3, 'zone_count': 6}
+
+pts = io.read_rdbx(path, attributes=["reflectance", "deviation", "return_number", "gps_time"],
+                   filter="riegl.deviation < 20")
+sylva.write(io.read_rdbx(path), "ScanPos001.laz")   # everything, as a LAZ
+```
+
+Every attribute comes back as a column in the database's own type (`int16`
+widened to `int32`, `uint64` to `int64`). The ones LAS has a place for take
+the LAS names, so a written LAS/LAZ carries them as standard dimensions:
+`riegl.target_index` is `return_number`, `riegl.target_count`
+`number_of_returns`, `riegl.timestamp` `gps_time`, `riegl.class`
+`classification`, `riegl.id` `id`. The rest keep their RDB names without the
+`riegl.` namespace (`reflectance`, `amplitude`, `deviation`, `mta_zone`,
+`mta_uncertain_point`, `dyntrig_uncertain_point`, ...), a vector attribute
+as `name_0`, `name_1`, .... `sylva info scan.rdbx` prints the schema and the
+metadata names from the index alone, and `sylva convert scan.rdbx scan.laz`
+converts a whole database.
 
 A RiSCAN PRO project gives the scan positions and their matrices:
 

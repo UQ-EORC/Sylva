@@ -68,8 +68,9 @@ to try a platform before tagging.
 
 ## Notes
 
-- Reading RIEGL `.rxp` needs RiVLib at run time; it is loaded dynamically, so
-  the wheels carry no RIEGL code and build without it.
+- Reading RIEGL `.rxp` needs RiVLib and `.rdbx` the RDB SDK's `librdb` at run
+  time; both are loaded dynamically, so the wheels carry no RIEGL code and
+  build without them.
 - docs.rs builds the crate documentation automatically after each crates.io
   release.
 - The documentation is published at <https://uq-eorc.github.io/Sylva/> from

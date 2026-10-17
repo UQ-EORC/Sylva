@@ -24,7 +24,7 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 
 | Module | What it does |
 |---|---|
-| [`sylva.io`](api/io.md) | LAS/LAZ (typed extra bytes, CRS), PLY (incl. raycloudtools ray clouds), XYZ/CSV/PTS, RIEGL `.rxp` via RiVLib, RiSCAN project parsing |
+| [`sylva.io`](api/io.md) | LAS/LAZ (typed extra bytes, CRS), PLY (incl. raycloudtools ray clouds), XYZ/CSV/PTS, RIEGL `.rxp` via RiVLib and `.rdbx` via librdb, RiSCAN project parsing |
 | [`sylva.geo.coords`](api/coords.md) | translation, rotation, recentring, reprojection between CRSs, applying transform files to many scans |
 | [`sylva.filters`](api/filters.md) | voxel / random / Poisson-disk subsampling, box & cylinder crops, statistical & radius outlier removal, PCA normals, planarity, Euclidean clustering, kNN |
 | [`sylva.ground`](api/ground.md) | Cloth Simulation Filter and Progressive Morphological Filter ground classification, DTM (lowest point, TIN, natural neighbour or IDW), height normalisation, CHM |

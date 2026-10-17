@@ -52,7 +52,11 @@ does the same job, in a virtual environment of your choice.
 
 Reading RIEGL `.rxp` files needs RiVLib's `libscanifc` (proprietary; download
 from RIEGL). Point `RIVLIB_PATH` at the extracted directory or pass
-`library=` to `sylva.io.read_rxp`.
+`library=` to `sylva.io.read_rxp`. Reading `.rdbx` databases (RiSCAN PRO's
+imported scans) likewise needs `librdb` from RIEGL's RDB SDK: point
+`RDBLIB_PATH` at the extracted directory or pass `library=` to
+`sylva.io.read_rdbx`. Both are loaded at run time; nothing else is affected
+when they are absent.
 
 ## Containers
 

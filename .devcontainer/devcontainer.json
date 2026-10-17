@@ -13,6 +13,7 @@
     "source=sylva-target,target=/opt/target,type=volume"
     // RiVLib (proprietary, from RIEGL) is needed only to read .rxp; mount it with e.g.
     // , "source=${localEnv:HOME}/.local/lib/rivlib,target=/opt/rivlib,type=bind,readonly"
+    // and the RDB SDK (also RIEGL's) only to read .rdbx, at /opt/rdblib (RDBLIB_PATH).
   ],
   "containerEnv": {
     "CARGO_TARGET_DIR": "/opt/target"

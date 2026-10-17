@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::{IntoPyDict, PyDict, PyList};
 use sylva_rs::pointcloud::Attr;
 
 mod canopy_py;
@@ -333,6 +333,50 @@ fn read_rxp_shots<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>,
 #[pyo3(signature = (hint=None))]
 fn find_rivlib(hint: Option<PathBuf>) -> PyResult<PathBuf> {
     io::riegl::find_rivlib(hint.as_deref()).map_err(err)
+}
+
+#[pyfunction]
+#[pyo3(signature = (path, library=None, attributes=None, filter=None, stride=1, max_points=None))]
+fn read_rdbx<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>, attributes: Option<Vec<String>>, filter: Option<String>, stride: usize, max_points: Option<usize>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
+    let opts = io::rdb::RdbxOptions { library, attributes, filter, stride: stride.max(1), max_points };
+    let c = py.detach(|| io::rdb::read_rdbx(&path, &opts)).map_err(err)?;
+    cloud_to_py(py, &c)
+}
+
+/// Point count, attributes, metadata and extent of an `.rdbx`, without its points.
+#[pyfunction]
+#[pyo3(signature = (path, library=None))]
+fn rdbx_info<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>) -> PyResult<Bound<'py, PyDict>> {
+    let info = py.detach(|| io::rdb::rdbx_info(&path, library.as_deref())).map_err(err)?;
+    let d = PyDict::new(py);
+    d.set_item("library_version", &info.library_version)?;
+    d.set_item("point_count", info.point_count)?;
+    d.set_item("primary_attribute", &info.primary_attribute)?;
+    let attributes = PyList::empty(py);
+    for a in &info.attributes {
+        let e = PyDict::new(py);
+        e.set_item("name", &a.name)?;
+        e.set_item("title", &a.title)?;
+        e.set_item("unit", &a.unit)?;
+        e.set_item("length", a.length)?;
+        e.set_item("dtype", a.dtype)?;
+        e.set_item("resolution", a.resolution)?;
+        e.set_item("minimum", a.minimum)?;
+        e.set_item("maximum", a.maximum)?;
+        e.set_item("invalid", a.invalid)?;
+        e.set_item("named_values", a.named_values.iter().cloned().collect::<Vec<(String, String)>>())?;
+        attributes.append(e)?;
+    }
+    d.set_item("attributes", attributes)?;
+    d.set_item("metadata", info.metadata.iter().collect::<Vec<_>>().into_py_dict(py)?)?;
+    d.set_item("bounds", info.bounds.map(|(lo, hi)| (lo.to_vec(), hi.to_vec())))?;
+    Ok(d)
+}
+
+#[pyfunction]
+#[pyo3(signature = (hint=None))]
+fn find_rdblib(hint: Option<PathBuf>) -> PyResult<PathBuf> {
+    io::rdb::find_rdblib(hint.as_deref()).map_err(err)
 }
 
 #[pyfunction]
@@ -1598,6 +1642,9 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(read_rxp, m)?,
         wrap_pyfunction!(read_rxp_shots, m)?,
         wrap_pyfunction!(find_rivlib, m)?,
+        wrap_pyfunction!(read_rdbx, m)?,
+        wrap_pyfunction!(rdbx_info, m)?,
+        wrap_pyfunction!(find_rdblib, m)?,
         wrap_pyfunction!(read_matrix_file, m)?,
         wrap_pyfunction!(shots_from_pointcloud, m)?,
         wrap_pyfunction!(shots_from_ray_cloud, m)?,

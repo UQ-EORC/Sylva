@@ -34,6 +34,8 @@ pub enum Error {
     Las(#[from] las::Error),
     #[error("RIEGL RiVLib: {0}")]
     Riegl(String),
+    #[error("RIEGL RDB: {0}")]
+    Rdb(String),
 }
 
 /// The crate's own `Result`: `Result<T>` here means `Result<T, Error>`.

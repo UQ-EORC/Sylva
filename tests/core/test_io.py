@@ -112,3 +112,18 @@ def test_riegl_missing_library(tmp_path, monkeypatch):
             io.read_rxp(tmp_path / "scan.rxp")
     else:
         pytest.skip("RiVLib is installed")
+
+
+def test_rdb_missing_library(tmp_path, monkeypatch):
+    monkeypatch.delenv("RDBLIB_PATH", raising=False)
+    monkeypatch.delenv("RDBLIB_HOME", raising=False)
+    try:
+        io.find_rdblib()
+    except ValueError as e:
+        assert "RDBLIB_PATH" in str(e)
+        with pytest.raises(ValueError, match="librdb"):
+            io.read_rdbx(tmp_path / "scan.rdbx")
+        with pytest.raises(ValueError, match="librdb"):
+            io.rdbx_info(tmp_path / "scan.rdbx")
+    else:
+        pytest.skip("the RDB SDK is installed")

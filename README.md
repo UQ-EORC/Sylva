@@ -13,7 +13,7 @@ command over it.
 
 | Module | What it does |
 |---|---|
-| `sylva.io` | LAS/LAZ (typed extra bytes, CRS from and to the WKT or GeoTIFF records), PLY (incl. raycloudtools ray clouds), XYZ/CSV/PTS, RIEGL `.rxp` via RiVLib, RiSCAN project parsing |
+| `sylva.io` | LAS/LAZ (typed extra bytes, CRS from and to the WKT or GeoTIFF records), PLY (incl. raycloudtools ray clouds), XYZ/CSV/PTS, RIEGL `.rxp` via RiVLib and `.rdbx` (RDB 2) via librdb, RiSCAN project parsing |
 | `sylva.geo.coords` | translation, rotation about any axis and point, recentring, reprojection between CRSs (EPSG codes, PROJ strings, WKT; pure Rust, no PROJ install), applying transform files (`transforms.json`, RiSCAN SOPs) to many scans |
 | `sylva.filters` | voxel / random / Poisson-disk subsampling, box & cylinder crops, statistical & radius outlier removal, PCA normals, planarity, Euclidean clustering, kNN |
 | `sylva.ground` | Cloth Simulation Filter and Progressive Morphological Filter ground classification, DTM (lowest point, or TIN, natural-neighbour or IDW), height normalisation, CHM |
@@ -64,7 +64,8 @@ pip install sylva-rs
 ```
 
 Optional extras: `pip install "sylva-rs[examples]"` for the notebooks. Reading RIEGL `.rxp`
-files needs RIEGL's RiVLib, which is proprietary and loaded at run time; see
+files needs RIEGL's RiVLib, and `.rdbx` databases RIEGL's RDB SDK; both are
+proprietary and loaded at run time; see
 the [install guide](https://uq-eorc.github.io/Sylva/install/).
 
 ### Rust
