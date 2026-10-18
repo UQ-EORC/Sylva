@@ -1207,6 +1207,7 @@ dependencies = [
  "rayon",
  "robust",
  "roxmltree",
+ "serde_json",
  "shapefile",
  "spade",
  "thiserror",

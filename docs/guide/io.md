@@ -123,18 +123,26 @@ What happens, per scan line and in this order:
    `keep_uncertain=True` (then flagged in `mta_uncertain_point`);
 5. `return_number` and `number_of_returns` are recounted over what survived.
 
-Measured against rimta5 6.9.6 on a VZ-600i forest scan (ScanPos001, Pilliga
-2026, 52.6 M echoes): on scan lines with little far canopy 99.1% of the points
-are the same set and the zone agrees for 99.6%; on lines where zone-2 returns
-make up 6% of the points it is 97% and 98.3%. Coordinates of common points agree
-to the 0.25 mm the `.rdbx` stores. The resolver is deliberately conservative:
-where it cannot tell it drops the echo rather than placing it at a guessed
-range, so it ends up with about 1% fewer points than rimta5 in far canopy and
-zone-2 recall of roughly 70% there. Not reproduced: the dynamic window analysis
-and the near-range window correction (rimta5 applies them only when its window
-model succeeds, which it did not on the reference scans). The thresholds live
-in `sylva_rs::io::mta::MtaParams` for anyone who wants to tune them against
-their own `.rdbx` ground truth.
+The three passes gather evidence per echo and zone (votes, anchor votes,
+heat-map density). What turns that into a decision is, by default, a small
+learned model: 300 boosted trees trained on rimta5's own output of a VZ-600i
+scan (`mta_model="default"`). `mta_model="rule"` uses the hand-written
+thresholds instead, and a path loads a model you trained yourself with
+`scripts/train_mta.py` from a scan that has both the `.rxp` and RiSCAN's
+`.rdbx` (set `SYLVA_MTA_FEATURES=<file>` while reading the `.rxp` to dump
+the per-echo evidence the script learns from).
+
+Measured against rimta5 6.9.6 on that scan (ScanPos001, Pilliga 2026, 52.6 M
+echoes), on scan lines the model never saw: 98.8% of the points are the same
+set and the zone agrees for 99.93% of the common points (the hand-written rule:
+98.1% and 99.7%). Coordinates of common points agree to the 0.25 mm the `.rdbx`
+stores. What remains is mostly echoes rimta5 drops as MTA-uncertain that look
+well supported from the outside, about 1% of the points, and 0.07% of
+rimta5's points that RiVLib never delivers at all. Not reproduced: the dynamic
+window analysis and the near-range window correction (rimta5 applies them only
+when its window model succeeds, which it did not on the reference scans). The
+model is specific to the scanner and scan program it was trained on; for other
+instruments train your own or use the rule.
 
 Extra attributes with MTA resolution: `mta_zone`, `return_number`,
 `number_of_returns`, `scan_line_index` (RiSCAN's convention: negative, -1 is

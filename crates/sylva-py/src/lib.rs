@@ -309,34 +309,39 @@ fn read_ascii<'py>(py: Python<'py>, path: PathBuf, columns: Option<Vec<String>>)
 
 #[allow(clippy::too_many_arguments)]
 fn rxp_opts(library: Option<PathBuf>, drop_pseudo_echoes: bool, min_range: f64, max_range: f64, stride: usize, max_points: Option<usize>, echoes: String, shot_stride: usize,
-            mta: &str, max_zone: usize, keep_uncertain: bool, shim: Option<PathBuf>, max_lines: Option<usize>) -> PyResult<io::riegl::RxpOptions> {
-    use io::rxp_mta::{MtaMode, MtaOptions};
+            mta: &str, max_zone: usize, keep_uncertain: bool, shim: Option<PathBuf>, max_lines: Option<usize>, mta_model: Option<String>) -> PyResult<io::riegl::RxpOptions> {
+    use io::rxp_mta::{MtaDecision, MtaMode, MtaOptions};
     let mode = match mta {
         "auto" => MtaMode::Auto,
         "off" | "none" => MtaMode::Off,
         "on" | "resolve" => MtaMode::On,
         other => return Err(PyValueError::new_err(format!("mta must be 'auto', 'on' or 'off', not {other:?}"))),
     };
-    let mta = MtaOptions { mode, shim, max_zone: max_zone.clamp(1, 8), keep_uncertain, max_lines, ..Default::default() };
+    let decision = match mta_model.as_deref() {
+        None | Some("default") => MtaDecision::Default,
+        Some("rule") => MtaDecision::Rule,
+        Some(p) => MtaDecision::Model(PathBuf::from(p)),
+    };
+    let mta = MtaOptions { mode, decision, shim, max_zone: max_zone.clamp(1, 8), keep_uncertain, max_lines, ..Default::default() };
     Ok(io::riegl::RxpOptions { library, drop_pseudo_echoes, min_range, max_range, stride: stride.max(1), max_points, echoes, shot_stride: shot_stride.max(1), mta })
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, library=None, drop_pseudo_echoes=true, min_range=0.5, max_range=f64::INFINITY, stride=1, max_points=None, echoes="all".to_string(), shot_stride=1, mta="auto", max_zone=6, keep_uncertain=false, shim=None, max_lines=None))]
+#[pyo3(signature = (path, library=None, drop_pseudo_echoes=true, min_range=0.5, max_range=f64::INFINITY, stride=1, max_points=None, echoes="all".to_string(), shot_stride=1, mta="auto", max_zone=6, keep_uncertain=false, shim=None, max_lines=None, mta_model=None))]
 #[allow(clippy::too_many_arguments)]
 fn read_rxp<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>, drop_pseudo_echoes: bool, min_range: f64, max_range: f64, stride: usize, max_points: Option<usize>, echoes: String, shot_stride: usize,
-                 mta: &str, max_zone: usize, keep_uncertain: bool, shim: Option<PathBuf>, max_lines: Option<usize>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
-    let opts = rxp_opts(library, drop_pseudo_echoes, min_range, max_range, stride, max_points, echoes, shot_stride, mta, max_zone, keep_uncertain, shim, max_lines)?;
+                 mta: &str, max_zone: usize, keep_uncertain: bool, shim: Option<PathBuf>, max_lines: Option<usize>, mta_model: Option<String>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
+    let opts = rxp_opts(library, drop_pseudo_echoes, min_range, max_range, stride, max_points, echoes, shot_stride, mta, max_zone, keep_uncertain, shim, max_lines, mta_model)?;
     let c = py.detach(|| io::riegl::read_rxp(&path, &opts)).map_err(err)?;
     cloud_to_py(py, &c)
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, library=None, drop_pseudo_echoes=true, min_range=0.5, max_range=f64::INFINITY, stride=1, max_points=None, echoes="all".to_string(), shot_stride=1, mta="auto", max_zone=6, keep_uncertain=false, shim=None, max_lines=None))]
+#[pyo3(signature = (path, library=None, drop_pseudo_echoes=true, min_range=0.5, max_range=f64::INFINITY, stride=1, max_points=None, echoes="all".to_string(), shot_stride=1, mta="auto", max_zone=6, keep_uncertain=false, shim=None, max_lines=None, mta_model=None))]
 #[allow(clippy::too_many_arguments)]
 fn read_rxp_shots<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>, drop_pseudo_echoes: bool, min_range: f64, max_range: f64, stride: usize, max_points: Option<usize>, echoes: String, shot_stride: usize,
-                       mta: &str, max_zone: usize, keep_uncertain: bool, shim: Option<PathBuf>, max_lines: Option<usize>) -> PyResult<Bound<'py, PyDict>> {
-    let opts = rxp_opts(library, drop_pseudo_echoes, min_range, max_range, stride, max_points, echoes, shot_stride, mta, max_zone, keep_uncertain, shim, max_lines)?;
+                       mta: &str, max_zone: usize, keep_uncertain: bool, shim: Option<PathBuf>, max_lines: Option<usize>, mta_model: Option<String>) -> PyResult<Bound<'py, PyDict>> {
+    let opts = rxp_opts(library, drop_pseudo_echoes, min_range, max_range, stride, max_points, echoes, shot_stride, mta, max_zone, keep_uncertain, shim, max_lines, mta_model)?;
     let s = py.detach(|| io::riegl::read_rxp_shots(&path, &opts)).map_err(err)?;
     shots_to_py(py, &s)
 }

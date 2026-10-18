@@ -124,6 +124,26 @@ pub struct LineEchoes {
     pub n_shots: usize,
 }
 
+/// Per-zone evidence gathered for one echo by the three passes (kept for
+/// diagnostics and for training a learned decision rule).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Evidence {
+    /// Pass-1 votes from the echo's own line.
+    pub votes_own: [f32; MAXZ],
+    /// Pass-1 votes from the neighbouring lines.
+    pub votes_nb: [f32; MAXZ],
+    /// Pass-2 anchor votes.
+    pub anchors: [f32; MAXZ],
+    /// Pass-3 heat-map density at the hypothesis range.
+    pub density: [f32; MAXZ],
+}
+
+impl Default for Evidence {
+    fn default() -> Self {
+        Evidence { votes_own: [-1.0; MAXZ], votes_nb: [-1.0; MAXZ], anchors: [-1.0; MAXZ], density: [-1.0; MAXZ] }
+    }
+}
+
 /// Outcome for one echo.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Decision {
@@ -136,6 +156,8 @@ pub struct Decision {
     pub score: f32,
     /// Runner-up's score in that pass.
     pub rival: f32,
+    /// What each pass saw, per zone (-1 where the zone had no hypothesis or the pass did not run).
+    pub evidence: Evidence,
 }
 
 /// Dense per-line tables used by the passes.
@@ -327,27 +349,34 @@ pub fn stage1(grids: &[Option<&Grid>], line: &LineEchoes, p: &MtaParams) -> Vec<
         .map(|i| {
             let zr = &line.zr[i];
             let shot = line.shot[i] as i64;
-            let mut s = [0f32; MAXZ];
-            own.votes(shot, zr, p.window, true, p.tol, &mut s);
+            let mut so = [0f32; MAXZ];
+            let mut sn = [0f32; MAXZ];
+            own.votes(shot, zr, p.window, true, p.tol, &mut so);
             for (gi, g) in grids.iter().enumerate() {
                 if gi == c {
                     continue;
                 }
                 if let Some(g) = g {
-                    g.votes(shot, zr, p.line_window, false, p.tol, &mut s);
+                    g.votes(shot, zr, p.line_window, false, p.tol, &mut sn);
                 }
             }
-            for (z, v) in s.iter_mut().enumerate().take(k) {
-                if !zr[z].is_finite() {
-                    *v = -1.0;
+            let mut s = [0f32; MAXZ];
+            for z in 0..MAXZ {
+                if z < k && zr[z].is_finite() {
+                    s[z] = so[z] + sn[z];
+                } else {
+                    s[z] = -1.0;
+                    so[z] = -1.0;
+                    sn[z] = -1.0;
                 }
             }
+            let evidence = Evidence { votes_own: so, votes_nb: sn, ..Default::default() };
             let (bi, b1, b2) = best_two(&s, k);
             let zone = if b1 < 0.0 { 0 } else { bi as u8 + 1 };
             if b1 >= p.min_votes * zone_factor(p, bi + 1) && b2 <= p.max_ratio * b1 {
-                Decision { zone, stage: 1, score: b1, rival: b2 }
+                Decision { zone, stage: 1, score: b1, rival: b2, evidence }
             } else {
-                Decision { zone, stage: 0, score: b1.max(0.0), rival: b2 }
+                Decision { zone, stage: 0, score: b1.max(0.0), rival: b2, evidence }
             }
         })
         .collect()
@@ -361,9 +390,10 @@ pub fn stage2(grids: &[Option<&Grid>], line: &LineEchoes, dec: &mut [Decision], 
     let own = grids[c].expect("centre grid");
     let k = line.nzone.min(MAXZ);
     dec.par_iter_mut().enumerate().for_each(|(i, d)| {
-        if d.stage != 0 || d.zone == 0 {
+        if d.zone == 0 {
             return;
         }
+        let decided = d.stage != 0;
         let zr = &line.zr[i];
         let shot = line.shot[i] as i64;
         let mut s = [0f32; MAXZ];
@@ -376,14 +406,21 @@ pub fn stage2(grids: &[Option<&Grid>], line: &LineEchoes, dec: &mut [Decision], 
                 g.anchor_votes(shot, zr, p.line_window, false, p.tol, &mut s);
             }
         }
-        for (z, v) in s.iter_mut().enumerate().take(k) {
-            if !zr[z].is_finite() {
+        for (z, v) in s.iter_mut().enumerate() {
+            if z >= k || !zr[z].is_finite() {
                 *v = -1.0;
             }
         }
+        d.evidence.anchors = s;
+        if decided {
+            return;
+        }
         let (bi, b1, b2) = best_two(&s, k);
         if b1 >= p.min_votes2 * zone_factor(p, bi + 1) && b1 > b2 {
-            *d = Decision { zone: bi as u8 + 1, stage: 2, score: b1, rival: b2 };
+            d.zone = bi as u8 + 1;
+            d.stage = 2;
+            d.score = b1;
+            d.rival = b2;
         }
     });
 }
@@ -397,9 +434,10 @@ pub fn stage3(grids: &[Option<&Grid>], line: &LineEchoes, dec: &mut [Decision], 
     let k = line.nzone.min(MAXZ);
     let nb = own.nb;
     dec.par_iter_mut().enumerate().for_each(|(i, d)| {
-        if d.stage != 0 || d.zone == 0 {
+        if d.zone == 0 {
             return;
         }
+        let decided = d.stage != 0;
         let zr = &line.zr[i];
         let shot = line.shot[i] as i64;
         let mut acc = vec![0f32; nb];
@@ -415,12 +453,17 @@ pub fn stage3(grids: &[Option<&Grid>], line: &LineEchoes, dec: &mut [Decision], 
             let b = ((r / p.bucket) as usize).clamp(1, nb - 2);
             s3[z] = acc[b] + 0.5 * (acc[b - 1] + acc[b + 1]);
         }
+        d.evidence.density = s3;
+        if decided {
+            return;
+        }
         let (bi, b1, b2) = best_two(&s3, k);
         let zone = if b1 < 0.0 { d.zone } else { bi as u8 + 1 };
+        let evidence = d.evidence;
         if b1 >= p.min_density3 * zone_factor(p, bi + 1) && b1 >= p.ratio3 * b2 {
-            *d = Decision { zone, stage: 3, score: b1, rival: b2 };
+            *d = Decision { zone, stage: 3, score: b1, rival: b2, evidence };
         } else {
-            *d = Decision { zone, stage: 0, score: b1.max(0.0), rival: b2 };
+            *d = Decision { zone, stage: 0, score: b1.max(0.0), rival: b2, evidence };
         }
     });
 }

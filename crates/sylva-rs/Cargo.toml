@@ -22,9 +22,15 @@ byteorder.workspace = true
 libloading.workspace = true
 parquet.workspace = true
 roxmltree.workspace = true
+serde_json.workspace = true
 spade.workspace = true
 robust.workspace = true
 shapefile.workspace = true
 geojson.workspace = true
 proj4rs.workspace = true
 crs-definitions.workspace = true
+
+[features]
+default = ["mta-model"]
+# Embed the learned MTA decision model (crates/sylva-rs/src/io/mta_model.json).
+mta-model = []

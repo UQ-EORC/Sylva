@@ -37,6 +37,7 @@ use std::sync::{Mutex, OnceLock};
 use libloading::{Library, Symbol};
 
 use super::mta::{self, Decision, Grid, LineEchoes, MtaParams, MAXZ};
+use super::mta_model::{EchoInfo, MtaModel};
 use super::riegl::{search_dir, search_roots, RxpOptions};
 use crate::error::{Error, Result};
 use crate::pointcloud::Attr;
@@ -55,10 +56,24 @@ pub enum MtaMode {
     On,
 }
 
+/// Which rule turns the per-zone evidence into a decision.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum MtaDecision {
+    /// The built-in learned model (trained on rimta5's output of a VZ-600i scan).
+    #[default]
+    Default,
+    /// The hand-written three-pass thresholds only.
+    Rule,
+    /// A model JSON produced by `train_mta.py`.
+    Model(PathBuf),
+}
+
 /// Options of the MTA path beyond [`MtaParams`].
 #[derive(Clone, Debug)]
 pub struct MtaOptions {
     pub mode: MtaMode,
+    /// How the zone and keep/drop are decided from the evidence.
+    pub decision: MtaDecision,
     /// Explicit `libsylva_rivlib` file or directory.
     pub shim: Option<PathBuf>,
     /// Zone hypotheses asked from RiVLib (1..=8).
@@ -80,6 +95,7 @@ impl Default for MtaOptions {
     fn default() -> Self {
         MtaOptions {
             mode: MtaMode::Auto,
+            decision: MtaDecision::Default,
             shim: None,
             max_zone: 6,
             keep_uncertain: false,
@@ -261,7 +277,42 @@ struct Pipeline<'a> {
     out: Out,
     n: MtaStats,
     notch: Option<(f64, f64, f32)>,
+    /// `SYLVA_MTA_FEATURES=<file>`: write one [`FEATURE_LEN`]-float record per echo
+    /// (training data for a learned decision rule; see docs/guide/io.md).
+    features: Option<std::io::BufWriter<std::fs::File>>,
+    /// Learned decision rule, if any (None = the hand-written thresholds).
+    model: Option<MtaModel>,
 }
+
+/// The model shipped with Sylva (`crates/sylva-rs/src/io/mta_model.json`), if built in.
+pub const DEFAULT_MODEL_JSON: Option<&str> = default_model_json();
+
+const fn default_model_json() -> Option<&'static str> {
+    #[cfg(feature = "mta-model")]
+    {
+        Some(include_str!("mta_model.json"))
+    }
+    #[cfg(not(feature = "mta-model"))]
+    {
+        None
+    }
+}
+
+fn load_decision(d: &MtaDecision) -> Result<Option<MtaModel>> {
+    match d {
+        MtaDecision::Rule => Ok(None),
+        MtaDecision::Model(p) => MtaModel::load(p).map(Some),
+        MtaDecision::Default => match DEFAULT_MODEL_JSON {
+            Some(js) => MtaModel::from_json(js).map(Some),
+            None => Ok(None),
+        },
+    }
+}
+
+/// Floats per echo in the feature dump: line, shot, echo index, echo count, r1, amplitude,
+/// deviation, late flag, zone chosen, stage, then per zone (MAXZ): range, reflectance,
+/// votes_own, votes_nb, anchors, density.
+pub const FEATURE_LEN: usize = 10 + 6 * MAXZ;
 
 impl Pipeline<'_> {
     /// Pass 1 for every line whose neighbours exist (or all, when `force`).
@@ -391,6 +442,89 @@ impl Pipeline<'_> {
         let notch = if self.m.notch { self.notch } else { None };
         let line_idx = self.lines[i].index;
         let prev_len = if i > 0 { self.lines[i - 1].shots.len() } else { 0 };
+        // the learned rule, where one is loaded, overrides zone and keep/drop
+        let dec_owned: Vec<Decision>;
+        let dec: &[Decision] = if let Some(model) = self.model.as_ref() {
+            let echoes = &self.lines[i].echoes;
+            let mut v = dec.to_vec();
+            let mut j = 0usize;
+            while j < echoes.len() {
+                let mut e2 = j;
+                while e2 < echoes.len() && echoes[e2].shot == echoes[j].shot {
+                    e2 += 1;
+                }
+                let n_echoes = (e2 - j).min(255) as u8;
+                for (ii, e_i) in (j..e2).enumerate() {
+                    let e = &echoes[e_i];
+                    // closer echoes of the same pulse: strongest amplitude and the gap to the nearest
+                    let (mut prev_amp, mut prev_gap, mut nearest) = (-1.0f32, -1.0f32, f64::INFINITY);
+                    for o in &echoes[j..e2] {
+                        if o.r1 < e.r1 {
+                            prev_amp = prev_amp.max(o.amp);
+                            let gap = e.r1 - o.r1;
+                            if gap < nearest {
+                                nearest = gap;
+                                prev_gap = gap as f32;
+                            }
+                        }
+                    }
+                    let info = EchoInfo { amplitude: e.amp, deviation: e.dev, r1: e.r1 as f32, late: e.flags & 32 != 0, n_echoes, idx_in_shot: (ii + 1).min(255) as u8, prev_amp, prev_gap };
+                    match model.decide(&e.zr, &e.zrefl, &v[e_i].evidence, info) {
+                        Some((zone, p)) => {
+                            v[e_i].zone = zone;
+                            v[e_i].stage = if p >= model.threshold() { 4 } else { 0 };
+                            v[e_i].score = p;
+                        }
+                        None => {
+                            v[e_i].zone = 0;
+                            v[e_i].stage = 0;
+                        }
+                    }
+                }
+                j = e2;
+            }
+            dec_owned = v;
+            &dec_owned
+        } else {
+            dec
+        };
+        if let Some(w) = self.features.as_mut() {
+            use std::io::Write;
+            let mut rec = [0f32; FEATURE_LEN];
+            let mut buf: Vec<u8> = Vec::with_capacity(FEATURE_LEN * 4 * self.lines[i].echoes.len());
+            let mut last_shot = u32::MAX;
+            let mut idx_in_shot = 0u32;
+            for (e_i, e) in self.lines[i].echoes.iter().enumerate() {
+                if e.shot != last_shot {
+                    last_shot = e.shot;
+                    idx_in_shot = 0;
+                }
+                idx_in_shot += 1;
+                let d = dec[e_i];
+                rec[0] = line_idx as f32;
+                rec[1] = e.shot as f32;
+                rec[2] = idx_in_shot as f32;
+                rec[3] = 0.0;
+                rec[4] = e.r1 as f32;
+                rec[5] = e.amp;
+                rec[6] = e.dev;
+                rec[7] = ((e.flags >> 5) & 1) as f32;
+                rec[8] = d.zone as f32;
+                rec[9] = d.stage as f32;
+                for z in 0..MAXZ {
+                    rec[10 + z] = e.zr[z];
+                    rec[10 + MAXZ + z] = e.zrefl[z];
+                    rec[10 + 2 * MAXZ + z] = d.evidence.votes_own[z];
+                    rec[10 + 3 * MAXZ + z] = d.evidence.votes_nb[z];
+                    rec[10 + 4 * MAXZ + z] = d.evidence.anchors[z];
+                    rec[10 + 5 * MAXZ + z] = d.evidence.density[z];
+                }
+                for v in rec {
+                    buf.extend_from_slice(&v.to_le_bytes());
+                }
+            }
+            let _ = w.write_all(&buf);
+        }
         for (e_i, e) in self.lines[i].echoes.iter().enumerate() {
             self.n.echoes += 1;
             if e.amp <= 0.0 {
@@ -511,7 +645,9 @@ pub fn read_rxp_mta_with_stats(path: &Path, opts: &RxpOptions, m: &MtaOptions) -
         let zero_echo = ShimEcho { range: 0.0, amplitude: 0.0, reflectance: 0.0, deviation: 0.0, background: 0.0, flags: 0, nzone: 0, zone_range: [0.0; 8], zone_reflectance: [0.0; 8] };
         let mut shot_buf = vec![zero_shot; SHOTS];
         let mut echo_buf = vec![zero_echo; ECHOES];
-        let mut pipe = Pipeline { opts, m, lines: VecDeque::new(), out: Out::default(), n: MtaStats::default(), notch: None };
+        let features = std::env::var_os("SYLVA_MTA_FEATURES").and_then(|f| std::fs::File::create(f).ok()).map(std::io::BufWriter::new);
+        let model = load_decision(&m.decision)?;
+        let mut pipe = Pipeline { opts, m, lines: VecDeque::new(), out: Out::default(), n: MtaStats::default(), notch: None, features, model };
         let mut cur: Option<Line> = None;
         let mut meta_read = false;
         let nzone = max_zone as usize;

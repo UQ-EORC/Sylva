@@ -26,6 +26,7 @@ clap = { version = "4.6", features = ["derive"] }
 pyo3 = { version = "0.29", features = ["extension-module", "abi3-py310"] }
 numpy = "0.29"
 roxmltree = "0.21"
+serde_json = "1"
 spade = "2.15"
 robust = "1.2"
 shapefile = "0.9"

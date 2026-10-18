@@ -195,6 +195,11 @@ def read_rxp(path: str | Path, **options) -> PointCloud:
         - ``max_zone`` (6): MTA zones considered (1..8).
         - ``keep_uncertain`` (False): keep MTA-uncertain echoes, flagged in
           ``mta_uncertain_point``, instead of dropping them as RiSCAN does.
+        - ``mta_model`` (None): how the zone and keep/drop are decided from
+          the evidence. ``None`` or ``"default"`` uses the learned model
+          shipped with Sylva (boosted trees trained on rimta5's output of a
+          VZ-600i scan), ``"rule"`` the hand-written thresholds, a path a
+          model JSON written by ``scripts/train_mta.py``.
         - ``shim`` (path): ``libsylva_rivlib`` or a directory containing it.
         - ``max_lines`` (None): stop after this many scan lines (quick looks).
         - ``library`` (path): ``libscanifc`` or a directory containing it.

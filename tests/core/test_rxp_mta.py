@@ -106,6 +106,15 @@ def test_keep_uncertain_adds_points(shim):
     assert flag.sum() == len(loose) - len(strict)
 
 
+def test_rule_and_model_decisions_differ_but_agree_mostly(shim):
+    rule = io.read_rxp(os.environ["SYLVA_TEST_RXP"], mta="on", max_lines=40, mta_model="rule")
+    model = io.read_rxp(os.environ["SYLVA_TEST_RXP"], mta="on", max_lines=40)
+    assert abs(len(rule) - len(model)) < 0.05 * len(rule)
+    with pytest.raises(ValueError):
+        io.read_rxp(os.environ["SYLVA_TEST_RXP"], mta="on", max_lines=40,
+                    mta_model="/no/such/model.json")
+
+
 def test_mta_off_is_the_plain_reader(shim):
     plain = io.read_rxp(os.environ["SYLVA_TEST_RXP"], mta="off", max_points=1000)
     assert "mta_zone" not in plain.attrs and len(plain) == 1000
