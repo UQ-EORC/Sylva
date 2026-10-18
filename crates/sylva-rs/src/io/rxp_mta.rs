@@ -445,43 +445,58 @@ impl Pipeline<'_> {
         // the learned rule, where one is loaded, overrides zone and keep/drop
         let dec_owned: Vec<Decision>;
         let dec: &[Decision] = if let Some(model) = self.model.as_ref() {
+            use rayon::prelude::*;
             let echoes = &self.lines[i].echoes;
-            let mut v = dec.to_vec();
-            let mut j = 0usize;
-            while j < echoes.len() {
-                let mut e2 = j;
-                while e2 < echoes.len() && echoes[e2].shot == echoes[j].shot {
-                    e2 += 1;
+            // pulses = runs of equal shot index; evaluate them in parallel
+            let mut starts: Vec<usize> = vec![0];
+            for e_i in 1..echoes.len() {
+                if echoes[e_i].shot != echoes[e_i - 1].shot {
+                    starts.push(e_i);
                 }
-                let n_echoes = (e2 - j).min(255) as u8;
-                for (ii, e_i) in (j..e2).enumerate() {
-                    let e = &echoes[e_i];
-                    // closer echoes of the same pulse: strongest amplitude and the gap to the nearest
-                    let (mut prev_amp, mut prev_gap, mut nearest) = (-1.0f32, -1.0f32, f64::INFINITY);
-                    for o in &echoes[j..e2] {
-                        if o.r1 < e.r1 {
-                            prev_amp = prev_amp.max(o.amp);
-                            let gap = e.r1 - o.r1;
-                            if gap < nearest {
-                                nearest = gap;
-                                prev_gap = gap as f32;
+            }
+            if echoes.is_empty() {
+                starts.clear();
+            }
+            starts.push(echoes.len());
+            let mut v = dec.to_vec();
+            let out: Vec<(usize, Decision)> = starts
+                .par_windows(2)
+                .flat_map_iter(|w| {
+                    let (j, e2) = (w[0], w[1]);
+                    let n_echoes = (e2 - j).min(255) as u8;
+                    (j..e2).map(move |e_i| {
+                        let e = &echoes[e_i];
+                        // closer echoes of the same pulse: strongest amplitude and the gap to the nearest
+                        let (mut prev_amp, mut prev_gap, mut nearest) = (-1.0f32, -1.0f32, f64::INFINITY);
+                        for o in &echoes[j..e2] {
+                            if o.r1 < e.r1 {
+                                prev_amp = prev_amp.max(o.amp);
+                                let gap = e.r1 - o.r1;
+                                if gap < nearest {
+                                    nearest = gap;
+                                    prev_gap = gap as f32;
+                                }
                             }
                         }
-                    }
-                    let info = EchoInfo { amplitude: e.amp, deviation: e.dev, r1: e.r1 as f32, late: e.flags & 32 != 0, n_echoes, idx_in_shot: (ii + 1).min(255) as u8, prev_amp, prev_gap };
-                    match model.decide(&e.zr, &e.zrefl, &v[e_i].evidence, info) {
-                        Some((zone, p)) => {
-                            v[e_i].zone = zone;
-                            v[e_i].stage = if p >= model.threshold() { 4 } else { 0 };
-                            v[e_i].score = p;
+                        let info = EchoInfo { amplitude: e.amp, deviation: e.dev, r1: e.r1 as f32, late: e.flags & 32 != 0, n_echoes, idx_in_shot: (e_i - j + 1).min(255) as u8, prev_amp, prev_gap };
+                        let mut d = dec[e_i];
+                        match model.decide(&e.zr, &e.zrefl, &d.evidence, info) {
+                            Some((zone, p)) => {
+                                d.zone = zone;
+                                d.stage = if p >= model.threshold() { 4 } else { 0 };
+                                d.score = p;
+                            }
+                            None => {
+                                d.zone = 0;
+                                d.stage = 0;
+                            }
                         }
-                        None => {
-                            v[e_i].zone = 0;
-                            v[e_i].stage = 0;
-                        }
-                    }
-                }
-                j = e2;
+                        (e_i, d)
+                    })
+                })
+                .collect();
+            for (e_i, d) in out {
+                v[e_i] = d;
             }
             dec_owned = v;
             &dec_owned
