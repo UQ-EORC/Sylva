@@ -22,12 +22,12 @@ use crate::error::{Error, Result};
 use super::mta::{Evidence, MAXZ};
 
 /// Feature names, in the order the model expects them.
-pub const FEATURE_NAMES: [&str; 23] = [
+pub const FEATURE_NAMES: [&str; 25] = [
     "zone", "range_k", "refl_k", "votes_own_k", "votes_nb_k", "anchors_k", "density_k",
     "votes_own_other", "votes_nb_other", "anchors_other", "density_other",
     "votes_own_sum", "anchors_sum", "density_sum",
     "amplitude", "deviation", "r1", "late", "n_echoes", "idx_in_shot", "n_zones",
-    "prev_amp", "prev_gap",
+    "prev_amp", "prev_gap", "next_amp", "shot_frac",
 ];
 
 struct Node {
@@ -65,6 +65,10 @@ pub struct EchoInfo {
     pub prev_amp: f32,
     /// Range gap to the closest closer echo of the same pulse (-1 if none).
     pub prev_gap: f32,
+    /// Strongest amplitude among the farther echoes of the same pulse (-1 if none).
+    pub next_amp: f32,
+    /// Position of the shot within its scan line, 0..1.
+    pub shot_frac: f32,
 }
 
 impl MtaModel {
@@ -198,6 +202,8 @@ pub fn row_features(k: usize, zr: &[f32; MAXZ], zrefl: &[f32; MAXZ], ev: &Eviden
         n_zones,
         info.prev_amp,
         info.prev_gap,
+        info.next_amp,
+        info.shot_frac,
     ]
 }
 
@@ -205,7 +211,7 @@ pub fn row_features(k: usize, zr: &[f32; MAXZ], zrefl: &[f32; MAXZ], ev: &Eviden
 mod tests {
     use super::*;
 
-    const TINY: &str = r#"{"format":"sylva-mta-model/1","features":["zone","range_k","refl_k","votes_own_k","votes_nb_k","anchors_k","density_k","votes_own_other","votes_nb_other","anchors_other","density_other","votes_own_sum","anchors_sum","density_sum","amplitude","deviation","r1","late","n_echoes","idx_in_shot","n_zones","prev_amp","prev_gap"],"kmax":3,"baseline":-1.0,"threshold":0.5,
+    const TINY: &str = r#"{"format":"sylva-mta-model/1","features":["zone","range_k","refl_k","votes_own_k","votes_nb_k","anchors_k","density_k","votes_own_other","votes_nb_other","anchors_other","density_other","votes_own_sum","anchors_sum","density_sum","amplitude","deviation","r1","late","n_echoes","idx_in_shot","n_zones","prev_amp","prev_gap","next_amp","shot_frac"],"kmax":3,"baseline":-1.0,"threshold":0.5,
       "trees":[{"value":[0,2.0,-2.0],"feature":[3,0,0],"threshold":[5.0,0,0],"missing_left":[0,0,0],"left":[1,0,0],"right":[2,0,0],"leaf":[0,1,1]}]}"#;
 
     #[test]
@@ -227,7 +233,7 @@ mod tests {
         let mut ev = Evidence::default();
         ev.votes_own[0] = 9.0; // zone 1 scores low
         ev.votes_own[1] = 2.0; // zone 2 scores high
-        let info = EchoInfo { amplitude: 10.0, deviation: 1.0, r1: 20.0, late: false, n_echoes: 1, idx_in_shot: 1, prev_amp: -1.0, prev_gap: -1.0 };
+        let info = EchoInfo { amplitude: 10.0, deviation: 1.0, r1: 20.0, late: false, n_echoes: 1, idx_in_shot: 1, prev_amp: -1.0, prev_gap: -1.0, next_amp: -1.0, shot_frac: 0.5 };
         let (zone, p) = m.decide(&zr, &zr, &ev, info).unwrap();
         assert_eq!(zone, 2);
         assert!(p > m.threshold());

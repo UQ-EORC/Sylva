@@ -99,11 +99,18 @@ def test_attributes_and_zones(ours):
 
 
 def test_keep_uncertain_adds_points(shim):
-    strict = io.read_rxp(os.environ["SYLVA_TEST_RXP"], mta="on", max_lines=40)
-    loose = io.read_rxp(os.environ["SYLVA_TEST_RXP"], mta="on", max_lines=40, keep_uncertain=True)
+    # the hand-written rule always leaves some echoes uncertain in the first lines;
+    # the learned model may keep them all there, so it is only checked for consistency
+    strict = io.read_rxp(os.environ["SYLVA_TEST_RXP"], mta="on", max_lines=40, mta_model="rule")
+    loose = io.read_rxp(os.environ["SYLVA_TEST_RXP"], mta="on", max_lines=40, mta_model="rule",
+                        keep_uncertain=True)
     assert len(loose) > len(strict)
     flag = np.asarray(loose.attrs["mta_uncertain_point"])
     assert flag.sum() == len(loose) - len(strict)
+    m_strict = io.read_rxp(os.environ["SYLVA_TEST_RXP"], mta="on", max_lines=40)
+    m_loose = io.read_rxp(os.environ["SYLVA_TEST_RXP"], mta="on", max_lines=40, keep_uncertain=True)
+    m_flag = np.asarray(m_loose.attrs["mta_uncertain_point"])
+    assert len(m_loose) >= len(m_strict) and m_flag.sum() == len(m_loose) - len(m_strict)
 
 
 def test_rule_and_model_decisions_differ_but_agree_mostly(shim):

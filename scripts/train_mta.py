@@ -42,7 +42,7 @@ ROW_FEATURES = [
     "votes_own_other", "votes_nb_other", "anchors_other", "density_other",
     "votes_own_sum", "anchors_sum", "density_sum",
     "amplitude", "deviation", "r1", "late", "n_echoes", "idx_in_shot", "n_zones",
-    "prev_amp", "prev_gap",
+    "prev_amp", "prev_gap", "next_amp", "shot_frac",
 ]
 
 
@@ -100,16 +100,29 @@ def shot_context(F):
         pm[ok] = np.maximum(pm[ok], am[j[ok]])
         if off == 1:
             gp[ok] = rs[ok] - rs[j[ok]]
+    nm = np.full(n, -1.0, np.float32)            # strongest farther echo
+    for off in range(1, 9):
+        j = idx + off
+        ok = j < n
+        ok[ok] &= ks[j[ok]] == ks[ok]
+        nm[ok] = np.maximum(nm[ok], am[j[ok]])
     prev_amp = np.full(n, -1.0, np.float32)
     prev_gap = np.full(n, -1.0, np.float32)
+    next_amp = np.full(n, -1.0, np.float32)
     prev_amp[order] = pm
     prev_gap[order] = gp
-    return prev_amp, prev_gap
+    next_amp[order] = nm
+    return prev_amp, prev_gap, next_amp
 
 
 def rows(F, kept, tz, tcnt, kmax):
     """Expand echoes into (echo, zone) rows with the ROW_FEATURES columns."""
-    prev_amp, prev_gap = shot_context(F)
+    prev_amp, prev_gap, next_amp = shot_context(F)
+    # position of the shot within its line (theta proxy: sky above, ground below)
+    line = F[:, 0].astype(np.int64)
+    shots_per_line = np.zeros(int(line.max()) + 1, np.float32)
+    np.maximum.at(shots_per_line, line, F[:, 1] + 1.0)
+    shot_frac = F[:, 1] / shots_per_line[line]
     zr = F[:, 10:10 + MAXZ]
     zf = F[:, 10 + MAXZ:10 + 2 * MAXZ]
     vo = F[:, 10 + 2 * MAXZ:10 + 3 * MAXZ]
@@ -135,7 +148,7 @@ def rows(F, kept, tz, tcnt, kmax):
             np.maximum(vo[:, :kmax], 0).sum(1)[m], np.maximum(an[:, :kmax], 0).sum(1)[m],
             np.maximum(de[:, :kmax], 0).sum(1)[m],
             F[m, 5], F[m, 6], F[m, 4], F[m, 7], tcnt[m].astype(np.float32), F[m, 2], n_zones[m],
-            prev_amp[m], prev_gap[m],
+            prev_amp[m], prev_gap[m], next_amp[m], shot_frac[m],
         ]
         X.append(np.stack(cols, 1).astype(np.float32))
         y.append(kept[m] & (tz[m] == k + 1))
@@ -201,9 +214,13 @@ def main():
     ap.add_argument("out")
     ap.add_argument("--kmax", type=int, default=3)
     ap.add_argument("--train-mod", type=int, default=8,
-                    help="train on lines with line %% mod == 0, validate on line %% mod == mod//2")
-    ap.add_argument("--iters", type=int, default=300)
-    ap.add_argument("--leaves", type=int, default=31)
+                    help="validate on lines with line %% mod == mod//2; train on the rest "
+                         "(or only on line %% mod == 0 with --small)")
+    ap.add_argument("--small", action="store_true", help="train on one eighth of the lines only")
+    ap.add_argument("--max-rows", type=float, default=60e6,
+                    help="subsample training rows to this many")
+    ap.add_argument("--iters", type=int, default=500)
+    ap.add_argument("--leaves", type=int, default=63)
     ap.add_argument("--threshold", type=float, default=0.5,
                     help="keep threshold written into the model (0 = pick the best agreement)")
     args = ap.parse_args()
@@ -216,14 +233,18 @@ def main():
     r1 = F[:, 4]
     # the deterministic filters stay outside the model
     valid = (amp > 0) & ~((amp < 2.5) & (r1 < 18.0))
-    tr = (line % args.train_mod == 0) & valid
-    va = (line % args.train_mod == args.train_mod // 2) & valid
+    va_res = args.train_mod // 2
+    va = (line % args.train_mod == va_res) & valid
+    tr = ((line % args.train_mod == 0) if args.small else (line % args.train_mod != va_res)) & valid
     log(f"train echoes {tr.sum():,}  validation echoes {va.sum():,}")
 
     Xt, yt, _, _ = rows(F[tr], kept[tr], tz[tr], tcnt[tr], args.kmax)
+    if len(Xt) > args.max_rows:
+        sel = np.random.default_rng(0).choice(len(Xt), int(args.max_rows), replace=False)
+        Xt, yt = Xt[sel], yt[sel]
     log(f"train rows {len(Xt):,}, positives {yt.mean() * 100:.2f}%")
     model = HistGradientBoostingClassifier(max_iter=args.iters, learning_rate=0.1,
-                                           max_leaf_nodes=args.leaves, min_samples_leaf=200,
+                                           max_leaf_nodes=args.leaves, min_samples_leaf=100,
                                            l2_regularization=1.0, early_stopping=False,
                                            random_state=0)
     t0 = time.time()

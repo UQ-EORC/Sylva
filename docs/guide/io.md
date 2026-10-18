@@ -124,17 +124,17 @@ What happens, per scan line and in this order:
 5. `return_number` and `number_of_returns` are recounted over what survived.
 
 The three passes gather evidence per echo and zone (votes, anchor votes,
-heat-map density). What turns that into a decision is, by default, a small
-learned model: 300 boosted trees trained on rimta5's own output of a VZ-600i
-scan (`mta_model="default"`). `mta_model="rule"` uses the hand-written
+heat-map density). What turns that into a decision is, by default, a learned
+model: 500 boosted trees trained on rimta5's own output of a VZ-600i scan
+(`mta_model="default"`). `mta_model="rule"` uses the hand-written
 thresholds instead, and a path loads a model you trained yourself with
 `scripts/train_mta.py` from a scan that has both the `.rxp` and RiSCAN's
 `.rdbx` (set `SYLVA_MTA_FEATURES=<file>` while reading the `.rxp` to dump
 the per-echo evidence the script learns from).
 
 Measured against rimta5 6.9.6 on that scan (ScanPos001, Pilliga 2026, 52.6 M
-echoes), on scan lines the model never saw: 98.8% of the points are the same
-set and the zone agrees for 99.93% of the common points (the hand-written rule:
+echoes), on scan lines the model never saw: 98.9% of the points are the same
+set and the zone agrees for 99.98% of the common points (the hand-written rule:
 98.1% and 99.7%). Coordinates of common points agree to the 0.25 mm the `.rdbx`
 stores. What remains is mostly echoes rimta5 drops as MTA-uncertain that look
 well supported from the outside, about 1% of the points, and 0.07% of

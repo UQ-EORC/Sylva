@@ -459,6 +459,7 @@ impl Pipeline<'_> {
             }
             starts.push(echoes.len());
             let mut v = dec.to_vec();
+            let n_shots = self.lines[i].shots.len().max(1) as f32;
             let out: Vec<(usize, Decision)> = starts
                 .par_windows(2)
                 .flat_map_iter(|w| {
@@ -467,7 +468,7 @@ impl Pipeline<'_> {
                     (j..e2).map(move |e_i| {
                         let e = &echoes[e_i];
                         // closer echoes of the same pulse: strongest amplitude and the gap to the nearest
-                        let (mut prev_amp, mut prev_gap, mut nearest) = (-1.0f32, -1.0f32, f64::INFINITY);
+                        let (mut prev_amp, mut prev_gap, mut next_amp, mut nearest) = (-1.0f32, -1.0f32, -1.0f32, f64::INFINITY);
                         for o in &echoes[j..e2] {
                             if o.r1 < e.r1 {
                                 prev_amp = prev_amp.max(o.amp);
@@ -476,9 +477,22 @@ impl Pipeline<'_> {
                                     nearest = gap;
                                     prev_gap = gap as f32;
                                 }
+                            } else if o.r1 > e.r1 {
+                                next_amp = next_amp.max(o.amp);
                             }
                         }
-                        let info = EchoInfo { amplitude: e.amp, deviation: e.dev, r1: e.r1 as f32, late: e.flags & 32 != 0, n_echoes, idx_in_shot: (e_i - j + 1).min(255) as u8, prev_amp, prev_gap };
+                        let info = EchoInfo {
+                            amplitude: e.amp,
+                            deviation: e.dev,
+                            r1: e.r1 as f32,
+                            late: e.flags & 32 != 0,
+                            n_echoes,
+                            idx_in_shot: (e_i - j + 1).min(255) as u8,
+                            prev_amp,
+                            prev_gap,
+                            next_amp,
+                            shot_frac: e.shot as f32 / n_shots,
+                        };
                         let mut d = dec[e_i];
                         match model.decide(&e.zr, &e.zrefl, &d.evidence, info) {
                             Some((zone, p)) => {
