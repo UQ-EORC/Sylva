@@ -52,11 +52,18 @@ does the same job, in a virtual environment of your choice.
 
 Reading RIEGL `.rxp` files needs RiVLib's `libscanifc` (proprietary; download
 from RIEGL). Point `RIVLIB_PATH` at the extracted directory or pass
-`library=` to `sylva.io.read_rxp`. Reading `.rdbx` databases (RiSCAN PRO's
-imported scans) likewise needs `librdb` from RIEGL's RDB SDK: point
-`RDBLIB_PATH` at the extracted directory or pass `library=` to
-`sylva.io.read_rdbx`. Both are loaded at run time; nothing else is affected
-when they are absent.
+`library=` to `sylva.io.read_rxp`. To convert `.rxp` the way RiSCAN PRO does
+(MTA resolution and its filters, see the [I/O guide](guide/io.md)), build the
+small shim once from the same SDK; it needs a C++ compiler:
+
+```bash
+RIVLIB=/path/to/rivlib-2_6_0-x86_64-linux-gcc11 crates/sylva-rs/rivlib-shim/build.sh
+```
+
+Reading `.rdbx` databases (RiSCAN PRO's imported scans) likewise needs
+`librdb` from RIEGL's RDB SDK: point `RDBLIB_PATH` at the extracted directory
+or pass `library=` to `sylva.io.read_rdbx`. All of these are loaded at run
+time; nothing else is affected when they are absent.
 
 ## Containers
 

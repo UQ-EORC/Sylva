@@ -31,7 +31,7 @@ from .pointcloud import PointCloud
 from .shots import Shots
 
 __all__ = [
-    "read", "write", "read_ascii", "read_rxp", "read_rxp_shots", "find_rivlib",
+    "read", "write", "read_ascii", "read_rxp", "read_rxp_shots", "find_rivlib", "find_rivlib_shim",
     "read_rdbx", "rdbx_info", "find_rdblib", "RdbxInfo", "RdbxAttribute",
     "read_matrix_file",
 ]
@@ -171,10 +171,17 @@ def read_ascii(path: str | Path, columns: list[str] | None = None) -> PointCloud
 
 
 def read_rxp(path: str | Path, **options) -> PointCloud:
-    """Read a RIEGL ``.rxp`` scan as points.
+    """Read a RIEGL ``.rxp`` scan as points, converted like RiSCAN PRO.
 
-    Needs RiVLib's ``libscanifc``, which RIEGL does not allow to be
-    redistributed; see :func:`find_rivlib` for where it is looked for.
+    Needs RiVLib, which RIEGL does not allow to be redistributed; see
+    :func:`find_rivlib` for where it is looked for. With the small
+    ``libsylva_rivlib`` shim built from the SDK (see
+    :func:`find_rivlib_shim`) the scan is converted the way RiSCAN PRO's
+    import does it: multiple-time-around (MTA) ambiguity is resolved, echoes
+    are placed on the pulse they belong to, the window and weak-echo filters
+    are applied and MTA-uncertain echoes are dropped. Without the shim the
+    plain ``libscanifc`` reading is used (every echo in zone 1, no
+    resolution), which is what earlier versions did.
 
     Parameters
     ----------
@@ -183,6 +190,13 @@ def read_rxp(path: str | Path, **options) -> PointCloud:
     **options
         Keyword options:
 
+        - ``mta`` (``"auto"``): ``"auto"`` resolves MTA when the shim is
+          found, ``"on"`` requires it, ``"off"`` reads plainly.
+        - ``max_zone`` (6): MTA zones considered (1..8).
+        - ``keep_uncertain`` (False): keep MTA-uncertain echoes, flagged in
+          ``mta_uncertain_point``, instead of dropping them as RiSCAN does.
+        - ``shim`` (path): ``libsylva_rivlib`` or a directory containing it.
+        - ``max_lines`` (None): stop after this many scan lines (quick looks).
         - ``library`` (path): ``libscanifc`` or a directory containing it.
         - ``drop_pseudo_echoes`` (True): skip echoes RIEGL flags as pseudo.
         - ``min_range`` (0.5): drop echoes closer than this (m); removes the
@@ -205,12 +219,17 @@ def read_rxp(path: str | Path, **options) -> PointCloud:
         coordinates. Attributes: ``amplitude`` and ``reflectance`` (dB),
         ``deviation`` (pulse-shape deviation, higher = more distorted),
         ``echo_type`` (0 single, 1 first, 2 interior, 3 last) and
-        ``gps_time`` (s).
+        ``gps_time`` (s, scanner clock). With MTA resolution also
+        ``mta_zone``, ``return_number`` and ``number_of_returns`` (recounted
+        over the kept echoes), ``scan_line_index`` (RiSCAN's convention:
+        negative, -1 is the first line), ``shot_index_line`` and
+        ``mirror_facet``.
 
     Raises
     ------
     ValueError
-        If RiVLib cannot be found or reports an error reading the file.
+        If RiVLib (or, with ``mta="on"``, the shim) cannot be found or an
+        error is reported reading the file.
     """
     xyz, attrs = _core.read_rxp(str(path), **options)
     return PointCloud(xyz, attrs)
@@ -243,6 +262,34 @@ def read_rxp_shots(path: str | Path, **options) -> Shots:
         If RiVLib cannot be found or reports an error reading the file.
     """
     return Shots._from_core(_core.read_rxp_shots(str(path), **options))
+
+
+def find_rivlib_shim(hint: str | Path | None = None) -> Path:
+    """Locate ``libsylva_rivlib``, Sylva's shim over RiVLib's C++ class.
+
+    The shim is what makes :func:`read_rxp` resolve MTA ambiguity like
+    RiSCAN PRO. It is built once from the RiVLib SDK with
+    ``crates/sylva-rs/rivlib-shim/build.sh`` (RiVLib is linked statically;
+    the result stays on your machine).
+
+    Parameters
+    ----------
+    hint
+        A file, or a directory to search (three levels deep) first.
+
+    Returns
+    -------
+    Path
+        The library found. After ``hint`` the search order is
+        ``$SYLVA_RIVLIB_SHIM``, then the same roots as :func:`find_rivlib`
+        (``$RIVLIB_PATH``, ``~/.local/lib``, ``/opt``, ...).
+
+    Raises
+    ------
+    ValueError
+        If it is not found, with the build instructions.
+    """
+    return Path(_core.find_rivlib_shim(None if hint is None else str(hint)))
 
 
 def find_rivlib(hint: str | Path | None = None) -> Path:

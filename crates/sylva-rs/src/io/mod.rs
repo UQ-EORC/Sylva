@@ -20,7 +20,9 @@ pub mod las;
 pub mod mesh;
 pub mod ply;
 pub mod rdb;
+pub mod mta;
 pub mod riegl;
+pub mod rxp_mta;
 pub mod shots;
 
 use std::path::Path;

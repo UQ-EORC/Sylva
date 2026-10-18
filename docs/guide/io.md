@@ -79,6 +79,67 @@ pts.attrs.keys()        # amplitude, reflectance, deviation, echo_type, gps_time
   `pts[pts.attrs["deviation"] < 20]`, is a common clean-up. The right
   threshold depends on the scanner, so look at the histogram first.
 
+### MTA resolution: converting like RiSCAN PRO
+
+Scanners that fire at megahertz rates (VZ-400i, VZ-600i, VZ-2000i, ...) have
+several pulses in flight at once, so the scanner cannot tell which pulse an
+echo belongs to: it may sit at its measured range, or one pulse interval
+(about 68 m on a VZ-600i at 2200 kHz) further out, or two. RiSCAN PRO's import
+resolves this "multiple time around" (MTA) ambiguity with `rimta5`, drops the
+echoes it cannot place, applies a few filters and only then writes the
+`.rdbx`. Plain `libscanifc` reading gives you none of that: every echo lands in
+the first zone, far returns fold back into the first 68 m, and the weak,
+uncertain echoes stay.
+
+Sylva does the same conversion itself when a small shim over RiVLib's C++
+class is present. Build it once from the SDK (RiVLib is linked statically; the
+result stays on your machine):
+
+```bash
+RIVLIB=/path/to/rivlib-2_6_0-x86_64-linux-gcc11 crates/sylva-rs/rivlib-shim/build.sh
+```
+
+It lands next to `libscanifc` and `sylva.io.find_rivlib_shim()` shows what will
+be used (`SYLVA_RIVLIB_SHIM` overrides). From then on `read_rxp`, `sylva
+convert scan.rxp scan.laz` and everything else reading `.rxp` resolve MTA by
+default (`mta="auto"`); `mta="off"` is the old behaviour and `mta="on"` fails
+loudly when the shim is missing.
+
+What happens, per scan line and in this order:
+
+1. every laser shot (also the 12% without echoes) comes from RiVLib with its
+   exact time and beam; echoes are attached to the pulse whose time they carry
+   and bring their range under each zone hypothesis;
+2. the zone is chosen by neighbourhood consistency: the pulse-position
+   modulation makes a wrong hypothesis of two neighbouring echoes land on
+   different ranges while the right one agrees, so neighbours vote, then the
+   remaining echoes are compared with the resolved ones, then with a wide range
+   histogram of them;
+3. the echo is placed on its pulse at the resolved range with that pulse's beam
+   and timestamp, and its reflectance recomputed for that range;
+4. echoes with amplitude 0 are dropped, so are echoes below 2.5 dB within 18 m
+   (the scanner's dynamic trigger), echoes outside `min_range`/`max_range`,
+   zone-1 echoes inside the window notch, and MTA-uncertain echoes unless
+   `keep_uncertain=True` (then flagged in `mta_uncertain_point`);
+5. `return_number` and `number_of_returns` are recounted over what survived.
+
+Measured against rimta5 6.9.6 on a VZ-600i forest scan (ScanPos001, Pilliga
+2026, 52.6 M echoes): on scan lines with little far canopy 99.1% of the points
+are the same set and the zone agrees for 99.6%; on lines where zone-2 returns
+make up 6% of the points it is 97% and 98.3%. Coordinates of common points agree
+to the 0.25 mm the `.rdbx` stores. The resolver is deliberately conservative:
+where it cannot tell it drops the echo rather than placing it at a guessed
+range, so it ends up with about 1% fewer points than rimta5 in far canopy and
+zone-2 recall of roughly 70% there. Not reproduced: the dynamic window analysis
+and the near-range window correction (rimta5 applies them only when its window
+model succeeds, which it did not on the reference scans). The thresholds live
+in `sylva_rs::io::mta::MtaParams` for anyone who wants to tune them against
+their own `.rdbx` ground truth.
+
+Extra attributes with MTA resolution: `mta_zone`, `return_number`,
+`number_of_returns`, `scan_line_index` (RiSCAN's convention: negative, -1 is
+the first line), `shot_index_line`, `mirror_facet`.
+
 ### RDB databases
 
 When RiSCAN PRO imports a scan it writes an RDB 2 database

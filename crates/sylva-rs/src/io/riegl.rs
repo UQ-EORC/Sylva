@@ -59,7 +59,7 @@ pub const ECHO_SINGLE: u16 = 0;
 pub const ECHO_FIRST: u16 = 1;
 pub const ECHO_INTERIOR: u16 = 2;
 pub const ECHO_LAST: u16 = 3;
-const FLAG_PSEUDO_ECHO: u16 = 1 << 4;
+pub(crate) const FLAG_PSEUDO_ECHO: u16 = 1 << 4;
 
 /// The library, loaded once and kept for the life of the process.
 ///
@@ -93,11 +93,13 @@ pub fn search_roots() -> Vec<PathBuf> {
 
 const LIB_NAMES: &[&str] = &["libscanifc-mt.so", "libscanifc.so", "scanifc-mt.dll", "libscanifc-mt.dylib"];
 
-fn search_dir(dir: &Path, depth: usize) -> Option<PathBuf> {
+/// Look for one of `names` in `dir`, descending `depth` levels into
+/// RiVLib-looking subdirectories.
+pub(crate) fn search_dir(dir: &Path, depth: usize, names: &[&str]) -> Option<PathBuf> {
     if !dir.is_dir() {
         return None;
     }
-    for name in LIB_NAMES {
+    for name in names {
         let p = dir.join(name);
         if p.is_file() {
             return Some(p);
@@ -111,7 +113,7 @@ fn search_dir(dir: &Path, depth: usize) -> Option<PathBuf> {
     for e in entries {
         let n = e.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if n.to_ascii_lowercase().contains("rivlib") || n == "lib" || depth >= 2 {
-            if let Some(p) = search_dir(&e, depth - 1) {
+            if let Some(p) = search_dir(&e, depth - 1, names) {
                 return Some(p);
             }
         }
@@ -125,7 +127,7 @@ pub fn find_rivlib(hint: Option<&Path>) -> Result<PathBuf> {
         if h.is_file() {
             return Ok(h.to_path_buf());
         }
-        if let Some(p) = search_dir(h, 3) {
+        if let Some(p) = search_dir(h, 3, LIB_NAMES) {
             return Ok(p);
         }
     }
@@ -133,7 +135,7 @@ pub fn find_rivlib(hint: Option<&Path>) -> Result<PathBuf> {
         if root.is_file() {
             return Ok(root);
         }
-        if let Some(p) = search_dir(&root, 3) {
+        if let Some(p) = search_dir(&root, 3, LIB_NAMES) {
             return Ok(p);
         }
     }
@@ -182,6 +184,10 @@ pub struct RxpOptions {
     pub max_points: Option<usize>,
     /// Echo selection: `all`, `first`, `last`, `single`.
     pub echoes: String,
+    /// Multiple-time-around resolution (RiSCAN-like conversion); see
+    /// [`super::rxp_mta`]. The default tries the shim and falls back to plain
+    /// `libscanifc` reading when it is not built.
+    pub mta: super::rxp_mta::MtaOptions,
 }
 
 impl Default for RxpOptions {
@@ -195,6 +201,7 @@ impl Default for RxpOptions {
             shot_stride: 1,
             max_points: None,
             echoes: "all".into(),
+            mta: Default::default(),
         }
     }
 }
@@ -316,7 +323,22 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
 
 /// Read an `.rxp` file into a point cloud (SOCS frame) with `amplitude`,
 /// `reflectance`, `deviation`, `echo_type` and `gps_time` (seconds) attributes.
+///
+/// With MTA resolution available ([`RxpOptions::mta`]) the cloud is converted
+/// the way RiSCAN PRO does it and additionally carries `mta_zone`,
+/// `return_number`, `number_of_returns`, `scan_line_index`, `shot_index_line`
+/// and `mirror_facet`.
 pub fn read_rxp(path: impl AsRef<Path>, opts: &RxpOptions) -> Result<PointCloud> {
+    use super::rxp_mta::{find_shim, read_rxp_mta, MtaMode};
+    match opts.mta.mode {
+        MtaMode::Off => {}
+        MtaMode::On => return read_rxp_mta(path.as_ref(), opts, &opts.mta),
+        MtaMode::Auto => {
+            if find_shim(opts.mta.shim.as_deref()).is_ok() {
+                return read_rxp_mta(path.as_ref(), opts, &opts.mta);
+            }
+        }
+    }
     let raw = read_raw(path.as_ref(), opts)?;
     let mut cloud = PointCloud::new(raw.xyz);
     cloud.attrs.insert("amplitude".into(), Attr::F32(raw.amplitude));

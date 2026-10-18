@@ -406,7 +406,8 @@ def main(argv=None):
     s.add_argument("input", help="point cloud (.las .laz .ply .xyz .txt .csv .pts .rxp .rdbx)")
     s.set_defaults(func=_cmd_info)
 
-    s = sub.add_parser("convert", help="convert between formats, optionally voxel-thinning", **fmt)
+    s = sub.add_parser("convert", help="convert between formats, optionally voxel-thinning "
+                       "(.rxp is converted like RiSCAN PRO when the RiVLib shim is built)", **fmt)
     s.add_argument("input", help="point cloud")
     s.add_argument("output", help="point cloud; format from the extension")
     s.add_argument("--voxel", type=float, default=None,

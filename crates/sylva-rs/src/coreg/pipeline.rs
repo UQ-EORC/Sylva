@@ -418,7 +418,9 @@ pub fn read_scan(path: &Path, cfg: &CoregConfig) -> std::result::Result<Vec<Poin
     let is_rxp = path.extension().map(|e| e.to_string_lossy().to_lowercase() == "rxp").unwrap_or(false);
     let cloud = if is_rxp {
         let o = &cfg.reading;
-        let opts = crate::io::riegl::RxpOptions { library: o.library.clone(), drop_pseudo_echoes: o.drop_pseudo_echoes, min_range: 0.0, max_range: f64::INFINITY, stride: o.stride.max(1), shot_stride: o.shot_stride.max(1), max_points: None, echoes: o.echoes.clone() };
+        let opts = crate::io::riegl::RxpOptions { library: o.library.clone(), drop_pseudo_echoes: o.drop_pseudo_echoes, min_range: 0.0, max_range: f64::INFINITY, stride: o.stride.max(1), shot_stride: o.shot_stride.max(1), max_points: None, echoes: o.echoes.clone(),
+            // coregistration reads many scans thinned by stride; plain zone-1 reading keeps it fast
+            mta: crate::io::rxp_mta::MtaOptions { mode: crate::io::rxp_mta::MtaMode::Off, ..Default::default() } };
         crate::io::riegl::read_rxp(path, &opts)?
     } else {
         crate::io::read(path)?
