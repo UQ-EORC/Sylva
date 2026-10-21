@@ -81,6 +81,18 @@ pts.attrs.keys()        # amplitude, reflectance, deviation, echo_type, gps_time
 
 ### MTA resolution: converting like RiSCAN PRO
 
+!!! warning "MTA resolution is a work in progress"
+
+    Sylva's MTA resolution is its own reimplementation, not a wrapper around
+    RIEGL's `rimta5`, and it does not reproduce it exactly. On the reference
+    scan it agrees on about 99% of the points and 99.98% of their zones, and
+    the disagreements are concentrated in far canopy returns and in echoes
+    `rimta5` sets aside as uncertain. It is good enough that the numbers below
+    are worth reading in detail; it is not a drop-in replacement for a RiSCAN
+    PRO import, and it is still being worked on. Where the exact RiSCAN point
+    set matters - reproducing a published result, or delivering to someone who
+    expects it - import in RiSCAN PRO and read the `.rdbx`.
+
 Scanners that fire at megahertz rates (VZ-400i, VZ-600i, VZ-2000i, ...) have
 several pulses in flight at once, so the scanner cannot tell which pulse an
 echo belongs to: it may sit at its measured range, or one pulse interval

@@ -54,7 +54,7 @@ jobs:
             type=sha
           labels: |
             org.opencontainers.image.title=Sylva
-            org.opencontainers.image.description=Terrestrial laser scanning for forest ecology: the sylva command. Mount RiVLib at /opt/rivlib to read .rxp.
+            org.opencontainers.image.description=LiDAR processing for forest ecology and remote sensing research: the sylva command. Mount RiVLib at /opt/rivlib to read .rxp.
             org.opencontainers.image.licenses=GPL-3.0-or-later
       - uses: docker/build-push-action@v6
         with:

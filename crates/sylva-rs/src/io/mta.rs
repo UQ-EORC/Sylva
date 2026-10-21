@@ -4,6 +4,13 @@
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Multiple-time-around (MTA) resolution for RIEGL scans.
 //!
+//! **Work in progress.** This is our own reimplementation of what RIEGL's
+//! `rimta5` does, not a wrapper around it, and it does not reproduce it
+//! exactly: see the figures at the end of this comment, and
+//! `docs/guide/io.md`. Treat the output as very close to a RiSCAN PRO import
+//! rather than identical to one, and expect the behaviour here to keep
+//! changing.
+//!
 //! A scanner firing at megahertz rates has several pulses in flight at once,
 //! so an echo may belong to the most recent pulse or to one fired earlier
 //! ("zone" 1, 2, 3 ...). RIEGL varies the pulse spacing with a short code
@@ -30,9 +37,16 @@
 //!    real far returns and produces points at the wrong range.
 //!
 //! Echoes that pass none of the three are *MTA uncertain* (`stage == 0`,
-//! `zone` = the most probable one); RiSCAN PRO rejects those by default. The defaults below were tuned against rimta5's own result
-//! on a VZ-600i forest scan (see docs/guide/io.md): 97-99% of rimta5's point
-//! set depending on how much far canopy the lines see, zone choice 98-99.6%.
+//! `zone` = the most probable one); RiSCAN PRO rejects those by default.
+//!
+//! The defaults below were tuned against rimta5's own result on a VZ-600i
+//! forest scan (see `docs/guide/io.md`): 97-99% of rimta5's point set
+//! depending on how much far canopy the lines see, zone choice 98-99.6%. The
+//! remaining disagreement is mostly echoes rimta5 sets aside as uncertain
+//! that look well supported from the outside, and it is larger on lines that
+//! see a lot of far canopy - which is to say, exactly where the ambiguity is
+//! hardest. Two of rimta5's steps are not implemented at all: the dynamic
+//! window analysis and the near-range window correction.
 //!
 //! This module is pure Rust and works on per-line tables; the RXP reader in
 //! [`super::rxp_mta`] feeds it.

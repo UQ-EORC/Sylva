@@ -7,6 +7,11 @@
 //! `crates/sylva-rs/rivlib-shim/`), multiple-time-around resolution with
 //! [`super::mta`], then the same deterministic filters rimta5 applies.
 //!
+//! **Work in progress**: "the way RiSCAN PRO converts a scan" means the same
+//! steps in the same order, reimplemented, not the same results to the last
+//! point. The figures below say how close it gets; where the exact RiSCAN
+//! point set is what matters, import there and read the `.rdbx`.
+//!
 //! What this reproduces, measured against rimta5 6.9.6 on a VZ-600i scan
 //! (ScanPos001 of the Pilliga project): 97-99% identical point set (99% on
 //! lines with little far canopy, 97% where zone-2 returns are 6% of the

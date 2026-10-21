@@ -394,7 +394,7 @@ def _als_common(s, buffer: float = 20.0):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="sylva",
-                                description="Terrestrial laser scanning for forest ecology.",
+                                description="LiDAR processing for forest ecology and remote sensing research.",
                                 epilog="Run `sylva <command> --help` for the options of a command.")
     p.add_argument("--version", action="version", version=f"sylva {__version__}")
     p.add_argument("--no-progress", action="store_true",
@@ -407,7 +407,8 @@ def main(argv=None):
     s.set_defaults(func=_cmd_info)
 
     s = sub.add_parser("convert", help="convert between formats, optionally voxel-thinning "
-                       "(.rxp is converted like RiSCAN PRO when the RiVLib shim is built)", **fmt)
+                       "(.rxp is converted much like RiSCAN PRO when the RiVLib shim is "
+                       "built; the MTA resolution is a work in progress and not exact)", **fmt)
     s.add_argument("input", help="point cloud")
     s.add_argument("output", help="point cloud; format from the extension")
     s.add_argument("--voxel", type=float, default=None,

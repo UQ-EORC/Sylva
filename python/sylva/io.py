@@ -183,6 +183,16 @@ def read_rxp(path: str | Path, **options) -> PointCloud:
     plain ``libscanifc`` reading is used (every echo in zone 1, no
     resolution), which is what earlier versions did.
 
+    .. warning::
+
+       MTA resolution is Sylva's own reimplementation and is a work in
+       progress: it is close to RiSCAN PRO's import (about 99% of the same
+       points, 99.98% of the same zones on the reference scan) but not
+       identical to it, and the disagreements fall in far canopy returns and
+       echoes RIEGL's ``rimta5`` sets aside as uncertain. Where the exact
+       RiSCAN point set matters, import in RiSCAN PRO and read the ``.rdbx``
+       with :func:`read_rdbx`. See the IO guide for the measured figures.
+
     Parameters
     ----------
     path
