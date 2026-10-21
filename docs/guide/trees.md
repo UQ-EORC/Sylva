@@ -25,6 +25,11 @@ dtm.to_geotiff("dtm.tif", crs="EPSG:28355")
   cells whose lowest return is canopy can hold the cloth up.
 - **Comparable DTMs across dates:** pass the same `bounds` every time, so
   the grids line up.
+- **Checking the result:** `dtm.hillshade()` shades the grid as if lit from
+  one direction (by default from the north-west, 45° up) and returns another
+  `Raster`, 0 to 255. Ridges, pits left by a filter that bit too deep and
+  the seams between tiles stand out in shaded relief where a colour ramp
+  hides them. It is `gdaldem hillshade` without the GDAL.
 
 ## 2. Stem detection
 

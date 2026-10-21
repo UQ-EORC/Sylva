@@ -239,6 +239,75 @@ impl Raster {
         self.data = out;
     }
 
+    /// Shaded relief: how brightly each cell would be lit by a distant light
+    /// `azimuth` degrees clockwise from north and `altitude` degrees above the
+    /// horizon, the same calculation as `gdaldem hillshade`.
+    ///
+    /// Values run from 0, for a face turned away from the light, to 255 for
+    /// one square on to it; a cell with no data stays NaN. The result is a
+    /// picture of the surface rather than a measurement of it - a way to see
+    /// the shape of a DTM or the texture of a CHM, and the usual backdrop to
+    /// draw other layers over.
+    ///
+    /// `z_factor` scales the heights before the slopes are taken, so 2.0
+    /// exaggerates the relief twofold; it is also where a unit conversion
+    /// goes if z is not in the units of x and y (feet over metres: 0.3048).
+    ///
+    /// The slope at each cell is Horn's (1981) weighted average over the
+    /// eight neighbours, as GDAL and ArcGIS compute it. Where a neighbour
+    /// is off the edge of the grid or has no data the centre cell stands in
+    /// for it, which flattens the estimate there a little instead of losing
+    /// a ring of cells around every edge and hole.
+    pub fn hillshade(&self, azimuth: f64, altitude: f64, z_factor: f64) -> Raster {
+        let mut out = Raster::filled(self.nrows, self.ncols, self.xmin, self.ymin, self.resolution, f64::NAN);
+        // The light as a unit vector pointing from the ground up towards the
+        // source. Azimuth is a compass bearing, clockwise from north, so it
+        // is sin for the eastward component and cos for the northward one -
+        // the opposite way round from the usual maths convention.
+        let (az, alt) = (azimuth.to_radians(), altitude.to_radians());
+        let (lx, ly, lz) = (az.sin() * alt.cos(), az.cos() * alt.cos(), alt.sin());
+        for r in 0..self.nrows {
+            for c in 0..self.ncols {
+                let z = self.get(r, c);
+                if !z.is_finite() {
+                    continue;
+                }
+                // The 3x3 window as `w[north step + 1][east step + 1]`, so
+                // `w[2][2]` is the north-east neighbour and `w[1][1]` the
+                // cell itself. Starting from the centre value everywhere
+                // leaves it standing in for any neighbour that is missing.
+                let mut w = [[z; 3]; 3];
+                for dr in -1i64..=1 {
+                    for dc in -1i64..=1 {
+                        let (rr, cc) = (r as i64 + dr, c as i64 + dc);
+                        if self.in_bounds(rr, cc) {
+                            let v = self.get(rr as usize, cc as usize);
+                            if v.is_finite() {
+                                w[(dr + 1) as usize][(dc + 1) as usize] = v;
+                            }
+                        }
+                    }
+                }
+                // Horn's slopes: the rise from one side of the window to the
+                // other over the run across it, counting the middle of each
+                // side twice. `gx` rises towards the east, `gy` towards the
+                // north.
+                let run = 8.0 * self.resolution;
+                let gx = z_factor * ((w[0][2] + 2.0 * w[1][2] + w[2][2]) - (w[0][0] + 2.0 * w[1][0] + w[2][0])) / run;
+                let gy = z_factor * ((w[2][0] + 2.0 * w[2][1] + w[2][2]) - (w[0][0] + 2.0 * w[0][1] + w[0][2])) / run;
+                // Brightness is the cosine of the angle between the light and
+                // the surface, which is the dot product of the two unit
+                // vectors. A surface rising by `(gx, gy)` has normal
+                // `(-gx, -gy, 1)`, and the square root normalises it.
+                // Negative means the cell faces away from the light, so it
+                // sits in its own shadow and clamps to black.
+                let lit = (lz - gx * lx - gy * ly) / (gx * gx + gy * gy + 1.0).sqrt();
+                out.set(r, c, 255.0 * lit.max(0.0));
+            }
+        }
+        out
+    }
+
     /// Grey morphological opening (min then max) with a square window of `half` cells.
     pub fn grey_opening(&self, half: usize) -> Raster {
         let eroded = self.window_reduce(half, f64::min, f64::INFINITY);
@@ -378,6 +447,35 @@ mod tests {
         let (r, c) = cell_indices(10.0, -5.0, 0.5, &[10.0, 9.9, 11.26, f64::NAN], &[-5.0, -5.01, 0.0, 0.0]);
         assert_eq!(c, vec![0, -1, 2, i64::MIN]);
         assert_eq!(r, vec![0, -1, 10, 10]);
+    }
+
+    #[test]
+    fn hillshade_follows_the_light() {
+        // A plane rising one metre per metre towards the east, with a hole in
+        // it. Such a slope turns its face *westwards*, so the light has to
+        // come from the west to fall on it square.
+        let mut r = Raster::filled(7, 7, 0.0, 0.0, 1.0, 0.0);
+        for row in 0..7 {
+            for col in 0..7 {
+                r.set(row, col, col as f64);
+            }
+        }
+        r.set(3, 3, f64::NAN);
+        let from_west = r.hillshade(270.0, 45.0, 1.0);
+        let from_east = r.hillshade(90.0, 45.0, 1.0);
+        // A 45 degree slope lit from 45 degrees above the opposite side is as
+        // bright as a surface can be; from behind it is in its own shadow.
+        assert!((from_west.get(1, 1) - 255.0).abs() < 1e-9, "{}", from_west.get(1, 1));
+        assert_eq!(from_east.get(1, 1), 0.0);
+        // The hole stays a hole, and the cells around it are still shaded.
+        assert!(from_west.get(3, 3).is_nan());
+        assert!(from_west.get(3, 2) > 250.0, "{}", from_west.get(3, 2));
+
+        // Flat ground takes the light at its own altitude, whatever the bearing.
+        let flat = Raster::filled(3, 3, 0.0, 0.0, 1.0, 7.0).hillshade(315.0, 30.0, 1.0);
+        for v in flat.data {
+            assert!((v - 255.0 * 0.5).abs() < 1e-9, "{v}");
+        }
     }
 
     #[test]

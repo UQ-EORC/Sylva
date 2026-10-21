@@ -129,6 +129,51 @@ class Raster:
         return Raster(_core.raster_fill_nearest(self.data), self.xmin, self.ymin,
                       self.resolution, self.crs)
 
+    def hillshade(self, azimuth: float = 315.0, altitude: float = 45.0,
+                  z_factor: float = 1.0) -> Raster:
+        """Shade the surface as if lit from one direction, for figures.
+
+        The same calculation as ``gdaldem hillshade``: slopes from Horn's
+        (1981) average over the eight neighbours, then the cosine of the
+        angle between each cell's face and the light. It is a picture of the
+        surface, not a measurement of it - a way to see the shape of a DTM or
+        the texture of a CHM, and the usual backdrop to draw other layers
+        over.
+
+        Parameters
+        ----------
+        azimuth
+            Compass bearing the light comes *from*, in degrees clockwise from
+            north. The default 315 (north-west) is the GIS convention: lit
+            from the upper left, which is the direction people read relief
+            correctly rather than inside out.
+        altitude
+            Height of the light above the horizon, in degrees. 45 is the
+            usual choice; lower picks out faint relief, higher flattens it.
+        z_factor
+            Heights are multiplied by this before the slopes are taken, so
+            2.0 exaggerates the relief twofold. It is also where a unit
+            conversion goes if z is not in the units of x and y (feet over
+            metres: 0.3048).
+
+        Returns
+        -------
+        Raster
+            Same grid and CRS, holding 0 (facing away from the light) to 255
+            (facing square at it); cells with no data stay NaN. At an edge or
+            a hole the missing neighbours are taken as the centre cell, which
+            flattens the shading there instead of losing a ring of cells.
+
+        Examples
+        --------
+        >>> hs = dtm.hillshade()
+        >>> plt.imshow(hs.data, cmap="gray", origin="lower",
+        ...            extent=[hs.xmin, hs.xmax, hs.ymin, hs.ymax])
+        """
+        return Raster(_core.raster_hillshade(self.data, float(self.resolution), float(azimuth),
+                                             float(altitude), float(z_factor)),
+                      self.xmin, self.ymin, self.resolution, self.crs)
+
     def to_geotiff(self, path: str | Path, crs: str | None = None) -> None:
         """Write a single-band float32 GeoTIFF, north-up, nodata = NaN.
 

@@ -31,9 +31,19 @@ fn raster_heights_above<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, data: 
     Ok(py.detach(|| ground::heights_above(&p, &r)).into_pyarray(py))
 }
 
+/// Shaded relief of a raster: 0-255 per cell, NaN where the raster has no data.
+#[pyfunction]
+#[pyo3(signature = (data, resolution, azimuth=315.0, altitude=45.0, z_factor=1.0))]
+fn raster_hillshade<'py>(py: Python<'py>, data: PyReadonlyArray2<f64>, resolution: f64, azimuth: f64, altitude: f64, z_factor: f64) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    let r = raster_from_py(data, 0.0, 0.0, resolution);
+    let h = py.detach(|| r.hillshade(azimuth, altitude, z_factor));
+    Ok(PyArray1::from_vec(py, h.data).reshape([h.nrows, h.ncols])?)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(raster_cell_index, m)?)?;
     m.add_function(wrap_pyfunction!(raster_cell_centers, m)?)?;
     m.add_function(wrap_pyfunction!(raster_heights_above, m)?)?;
+    m.add_function(wrap_pyfunction!(raster_hillshade, m)?)?;
     Ok(())
 }

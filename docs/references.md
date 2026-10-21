@@ -160,6 +160,10 @@ altimeter waveforms. *IEEE Transactions on Geoscience and Remote Sensing*,
 In Sylva: the inflection-point initial estimates of `waveform.decompose`
 (`peaks="inflection"`).
 
+Horn, B. K. P. (1981). Hill shading and the reflectance map. *Proceedings of the
+IEEE*, *69*(1), 14–47. <https://doi.org/10.1109/PROC.1981.11918>
+In Sylva: the slope estimate and shading of `Raster.hillshade`.
+
 Hosoi, F., & Omasa, K. (2006). Voxel-based 3-D modeling of individual trees for
 estimating leaf area density using high-resolution portable scanning lidar.
 *IEEE Transactions on Geoscience and Remote Sensing*, *44*(12), 3610–3618.
