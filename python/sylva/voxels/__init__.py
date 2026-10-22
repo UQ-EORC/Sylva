@@ -144,6 +144,7 @@ class RayVoxelGrid:
     | ``state`` | 0 unobserved, 1 occluded, 2 empty, 3 filled (:data:`STATES`) |
     | ``attenuation_<m>`` | attenuation λ (m⁻¹) by method ``m`` (see ``attenuation``) |
     | ``pad_<m>``, ``lad_<m>``, ``wad_<m>`` | plant, leaf, wood area density λ / G (m² m⁻³) |
+    | ``attenuation_fpl_biased``, ``attenuation_fpl_correction`` | the FPL estimate before the Pimont et al. (2018) term and the term itself; ``attenuation_fpl`` and ``pad_fpl`` are their difference over G |
     | ``pad_g0_5`` | plant area density with G = 0.5 |
     | ``pad_g_corrected`` | PAD with G at the voxel's mean beam zenith, first attenuation method |
     | ``surface_area`` | ``pad_g0_5`` × voxel volume (m²) |

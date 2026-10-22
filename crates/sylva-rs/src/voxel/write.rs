@@ -84,7 +84,7 @@ impl RayVoxels {
         col!("mean_azimuth_angle_deg", |i| real(self.mean_azimuth(i).0.to_degrees()));
         col!("azimuth_concentration", |i| real(self.mean_azimuth(i).1));
         col!("mean_laser_dist", |i| real(self.mean_laser_distance(i)));
-        col!("attenuation_fpl", |i| real(self.attenuation(i, Attenuation::Fpl) - self.fpl_bias(i)));
+        col!("attenuation_fpl", |i| real(self.attenuation_corrected(i, Attenuation::Fpl)));
         col!("attenuation_ppl", |i| real(self.attenuation(i, Attenuation::Ppl)));
         if self.ground_height.is_some() {
             col!("distance_from_ground", |i| real(self.distance_from_ground(i)));

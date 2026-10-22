@@ -44,7 +44,16 @@ the fallback and the beam-section estimate agree within 3 % in PAI.
 | `transmittance` | `−ln(1 − intercepted / entering)` beam section |
 | `bailey` | [Bailey & Mahaffee (2017)](../references.md) eq. 10 per class, with `G` from triangle facets between neighbouring echoes |
 
-Area density is `λ / G`. `G` comes from an analytic leaf angle distribution
+Area density is `λ / G`, with the same bias-corrected λ as `attenuation_fpl`
+(`attenuation_fpl_biased` and `attenuation_fpl_correction` hold the two parts).
+The correction is subtracted from a noisy estimate, so a voxel crossed by few
+pulses can come out slightly negative; that is the unbiased estimator working
+as intended, and dropping only those voxels biases every mean upward. Apply
+one sampling threshold to all voxels instead (`profile(..., min_beams=)`) and
+clip at zero only for per-voxel maps. Without `laser` or `beam` there is no
+beam section and the term is zero.
+
+`G` comes from an analytic leaf angle distribution
 (`lad=`: spherical, uniform, the four [de Wit (1965)](../references.md) types,
 [Campbell's (1990)](../references.md) ellipsoidal, [Goel & Strebel's
 (1984)](../references.md) two-parameter beta, `lad_params=[mu, nu]` in their

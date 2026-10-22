@@ -341,6 +341,17 @@ impl RayVoxels {
         }
     }
 
+    /// λ with the Pimont et al. (2018) bias term taken off the FPL estimate;
+    /// the other methods have no correction. This is the λ behind the area
+    /// densities and the `attenuation_fpl` column, so a poorly sampled voxel
+    /// can come out slightly negative: the term is subtracted from a noisy
+    /// estimate near zero. That is the unbiased estimator working as it
+    /// should, and dropping only those voxels would bias every mean upward.
+    pub fn attenuation_corrected(&self, idx: usize, method: Attenuation) -> f64 {
+        let lambda = self.attenuation(idx, method);
+        if method == Attenuation::Fpl { lambda - self.fpl_bias(idx) } else { lambda }
+    }
+
     /// Pimont et al. (2018) bias correction of the FPL estimate.
     pub fn fpl_bias(&self, idx: usize) -> f64 {
         let w_eff = self.get_f(F::BsEffectiveFreePath, idx) as f64;
@@ -439,7 +450,7 @@ impl RayVoxels {
             return 0.0;
         }
         let g = self.g_analytic(idx);
-        if g > 0.0 { self.attenuation(idx, self.params.attenuation[0]) / g } else { 0.0 }
+        if g > 0.0 { self.attenuation_corrected(idx, self.params.attenuation[0]) / g } else { 0.0 }
     }
 
     /// The inclination distribution governing a voxel (its predominant tree's).
@@ -466,7 +477,7 @@ impl RayVoxels {
         let Some(iad) = self.voxel_iad(idx) else {
             let g = self.g_analytic(idx);
             if g > 0.0 {
-                let lambda = self.attenuation(idx, method);
+                let lambda = self.attenuation_corrected(idx, method);
                 out.pad = lambda / g;
                 if self.has_leaf {
                     out.lad = lambda * leaf / hit_total / g;
@@ -494,6 +505,8 @@ impl RayVoxels {
                 };
             }
             Attenuation::Fpl => {
+                // The per-class count estimator (hits over the class free
+                // path); the beam-section bias term does not apply to it.
                 let class = |n: i32, fp: f32, g: f64| if g > 0.0 && fp as f64 > EPS { n as f64 / (fp as f64 * g) } else { 0.0 };
                 // Plant hits count every vegetation echo, so pair them with the free
                 // path of every vegetation segment (rayvoxel uses the unclassified
@@ -504,7 +517,7 @@ impl RayVoxels {
                 out.wad = class(self.get_i(I::NumHitWood, idx), self.get_f(F::FreePathLengthWood, idx), iad.g_wood);
             }
             _ => {
-                let lambda = self.attenuation(idx, method);
+                let lambda = self.attenuation_corrected(idx, method);
                 if iad.g_plant > 0.0 {
                     out.pad = lambda / iad.g_plant;
                 }
@@ -542,7 +555,7 @@ impl RayVoxels {
             "exploration_rate" => map(&|i| self.exploration(i).0),
             "attenuation_fpl_biased" => map(&|i| self.attenuation(i, Attenuation::Fpl)),
             "attenuation_fpl_correction" => map(&|i| self.fpl_bias(i)),
-            "attenuation_fpl" => map(&|i| self.attenuation(i, Attenuation::Fpl) - self.fpl_bias(i)),
+            "attenuation_fpl" => map(&|i| self.attenuation_corrected(i, Attenuation::Fpl)),
             "g_plant" => map(&|i| self.voxel_iad(i).map_or_else(|| self.g_analytic(i), |t| t.g_plant)),
             "g_leaf" => map(&|i| self.voxel_iad(i).map_or(0.0, |t| t.g_leaf)),
             "g_wood" => map(&|i| self.voxel_iad(i).map_or(0.0, |t| t.g_wood)),
