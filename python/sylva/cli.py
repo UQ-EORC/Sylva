@@ -131,6 +131,14 @@ def _is_las(path) -> bool:
     return str(path).lower().endswith((".las", ".laz"))
 
 
+def _heights_warning(cloud, path):
+    """Warn when a cloud has no height attribute, since z then stands in,
+    which is right only for a cloud that is already height-normalised."""
+    if "height" not in cloud.attrs:
+        print(f"warning: {path} has no height attribute; using z as height above ground. "
+              "Run `sylva ground` first unless the cloud is already height-normalised.", file=sys.stderr)
+
+
 def _cmd_trees(args):
     args.output = args.output or _beside(args.input, "_trees", ".csv")
     if args.segment == "":                       # --segment with no path
@@ -139,6 +147,7 @@ def _cmd_trees(args):
     # gets the other attributes by streaming the input past the labels.
     las = _is_las(args.input)
     cloud = io.read(args.input, attrs=["height"] if las else None)
+    _heights_warning(cloud, args.input)
     found = trees.detect_stems(cloud, min_radius=args.min_dbh / 2)
     labels = trees.segment_trees(cloud, found)
     trees.tree_heights(cloud, labels, found)
@@ -166,6 +175,7 @@ def _cmd_trees(args):
 def _cmd_chm(args):
     args.output = args.output or _beside(args.input, "_chm", ".asc")
     cloud = io.read(args.input)
+    _heights_warning(cloud, args.input)
     chm = ground.make_chm(cloud, resolution=args.resolution)
     if args.output.lower().endswith((".tif", ".tiff")):
         chm.to_geotiff(args.output)
@@ -176,6 +186,7 @@ def _cmd_chm(args):
 
 def _cmd_pad(args):
     cloud = io.read(args.input)
+    _heights_warning(cloud, args.input)
     z, pad = canopy.pad_profile_voxel(cloud, voxel_size=args.voxel)
     print("height,pad")
     for zz, p in zip(z, pad, strict=True):

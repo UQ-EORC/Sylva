@@ -69,3 +69,16 @@ def test_trees_can_still_write_to_stdout(tmp_path, capsys):
     out = capsys.readouterr().out
     assert out.startswith("tree_id,") and "\n" in out
     assert not list(tmp_path.glob("*_trees.csv"))
+
+
+def test_trees_warns_when_z_stands_in_for_height(tmp_path, capsys):
+    plot = _two_tree_plot()
+    bare = PointCloud(plot.xyz, {k: v for k, v in plot.attrs.items() if k != "height"})
+    src = tmp_path / "plot.laz"
+    io.write(bare, src)
+    cli.main(["trees", str(src), "-o", "-"])
+    assert "no height attribute" in capsys.readouterr().err
+    normalised = tmp_path / "plot_h.laz"
+    io.write(bare.with_attrs(height=bare.xyz[:, 2]), normalised)
+    cli.main(["trees", str(normalised), "-o", "-"])
+    assert "no height attribute" not in capsys.readouterr().err

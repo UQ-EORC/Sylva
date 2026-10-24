@@ -5,7 +5,7 @@
 //! `sylva` command-line tool (Rust build; the Python package ships an
 //! equivalent `sylva` entry point).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -143,7 +143,12 @@ fn is_shots_file(path: &std::path::Path) -> bool {
     path.extension().is_some_and(|e| e.eq_ignore_ascii_case("parquet"))
 }
 
-fn heights(cloud: &PointCloud) -> Vec<f64> {
+/// The cloud's heights above ground, warning when it has none and z
+/// stands in: right only for a cloud that is already height-normalised.
+fn heights(cloud: &PointCloud, path: &Path) -> Vec<f64> {
+    if !cloud.attrs.contains_key("height") {
+        eprintln!("warning: {} has no height attribute; using z as height above ground. Run `sylva ground` first unless the cloud is already height-normalised.", path.display());
+    }
     cloud.heights("height")
 }
 
@@ -193,7 +198,7 @@ fn main() -> Result<()> {
             // attributes reach the segmented file by streaming the input.
             let is_las = input.extension().is_some_and(|e| e.eq_ignore_ascii_case("las") || e.eq_ignore_ascii_case("laz"));
             let mut c = if is_las { io::read_attrs(&input, Some(&["height"]))? } else { io::read(&input)? };
-            let h = heights(&c);
+            let h = heights(&c, &input);
             let mut found = trees::detect_stems(&c.xyz, &h, &trees::StemParams { min_radius: min_dbh / 2.0, ..Default::default() });
             if let Some(p) = segment {
                 let labels = trees::segment_trees(&c.xyz, &h, &found, &trees::SegmentParams::default());
@@ -224,14 +229,14 @@ fn main() -> Result<()> {
         }
         Command::Chm { input, output, resolution } => {
             let c = io::read(&input)?;
-            let h = heights(&c);
+            let h = heights(&c, &input);
             let chm = ground::make_chm(&c.xyz, &h, resolution, None, 0.0)?;
             chm.write_ascii_grid(&output, -9999.0)?;
             println!("CHM {}x{} -> {}; cover(>2m)={:.2}", chm.nrows, chm.ncols, output.display(), canopy::canopy_cover(&chm.data, 2.0));
         }
         Command::Pad { input, voxel } => {
             let c = io::read(&input)?;
-            let h = heights(&c);
+            let h = heights(&c, &input);
             let (z, pad) = canopy::pad_profile_voxel(&c.xyz, &h, voxel, None, 1.0)?;
             println!("height,pad");
             for (zz, p) in z.iter().zip(&pad) {
