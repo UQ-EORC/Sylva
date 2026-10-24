@@ -131,8 +131,8 @@ impl<'a> Graph<'a> {
                 }
             }
         });
-        let extra = if bridge { bridges(points, &tree, &found, slots, max_distance) } else { Vec::new() };
         drop(tree);
+        let extra = if bridge { bridges(points, &found, slots, max_distance) } else { Vec::new() };
         // Degree of each node: what it found plus what found it, and the bridges.
         let mut degree = vec![0usize; n];
         for (i, row) in found.chunks(slots).enumerate() {
@@ -234,17 +234,25 @@ fn find(parent: &mut [u32], mut x: u32) -> u32 {
 }
 
 /// The edges that join the connected components of a k-nearest-neighbour
-/// graph wherever two of them come within `max_distance`: for every
-/// component but the largest, the closest pair of nodes between it and
-/// each other component within reach, repeated until no two components
-/// are that close. The graph then connects whatever the cloud connects at
-/// `max_distance`, however the points were thinned: a crown joined to its
-/// trunk by a few sparsely sampled branches is no longer at the mercy of
-/// which point each voxel kept, which is what made a k-neighbour graph
-/// fall apart there. A piece near two trees is joined to both, and the
-/// path costs decide which it belongs to, as they would in a radius graph.
-/// `found` is the slot table of the search, `slots` wide per node.
-fn bridges(points: &[Point], tree: &KdTree, found: &[u32], slots: usize, max_distance: f64) -> Vec<(u32, u32)> {
+/// graph wherever two of them come within `max_distance`: for every pair
+/// of components within reach, the closest pair of nodes between them,
+/// repeated until no two components are that close. The graph then
+/// connects whatever the cloud connects at `max_distance`, however the
+/// points were thinned: a crown joined to its trunk by a few sparsely
+/// sampled branches is no longer at the mercy of which point each voxel
+/// kept, which is what made a k-neighbour graph fall apart there. A piece
+/// near two trees is joined to both, and the path costs decide which it
+/// belongs to, as they would in a radius graph. `found` is the slot table
+/// of the search, `slots` wide per node.
+///
+/// The closest pairs come from a search over a bounding-box tree of the
+/// nodes in which every box records the component its nodes belong to,
+/// when they all belong to one: two boxes of the same component have
+/// nothing to offer and are skipped whole, so the inside of a tree costs
+/// nothing and the work goes where components meet. A radius search from
+/// every node would visit the whole metre around each of them, which on a
+/// dense plot is thousands of nodes a node and hours a pass.
+fn bridges(points: &[Point], found: &[u32], slots: usize, max_distance: f64) -> Vec<(u32, u32)> {
     let n = points.len();
     let mut parent: Vec<u32> = (0..n as u32).collect();
     for (i, row) in found.chunks(slots).enumerate() {
@@ -259,64 +267,19 @@ fn bridges(points: &[Point], tree: &KdTree, found: &[u32], slots: usize, max_dis
         }
     }
     let mut extra = Vec::new();
-    // Each pass joins every component to its nearest neighbour component;
+    if n == 0 {
+        return extra;
+    }
+    let tree = BoxTree::new(points);
+    // Each pass joins every component to its neighbours within reach;
     // chains of components take a few passes, and the count is bounded by
     // the number of components, which halves at least each pass.
     for _ in 0..64 {
         let comp: Vec<u32> = (0..n as u32).map(|i| find(&mut parent, i)).collect();
-        let mut size = vec![0u32; n];
-        for &c in &comp {
-            size[c as usize] += 1;
-        }
-        let largest = (0..n).max_by_key(|&c| size[c]).map(|c| c as u32).unwrap_or(0);
-        if size[largest as usize] as usize == n {
+        if comp.iter().all(|&c| c == comp[0]) {
             break;
         }
-        // Per node outside the largest component, the nearest node of each
-        // other component within reach: probe the nearest neighbours in
-        // widening batches until the batch reaches past `max_distance`,
-        // then by radius if a dense cloud defeats that.
-        let near: Vec<Vec<(u32, u32, f64)>> = (0..n)
-            .into_par_iter()
-            .map(|i| {
-                if comp[i] == largest {
-                    return Vec::new();
-                }
-                let others = |nb: Vec<(usize, f64)>| {
-                    let mut seen: Vec<(u32, u32, f64)> = Vec::new();
-                    for (j, d) in nb {
-                        if d > max_distance {
-                            break;
-                        }
-                        if comp[j] != comp[i] && !seen.iter().any(|&(_, jj, _)| comp[jj as usize] == comp[j]) {
-                            seen.push((i as u32, j as u32, d));
-                        }
-                    }
-                    seen
-                };
-                let mut k = 32;
-                while k <= 4096 {
-                    let nb = tree.knn(&points[i], k);
-                    if nb.len() < k || nb.last().is_some_and(|&(_, d)| d > max_distance) {
-                        return others(nb);
-                    }
-                    k *= 4;
-                }
-                let mut nb = tree.within(&points[i], max_distance);
-                nb.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-                others(nb)
-            })
-            .collect();
-        // The closest pair per pair of components.
-        let mut best: std::collections::HashMap<(u32, u32), (f64, u32, u32)> = std::collections::HashMap::new();
-        for (i, j, d) in near.into_iter().flatten() {
-            let (a, b) = (comp[i as usize], comp[j as usize]);
-            let key = if a < b { (a, b) } else { (b, a) };
-            let e = best.entry(key).or_insert((f64::INFINITY, 0, 0));
-            if d < e.0 {
-                *e = (d, i, j);
-            }
-        }
+        let best = tree.closest_pairs(&comp, max_distance);
         if best.is_empty() {
             break;
         }
@@ -338,6 +301,216 @@ fn bridges(points: &[Point], tree: &KdTree, found: &[u32], slots: usize, max_dis
         }
     }
     extra
+}
+
+/// The closest pair of nodes per pair of components: `(distance, i, j)`
+/// under the component pair `(a, b)` with `a < b`.
+type ClosestPairs = std::collections::HashMap<(u32, u32), (f64, u32, u32)>;
+
+/// A bounding-box tree over a point set: a k-d split down to leaves of at
+/// most [`BoxTree::LEAF`] points, each node holding the tight box of its
+/// points. Built once per graph; the component flags that drive
+/// [`BoxTree::closest_pairs`] are recomputed per pass.
+struct BoxTree<'a> {
+    points: &'a [Point],
+    /// Point indices, permuted so that every node holds a contiguous run.
+    perm: Vec<u32>,
+    nodes: Vec<BoxNode>,
+}
+
+#[derive(Clone)]
+struct BoxNode {
+    lo: Point,
+    hi: Point,
+    /// Run of `perm` this node holds.
+    start: u32,
+    end: u32,
+    /// First child; the second is `left + 1`. `u32::MAX` for a leaf.
+    left: u32,
+}
+
+/// Marker for a box whose points span more than one component.
+const MIXED: u32 = u32::MAX;
+
+impl<'a> BoxTree<'a> {
+    const LEAF: usize = 16;
+
+    fn new(points: &'a [Point]) -> Self {
+        let perm: Vec<u32> = (0..points.len() as u32).collect();
+        let mut nodes = Vec::with_capacity(2 * points.len() / Self::LEAF + 1);
+        let root = BoxNode { lo: [0.0; 3], hi: [0.0; 3], start: 0, end: points.len() as u32, left: u32::MAX };
+        nodes.push(root);
+        let mut tree = BoxTree { points, perm, nodes };
+        tree.build(0);
+        tree
+    }
+
+    /// Lay out the subtree at `node`: box the run, split the longest axis
+    /// at its median point, recurse. Children follow their parent in
+    /// `nodes`, so a reverse scan visits every child before its parent.
+    fn build(&mut self, node: usize) {
+        let (start, end) = (self.nodes[node].start as usize, self.nodes[node].end as usize);
+        let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        for &i in &self.perm[start..end] {
+            for k in 0..3 {
+                lo[k] = lo[k].min(self.points[i as usize][k]);
+                hi[k] = hi[k].max(self.points[i as usize][k]);
+            }
+        }
+        self.nodes[node].lo = lo;
+        self.nodes[node].hi = hi;
+        if end - start <= Self::LEAF {
+            return;
+        }
+        let axis = (0..3).max_by(|&a, &b| (hi[a] - lo[a]).total_cmp(&(hi[b] - lo[b]))).unwrap();
+        let mid = (start + end) / 2;
+        let points = self.points;
+        self.perm[start..end].select_nth_unstable_by(mid - start, |&a, &b| points[a as usize][axis].total_cmp(&points[b as usize][axis]));
+        let left = self.nodes.len() as u32;
+        self.nodes[node].left = left;
+        self.nodes.push(BoxNode { lo, hi, start: start as u32, end: mid as u32, left: u32::MAX });
+        self.nodes.push(BoxNode { lo, hi, start: mid as u32, end: end as u32, left: u32::MAX });
+        self.build(left as usize);
+        self.build(left as usize + 1);
+    }
+
+    /// The component of each box: its nodes' one component, or `MIXED`.
+    fn flags(&self, comp: &[u32]) -> Vec<u32> {
+        let mut flag = vec![MIXED; self.nodes.len()];
+        for (b, node) in self.nodes.iter().enumerate().rev() {
+            flag[b] = if node.left == u32::MAX {
+                let mut run = self.perm[node.start as usize..node.end as usize].iter().map(|&i| comp[i as usize]);
+                let first = run.next().unwrap_or(MIXED);
+                if run.all(|c| c == first) {
+                    first
+                } else {
+                    MIXED
+                }
+            } else {
+                let (l, r) = (flag[node.left as usize], flag[node.left as usize + 1]);
+                if l == r {
+                    l
+                } else {
+                    MIXED
+                }
+            };
+        }
+        flag
+    }
+
+    /// Squared distance between two boxes (zero when they overlap).
+    fn gap(&self, a: usize, b: usize) -> f64 {
+        let (a, b) = (&self.nodes[a], &self.nodes[b]);
+        (0..3)
+            .map(|k| {
+                let d = (a.lo[k] - b.hi[k]).max(b.lo[k] - a.hi[k]).max(0.0);
+                d * d
+            })
+            .sum()
+    }
+
+    /// The closest pair of nodes between every two components that come
+    /// within `max_distance`, for the component labels `comp`.
+    fn closest_pairs(&self, comp: &[u32], max_distance: f64) -> ClosestPairs {
+        let flag = self.flags(comp);
+        let limit = max_distance * max_distance;
+        // Widen the root pair into enough independent box pairs to share
+        // out, then search each and keep the closest per component pair.
+        let mut pairs = vec![(0usize, 0usize)];
+        let mut next = Vec::new();
+        for _ in 0..7 {
+            next.clear();
+            for &(a, b) in &pairs {
+                self.expand(a, b, &flag, limit, &mut next);
+            }
+            std::mem::swap(&mut pairs, &mut next);
+        }
+        pairs
+            .par_iter()
+            .fold(ClosestPairs::new, |mut best, &(a, b)| {
+                self.search(a, b, comp, &flag, limit, &mut best);
+                best
+            })
+            .reduce(ClosestPairs::new, |mut x, y| {
+                for (key, v) in y {
+                    let e = x.entry(key).or_insert(v);
+                    if v < *e {
+                        *e = v;
+                    }
+                }
+                x
+            })
+    }
+
+    /// Whether the pair of boxes can hold a bridge at all.
+    fn worth(&self, a: usize, b: usize, flag: &[u32], limit: f64) -> bool {
+        !(flag[a] != MIXED && flag[a] == flag[b]) && self.gap(a, b) <= limit
+    }
+
+    /// The child pairs of a box pair, or the pair itself when it has no
+    /// children to open, dropping what `worth` rules out.
+    fn expand(&self, a: usize, b: usize, flag: &[u32], limit: f64, out: &mut Vec<(usize, usize)>) {
+        if !self.worth(a, b, flag, limit) {
+            return;
+        }
+        let (la, lb) = (self.nodes[a].left, self.nodes[b].left);
+        match (la != u32::MAX, lb != u32::MAX) {
+            (false, false) => out.push((a, b)),
+            (true, false) => out.extend([(la as usize, b), (la as usize + 1, b)]),
+            (false, true) => out.extend([(a, lb as usize), (a, lb as usize + 1)]),
+            (true, true) if a == b => out.extend([(la as usize, la as usize), (la as usize + 1, la as usize + 1), (la as usize, la as usize + 1)]),
+            (true, true) => out.extend([(la as usize, lb as usize), (la as usize, lb as usize + 1), (la as usize + 1, lb as usize), (la as usize + 1, lb as usize + 1)]),
+        }
+    }
+
+    /// Search a pair of boxes for closest pairs between components, into `best`.
+    fn search(&self, a: usize, b: usize, comp: &[u32], flag: &[u32], limit: f64, best: &mut ClosestPairs) {
+        if !self.worth(a, b, flag, limit) {
+            return;
+        }
+        if flag[a] != MIXED && flag[b] != MIXED {
+            // Two boxes of two components: nothing to gain past the pair
+            // already found for them.
+            let key = if flag[a] < flag[b] { (flag[a], flag[b]) } else { (flag[b], flag[a]) };
+            if best.get(&key).is_some_and(|e| e.0 * e.0 <= self.gap(a, b)) {
+                return;
+            }
+        }
+        let (la, lb) = (self.nodes[a].left, self.nodes[b].left);
+        if la == u32::MAX && lb == u32::MAX {
+            let (na, nb) = (&self.nodes[a], &self.nodes[b]);
+            for &i in &self.perm[na.start as usize..na.end as usize] {
+                let ci = comp[i as usize];
+                for &j in &self.perm[nb.start as usize..nb.end as usize] {
+                    if a == b && j <= i {
+                        continue;
+                    }
+                    let cj = comp[j as usize];
+                    if ci == cj {
+                        continue;
+                    }
+                    let (p, q) = (&self.points[i as usize], &self.points[j as usize]);
+                    let d2 = (0..3).map(|k| (p[k] - q[k]) * (p[k] - q[k])).sum::<f64>();
+                    if d2 > limit {
+                        continue;
+                    }
+                    let (key, i, j) = if ci < cj { ((ci, cj), i, j) } else { ((cj, ci), j, i) };
+                    let d = d2.sqrt();
+                    let e = best.entry(key).or_insert((f64::INFINITY, 0, 0));
+                    if d < e.0 {
+                        *e = (d, i, j);
+                    }
+                }
+            }
+            return;
+        }
+        let mut children = Vec::with_capacity(4);
+        self.expand(a, b, flag, limit, &mut children);
+        for (x, y) in children {
+            self.search(x, y, comp, flag, limit, best);
+        }
+    }
+
 }
 
 /// Directed graph from per-node adjacency lists (no symmetrisation).
