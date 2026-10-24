@@ -13,7 +13,8 @@ use rayon::prelude::*;
 
 use crate::cluster::{dijkstra_gravity, dijkstra_scaled, directed_knn_graph, directed_knn_graph_wood};
 use crate::error::{Error, Result};
-use crate::filters::{voxel_downsample_indices, voxel_downsample_indices_at, Rng};
+use crate::filters::Rng;
+use crate::util::spatial::{first_in_voxel, min_corner_of};
 use crate::util::optim::levenberg_marquardt;
 use crate::util::spatial::KdTree;
 use crate::Point;
@@ -226,12 +227,10 @@ pub fn graph_nodes(points: &[Point], heights: &[f64], p: &SegmentParams) -> Vec<
     if p.voxel_size.is_nan() || p.voxel_size <= 0.0 {
         return above;
     }
-    let above_pts: Vec<Point> = above.iter().map(|&i| points[i]).collect();
-    let keep = match &p.voxel_origin {
-        Some(o) => voxel_downsample_indices_at(&above_pts, o, p.voxel_size),
-        None => voxel_downsample_indices(&above_pts, p.voxel_size),
-    };
-    keep.into_iter().map(|i| above[i]).collect()
+    // Thinned in place: the voxel of each point is found through its index,
+    // with no copy of the points above the cut and no list per voxel.
+    let origin = p.voxel_origin.unwrap_or_else(|| min_corner_of(points, &above));
+    first_in_voxel(points, above, &origin, p.voxel_size)
 }
 
 /// Assign points to the nearest stem by shortest path through a kNN graph
@@ -655,4 +654,40 @@ fn crown_metrics_indices(points: &[Point], heights: &[f64], idx: &[usize], crown
     let area = convex_hull_area(&xy);
     let diam = if area.is_finite() { 2.0 * (area / std::f64::consts::PI).sqrt() } else { f64::NAN };
     Some([area, crown_base, top - crown_base, diam])
+}
+
+#[cfg(test)]
+mod graph_node_tests {
+    use super::*;
+
+    /// `graph_nodes` as it was: copy the points above the cut, thin the copy.
+    fn reference(points: &[Point], heights: &[f64], p: &SegmentParams) -> Vec<usize> {
+        let above: Vec<usize> = (0..points.len()).filter(|&i| heights[i] >= p.cut_above_ground).collect();
+        if p.voxel_size.is_nan() || p.voxel_size <= 0.0 {
+            return above;
+        }
+        let above_pts: Vec<Point> = above.iter().map(|&i| points[i]).collect();
+        let keep = match &p.voxel_origin {
+            Some(o) => crate::filters::voxel_downsample_indices_at(&above_pts, o, p.voxel_size),
+            None => crate::filters::voxel_downsample_indices(&above_pts, p.voxel_size),
+        };
+        keep.into_iter().map(|i| above[i]).collect()
+    }
+
+    #[test]
+    fn nodes_are_those_of_the_copying_thinning() {
+        let mut rng = Rng::new(11);
+        let mut unit = || (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
+        let mut pts: Vec<Point> = (0..6000).map(|_| [5.0 * unit() - 2.0, 5.0 * unit(), 8.0 * unit() - 0.5]).collect();
+        for i in 0..300 {
+            pts[5000 + i] = pts[i];
+        }
+        let heights: Vec<f64> = pts.iter().enumerate().map(|(i, q)| if i % 97 == 0 { f64::NAN } else { q[2] }).collect();
+        for (voxel, origin) in [(0.03, None), (0.1, Some([0.0, 0.0, 0.0])), (0.0, None), (0.25, Some([1.0, -1.0, 0.0]))] {
+            let p = SegmentParams { voxel_size: voxel, voxel_origin: origin, ..Default::default() };
+            assert_eq!(graph_nodes(&pts, &heights, &p), reference(&pts, &heights, &p));
+        }
+        let none = SegmentParams { cut_above_ground: 100.0, ..Default::default() };
+        assert!(graph_nodes(&pts, &heights, &none).is_empty());
+    }
 }

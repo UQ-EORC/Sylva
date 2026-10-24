@@ -189,15 +189,26 @@ fn main() -> Result<()> {
             println!("{} ground points; wrote {}", ground_pts.len(), output.display());
         }
         Command::Trees { input, output, min_dbh, segment } => {
-            let c = io::read(&input)?;
+            // Only the coordinates and heights are needed; the other
+            // attributes reach the segmented file by streaming the input.
+            let is_las = input.extension().is_some_and(|e| e.eq_ignore_ascii_case("las") || e.eq_ignore_ascii_case("laz"));
+            let mut c = if is_las { io::read_attrs(&input, Some(&["height"]))? } else { io::read(&input)? };
             let h = heights(&c);
             let mut found = trees::detect_stems(&c.xyz, &h, &trees::StemParams { min_radius: min_dbh / 2.0, ..Default::default() });
             if let Some(p) = segment {
                 let labels = trees::segment_trees(&c.xyz, &h, &found, &trees::SegmentParams::default());
                 trees::tree_heights(&h, &labels, &mut found, 100.0);
-                let mut out = c.clone();
-                out.attrs.insert("tree_id".into(), Attr::I32(labels.iter().map(|&l| l as i32).collect()));
-                io::write(&out, &p)?;
+                let tree_id = Attr::I32(labels.iter().map(|&l| l as i32).collect());
+                drop(labels);
+                let out_is_las = p.extension().is_some_and(|e| e.eq_ignore_ascii_case("las") || e.eq_ignore_ascii_case("laz"));
+                if is_las && out_is_las {
+                    let lo = c.bounds().map(|b| b.0);
+                    let extra = std::collections::BTreeMap::from([("tree_id".to_string(), tree_id)]);
+                    io::write_annotated(&input, &p, &io::WriteOptions::default(), &extra, lo)?;
+                } else {
+                    c.attrs.insert("tree_id".into(), tree_id);
+                    io::write(&c, &p)?;
+                }
             }
             let mut text = String::from("tree_id,x,y,dbh,height,n_points,coverage,n_slices,quality\n");
             for t in &found {

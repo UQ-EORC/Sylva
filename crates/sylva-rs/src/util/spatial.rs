@@ -4,7 +4,7 @@
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Spatial indexing: k-d tree and voxel hashing.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;
 
 use kiddo::{ImmutableKdTree, SquaredEuclidean};
@@ -109,6 +109,30 @@ pub fn voxel_groups(points: &[Point], origin: &Point, size: f64) -> (Vec<VoxelKe
         groups[g].push(i);
     }
     (keys, groups)
+}
+
+/// The first point of each voxel among `idx` (indices into `points`, in
+/// the order they are given), as a subsequence of `idx`: the thinning of
+/// [`voxel_groups`]' first entries without the groups, one key per voxel
+/// instead of a vector per voxel.
+pub fn first_in_voxel(points: &[Point], idx: impl IntoIterator<Item = usize>, origin: &Point, size: f64) -> Vec<usize> {
+    let mut seen: HashSet<VoxelKey> = HashSet::new();
+    idx.into_iter().filter(|&i| seen.insert(voxel_key(&points[i], origin, size))).collect()
+}
+
+/// Minimum corner of the points at `idx`; `[0, 0, 0]` when there are none.
+pub fn min_corner_of(points: &[Point], idx: &[usize]) -> Point {
+    let mut lo = [f64::INFINITY; 3];
+    for &i in idx {
+        for k in 0..3 {
+            lo[k] = lo[k].min(points[i][k]);
+        }
+    }
+    if idx.is_empty() {
+        [0.0; 3]
+    } else {
+        lo
+    }
 }
 
 /// Minimum corner of a point set.

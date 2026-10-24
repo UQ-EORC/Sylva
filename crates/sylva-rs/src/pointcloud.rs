@@ -115,6 +115,11 @@ impl Attr {
         })
     }
 
+    /// Rows `r` as a column of the same type.
+    pub fn slice(&self, r: std::ops::Range<usize>) -> Attr {
+        attr_dispatch!(self, v => v[r].to_vec().into())
+    }
+
     /// Append another column of the same type.
     pub fn extend(&mut self, other: &Attr) -> Result<()> {
         match (self, other) {

@@ -17,7 +17,7 @@ use sylva_rs::trees::prune::PruneParams;
 use sylva_rs::trees::SegmentParams;
 
 use crate::als_py::catalog_from_py;
-use crate::{attr_from_py, cloud_to_py, err, tree_to_py, trees_from_py};
+use crate::{attr_from_py, cloud_into_py, err, tree_to_py, trees_from_py};
 
 fn info_to_py<'py>(py: Python<'py>, i: &RunInfo) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new(py);
@@ -159,7 +159,7 @@ fn tree_store_read<'py>(py: Python<'py>, store: PathBuf) -> PyResult<(Vec<String
 #[pyfunction]
 fn tree_store_tree<'py>(py: Python<'py>, store: PathBuf, tree_id: i64) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
     let c = py.detach(|| tt::read_tree(&store, tree_id)).map_err(err)?;
-    cloud_to_py(py, &c)
+    cloud_into_py(py, c)
 }
 
 #[pyfunction]
@@ -168,7 +168,7 @@ fn tiles_read_tree<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, tree_id: i
     let c = catalog_from_py(catalog)?;
     let b = bounds.map(|b| [b.0, b.1, b.2, b.3]);
     let cloud = py.detach(|| tt::read_tree_from_tiles(&c, tree_id, attribute, b)).map_err(err)?;
-    cloud_to_py(py, &cloud)
+    cloud_into_py(py, cloud)
 }
 
 #[pyfunction]

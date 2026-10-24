@@ -56,6 +56,28 @@ edge, and both writers flip it to north-up.
 The format specifications are listed on the [references](../references.md)
 page.
 
+### Large clouds
+
+A LAS/LAZ plot of a few hundred million points is mostly its attributes:
+intensity, GPS time, the RIEGL extras and the rest are about two thirds of
+what `read` holds, and most processing needs the coordinates and heights
+alone. `read(path, attrs=["height"])` reads only the columns named, never
+allocating the others, and `write_annotated` puts a result back into a
+complete copy of the file without the cloud being held whole: it streams the
+source past the new columns a million points at a time.
+
+```python
+cloud = sylva.read("plot.laz", attrs=["height"])        # coordinates and heights
+labels = trees.segment_trees(cloud, stems)
+sylva.io.write_annotated("plot.laz", "plot_trees.laz", {"tree_id": labels.astype("int32")},
+                         origin=cloud.bounds[0])
+```
+
+The file is byte for byte the one `write(cloud.with_attrs(tree_id=...))`
+gives from a full read. `write` itself streams LAS/LAZ output in the same
+batches, so writing never costs a second copy of the cloud. `sylva trees
+--segment` works this way.
+
 ## RIEGL data
 
 RiVLib is proprietary, so Sylva loads RIEGL's `libscanifc` at run time

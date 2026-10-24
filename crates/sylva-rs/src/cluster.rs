@@ -12,33 +12,87 @@ use rayon::prelude::*;
 use crate::util::spatial::KdTree;
 use crate::Point;
 
-/// Undirected sparse graph in CSR form with edge weights.
+/// Sparse graph in CSR form.
+///
+/// Edge weights are either stored (`weights`, one per entry of `neighbors`)
+/// or, for the directed kNN graphs of [`directed_knn_graph`], computed from
+/// the node positions when an edge is visited: a shortest-path search
+/// relaxes every edge once, so storing the weight saves no work and costs
+/// eight bytes an edge, which on a plot of a few hundred million points is
+/// most of the memory.
 #[derive(Debug, Clone, Default)]
-pub struct Graph {
+pub struct Graph<'a> {
     pub offsets: Vec<usize>,
     pub neighbors: Vec<u32>,
+    /// One weight per neighbour; empty when `cost` computes them.
     pub weights: Vec<f64>,
-    /// Optional node xy positions (needed for the gravity term).
+    /// Optional node xy positions (needed for the gravity term when the
+    /// positions are not in `cost`).
     pub xy: Vec<[f64; 2]>,
+    cost: Option<EdgeCost<'a>>,
 }
 
-impl Graph {
+/// The direction-dependent edge cost of [`directed_knn_graph_wood`].
+#[derive(Debug, Clone)]
+struct EdgeCost<'a> {
+    points: &'a [Point],
+    power: f64,
+    angle_penalty: bool,
+    wood: Option<&'a [bool]>,
+}
+
+impl EdgeCost<'_> {
+    #[inline]
+    fn cost(&self, from: usize, to: usize) -> f64 {
+        let d = crate::transform::sub(&self.points[to], &self.points[from]);
+        let len = crate::transform::norm(&d).max(1e-12);
+        let mut c = len.powf(self.power);
+        if self.angle_penalty {
+            let cos_theta = (d[2] / len).clamp(-1.0, 1.0);
+            let deg = cos_theta.acos().to_degrees();
+            c *= (0.046051 * deg).exp().min(100.0);
+        }
+        if let Some(w) = self.wood {
+            c *= match (w[from], w[to]) {
+                (true, true) => 0.1,
+                (false, false) => 20.0,
+                (true, false) => 1000.0,
+                (false, true) => 1.0,
+            };
+        }
+        c
+    }
+}
+
+impl<'a> Graph<'a> {
     pub fn n(&self) -> usize {
         self.offsets.len().saturating_sub(1)
     }
 
     #[inline]
     fn position(&self, i: usize) -> [f64; 2] {
-        self.xy.get(i).copied().unwrap_or([0.0, 0.0])
+        match &self.cost {
+            Some(c) => [c.points[i][0], c.points[i][1]],
+            None => self.xy.get(i).copied().unwrap_or([0.0, 0.0]),
+        }
+    }
+
+    /// Edge weight of the `e`-th entry of `neighbors`, leaving node `i`.
+    #[inline]
+    fn weight(&self, i: usize, e: usize) -> f64 {
+        match &self.cost {
+            Some(c) => c.cost(i, self.neighbors[e] as usize),
+            None => self.weights[e],
+        }
     }
 
     pub fn edges(&self, i: usize) -> impl Iterator<Item = (usize, f64)> + '_ {
         let (a, b) = (self.offsets[i], self.offsets[i + 1]);
-        self.neighbors[a..b].iter().zip(&self.weights[a..b]).map(|(&j, &w)| (j as usize, w))
+        (a..b).map(move |e| (self.neighbors[e] as usize, self.weight(i, e)))
     }
 
     /// Build from an adjacency list, symmetrising.
-    fn from_adjacency(mut adj: Vec<Vec<(u32, f64)>>) -> Graph {
+    fn from_adjacency(mut adj: Vec<Vec<(u32, f64)>>) -> Graph<'static> {
         let n = adj.len();
         let mut extra: Vec<Vec<(u32, f64)>> = vec![Vec::new(); n];
         for (i, list) in adj.iter().enumerate() {
@@ -51,23 +105,115 @@ impl Graph {
             list.sort_unstable_by(|a, b| a.0.cmp(&b.0));
             list.dedup_by(|a, b| a.0 == b.0);
         }
-        let mut offsets = Vec::with_capacity(n + 1);
-        let mut neighbors = Vec::new();
-        let mut weights = Vec::new();
-        offsets.push(0);
-        for list in &adj {
-            for &(j, w) in list {
-                neighbors.push(j);
-                weights.push(w);
+        graph_from_directed(adj)
+    }
+
+    /// The symmetrised neighbour sets of a k-nearest-neighbour search, as
+    /// CSR offsets and neighbours: each node's list holds the nodes it
+    /// found and the nodes that found it, sorted by index, each once. Built
+    /// in flat arrays - a slot table of the search results, a reverse pass,
+    /// a sort of each node's run - rather than a vector per node, which for
+    /// a few neighbours costs more in headers and slack than in neighbours.
+    fn symmetric_knn_csr(points: &[Point], k: usize, max_distance: f64) -> (Vec<usize>, Vec<u32>) {
+        let n = points.len();
+        let tree = KdTree::new(points);
+        // Up to k + 1 results survive the filter when the point's own entry
+        // is not among the k + 1 nearest (coincident points), so a slot
+        // table of k + 1 per node holds every list; u32::MAX marks an empty slot.
+        let slots = k + 1;
+        let mut found = vec![u32::MAX; n * slots];
+        found.par_chunks_mut(slots).enumerate().for_each(|(i, row)| {
+            let mut m = 0;
+            for (j, d) in tree.knn(&points[i], k + 1) {
+                if j != i && d <= max_distance {
+                    row[m] = j as u32;
+                    m += 1;
+                }
             }
-            offsets.push(neighbors.len());
+        });
+        drop(tree);
+        // Degree of each node: what it found plus what found it.
+        let mut degree = vec![0usize; n];
+        for (i, row) in found.chunks(slots).enumerate() {
+            for &j in row {
+                if j == u32::MAX {
+                    break;
+                }
+                degree[i] += 1;
+                degree[j as usize] += 1;
+            }
         }
-        Graph { offsets, neighbors, weights, xy: Vec::new() }
+        let mut offsets = Vec::with_capacity(n + 1);
+        offsets.push(0usize);
+        for &d in &degree {
+            offsets.push(offsets.last().unwrap() + d);
+        }
+        let mut neighbors = vec![0u32; offsets[n]];
+        // Forward entries first, in each node's run, then the reverse ones.
+        let mut cursor: Vec<usize> = offsets[..n].to_vec();
+        for (i, row) in found.chunks(slots).enumerate() {
+            for &j in row {
+                if j == u32::MAX {
+                    break;
+                }
+                neighbors[cursor[i]] = j;
+                cursor[i] += 1;
+            }
+        }
+        for (i, row) in found.chunks(slots).enumerate() {
+            for &j in row {
+                if j == u32::MAX {
+                    break;
+                }
+                let j = j as usize;
+                neighbors[cursor[j]] = i as u32;
+                cursor[j] += 1;
+            }
+        }
+        drop(found);
+        drop(cursor);
+        // Sort and dedup each run in place; `kept[i]` is its new length.
+        let mut kept = vec![0usize; n];
+        {
+            let mut runs: Vec<&mut [u32]> = Vec::with_capacity(n);
+            let mut rest: &mut [u32] = &mut neighbors;
+            for i in 0..n {
+                let (run, tail) = rest.split_at_mut(degree[i]);
+                runs.push(run);
+                rest = tail;
+            }
+            runs.into_par_iter().zip(kept.par_iter_mut()).for_each(|(run, kept)| {
+                run.sort_unstable();
+                let mut m = 0;
+                for e in 0..run.len() {
+                    if e == 0 || run[e] != run[e - 1] {
+                        run[m] = run[e];
+                        m += 1;
+                    }
+                }
+                *kept = m;
+            });
+        }
+        // Close the gaps the duplicates left: each run moves down to the end
+        // of the previous one (the runs' old starts are the degree sums).
+        let mut write = 0;
+        let mut start = 0;
+        for i in 0..n {
+            if write != start {
+                neighbors.copy_within(start..start + kept[i], write);
+            }
+            write += kept[i];
+            start += degree[i];
+            offsets[i + 1] = write;
+        }
+        neighbors.truncate(write);
+        neighbors.shrink_to_fit();
+        (offsets, neighbors)
     }
 }
 
 /// Directed graph from per-node adjacency lists (no symmetrisation).
-pub fn graph_from_directed(adj: Vec<Vec<(u32, f64)>>) -> Graph {
+pub fn graph_from_directed(adj: Vec<Vec<(u32, f64)>>) -> Graph<'static> {
     let mut offsets = Vec::with_capacity(adj.len() + 1);
     let mut neighbors = Vec::new();
     let mut weights = Vec::new();
@@ -79,17 +225,21 @@ pub fn graph_from_directed(adj: Vec<Vec<(u32, f64)>>) -> Graph {
         }
         offsets.push(neighbors.len());
     }
-    Graph { offsets, neighbors, weights, xy: Vec::new() }
+    Graph { offsets, neighbors, weights, xy: Vec::new(), cost: None }
 }
 
 /// What a k-nearest-neighbour graph over `n` points will cost, and whether it
-/// fits: each edge is stored both ways, as a `u32` and an `f64`, plus the
-/// per-node vectors that build it.
-fn check_graph(n: usize, k: usize) -> crate::error::Result<()> {
-    let edges = (n as u128) * (2 * k as u128 + 2);
+/// fits. The symmetrised neighbour lists hold up to `2k + 2` entries a node
+/// as `u32`, built from a slot table of `k + 1` a node, with the degrees,
+/// offsets and the kd-tree's copy of the points beside them (about 60 bytes
+/// a node); a graph with stored weights adds an `f64` an entry.
+fn check_graph(n: usize, k: usize, stored_weights: bool) -> crate::error::Result<()> {
+    let per_edge = std::mem::size_of::<u32>() as u64 + if stored_weights { std::mem::size_of::<f64>() as u64 } else { 0 };
+    let edges = (n as u128) * (3 * k as u128 + 3);
+    let bytes = edges.saturating_mul(per_edge as u128).saturating_add((n as u128) * 60);
     crate::util::limits::check_cells(
-        edges,
-        (std::mem::size_of::<u32>() + std::mem::size_of::<f64>()) as u64 + 8,
+        bytes,
+        1,
         &format!("a {k}-neighbour graph over {n} points"),
         "thinning the cloud (filters.voxel_downsample), a smaller k, or working tile by tile",
     )
@@ -101,7 +251,7 @@ fn check_graph(n: usize, k: usize) -> crate::error::Result<()> {
 /// horizontal costs x63 and downward x100 -- so shortest paths from stem
 /// seeds climb through the tree rather than leaking across the ground.
 /// The neighbour set is symmetrised so the graph is connected both ways.
-pub fn directed_knn_graph(points: &[Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool) -> Graph {
+pub fn directed_knn_graph(points: &[Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool) -> Graph<'_> {
     directed_knn_graph_wood(points, k, max_distance, power, angle_penalty, None)
 }
 
@@ -109,61 +259,22 @@ pub fn directed_knn_graph(points: &[Point], k: usize, max_distance: f64, power: 
 /// `wood` mask is given: wood->wood x0.1, leaf->leaf x20, wood->leaf x1000,
 /// leaf->wood x1. Paths run along the woody skeleton and may enter it from
 /// foliage, but almost never leave it, so foliage cannot bridge two trees.
-pub fn directed_knn_graph_wood(points: &[Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&[bool]>) -> Graph {
-    if let Err(e) = check_graph(points.len(), k) {
+///
+/// The graph borrows `points` (and `wood`): edge costs are computed from
+/// them as the edges are walked, not stored.
+pub fn directed_knn_graph_wood<'a>(points: &'a [Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&'a [bool]>) -> Graph<'a> {
+    if let Err(e) = check_graph(points.len(), k, false) {
         // The callers of this one cannot carry an error; refusing loudly is
         // still better than the machine going down.
         panic!("{e}");
     }
-    let tree = KdTree::new(points);
-    let mut adj: Vec<Vec<u32>> = points
-        .par_iter()
-        .enumerate()
-        .map(|(i, p)| tree.knn(p, k + 1).into_iter().filter(|&(j, d)| j != i && d <= max_distance).map(|(j, _)| j as u32).collect())
-        .collect();
-    let mut extra: Vec<Vec<u32>> = vec![Vec::new(); points.len()];
-    for (i, list) in adj.iter().enumerate() {
-        for &j in list {
-            extra[j as usize].push(i as u32);
-        }
-    }
-    for (i, list) in adj.iter_mut().enumerate() {
-        list.append(&mut extra[i]);
-        list.sort_unstable();
-        list.dedup();
-    }
-    let cost = |from: usize, to: usize| -> f64 {
-        let d = crate::transform::sub(&points[to], &points[from]);
-        let len = crate::transform::norm(&d).max(1e-12);
-        let mut c = len.powf(power);
-        if angle_penalty {
-            let cos_theta = (d[2] / len).clamp(-1.0, 1.0);
-            let deg = cos_theta.acos().to_degrees();
-            c *= (0.046051 * deg).exp().min(100.0);
-        }
-        if let Some(w) = wood {
-            c *= match (w[from], w[to]) {
-                (true, true) => 0.1,
-                (false, false) => 20.0,
-                (true, false) => 1000.0,
-                (false, true) => 1.0,
-            };
-        }
-        c
-    };
-    let weighted: Vec<Vec<(u32, f64)>> = adj
-        .into_par_iter()
-        .enumerate()
-        .map(|(i, list)| list.into_iter().map(|j| (j, cost(i, j as usize))).collect())
-        .collect();
-    let mut g = graph_from_directed(weighted);
-    g.xy = points.iter().map(|p| [p[0], p[1]]).collect();
-    g
+    let (offsets, neighbors) = Graph::symmetric_knn_csr(points, k, max_distance);
+    Graph { offsets, neighbors, weights: Vec::new(), xy: Vec::new(), cost: Some(EdgeCost { points, power, angle_penalty, wood }) }
 }
 
 /// Symmetric k-nearest-neighbour graph; edges longer than `max_distance` are dropped.
-pub fn knn_graph(points: &[Point], k: usize, max_distance: f64) -> Graph {
-    if let Err(e) = check_graph(points.len(), k) {
+pub fn knn_graph(points: &[Point], k: usize, max_distance: f64) -> Graph<'static> {
+    if let Err(e) = check_graph(points.len(), k, true) {
         panic!("{e}");
     }
     let tree = KdTree::new(points);
@@ -182,7 +293,7 @@ pub fn knn_graph(points: &[Point], k: usize, max_distance: f64) -> Graph {
 }
 
 /// Graph linking all point pairs closer than `radius`.
-pub fn radius_graph(points: &[Point], radius: f64) -> Graph {
+pub fn radius_graph(points: &[Point], radius: f64) -> Graph<'static> {
     let tree = KdTree::new(points);
     let adj: Vec<Vec<(u32, f64)>> = points
         .par_iter()
@@ -330,4 +441,103 @@ pub fn dijkstra_scaled(graph: &Graph, sources: &[usize], seed_xy: Option<&[[f64;
         }
     }
     (dist, src, pred)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::filters::Rng;
+
+    /// The graph as it was built before the flat CSR: a vector per node,
+    /// symmetrised, sorted and deduplicated, with the costs stored.
+    fn reference(points: &[Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&[bool]>) -> Graph<'static> {
+        let tree = KdTree::new(points);
+        let mut adj: Vec<Vec<u32>> = points.iter().enumerate().map(|(i, p)| tree.knn(p, k + 1).into_iter().filter(|&(j, d)| j != i && d <= max_distance).map(|(j, _)| j as u32).collect()).collect();
+        let mut extra: Vec<Vec<u32>> = vec![Vec::new(); points.len()];
+        for (i, list) in adj.iter().enumerate() {
+            for &j in list {
+                extra[j as usize].push(i as u32);
+            }
+        }
+        for (i, list) in adj.iter_mut().enumerate() {
+            list.append(&mut extra[i]);
+            list.sort_unstable();
+            list.dedup();
+        }
+        let cost = EdgeCost { points, power, angle_penalty, wood };
+        let weighted: Vec<Vec<(u32, f64)>> = adj.into_iter().enumerate().map(|(i, list)| list.into_iter().map(|j| (j, cost.cost(i, j as usize))).collect()).collect();
+        let mut g = graph_from_directed(weighted);
+        g.xy = points.iter().map(|p| [p[0], p[1]]).collect();
+        g
+    }
+
+    fn cloud(n: usize, seed: u64, coincident: bool) -> Vec<Point> {
+        let mut rng = Rng::new(seed);
+        let mut unit = || (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
+        let mut pts: Vec<Point> = (0..n).map(|_| [4.0 * unit(), 4.0 * unit(), 6.0 * unit()]).collect();
+        if coincident {
+            // Clumps of identical points, so a point's own entry can fall
+            // outside its k + 1 nearest.
+            for i in 0..n / 4 {
+                pts[n / 2 + i] = pts[i];
+                pts[n / 4 * 3 + i % (n / 4)] = pts[i];
+            }
+        }
+        pts
+    }
+
+    fn same(a: &Graph<'_>, b: &Graph<'_>) {
+        assert_eq!(a.offsets, b.offsets);
+        assert_eq!(a.neighbors, b.neighbors);
+        for i in 0..a.n() {
+            let ea: Vec<(usize, f64)> = a.edges(i).collect();
+            let eb: Vec<(usize, f64)> = b.edges(i).collect();
+            assert_eq!(ea.len(), eb.len());
+            for (x, y) in ea.iter().zip(&eb) {
+                assert_eq!(x.0, y.0);
+                assert!(x.1.to_bits() == y.1.to_bits(), "node {i}: {} vs {}", x.1, y.1);
+            }
+            assert_eq!(a.position(i), b.position(i));
+        }
+    }
+
+    #[test]
+    fn flat_csr_matches_the_vector_build() {
+        for (seed, coincident, max_edge) in [(1, false, 1.0), (2, true, 1.0), (3, false, 0.3), (4, true, 0.05)] {
+            let pts = cloud(400, seed, coincident);
+            let wood: Vec<bool> = pts.iter().map(|p| p[2] > 3.0).collect();
+            for w in [None, Some(wood.as_slice())] {
+                let g = directed_knn_graph_wood(&pts, 6, max_edge, 6.0, true, w);
+                same(&g, &reference(&pts, 6, max_edge, 6.0, true, w));
+            }
+            let g = directed_knn_graph(&pts, 10, max_edge, 3.0, false);
+            same(&g, &reference(&pts, 10, max_edge, 3.0, false, None));
+        }
+    }
+
+    #[test]
+    fn paths_are_those_of_the_stored_graph() {
+        let pts = cloud(600, 9, true);
+        let g = directed_knn_graph(&pts, 6, 1.0, 6.0, true);
+        let r = reference(&pts, 6, 1.0, 6.0, true, None);
+        let sources = [0usize, 7, 123];
+        let xy = [[pts[0][0], pts[0][1]], [pts[7][0], pts[7][1]], [pts[123][0], pts[123][1]]];
+        let scale = [0.5, 1.0, 0.25];
+        let a = dijkstra_scaled(&g, &sources, Some(&xy), 0.3, Some(&scale));
+        let b = dijkstra_scaled(&r, &sources, Some(&xy), 0.3, Some(&scale));
+        assert!(a.0.iter().zip(&b.0).all(|(x, y)| x.to_bits() == y.to_bits()));
+        assert_eq!(a.1, b.1);
+        assert_eq!(a.2, b.2);
+        assert_eq!(connected_components(&g), connected_components(&r));
+    }
+
+    #[test]
+    fn empty_and_tiny_graphs() {
+        let g = directed_knn_graph(&[], 6, 1.0, 6.0, true);
+        assert_eq!(g.n(), 0);
+        let one = [[0.0, 0.0, 0.0]];
+        let g = directed_knn_graph(&one, 6, 1.0, 6.0, true);
+        assert_eq!(g.n(), 1);
+        assert_eq!(g.edges(0).count(), 0);
+    }
 }

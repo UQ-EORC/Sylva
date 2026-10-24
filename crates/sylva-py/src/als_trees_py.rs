@@ -240,7 +240,7 @@ fn synthetic_scene_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs
 fn synthetic_crown_forest<'py>(py: Python<'py>, trees: Vec<(f64, f64, f64, f64)>, form: &str, crown_radius: f64, crown_length: f64, density: f64, size: f64, ground_points: usize, margin: f64, seed: u64) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
     let f = als::CrownForm::parse(form).map_err(err)?;
     let c = py.detach(|| als::crown_forest(&trees, f, crown_radius, crown_length, density, size, ground_points, margin, seed)).map_err(err)?;
-    crate::cloud_to_py(py, &c)
+    crate::cloud_into_py(py, c)
 }
 
 /// Random stems for synthetic.forest.

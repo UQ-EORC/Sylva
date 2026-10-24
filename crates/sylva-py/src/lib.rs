@@ -22,7 +22,7 @@
 //! lifetime ties those objects to the span in which Python's lock is held.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -89,8 +89,47 @@ fn xyz_from_py(xyz: PyReadonlyArray2<f64>) -> PyResult<Vec<Point>> {
 }
 
 fn xyz_to_py<'py>(py: Python<'py>, xyz: &[Point]) -> Bound<'py, PyArray2<f64>> {
-    let flat: Vec<f64> = xyz.iter().flat_map(|p| p.iter().cloned()).collect();
-    PyArray1::from_vec(py, flat).reshape([xyz.len(), 3]).expect("reshape")
+    xyz_into_py(py, xyz.to_vec())
+}
+
+/// The core's `Vec<Point>` as a NumPy `(N, 3)` array, without copying: the
+/// rows are reinterpreted as a flat `Vec<f64>` of three times the length.
+fn xyz_into_py<'py>(py: Python<'py>, xyz: Vec<Point>) -> Bound<'py, PyArray2<f64>> {
+    let n = xyz.len();
+    let mut xyz = std::mem::ManuallyDrop::new(xyz);
+    // SAFETY: `[f64; 3]` is three `f64`s with no padding and the alignment of
+    // `f64`, so a buffer of `cap` rows is exactly a buffer of `3 * cap`
+    // doubles with the same allocation layout; `ManuallyDrop` leaves the
+    // allocation to the new vector alone.
+    let flat = unsafe { Vec::from_raw_parts(xyz.as_mut_ptr() as *mut f64, 3 * n, 3 * xyz.capacity()) };
+    PyArray1::from_vec(py, flat).reshape([n, 3]).expect("reshape")
+}
+
+/// A NumPy `(N, 3)` array as the core's `&[Point]`, borrowing the buffer
+/// when it is C-contiguous and copying otherwise. The borrow outlives any
+/// `py.detach` the slice is used under, since the array does.
+fn xyz_ref_from_py<'a>(xyz: &'a PyReadonlyArray2<'_, f64>) -> PyResult<std::borrow::Cow<'a, [Point]>> {
+    let a = xyz.as_array();
+    if a.ncols() != 3 {
+        return Err(PyValueError::new_err(format!("xyz must have shape (N, 3), got (N, {})", a.ncols())));
+    }
+    match xyz.as_slice() {
+        Ok(flat) => {
+            // SAFETY: a C-contiguous `(N, 3)` buffer of `f64` is `N` rows of
+            // `[f64; 3]` back to back, same alignment, no padding.
+            let rows = unsafe { std::slice::from_raw_parts(flat.as_ptr() as *const Point, flat.len() / 3) };
+            Ok(std::borrow::Cow::Borrowed(rows))
+        }
+        Err(_) => Ok(std::borrow::Cow::Owned(a.rows().into_iter().map(|r| [r[0], r[1], r[2]]).collect())),
+    }
+}
+
+/// A 1-D array as a slice, borrowed when contiguous and copied otherwise.
+fn slice_from_py<'a, T: numpy::Element + Clone>(a: &'a PyReadonlyArray1<'_, T>) -> std::borrow::Cow<'a, [T]> {
+    match a.as_slice() {
+        Ok(s) => std::borrow::Cow::Borrowed(s),
+        Err(_) => std::borrow::Cow::Owned(a.as_array().to_vec()),
+    }
 }
 
 fn attr_from_py(v: &Bound<'_, PyAny>) -> PyResult<Attr> {
@@ -141,6 +180,21 @@ fn attr_to_py<'py>(py: Python<'py>, a: &Attr) -> Bound<'py, PyAny> {
     }
 }
 
+/// [`attr_to_py`] taking the column, so nothing is copied.
+fn attr_into_py<'py>(py: Python<'py>, a: Attr) -> Bound<'py, PyAny> {
+    match a {
+        Attr::F64(v) => v.into_pyarray(py).into_any(),
+        Attr::F32(v) => v.into_pyarray(py).into_any(),
+        Attr::I64(v) => v.into_pyarray(py).into_any(),
+        Attr::I32(v) => v.into_pyarray(py).into_any(),
+        Attr::U32(v) => v.into_pyarray(py).into_any(),
+        Attr::U16(v) => v.into_pyarray(py).into_any(),
+        Attr::U8(v) => v.into_pyarray(py).into_any(),
+        Attr::I8(v) => v.into_pyarray(py).into_any(),
+        Attr::Bool(v) => v.into_pyarray(py).into_any(),
+    }
+}
+
 fn attrs_from_py(attrs: Option<&Bound<'_, PyDict>>) -> PyResult<BTreeMap<String, Attr>> {
     let mut out = BTreeMap::new();
     if let Some(d) = attrs {
@@ -165,6 +219,23 @@ fn cloud_from_py(xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>) 
 
 fn cloud_to_py<'py>(py: Python<'py>, c: &PointCloud) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
     Ok((xyz_to_py(py, &c.xyz), attrs_to_py(py, &c.attrs)?))
+}
+
+/// [`cloud_to_py`] taking the cloud: its columns become the arrays, so the
+/// cloud is never held twice.
+fn cloud_into_py<'py>(py: Python<'py>, c: PointCloud) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
+    let xyz = xyz_into_py(py, c.xyz);
+    let d = PyDict::new(py);
+    for (k, v) in c.attrs {
+        d.set_item(k, attr_into_py(py, v))?;
+    }
+    Ok((xyz, d))
+}
+
+/// Non-standard columns from a dict of arrays, as [`attrs_from_py`]
+/// (which copies: these are the few columns added to a file, not the file).
+fn extra_from_py(attrs: &Bound<'_, PyDict>) -> PyResult<BTreeMap<String, Attr>> {
+    attrs_from_py(Some(attrs))
 }
 
 fn matrix_from_py(m: Option<PyReadonlyArray2<f64>>) -> PyResult<Option<Transform>> {
@@ -288,23 +359,84 @@ fn bounds_opt(b: Option<(f64, f64, f64, f64)>) -> Option<(f64, f64, f64, f64)> {
 // ------------------------------------------------------------------------- io
 
 #[pyfunction]
-fn read<'py>(py: Python<'py>, path: PathBuf) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
-    let c = py.detach(|| io::read(&path)).map_err(err)?;
-    cloud_to_py(py, &c)
+#[pyo3(signature = (path, attrs=None))]
+fn read<'py>(py: Python<'py>, path: PathBuf, attrs: Option<Vec<String>>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
+    let keep: Option<Vec<&str>> = attrs.as_ref().map(|a| a.iter().map(String::as_str).collect());
+    let c = py.detach(|| io::read_attrs(&path, keep.as_deref())).map_err(err)?;
+    cloud_into_py(py, c)
 }
 
 #[pyfunction]
 #[pyo3(signature = (path, xyz, attrs=None, point_format=6, scale=0.001, binary=true, crs_wkt=None))]
 fn write(py: Python<'_>, path: PathBuf, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>, point_format: u8, scale: f64, binary: bool, crs_wkt: Option<String>) -> PyResult<()> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if ext == "las" || ext == "laz" {
+        return write_las_batched(py, &path, xyz, attrs, &sylva_rs::io::las::LasWriteOptions { point_format, scale, crs_wkt });
+    }
     let c = cloud_from_py(xyz, attrs)?;
     py.detach(|| io::write_with(&c, &path, &io::WriteOptions { point_format, scale, binary, crs_wkt })).map_err(err)
+}
+
+/// A LAS/LAZ file from NumPy arrays, a million points at a time: the
+/// coordinates are borrowed, and only one batch of the attribute columns is
+/// ever copied, so writing costs the cloud nothing like a second copy of
+/// itself. The file is the one `write_las` gives for the whole cloud.
+fn write_las_batched(py: Python<'_>, path: &Path, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>, opts: &sylva_rs::io::las::LasWriteOptions) -> PyResult<()> {
+    use sylva_rs::io::las::{extra_schema, LasWriter};
+    const BATCH: usize = 1 << 20;
+    let p = xyz_ref_from_py(&xyz)?;
+    let n = p.len();
+    let mut lo = [f64::INFINITY; 3];
+    for q in p.iter() {
+        for k in 0..3 {
+            lo[k] = lo[k].min(q[k]);
+        }
+    }
+    if n == 0 {
+        lo = [0.0; 3];
+    }
+    let columns: Vec<(String, Bound<'_, PyAny>)> = match attrs {
+        Some(d) => d.iter().map(|(k, v)| Ok((k.extract::<String>()?, v))).collect::<PyResult<_>>()?,
+        None => Vec::new(),
+    };
+    let batch_attrs = |a: usize, b: usize| -> PyResult<BTreeMap<String, Attr>> {
+        let mut out = BTreeMap::new();
+        for (k, v) in &columns {
+            let part = v.get_item(pyo3::types::PySlice::new(py, a as isize, b as isize, 1))?;
+            out.insert(k.clone(), attr_from_py(&part)?);
+        }
+        Ok(out)
+    };
+    let mut start = 0;
+    let mut pending = batch_attrs(0, n.min(BATCH))?;
+    let schema = extra_schema(&pending);
+    let mut writer = LasWriter::create(path, opts, &[], &schema, lo).map_err(err)?;
+    loop {
+        let end = (start + BATCH).min(n);
+        let cloud = PointCloud::with_attrs(p[start..end].to_vec(), std::mem::take(&mut pending)).map_err(err)?;
+        py.detach(|| writer.write(&cloud)).map_err(err)?;
+        start = end;
+        if start >= n {
+            break;
+        }
+        pending = batch_attrs(start, (start + BATCH).min(n))?;
+    }
+    py.detach(|| writer.close()).map_err(err)
+}
+
+#[pyfunction]
+#[pyo3(signature = (src, path, attrs, point_format=6, scale=0.001, crs_wkt=None, origin=None))]
+fn write_annotated(py: Python<'_>, src: PathBuf, path: PathBuf, attrs: &Bound<'_, PyDict>, point_format: u8, scale: f64, crs_wkt: Option<String>, origin: Option<(f64, f64, f64)>) -> PyResult<()> {
+    let extra = extra_from_py(attrs)?;
+    let lo = origin.map(|o| [o.0, o.1, o.2]);
+    py.detach(|| io::write_annotated(&src, &path, &io::WriteOptions { point_format, scale, binary: true, crs_wkt }, &extra, lo)).map_err(err)
 }
 
 #[pyfunction]
 #[pyo3(signature = (path, columns=None))]
 fn read_ascii<'py>(py: Python<'py>, path: PathBuf, columns: Option<Vec<String>>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
     let c = py.detach(|| io::ascii::read_ascii(&path, columns.as_deref())).map_err(err)?;
-    cloud_to_py(py, &c)
+    cloud_into_py(py, c)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -333,7 +465,7 @@ fn read_rxp<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>, drop_
                  mta: &str, max_zone: usize, keep_uncertain: bool, shim: Option<PathBuf>, max_lines: Option<usize>, mta_model: Option<String>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
     let opts = rxp_opts(library, drop_pseudo_echoes, min_range, max_range, stride, max_points, echoes, shot_stride, mta, max_zone, keep_uncertain, shim, max_lines, mta_model)?;
     let c = py.detach(|| io::riegl::read_rxp(&path, &opts)).map_err(err)?;
-    cloud_to_py(py, &c)
+    cloud_into_py(py, c)
 }
 
 #[pyfunction]
@@ -363,7 +495,7 @@ fn find_rivlib_shim(hint: Option<PathBuf>) -> PyResult<PathBuf> {
 fn read_rdbx<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>, attributes: Option<Vec<String>>, filter: Option<String>, stride: usize, max_points: Option<usize>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
     let opts = io::rdb::RdbxOptions { library, attributes, filter, stride: stride.max(1), max_points };
     let c = py.detach(|| io::rdb::read_rdbx(&path, &opts)).map_err(err)?;
-    cloud_to_py(py, &c)
+    cloud_into_py(py, c)
 }
 
 /// Point count, attributes, metadata and extent of an `.rdbx`, without its points.
@@ -1094,13 +1226,14 @@ fn fit_circle_ransac<'py>(py: Python<'py>, xy: PyReadonlyArray2<f64>, threshold:
 #[pyo3(signature = (xyz, heights, slice_min=1.0, slice_max=5.0, slice_thickness=0.3, slice_step=0.25, reference_height=1.3, min_radius=0.015, max_radius=0.75, cluster_cell=0.06, min_cluster_points=12, max_cluster_extent=2.0, ransac_iterations=120, ransac_tolerance=0.02, max_circles_per_cluster=3, min_circle_inliers=10, min_coverage=0.12, min_arc_deg=0.0, max_circle_rmse=0.02, link_radius=0.2, link_radius_ratio=0.45, min_slices=3, max_lean_deg=25.0, link_radius_abs=0.02, prefilter=true, prefilter_k=16, prefilter_max_nz=0.6, prefilter_max_variation=0.15, seed=0, ransac_block=0, ransac_presample=false, recluster_wide=true, cluster_grid_at_slice_min=false, band_top_inclusive=false, shared_rng=false, taper_weight_power=1.0, min_total_points=0, cluster_seeds=false))]
 #[allow(clippy::too_many_arguments)]
 fn detect_stems<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, slice_min: f64, slice_max: f64, slice_thickness: f64, slice_step: f64, reference_height: f64, min_radius: f64, max_radius: f64, cluster_cell: f64, min_cluster_points: usize, max_cluster_extent: f64, ransac_iterations: usize, ransac_tolerance: f64, max_circles_per_cluster: usize, min_circle_inliers: usize, min_coverage: f64, min_arc_deg: f64, max_circle_rmse: f64, link_radius: f64, link_radius_ratio: f64, min_slices: usize, max_lean_deg: f64, link_radius_abs: f64, prefilter: bool, prefilter_k: usize, prefilter_max_nz: f64, prefilter_max_variation: f64, seed: u64, ransac_block: usize, ransac_presample: bool, recluster_wide: bool, cluster_grid_at_slice_min: bool, band_top_inclusive: bool, shared_rng: bool, taper_weight_power: f64, min_total_points: usize, cluster_seeds: bool) -> PyResult<Bound<'py, PyList>> {
-    let p = xyz_from_py(xyz)?;
-    let h = heights.as_array().to_vec();
+    let p = xyz_ref_from_py(&xyz)?;
+    let h = slice_from_py(&heights);
     if h.len() != p.len() {
         return Err(PyValueError::new_err("heights must have one value per point"));
     }
+    let (p, h) = (&*p, &*h);
     let params = sylva_rs::trees::stems::StemParams { slice_min, slice_max, slice_thickness, slice_step, reference_height, min_radius, max_radius, cluster_cell, min_cluster_points, max_cluster_extent, ransac_iterations, ransac_tolerance, max_circles_per_cluster, min_circle_inliers, min_coverage, min_arc_deg, max_circle_rmse, link_radius, link_radius_ratio, min_slices, max_lean_deg, link_radius_abs, prefilter, prefilter_k, prefilter_max_nz, prefilter_max_variation, seed, ransac_block, ransac_presample, recluster_wide, cluster_grid_at_slice_min, band_top_inclusive, shared_rng, taper_weight_power, min_total_points, cluster_seeds };
-    let found = py.detach(|| sylva_rs::trees::stems::detect_stems_full(&p, &h, &params));
+    let found = py.detach(|| sylva_rs::trees::stems::detect_stems_full(p, h, &params));
     let list = PyList::empty(py);
     for s in &found {
         let d = tree_to_py(py, &s.tree)?;
@@ -1185,22 +1318,24 @@ fn dbh_profile<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRead
 #[pyo3(signature = (xyz, heights, trees_list, k=6, max_edge=1.0, voxel_size=0.03, seed_height=1.5, seed_radius=0.25, seed_ring=true, power=6.0, angle_penalty=true, gravity=0.0, cut_above_ground=0.25, height_prior=true, height_prior_radius=1.5, height_prior_power=1.0, low_height=0.5, low_radius=1.0, wood_costs=false, wood_k=20, wood_threshold=0.9, understorey_height=10.0, understorey_band=0.5, voxel_origin=None))]
 #[allow(clippy::too_many_arguments)]
 fn segment_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, trees_list: &Bound<'_, PyList>, k: usize, max_edge: f64, voxel_size: f64, seed_height: f64, seed_radius: f64, seed_ring: bool, power: f64, angle_penalty: bool, gravity: f64, cut_above_ground: f64, height_prior: bool, height_prior_radius: f64, height_prior_power: f64, low_height: f64, low_radius: f64, wood_costs: bool, wood_k: usize, wood_threshold: f64, understorey_height: f64, understorey_band: f64, voxel_origin: Option<(f64, f64, f64)>) -> PyResult<Bound<'py, PyArray1<i64>>> {
-    let p = xyz_from_py(xyz)?;
-    let h = heights.as_array().to_vec();
+    let p = xyz_ref_from_py(&xyz)?;
+    let h = slice_from_py(&heights);
+    let (p, h) = (&*p, &*h);
     let t = trees_from_py(trees_list)?;
     let params = trees::SegmentParams { k, max_edge, voxel_size, seed_height, seed_radius, seed_ring, power, angle_penalty, gravity, cut_above_ground, height_prior, height_prior_radius, height_prior_power, low_height, low_radius, wood_costs, wood_k, wood_threshold, understorey_height, understorey_band, voxel_origin: voxel_origin.map(|o| [o.0, o.1, o.2]) };
-    Ok(py.detach(|| trees::segment_trees(&p, &h, &t, &params)).into_pyarray(py))
+    Ok(py.detach(|| trees::segment_trees(p, h, &t, &params)).into_pyarray(py))
 }
 
 #[pyfunction]
 #[pyo3(signature = (xyz, heights, trees_list, k=10, max_edge=1.0, voxel_size=0.1, seed_height=1.5, seed_radius=0.5, seed_ring=true, power=3.0, angle_penalty=true, cut_above_ground=0.25, ground_height=0.5, trunk_scale=1.5, trunk_min=0.15, search_radius=6.0, voxel_origin=None))]
 #[allow(clippy::too_many_arguments)]
 fn merge_branches<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, trees_list: &Bound<'_, PyList>, k: usize, max_edge: f64, voxel_size: f64, seed_height: f64, seed_radius: f64, seed_ring: bool, power: f64, angle_penalty: bool, cut_above_ground: f64, ground_height: f64, trunk_scale: f64, trunk_min: f64, search_radius: f64, voxel_origin: Option<(f64, f64, f64)>) -> PyResult<(Bound<'py, PyList>, Bound<'py, PyArray1<i64>>)> {
-    let p = xyz_from_py(xyz)?;
-    let h = heights.as_array().to_vec();
+    let p = xyz_ref_from_py(&xyz)?;
+    let h = slice_from_py(&heights);
+    let (p, h) = (&*p, &*h);
     let t = trees_from_py(trees_list)?;
     let params = trees::SegmentParams { k, max_edge, voxel_size, seed_height, seed_radius, seed_ring, power, angle_penalty, gravity: 0.0, cut_above_ground, height_prior: false, height_prior_radius: 1.5, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, voxel_origin: voxel_origin.map(|o| [o.0, o.1, o.2]), ..Default::default() };
-    let (kept, merged) = py.detach(|| trees::merge_branches(&p, &h, &t, &params, ground_height, trunk_scale, trunk_min, search_radius));
+    let (kept, merged) = py.detach(|| trees::merge_branches(p, h, &t, &params, ground_height, trunk_scale, trunk_min, search_radius));
     let list = PyList::empty(py);
     for tr in &kept {
         list.append(tree_to_py(py, tr)?)?;
@@ -1212,7 +1347,9 @@ fn merge_branches<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyR
 #[pyo3(signature = (heights, labels, trees_list, percentile=100.0))]
 fn tree_heights<'py>(py: Python<'py>, heights: PyReadonlyArray1<f64>, labels: PyReadonlyArray1<i64>, trees_list: &Bound<'_, PyList>, percentile: f64) -> PyResult<Bound<'py, PyList>> {
     let mut t = trees_from_py(trees_list)?;
-    trees::tree_heights(&heights.as_array().to_vec(), &labels.as_array().to_vec(), &mut t, percentile);
+    let (h, l) = (slice_from_py(&heights), slice_from_py(&labels));
+    let (h, l) = (&*h, &*l);
+    py.detach(|| trees::tree_heights(h, l, &mut t, percentile));
     let list = PyList::empty(py);
     for tr in &t {
         list.append(tree_to_py(py, tr)?)?;
@@ -1223,8 +1360,9 @@ fn tree_heights<'py>(py: Python<'py>, heights: PyReadonlyArray1<f64>, labels: Py
 #[pyfunction]
 #[pyo3(signature = (xyz, heights, labels, tree_id, crown_base_fraction=0.1))]
 fn crown_metrics<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, labels: PyReadonlyArray1<i64>, tree_id: i64, crown_base_fraction: f64) -> PyResult<Option<Bound<'py, PyDict>>> {
-    let p = xyz_from_py(xyz)?;
-    let m = trees::crown_metrics(&p, &heights.as_array().to_vec(), &labels.as_array().to_vec(), tree_id, crown_base_fraction);
+    let p = xyz_ref_from_py(&xyz)?;
+    let (h, l) = (slice_from_py(&heights), slice_from_py(&labels));
+    let m = trees::crown_metrics(&p, &h, &l, tree_id, crown_base_fraction);
     match m {
         None => Ok(None),
         Some([area, base, depth, diam]) => {
@@ -1241,10 +1379,10 @@ fn crown_metrics<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRe
 #[pyfunction]
 #[pyo3(signature = (xyz, heights, labels, crown_base_fraction=0.1))]
 fn crown_metrics_all<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, labels: PyReadonlyArray1<i64>, crown_base_fraction: f64) -> PyResult<Bound<'py, PyDict>> {
-    let p = xyz_from_py(xyz)?;
-    let h = heights.as_array().to_vec();
-    let l = labels.as_array().to_vec();
-    let all = py.detach(|| trees::crown_metrics_all(&p, &h, &l, crown_base_fraction));
+    let p = xyz_ref_from_py(&xyz)?;
+    let (h, l) = (slice_from_py(&heights), slice_from_py(&labels));
+    let (p, h, l) = (&*p, &*h, &*l);
+    let all = py.detach(|| trees::crown_metrics_all(p, h, l, crown_base_fraction));
     let out = PyDict::new(py);
     for (id, [area, base, depth, diam]) in all {
         let d = PyDict::new(py);
@@ -1661,6 +1799,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(read, m)?,
         wrap_pyfunction!(write, m)?,
+        wrap_pyfunction!(write_annotated, m)?,
         wrap_pyfunction!(read_ascii, m)?,
         wrap_pyfunction!(read_rxp, m)?,
         wrap_pyfunction!(read_rxp_shots, m)?,

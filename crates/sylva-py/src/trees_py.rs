@@ -20,7 +20,7 @@ use crate::{err, tree_to_py, trees_from_py, xyz_from_py};
 fn prune_trees<'py>(py: Python<'py>, trees_list: &Bound<'_, PyList>, labels: PyReadonlyArray1<i64>, min_height: f64, merge_radius: f64, max_dbh: Option<f64>, min_quality_short: f64, short_slices: i64, min_slenderness: f64, slender_min_dbh: f64) -> PyResult<(Bound<'py, PyList>, Bound<'py, PyArray1<i64>>)> {
     let t = trees_from_py(trees_list)?;
     let p = tp::PruneParams { min_height, merge_radius, max_dbh, min_quality_short, short_slices, min_slenderness, slender_min_dbh };
-    let (kept, lab) = tp::prune_trees(&t, &labels.as_array().to_vec(), &p).map_err(err)?;
+    let (kept, lab) = tp::prune_trees(&t, &crate::slice_from_py(&labels), &p).map_err(err)?;
     let list = PyList::empty(py);
     for (i, tr) in &kept {
         list.append((*i, tree_to_py(py, tr)?))?;

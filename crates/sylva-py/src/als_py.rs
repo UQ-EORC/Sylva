@@ -21,7 +21,7 @@ use sylva_rs::geo::interpolate::{GridMethod, GridParams};
 use sylva_rs::io::las::LasWriteOptions;
 use sylva_rs::synthetic::als::{self as synthetic_als, FlightParams, ScanPattern, Trajectory};
 
-use crate::{cloud_from_py, cloud_to_py, err, raster_from_py, raster_to_py, xyz_to_py};
+use crate::{cloud_from_py, cloud_into_py, cloud_to_py, err, raster_from_py, raster_to_py, xyz_to_py};
 
 fn get<'py, T: FromPyObjectOwned<'py>>(d: &Bound<'py, PyDict>, key: &str) -> PyResult<T> {
     d.get_item(key)?.ok_or_else(|| PyValueError::new_err(format!("catalogue is missing {key:?}")))?.extract::<T>().map_err(|e| {
@@ -179,7 +179,7 @@ fn als_read_chunk<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, chunk: &Bou
 fn als_read_region<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, bounds: (f64, f64, f64, f64)) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
     let c = catalog_from_py(catalog)?;
     let cloud = py.detach(|| als::read_region(&c, [bounds.0, bounds.1, bounds.2, bounds.3])).map_err(err)?;
-    cloud_to_py(py, &cloud)
+    cloud_into_py(py, cloud)
 }
 
 /// The catalogue grid at `resolution`, as an all-NaN raster dict.

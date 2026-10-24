@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,13 +32,14 @@ from .pointcloud import PointCloud
 from .shots import Shots
 
 __all__ = [
-    "read", "write", "read_ascii", "read_rxp", "read_rxp_shots", "find_rivlib", "find_rivlib_shim",
+    "read", "write", "write_annotated",
+    "read_ascii", "read_rxp", "read_rxp_shots", "find_rivlib", "find_rivlib_shim",
     "read_rdbx", "rdbx_info", "find_rdblib", "RdbxInfo", "RdbxAttribute",
     "read_matrix_file",
 ]
 
 
-def read(path: str | Path) -> PointCloud:
+def read(path: str | Path, attrs: list[str] | None = None) -> PointCloud:
     """Read a point cloud, choosing the reader from the file extension.
 
     Parameters
@@ -46,6 +48,14 @@ def read(path: str | Path) -> PointCloud:
         ``.las``, ``.laz``, ``.ply``, ``.xyz``, ``.txt``, ``.csv``, ``.asc``,
         ``.pts``, ``.rxp`` or ``.rdbx``. The extension is matched
         case-insensitively.
+    attrs
+        Names of the attributes to keep; None keeps them all. Names the file
+        does not have are ignored, so ``attrs=["height"]`` reads a cloud
+        that is only coordinates and heights whatever else the file holds.
+        A LAS/LAZ file never allocates the other columns, which for a plot
+        of hundreds of millions of points is most of its memory; the other
+        formats read everything and drop the rest. See
+        :func:`write_annotated` for getting a result back into such a file.
 
     Returns
     -------
@@ -75,9 +85,9 @@ def read(path: str | Path) -> PointCloud:
     ValueError
         For an unsupported extension or invalid option.
     """
-    xyz, attrs = _core.read(str(path))
+    xyz, found = _core.read(str(path), None if attrs is None else [str(a) for a in attrs])
     crs = _core.read_las_crs(str(path)) if Path(path).suffix.lower() in (".las", ".laz") else None
-    return PointCloud(xyz, attrs, crs)
+    return PointCloud(xyz, found, crs)
 
 
 def write(cloud: PointCloud, path: str | Path, point_format: int = 6, scale: float | None = None,
@@ -120,21 +130,88 @@ def write(cloud: PointCloud, path: str | Path, point_format: int = 6, scale: flo
     ValueError
         For an unsupported extension or invalid option.
     """
+    crs_wkt, scale = _las_crs_and_scale(getattr(cloud, "crs", None), path, scale)
+    _core.write(str(path), cloud.xyz, cloud.attrs, point_format, scale, binary, crs_wkt)
+
+
+def _las_crs_and_scale(crs: str | None, path: str | Path,
+                       scale: float | None) -> tuple[str | None, float]:
+    """The WKT to store in a LAS/LAZ file at ``path`` for ``crs``, and the
+    coordinate scale to use (``scale``, or 1e-7 degrees for a geographic
+    CRS and 1 mm otherwise), as :func:`write` chooses them."""
     crs_wkt = None
     geographic = False
-    if getattr(cloud, "crs", None) is not None and Path(path).suffix.lower() in (".las", ".laz"):
+    if crs is not None and Path(path).suffix.lower() in (".las", ".laz"):
         try:
-            info = _core.crs_info(cloud.crs)
+            info = _core.crs_info(crs)
             crs_wkt, geographic = info["wkt"], bool(info["geographic"])
         except ValueError:                       # WKT Sylva cannot interpret: store it as given
-            text = cloud.crs.strip()
+            text = crs.strip()
             crs_wkt = text if text[:1].isalpha() and "[" in text else None
         if crs_wkt is None:
-            warnings.warn(f"the CRS {cloud.crs!r} has no WKT form and is not stored in {path}; "
-                          "give it as an EPSG code or WKT to keep it", UserWarning, stacklevel=2)
+            warnings.warn(f"the CRS {crs!r} has no WKT form and is not stored in {path}; "
+                          "give it as an EPSG code or WKT to keep it", UserWarning, stacklevel=3)
     if scale is None:
         scale = 1e-7 if geographic else 0.001
-    _core.write(str(path), cloud.xyz, cloud.attrs, point_format, scale, binary, crs_wkt)
+    return crs_wkt, scale
+
+
+def write_annotated(src: str | Path, path: str | Path, attrs: Mapping[str, np.ndarray],
+                    point_format: int = 6, scale: float | None = None,
+                    origin=None) -> None:
+    """Copy a LAS/LAZ file with attributes added, one batch at a time.
+
+    The points of ``src`` are written to ``path`` with each array in
+    ``attrs`` attached as an attribute, in file order, without the whole
+    file being held in memory. With :func:`read` and its ``attrs`` a cloud
+    is processed as coordinates alone and still comes back as a complete
+    file: the output is what :func:`write` gives for the cloud of ``src``
+    with ``attrs`` added by :meth:`PointCloud.with_attrs`, byte for byte.
+
+    Parameters
+    ----------
+    src
+        ``.las`` or ``.laz`` to copy the points from.
+    path
+        ``.las`` or ``.laz`` to write; overwritten if it exists.
+    attrs
+        ``name: array`` pairs, each with one value per point of ``src``.
+        A name the file already has is replaced.
+    point_format
+        LAS point data record format, as for :func:`write`.
+    scale
+        Coordinate quantisation, as for :func:`write`; the default depends
+        on the CRS of ``src``.
+    origin
+        The minimum corner the header's coordinate offsets are taken from,
+        length 3: ``cloud.bounds[0]`` when the cloud was read. By default
+        the bounds of the header of ``src``, which a well-formed file has at
+        its minimum point.
+
+    Raises
+    ------
+    OSError
+        If a file cannot be opened or is malformed.
+    ValueError
+        If ``src`` or ``path`` is not LAS/LAZ or an array has the wrong length.
+
+    Examples
+    --------
+    >>> cloud = sylva.read("plot.laz", attrs=["height"])          # doctest: +SKIP
+    >>> labels = trees.segment_trees(cloud, stems)                 # doctest: +SKIP
+    >>> sylva.io.write_annotated("plot.laz", "plot_trees.laz",     # doctest: +SKIP
+    ...                          {"tree_id": labels.astype(np.int32)},
+    ...                          origin=cloud.bounds[0])
+    """
+    src, path = Path(src), Path(path)
+    crs = _core.read_las_crs(str(src)) if src.suffix.lower() in (".las", ".laz") else None
+    crs_wkt, scale = _las_crs_and_scale(crs, path, scale)
+    arrays = {str(k): np.ascontiguousarray(np.asarray(v)) for k, v in attrs.items()}
+    for k, v in arrays.items():
+        if v.ndim != 1:
+            raise ValueError(f"attribute {k!r} must be one-dimensional, got shape {v.shape}")
+    o = None if origin is None else tuple(float(v) for v in np.asarray(origin, dtype=float)[:3])
+    _core.write_annotated(str(src), str(path), arrays, point_format, scale, crs_wkt, o)
 
 
 def read_ascii(path: str | Path, columns: list[str] | None = None) -> PointCloud:

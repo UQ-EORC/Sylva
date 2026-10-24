@@ -127,3 +127,61 @@ def test_rdb_missing_library(tmp_path, monkeypatch):
             io.rdbx_info(tmp_path / "scan.rdbx")
     else:
         pytest.skip("the RDB SDK is installed")
+
+
+def test_read_some_attributes(cloud, tmp_path):
+    path = tmp_path / "cloud.laz"
+    io.write(cloud, path)
+    some = io.read(path, attrs=["height", "tree_id", "nothing_like_this"])
+    assert sorted(some.attrs) == ["height", "tree_id"]
+    full = io.read(path)
+    np.testing.assert_array_equal(some.xyz, full.xyz)
+    np.testing.assert_array_equal(some.attrs["tree_id"], full.attrs["tree_id"])
+    assert io.read(path, attrs=[]).attrs == {}
+    # Other formats read everything and drop the rest.
+    io.write(cloud, tmp_path / "cloud.ply")
+    assert sorted(io.read(tmp_path / "cloud.ply", attrs=["height"]).attrs) == ["height"]
+
+
+def test_write_annotated_is_write_with_attrs(cloud, tmp_path):
+    src = tmp_path / "src.laz"
+    cloud.crs = "EPSG:7855"
+    io.write(cloud, src)
+    back = io.read(src)
+    label = np.arange(len(cloud), dtype=np.int32) % 7 - 1
+    score = np.linspace(0, 1, len(cloud), dtype=np.float32)
+    whole = tmp_path / "whole.laz"
+    io.write(back.with_attrs(tree_id=label, score=score), whole)   # tree_id replaced, score added
+    streamed = tmp_path / "streamed.laz"
+    io.write_annotated(src, streamed, {"tree_id": label, "score": score}, origin=back.bounds[0])
+    assert streamed.read_bytes() == whole.read_bytes()
+    # Without an origin the source header's minimum is used, which is the same corner.
+    io.write_annotated(src, tmp_path / "streamed2.laz", {"tree_id": label, "score": score})
+    assert (tmp_path / "streamed2.laz").read_bytes() == whole.read_bytes()
+    out = io.read(streamed)
+    assert out.crs == back.crs
+    np.testing.assert_array_equal(out.attrs["tree_id"], label)
+    with pytest.raises(ValueError):
+        io.write_annotated(src, tmp_path / "bad.laz", {"tree_id": label[:-1]})
+    with pytest.raises(ValueError):
+        io.write_annotated(tmp_path / "cloud.ply", tmp_path / "bad.laz", {"tree_id": label})
+
+
+def test_las_write_spans_batches(tmp_path):
+    # Past one batch of the writer (2**20 points), so the pieces meet in the file.
+    n = (1 << 20) + 1234
+    r = np.random.default_rng(5)
+    xyz = np.column_stack([r.uniform(0, 50, n), r.uniform(0, 50, n), r.uniform(0, 30, n)])
+    c = PointCloud(xyz, {"intensity": r.integers(0, 65535, n, dtype=np.uint16),
+                         "tree_id": np.arange(n, dtype=np.int32)})
+    path = tmp_path / "big.las"
+    io.write(c, path)
+    back = io.read(path)
+    assert len(back) == n
+    np.testing.assert_allclose(back.xyz, xyz, atol=1e-3)
+    np.testing.assert_array_equal(back.attrs["tree_id"], c.attrs["tree_id"])
+    np.testing.assert_array_equal(back.attrs["intensity"], c.attrs["intensity"])
+    io.write_annotated(path, tmp_path / "big2.las", {"flag": (np.arange(n) % 2).astype(np.uint8)})
+    again = io.read(tmp_path / "big2.las")
+    np.testing.assert_array_equal(again.attrs["flag"], np.arange(n) % 2)
+    np.testing.assert_array_equal(again.attrs["tree_id"], c.attrs["tree_id"])

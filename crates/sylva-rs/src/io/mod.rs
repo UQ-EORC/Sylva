@@ -48,6 +48,33 @@ pub fn read(path: impl AsRef<Path>) -> Result<PointCloud> {
     }
 }
 
+/// [`read`] keeping only the attributes named in `keep` (None keeps them
+/// all; names the file does not have are ignored). LAS/LAZ never allocates
+/// the other columns; the other formats read everything and drop them.
+pub fn read_attrs(path: impl AsRef<Path>, keep: Option<&[&str]>) -> Result<PointCloud> {
+    let path = path.as_ref();
+    if matches!(ext(path).as_str(), "las" | "laz") {
+        return las::read_las_attrs(path, keep);
+    }
+    let mut cloud = read(path)?;
+    if let Some(keep) = keep {
+        cloud.attrs.retain(|k, _| keep.contains(&k.as_str()));
+    }
+    Ok(cloud)
+}
+
+/// Write the points of the LAS/LAZ file `src` to `path` with the columns of
+/// `extra` added (one value per point, in file order), a batch at a time:
+/// [`las::write_las_annotated`] with [`WriteOptions`]. `lo` is the minimum
+/// corner for the header's offsets (None: the source header's).
+pub fn write_annotated(src: impl AsRef<Path>, path: impl AsRef<Path>, opts: &WriteOptions, extra: &std::collections::BTreeMap<String, crate::pointcloud::Attr>, lo: Option<crate::Point>) -> Result<()> {
+    let (src, path) = (src.as_ref(), path.as_ref());
+    match (ext(src).as_str(), ext(path).as_str()) {
+        ("las" | "laz", "las" | "laz") => las::write_las_annotated(src, path, &las::LasWriteOptions { point_format: opts.point_format, scale: opts.scale, crs_wkt: opts.crs_wkt.clone() }, extra, lo),
+        ("las" | "laz", other) | (other, _) => Err(Error::UnsupportedFormat(other.to_string())),
+    }
+}
+
 /// Options for [`write_with`]; each applies to one family of formats.
 #[derive(Debug, Clone)]
 pub struct WriteOptions {

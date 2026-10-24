@@ -127,18 +127,30 @@ def _cmd_ground(args):
     print(f"{int(ground.ground_mask(cloud).sum()):,} ground points; wrote {args.output}")
 
 
+def _is_las(path) -> bool:
+    return str(path).lower().endswith((".las", ".laz"))
+
+
 def _cmd_trees(args):
     args.output = args.output or _beside(args.input, "_trees", ".csv")
     if args.segment == "":                       # --segment with no path
         args.segment = _beside(args.input, "_segmented")
-    cloud = io.read(args.input)
+    # Only the coordinates and heights are needed here; the segmented file
+    # gets the other attributes by streaming the input past the labels.
+    las = _is_las(args.input)
+    cloud = io.read(args.input, attrs=["height"] if las else None)
     found = trees.detect_stems(cloud, min_radius=args.min_dbh / 2)
     labels = trees.segment_trees(cloud, found)
     trees.tree_heights(cloud, labels, found)
     found, labels = trees.prune_trees(found, labels, min_height=args.min_height)
     crowns = trees.crown_metrics_all(cloud, labels)
     if args.segment:
-        io.write(cloud.with_attrs(tree_id=labels.astype(np.int32)), args.segment)
+        tree_id = labels.astype(np.int32)
+        if las and _is_las(args.segment):
+            io.write_annotated(args.input, args.segment, {"tree_id": tree_id},
+                               origin=cloud.bounds[0])
+        else:
+            io.write(cloud.with_attrs(tree_id=tree_id), args.segment)
     rows = [{**t.as_dict(), **crowns.get(t.tree_id, {})} for t in found]
     to_file = args.output != "-"
     out = open(args.output, "w", newline="") if to_file else sys.stdout

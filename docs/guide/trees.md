@@ -83,7 +83,12 @@ paths, after raycloudtools' `rayextract trees`
 - **`wood_costs=True`** stops foliage from bridging neighbouring crowns. It is
   slower.
 - **`voxel_size`** (3 cm) sets the graph resolution. Labels are copied to
-  every point.
+  every point. The graph is what segmentation costs in memory: about 60
+  bytes a node, plus the node coordinates and the search's own arrays, and
+  on a 2 cm cloud 3 cm voxels keep more than half the points as nodes
+  (5 cm keep a third, 10 cm an eighth). Read a large plot with
+  `sylva.read(path, attrs=["height"])` so that nothing else is held beside
+  it (see [Large clouds](io.md#large-clouds)).
 - **Understorey competes** (`understorey_height`, on by default). After
   raycloudtools, near-ground points away from every detected stem are
   sources too, so grass, shrubs and saplings keep their own points instead

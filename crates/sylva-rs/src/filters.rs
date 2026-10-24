@@ -6,7 +6,7 @@
 
 use rayon::prelude::*;
 
-use crate::util::spatial::{min_corner, voxel_groups, KdTree};
+use crate::util::spatial::{first_in_voxel, min_corner, voxel_groups, KdTree};
 use crate::{Point, PointCloud};
 
 /// Simple xorshift RNG so results are reproducible without extra deps.
@@ -73,10 +73,7 @@ pub fn voxel_downsample_indices(points: &[Point], voxel_size: f64) -> Vec<usize>
 /// `origin`, as sorted indices. [`voxel_downsample_indices`] anchors the grid
 /// at the cloud's minimum corner; a fixed origin puts every cloud on one grid.
 pub fn voxel_downsample_indices_at(points: &[Point], origin: &Point, voxel_size: f64) -> Vec<usize> {
-    let (_, groups) = voxel_groups(points, origin, voxel_size);
-    let mut idx: Vec<usize> = groups.iter().map(|g| g[0]).collect();
-    idx.sort_unstable();
-    idx
+    first_in_voxel(points, 0..points.len(), origin, voxel_size)
 }
 
 /// Random subsample of `n` points (without replacement), in original order.
@@ -339,5 +336,34 @@ mod tests {
         assert_eq!(crop_cylinder_mask(&p, 0.0, 0.0, 3.0, 0.0, 2.0), vec![true, false, true, false]);
         assert_eq!(range_mask(&p, [0.0, 0.0, 1.0], 1.0, 1.5), vec![false, false, true, true]);
         assert_eq!(range_mask(&p, [0.0, 0.0, 0.0], 2.0, 2.5), vec![false, false, true, true]);
+    }
+}
+
+#[cfg(test)]
+mod first_in_voxel_tests {
+    use super::*;
+
+    #[test]
+    fn first_index_per_voxel_matches_the_grouped_thinning() {
+        let mut rng = Rng::new(3);
+        let mut unit = || (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
+        let mut pts: Vec<Point> = (0..5000).map(|_| [3.0 * unit() - 1.0, 3.0 * unit(), 2.0 * unit() - 0.5]).collect();
+        for i in 0..500 {
+            pts[4000 + i] = pts[i]; // coincident points
+        }
+        for origin in [None, Some([0.0, 0.0, 0.0]), Some([-7.0, 2.5, 0.1])] {
+            let o = origin.unwrap_or_else(|| min_corner(&pts));
+            let (_, groups) = voxel_groups(&pts, &o, 0.1);
+            let mut expect: Vec<usize> = groups.iter().map(|g| g[0]).collect();
+            expect.sort_unstable();
+            assert_eq!(voxel_downsample_indices_at(&pts, &o, 0.1), expect);
+        }
+        assert_eq!(voxel_downsample_indices(&pts, 0.25), {
+            let (_, groups) = voxel_groups(&pts, &min_corner(&pts), 0.25);
+            let mut e: Vec<usize> = groups.iter().map(|g| g[0]).collect();
+            e.sort_unstable();
+            e
+        });
+        assert!(voxel_downsample_indices(&[], 0.1).is_empty());
     }
 }
