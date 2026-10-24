@@ -126,8 +126,8 @@ def test_understorey_keeps_its_own_points(rng):
     tree = [trees.Tree(1, 0.0, 0.0, 0.30)]
     is_shrub = np.arange(len(xyz)) >= len(xyz) - len(shrub)
     upper = is_shrub & (xyz[:, 2] > 1.0)
-    on = trees.segment_trees(pc, tree)
-    off = trees.segment_trees(pc, tree, understorey_height=0.0)
+    on = trees.segment_trees(pc, tree, understorey_height=10.0)
+    off = trees.segment_trees(pc, tree)
     assert (off[upper] == 1).mean() > 0.9
     assert (on[upper] == -1).mean() > 0.9
     tree_pts = np.arange(len(xyz)) < len(stem) + len(crown)
@@ -168,3 +168,40 @@ def test_basal_area():
     assert trees.basal_area([], area) == 0.0
     with pytest.raises(ValueError):
         trees.basal_area(stems, 0.0)
+
+
+def test_segment_with_classified_ground_labels_the_base(rng):
+    # By default a stem is labelled down to the terrain model's noise band;
+    # with the ground taken from a classification the cut sits at the ground
+    # and the stem is labelled to its lowest points; the ground stays -1.
+    from conftest import make_crown, make_stem
+
+    import sylva
+
+    stem = make_stem(rng, 0, 0, 0.15, 8.0)
+    crown = make_crown(rng, 0, 0, 7.0, 2.0)
+    n = 6000
+    rad, ang = 3.0 * np.sqrt(rng.uniform(0, 1, n)), rng.uniform(0, 2 * np.pi, n)
+    soil = np.column_stack([rad * np.cos(ang), rad * np.sin(ang), rng.uniform(-0.03, 0.03, n)])
+    xyz = np.vstack([stem, crown, soil])
+    cls = np.full(len(xyz), 1, dtype=np.uint8)
+    cls[len(stem) + len(crown):] = 2
+    pc = sylva.PointCloud(xyz, {"height": xyz[:, 2].copy(), "classification": cls})
+    tree = [trees.Tree(1, 0.0, 0.0, 0.30)]
+    is_stem = np.arange(len(xyz)) < len(stem)
+    base, foot = is_stem & (xyz[:, 2] < 0.25), is_stem & (xyz[:, 2] < 0.1)
+    assert foot.sum() > 20
+    default = trees.segment_trees(pc, tree)
+    assert (default[base & ~foot] == 1).mean() > 0.95       # labelled down to the 0.1 m band
+    assert (default[foot] == -1).all()                      # not within it
+    assert (default[cls == 2] == -1).all()
+    masked = trees.segment_trees(pc, tree, ground="classification")
+    assert (masked[base] == 1).mean() > 0.95                # the whole base belongs to the tree
+    assert (masked[cls == 2] == -1).all()                   # the ground does not
+    assert (masked[: len(stem)][stem[:, 2] > 0.5] == 1).mean() > 0.99
+    # An explicit mask is the same thing; a wrong one is refused.
+    np.testing.assert_array_equal(trees.segment_trees(pc, tree, ground=cls == 2), masked)
+    with pytest.raises(ValueError):
+        trees.segment_trees(pc, tree, ground=np.zeros(3, bool))
+    with pytest.raises(ValueError):
+        trees.segment_trees(pc.without("classification"), tree, ground="classification")

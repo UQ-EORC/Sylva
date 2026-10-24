@@ -85,13 +85,21 @@ def test_segmentation_matches_the_whole_plot(plot):
     whole = plot["whole"].with_attrs(tree_id=ref_labels)
     np.testing.assert_array_equal(_by_pid(got, "tree_id"), _by_pid(whole, "tree_id"))
     assert not any(t.extra["crown_at_edge"] for t in seg)
-    # The trees are the ones planted: most of each tree's points are its own.
-    truth = got.attrs["truth"]
-    purity = []
+    # The trees are the ones planted: each segmented tree maps to the planted
+    # tree holding most of its points, and most of every planted tree's points
+    # come back with the right label, few with none. (Purity alone rewarded
+    # leaving detached crowns unlabelled: a third of the tree points, once.)
+    truth, label = got.attrs["truth"], got.attrs["tree_id"]
+    to_truth = {}
     for t in seg:
-        mine = truth[got.attrs["tree_id"] == t.tree_id]
-        purity.append(np.mean(mine == np.bincount(mine[mine > 0]).argmax()))
-    assert np.mean(purity) > 0.8, purity
+        mine = truth[label == t.tree_id]
+        to_truth[t.tree_id] = np.bincount(mine[mine > 0]).argmax()
+    mapped = np.array([to_truth.get(lab, -1) for lab in label])
+    planted = truth > 0
+    right = np.mean(mapped[planted] == truth[planted])
+    unlabelled = np.mean(label[planted] == -1)
+    assert right > 0.7, (right, unlabelled)
+    assert unlabelled < 0.05, (right, unlabelled)
 
 
 @pytest.mark.parametrize("tile_size,workers,buffer", [(7.5, 3, 20.0), (15.0, 8, 12.0), (10.0, 2, 3.0)])
@@ -153,8 +161,9 @@ def test_segmentation_edge_cases(plot, tmp_path):
 
 
 def test_voxel_origin_leaves_the_default_unchanged(plot):
+    # The default grid corner is the cloud's minimum in whole metres.
     whole, stems = plot["whole"], plot["stems"][:4]
-    lo = whole.xyz[whole.heights("height") >= 0.25].min(axis=0)
+    lo = np.floor(whole.xyz.min(axis=0))
     a = trees.segment_trees(whole, stems, voxel_size=0.1)
     b = trees.segment_trees(whole, stems, voxel_size=0.1, voxel_origin=lo)
     np.testing.assert_array_equal(a, b)

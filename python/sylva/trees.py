@@ -348,12 +348,13 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
                   seed_height: float = 1.5, seed_radius: float = 0.25, seed_ring: bool = True,
                   power: float = 6.0,
                   angle_penalty: bool = True, gravity: float = 0.0,
-                  cut_above_ground: float = 0.25, height_prior: bool = True,
+                  cut_above_ground: float | None = None, height_prior: bool = True,
                   height_prior_radius: float = 1.5, height_prior_power: float = 1.0,
                   low_height: float = 0.5,
                   low_radius: float = 1.0, wood_costs: bool = False,
-                  wood_k: int = 20, wood_threshold: float = 0.9, understorey_height: float = 10.0,
-                  understorey_band: float = 0.5, voxel_origin=None) -> np.ndarray:
+                  wood_k: int = 20, wood_threshold: float = 0.9, understorey_height: float = 0.0,
+                  understorey_band: float = 0.5, voxel_origin=None,
+                  ground: str | np.ndarray | None = None, bridge: bool = True) -> np.ndarray:
     """Assign each point to a stem by least-cost path through a directed kNN
     graph (multi-source Dijkstra from stem seeds), after raycloudtools'
     ``rayextract trees`` (Devereux et al. 2026).
@@ -406,7 +407,11 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
     gravity
         Lateral-distance term; 0 disables it.
     cut_above_ground
-        Points below this height (m) are left unassigned.
+        Points below this height (m) are left unassigned and kept out of
+        the graph. None is 0.1 m, the noise band of a terrain model, so the
+        ground surface stays out while a stem is labelled to within a hand
+        of the ground; or 0 when ``ground`` is given, the ground then being
+        what the classifier found.
     height_prior, height_prior_radius
         Scale costs by 1 / tree height; tree height is estimated from points
         within ``height_prior_radius`` of the stem.
@@ -423,16 +428,30 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
         ``max(low_radius, 1.5 DBH)`` from every stem become extra sources,
         with path costs scaled as for a tree ``understorey_height`` tall
         (with ``height_prior``). Grass, shrubs and saplings around a stem go
-        to them and are left unassigned instead of joining the tree. 0
-        disables. On the CHERLET test blocks the default raises F1 at
-        Litchfield from 0.73 to 0.83 and cuts the share of tree points that
-        are really understorey from 17 % to 6 %; scales above about 20 start
-        to take points from real trees.
+        to them and are left unassigned instead of joining the tree. 0, the
+        default, disables: on the four CHERLET reference plots the sources
+        found no tree and lost up to four (see *Benchmarks > Tree
+        detection*), and what they take from a crown they take through
+        foliage whatever they are costed, so they are left to the
+        ``low_height`` rule. 10 is the value they were tuned at.
     voxel_origin
         ``(x, y, z)`` of a corner of the graph's voxel grid; None anchors it
-        at the lowest point above ``cut_above_ground``. A fixed corner puts
-        the graph on the grid :func:`sylva.als.tiles.segment_trees` uses, which
+        at the cloud's minimum corner rounded down to whole metres, so that
+        neither the cut nor the thinning moves it. A fixed corner puts the
+        graph on the grid :func:`sylva.als.tiles.segment_trees` uses, which
         then gives these labels tile by tile.
+    ground
+        Points to keep out of the graph and leave unassigned, whatever their
+        height: ``"classification"`` takes the points classified as ground
+        (ASPRS class 2, as :func:`sylva.ground.classify_ground_csf` writes
+        them), or give a boolean mask with one value per point. None leaves
+        the ground to ``cut_above_ground`` alone.
+    bridge
+        Join the graph's components wherever two come within ``max_edge`` of
+        each other, so that a crown reaches its trunk through sparsely
+        sampled branches whatever points the thinning kept. Off, the labels
+        of trees of 5 to 10 m depended on which point survived each voxel
+        (see *Benchmarks > Tree detection*).
 
     Returns
     -------
@@ -449,13 +468,29 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
     and use int32 first, because Segfix reads a negative id as noise.
     """
     h = np.ascontiguousarray(cloud.heights(height_attr))
+    if isinstance(ground, str):
+        if ground != "classification":
+            raise ValueError(f"ground must be 'classification', a mask or None, got {ground!r}")
+        if "classification" not in cloud.attrs:
+            raise ValueError("ground='classification' needs a classification attribute; "
+                             "run sylva.ground.classify_ground_csf first")
+        exclude = np.asarray(cloud.attrs["classification"]) == 2
+    elif ground is None:
+        exclude = None
+    else:
+        exclude = np.ascontiguousarray(np.asarray(ground, dtype=bool))
+        if exclude.shape != (len(cloud),):
+            raise ValueError(f"ground mask has shape {exclude.shape}, expected ({len(cloud)},)")
+    if cut_above_ground is None:
+        cut_above_ground = 0.0 if exclude is not None else 0.1
     return _core.segment_trees(cloud.xyz, h, [t._to_core() for t in trees], k, max_edge,
                                voxel_size, seed_height, seed_radius, seed_ring, power, angle_penalty,
                                gravity, cut_above_ground, height_prior, height_prior_radius,
                                height_prior_power,
                                low_height, low_radius, wood_costs, wood_k, wood_threshold,
                                understorey_height, understorey_band,
-                               None if voxel_origin is None else tuple(float(v) for v in voxel_origin))
+                               None if voxel_origin is None else tuple(float(v) for v in voxel_origin),
+                               exclude, bool(bridge))
 
 
 def merge_branches(cloud: PointCloud, trees: list[Tree], height_attr: str = "height",

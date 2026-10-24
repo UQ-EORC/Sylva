@@ -79,24 +79,41 @@ paths, after raycloudtools' `rayextract trees`
 - **Cost.** Climbing is cheap, while horizontal and downward steps are
   expensive, so paths go up through a tree rather than across the
   understorey.
+- **Seeds.** Each stem is seeded along its whole bark shell, from the
+  ground to half a metre above `seed_height`, so the trunk belongs to its
+  tree at no cost instead of being grown into from breast height against
+  the angle penalty.
+- **The ground.** Points within `cut_above_ground` (0.1 m, the noise band
+  of a terrain model) of the ground stay out of the graph and unlabelled;
+  a stem is labelled to within a hand of the ground. With a ground
+  classification, `ground="classification"` keeps out what the classifier
+  found instead and the cut drops to zero, so the base is labelled to its
+  last point above the ground. Mind the classifier's own threshold: CSF at
+  its default 0.3 m calls the lowest 30 cm of a trunk ground too.
+- **Connectivity.** The graph joins its components wherever two come within
+  `max_edge` of each other, so a crown reaches its trunk through sparsely
+  sampled branches whatever points the thinning kept. Without this the
+  labels of trees of 5 to 10 m depended on which point survived each voxel
+  (see *Benchmarks > Tree detection*).
 - **`height_prior`** lets tall trees win contested crown points.
 - **`wood_costs=True`** stops foliage from bridging neighbouring crowns. It is
   slower.
-- **`voxel_size`** (3 cm) sets the graph resolution. Labels are copied to
+- **`voxel_size`** (3 cm) sets the graph resolution, on a grid anchored at
+  the cloud's minimum corner in whole metres. Labels are copied to
   every point. The graph is what segmentation costs in memory: about 60
   bytes a node, plus the node coordinates and the search's own arrays, and
   on a 2 cm cloud 3 cm voxels keep more than half the points as nodes
   (5 cm keep a third, 10 cm an eighth). Read a large plot with
   `sylva.read(path, attrs=["height"])` so that nothing else is held beside
   it (see [Large clouds](io.md#large-clouds)).
-- **Understorey competes** (`understorey_height`, on by default). After
-  raycloudtools, near-ground points away from every detected stem are
+- **Understorey sources** (`understorey_height`, off by default). After
+  raycloudtools, near-ground points away from every detected stem can be
   sources too, so grass, shrubs and saplings keep their own points instead
-  of flowing into the nearest tree. That matters most for QSMs: before, the
-  understorey around a stem was modelled as a fan of low branches. On the
-  CHERLET Litchfield test block it raises F1 from 0.73 to 0.83 and cuts
-  the share of tree points that are really understorey from 17 % to 6 %.
-  Wytham and Robson Creek improve too.
+  of flowing into the nearest tree. Measured on the four CHERLET reference
+  plots they find no tree and lose up to four: what they take from a crown
+  they take through foliage whatever they are costed, and the `low_height`
+  rule already keeps the ground layer beyond `low_radius` of a stem out of
+  the tree. Set `understorey_height=10` to have them back.
 
 `prune_trees` removes candidates lower than `min_height` and merges stems
 closer than `merge_radius`. In conifer stands with many low branches,

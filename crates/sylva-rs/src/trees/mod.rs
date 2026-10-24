@@ -11,10 +11,10 @@ use std::collections::HashMap;
 
 use rayon::prelude::*;
 
-use crate::cluster::{dijkstra_gravity, dijkstra_scaled, directed_knn_graph, directed_knn_graph_wood};
+use crate::cluster::{dijkstra_gravity, dijkstra_scaled, directed_knn_graph, directed_knn_graph_bridged, directed_knn_graph_wood};
 use crate::error::{Error, Result};
 use crate::filters::Rng;
-use crate::util::spatial::{first_in_voxel, min_corner_of};
+use crate::util::spatial::first_in_voxel;
 use crate::util::optim::levenberg_marquardt;
 use crate::util::spatial::KdTree;
 use crate::Point;
@@ -172,7 +172,11 @@ pub struct SegmentParams {
     pub angle_penalty: bool,
     /// raycloudtools gravity factor: cost x (1 + g * lateral^2 from the seed); 0 disables.
     pub gravity: f64,
-    /// Points below this height are left unassigned (-1).
+    /// Points below this height are left unassigned (-1) and kept out of
+    /// the graph: the terrain model's own noise band, 0.1 m, so that the
+    /// ground surface is not in the graph while a stem is labelled to within
+    /// a hand of the ground. With the ground given as a mask instead
+    /// (`segment_trees_masked`) it can be 0.
     pub cut_above_ground: f64,
     /// Scale each tree's path costs by `1 / max(height_estimate, 2)`, the
     /// height estimate being the 95th-percentile point height within
@@ -204,32 +208,51 @@ pub struct SegmentParams {
     /// Graph nodes up to `understorey_band` above `cut_above_ground`, and
     /// further than `max(low_radius, 1.5 DBH)` from every stem, become extra
     /// sources whose path costs are scaled as for a tree this tall (with
-    /// `height_prior`); what they claim is left unassigned. 0 disables.
+    /// `height_prior`); what they claim is left unassigned. 0, the default,
+    /// disables: on the four CHERLET reference plots the sources gained no
+    /// tree and lost up to four, and what they take from a crown they take
+    /// through foliage regardless of how they are costed.
     pub understorey_height: f64,
     pub understorey_band: f64,
     /// Corner of the voxel grid of the graph; None anchors it at the
-    /// minimum of the points above `cut_above_ground`. A fixed corner puts
-    /// every part of a plot on one grid, so tiles of the plot get the graph
-    /// nodes the whole plot has (`crate::als::tiles_trees`).
+    /// cloud's minimum corner rounded down to whole metres, so that nothing
+    /// about the cut or the thinning moves it. A fixed corner puts every
+    /// part of a plot on one grid, so tiles of the plot get the graph nodes
+    /// the whole plot has (`crate::als::tiles_trees`).
     pub voxel_origin: Option<Point>,
+    /// Join the graph's components wherever two come within `max_edge` of
+    /// each other, so that a crown reaches its trunk through sparsely
+    /// sampled branches whatever points the thinning kept
+    /// (`crate::cluster::directed_knn_graph_bridged`).
+    pub bridge: bool,
 }
 
 impl Default for SegmentParams {
     fn default() -> Self {
-        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.03, seed_height: 1.5, seed_radius: 0.25, power: 6.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, seed_ring: true, height_prior: true, height_prior_radius: 1.5, height_prior_power: 1.0, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 10.0, understorey_band: 0.5, voxel_origin: None }
+        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.03, seed_height: 1.5, seed_radius: 0.25, power: 6.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.1, seed_ring: true, height_prior: true, height_prior_radius: 1.5, height_prior_power: 1.0, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 0.0, understorey_band: 0.5, voxel_origin: None, bridge: true }
     }
 }
 
 /// The points that become graph nodes: those at or above
 /// `cut_above_ground`, thinned to the first of each `voxel_size` voxel.
 pub fn graph_nodes(points: &[Point], heights: &[f64], p: &SegmentParams) -> Vec<usize> {
-    let above: Vec<usize> = (0..points.len()).filter(|&i| heights[i] >= p.cut_above_ground).collect();
+    graph_nodes_masked(points, heights, p, None)
+}
+
+/// [`graph_nodes`] leaving out the points flagged in `exclude` as well: the
+/// ground as a classifier found it, so that the surface is out of the graph
+/// whatever its height, and the cut can sit at the ground itself.
+pub fn graph_nodes_masked(points: &[Point], heights: &[f64], p: &SegmentParams, exclude: Option<&[bool]>) -> Vec<usize> {
+    let above: Vec<usize> = (0..points.len()).filter(|&i| heights[i] >= p.cut_above_ground && exclude.is_none_or(|e| !e[i])).collect();
     if p.voxel_size.is_nan() || p.voxel_size <= 0.0 {
         return above;
     }
     // Thinned in place: the voxel of each point is found through its index,
     // with no copy of the points above the cut and no list per voxel.
-    let origin = p.voxel_origin.unwrap_or_else(|| min_corner_of(points, &above));
+    let origin = p.voxel_origin.unwrap_or_else(|| {
+        let lo = crate::util::spatial::min_corner(points);
+        [lo[0].floor(), lo[1].floor(), lo[2].floor()]
+    });
     first_in_voxel(points, above, &origin, p.voxel_size)
 }
 
@@ -237,14 +260,22 @@ pub fn graph_nodes(points: &[Point], heights: &[f64], p: &SegmentParams) -> Vec<
 /// (multi-source Dijkstra from stem seeds), after raycloudtools' `rayextract
 /// trees` (Devereux et al. 2026). Unreachable points get `-1`.
 pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &SegmentParams) -> Vec<i64> {
+    segment_trees_masked(points, heights, trees, p, None)
+}
+
+/// [`segment_trees`] with the points flagged in `exclude` kept out of the
+/// graph and left unassigned (-1): pass the ground classification, and set
+/// `cut_above_ground` to 0, to label stems down to the last point above the
+/// ground rather than to a fixed height above it.
+pub fn segment_trees_masked(points: &[Point], heights: &[f64], trees: &[Tree], p: &SegmentParams, exclude: Option<&[bool]>) -> Vec<i64> {
     let task = crate::util::progress::start("segmenting trees", 3);
-    let work_idx = graph_nodes(points, heights, p);
+    let work_idx = graph_nodes_masked(points, heights, p, exclude);
     let work: Vec<Point> = work_idx.iter().map(|&i| points[i]).collect();
     let hw: Vec<f64> = work_idx.iter().map(|&i| heights[i]).collect();
     task.inc(1); // thinned
     let labels_work = segment_nodes(&work, &hw, trees, p);
     task.inc(1); // paths
-    let labels = label_points(points, heights, &work, &labels_work, trees, p);
+    let labels = label_points_masked(points, heights, &work, &labels_work, trees, p, exclude);
     task.inc(1); // labelled
     labels
 }
@@ -313,7 +344,7 @@ impl FlatGrid {
 /// the 95th-percentile node height within `height_prior_radius` of its stem
 /// (at least 2 m). The seed nodes are those on the bark ring: distance from
 /// the stem axis within `seed_radius` of half the DBH (of the axis itself
-/// without `seed_ring`), and height within 0.5 m of `seed_height`.
+/// without `seed_ring`), at any height below `seed_height + 0.5`.
 pub fn collect_seeds(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentParams) -> Seeds {
     let mut out = Seeds { seeds: Vec::new(), seed_tree: Vec::new(), seed_xy: Vec::new(), seed_scale: Vec::new() };
     if trees.is_empty() || work.is_empty() {
@@ -339,10 +370,14 @@ pub fn collect_seeds(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentPara
         // points at all, and the tree starts with nothing (r-lidar's arbor seeds
         // a whole synthetic trunk shell for the same reason).
         let inner = if p.seed_ring { 0.5 * t.dbh } else { 0.0 };
+        // The whole shell from the ground (every node is above the cut) up
+        // to half a metre above `seed_height`: the trunk belongs to its tree
+        // at no cost, rather than being grown into from breast height against
+        // the angle penalty.
         found.clear();
         found.extend(grid.candidates(t.x, t.y, inner + p.seed_radius).filter(|&i| {
             let d = (work[i][0] - t.x).hypot(work[i][1] - t.y);
-            (d - inner).abs() <= p.seed_radius && (hw[i] - p.seed_height).abs() < 0.5
+            (d - inner).abs() <= p.seed_radius && hw[i] < p.seed_height + 0.5
         }));
         found.sort_unstable();
         for &i in &found {
@@ -366,7 +401,7 @@ pub fn segment_nodes(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentPara
     } else {
         None
     };
-    let graph = directed_knn_graph_wood(work, p.k, p.max_edge, p.power, p.angle_penalty, wood.as_deref());
+    let graph = if p.bridge { directed_knn_graph_bridged(work, p.k, p.max_edge, p.power, p.angle_penalty, wood.as_deref()) } else { directed_knn_graph_wood(work, p.k, p.max_edge, p.power, p.angle_penalty, wood.as_deref()) };
     let Seeds { mut seeds, mut seed_tree, mut seed_xy, mut seed_scale } = collect_seeds(work, hw, trees, p);
     if seeds.is_empty() {
         return vec![-1; work.len()];
@@ -375,13 +410,14 @@ pub fn segment_nodes(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentPara
         // Near-ground nodes away from every stem: sources labelled -1.
         let stems = KdTree::new(&trees.iter().map(|t| [t.x, t.y, 0.0]).collect::<Vec<_>>());
         let clear: Vec<f64> = trees.iter().map(|t| p.low_radius.max(1.5 * t.dbh)).collect();
+        let reach = clear.iter().cloned().fold(0.0, f64::max);
         let scale = if p.height_prior { 1.0 / p.understorey_height } else { 1.0 };
         for (i, q) in work.iter().enumerate() {
             if hw[i] > p.cut_above_ground + p.understorey_band {
                 continue;
             }
             let flat = [q[0], q[1], 0.0];
-            let near = stems.within(&flat, clear.iter().cloned().fold(0.0, f64::max)).into_iter().any(|(j, d)| d <= clear[j]);
+            let near = stems.within(&flat, reach).into_iter().any(|(j, d)| d <= clear[j]);
             if !near {
                 seeds.push(i);
                 seed_tree.push(-1);
@@ -399,13 +435,18 @@ pub fn segment_nodes(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentPara
 /// `cut_above_ground`, and those below `low_height` farther than
 /// `max(low_radius, 1.5 DBH)` from their tree's stem, get -1.
 pub fn label_points(points: &[Point], heights: &[f64], work: &[Point], labels_work: &[i64], trees: &[Tree], p: &SegmentParams) -> Vec<i64> {
+    label_points_masked(points, heights, work, labels_work, trees, p, None)
+}
+
+/// [`label_points`] with the points flagged in `exclude` left at -1.
+pub fn label_points_masked(points: &[Point], heights: &[f64], work: &[Point], labels_work: &[i64], trees: &[Tree], p: &SegmentParams, exclude: Option<&[bool]>) -> Vec<i64> {
     let tree = KdTree::new(work);
     let base: std::collections::HashMap<i64, (f64, f64, f64)> = trees.iter().map(|t| (t.tree_id, (t.x, t.y, p.low_radius.max(1.5 * t.dbh)))).collect();
-    points
-        .par_iter()
-        .zip(heights)
-        .map(|(q, &h)| {
-            if h < p.cut_above_ground {
+    (0..points.len())
+        .into_par_iter()
+        .map(|i| {
+            let (q, h) = (&points[i], heights[i]);
+            if h < p.cut_above_ground || exclude.is_some_and(|e| e[i]) {
                 return -1;
             }
             let l = tree.nearest(q).map(|(j, _)| labels_work[j]).unwrap_or(-1);
@@ -447,7 +488,7 @@ pub fn branch_parents(points: &[Point], heights: &[f64], trees: &[Tree], p: &Seg
     let work_idx = graph_nodes(points, heights, p);
     let work: Vec<Point> = work_idx.iter().map(|&i| points[i]).collect();
     let hw: Vec<f64> = work_idx.iter().map(|&i| heights[i]).collect();
-    let graph = directed_knn_graph(&work, p.k, p.max_edge, p.power, p.angle_penalty);
+    let graph = if p.bridge { directed_knn_graph_bridged(&work, p.k, p.max_edge, p.power, p.angle_penalty, None) } else { directed_knn_graph(&work, p.k, p.max_edge, p.power, p.angle_penalty) };
     let sources: Vec<usize> = (0..work.len()).filter(|&i| hw[i] < ground_height).collect();
     if sources.is_empty() {
         return parent;
@@ -827,7 +868,7 @@ mod seed_and_height_tests {
             let inner = if p.seed_ring { 0.5 * t.dbh } else { 0.0 };
             for (i, q) in work.iter().enumerate() {
                 let d = (q[0] - t.x).hypot(q[1] - t.y);
-                if (d - inner).abs() <= p.seed_radius && (hw[i] - p.seed_height).abs() < 0.5 {
+                if (d - inner).abs() <= p.seed_radius && hw[i] < p.seed_height + 0.5 {
                     out.seeds.push(i);
                     out.seed_tree.push(t.tree_id);
                     out.seed_xy.push([t.x, t.y]);
@@ -854,6 +895,29 @@ mod seed_and_height_tests {
         let (pts, hw, _) = forest(100, 5);
         assert!(collect_seeds(&pts, &hw, &[], &SegmentParams::default()).seeds.is_empty());
         assert!(collect_seeds(&[], &[], &forest(10, 6).2, &SegmentParams::default()).seeds.is_empty());
+    }
+
+    #[test]
+    fn an_exclusion_mask_keeps_points_out_of_graph_and_labels() {
+        let (pts, hw, trees) = forest(8000, 21);
+        let p = SegmentParams { voxel_size: 0.05, ..Default::default() };
+        // No mask is the unmasked function, bit for bit.
+        assert_eq!(segment_trees_masked(&pts, &hw, &trees, &p, None), segment_trees(&pts, &hw, &trees, &p));
+        assert_eq!(graph_nodes_masked(&pts, &hw, &p, None), graph_nodes(&pts, &hw, &p));
+        // Masked points are neither nodes nor labelled, and the rest still are.
+        let mask: Vec<bool> = pts.iter().map(|q| q[2] < 0.6 && q[0] > 0.0).collect();
+        let nodes = graph_nodes_masked(&pts, &hw, &p, Some(&mask));
+        assert!(!nodes.is_empty() && nodes.iter().all(|&i| !mask[i]));
+        let labels = segment_trees_masked(&pts, &hw, &trees, &p, Some(&mask));
+        assert!(labels.iter().zip(&mask).all(|(&l, &m)| !m || l == -1));
+        assert!(labels.iter().any(|&l| l >= 0));
+        // With the cut at the ground and the mask doing its job, the stems reach lower.
+        let low = SegmentParams { cut_above_ground: 0.0, voxel_size: 0.05, ..Default::default() };
+        let ground: Vec<bool> = pts.iter().map(|q| q[2] < 0.05).collect();
+        let labels_low = segment_trees_masked(&pts, &hw, &trees, &low, Some(&ground));
+        let labelled_below_cut = labels_low.iter().zip(&pts).filter(|(&l, q)| l >= 0 && q[2] < 0.25).count();
+        assert!(labelled_below_cut > 0);
+        assert!(labels_low.iter().zip(&ground).all(|(&l, &g)| !g || l == -1));
     }
 
     #[test]

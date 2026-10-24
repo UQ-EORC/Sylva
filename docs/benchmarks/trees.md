@@ -7,14 +7,57 @@ best-overlapping sylva tree has IoU ≥ 0.5; predicted trees outside the
 reference coverage are ignored. raycloudtools' `rayextract trees`
 ([Devereux et al. 2026](../references.md)) output is scored the same way.
 
-| Site (points) | sylva F1 | raycloudtools F1 | sylva TP / ref | sylva mean IoU |
-|---|---|---|---|---|
-| LITCH_CHERLET (8 M) | 0.96 | 0.97 | 124 / 127 | 0.98 |
-| ROBSON_CHERLET (9 M) | 0.57 | 0.55 | 91 / 149 | 0.73 |
-| WYTHAM_CHERLET (14 M) | 0.77 | 0.73 | 125 / 180 | 0.85 |
-| OFENTAL_CHERLET (15 M) | 0.57 (0.63 with `min_quality_short=0.15`) | 0.73 | 56 / 89 | 0.69 |
+| Site (points) | sylva F1, pruned at 3 m | at 5 m | raycloudtools F1 | sylva TP / ref | point accuracy |
+|---|---|---|---|---|---|
+| LITCH_CHERLET (8 M) | 0.964 | 0.968 | 0.97 | 122 / 127 | 0.977 |
+| ROBSON_CHERLET (9 M) | 0.591 | 0.613 | 0.55 | 99 / 149 | 0.626 |
+| WYTHAM_CHERLET (14 M) | 0.864 | 0.874 | 0.73 | 149 / 180 | 0.896 |
+| OFENTAL_CHERLET (15 M) | 0.594 | 0.622 | 0.73 | 57 / 89 | 0.706 |
 
-(Those figures are the per-site runs recorded earlier.)
+Scored in October 2026 with the current defaults on the plot clouds and
+reference labels as kept beside the harvest benchmark (the `basis` arrays):
+ground by PMF on a 5 cm thinning, a 0.5 m DTM, stems detected with the
+defaults, the graph on 5 cm voxels, pruned at 3 m (left) and 5 m (right).
+The same figures come out at three different corners of the thinning grid,
+which was not so before (below).
+
+## What the October 2026 changes did
+
+Three things changed together in the segmentation, and were measured on all
+four plots with this protocol:
+
+1. **The graph is bridged.** A k-nearest-neighbour graph over thinned points
+   left crowns disconnected from their trunks wherever a few sparsely sampled
+   branches carried the connection, and *which* crowns depended on which point
+   each voxel happened to keep. Moving the thinning grid by a fraction of a
+   voxel moved F1 by -0.047 at Litchfield, +0.027 at Robson, +0.008 at Wytham
+   and -0.014 at Ofental: more than any setting ever tuned here. The graph now
+   joins its components wherever two come within `max_edge`, one edge per pair
+   of components, so its connectivity is the cloud's at that distance and not
+   the thinning's. On a synthetic plot of interlocking crowns that took the
+   share of tree points left unlabelled from 31 % to under 1 %.
+2. **Stems are seeded along the whole bark shell** from the ground to half a
+   metre above breast height, and the ground cut dropped from 0.25 m to 0.1 m
+   (0 with a ground classification), so a trunk is labelled to within a hand
+   of the ground. Neither changed a single tree's outcome once the grid was
+   held still; what the earlier cut was protecting against turned out to be
+   the grid artefact above.
+3. **The understorey sources are off by default.** Costed as a 10 m tree, or
+   by the vegetation height around each source, or by the height of the
+   column above it up to the first gap, they found no tree on any plot and
+   lost two at Litchfield and four at Wytham. What they take from a crown
+   they take through foliage from below, whatever they are costed.
+
+| Plot | before (F1 at 3 m, two grid corners) | after (three grid corners) | after, understorey sources on |
+|---|---|---|---|
+| Litchfield | 0.924 / 0.877 | 0.964 / 0.964 / 0.964 | 0.956 |
+| Robson Creek | 0.562 / 0.589 | 0.591 / 0.591 / 0.591 | 0.589 |
+| Wytham | 0.848 / 0.856 | 0.864 / 0.864 / 0.866 | 0.850 |
+| Ofental | 0.611 / 0.597 | 0.594 / 0.594 / 0.594 | 0.597 |
+
+Any comparison finer than about 0.03 on a single plot made before these
+changes is within the grid noise, including the tuning notes further down,
+which are kept as the record of what was tried.
 
 ## Scored the way the benchmark scores
 
@@ -33,7 +76,10 @@ a true positive at IoU > 0.5), on the test splits, with `min_height` set to the
 5 m the references themselves use (6 m at Robson Creek; `prune_trees` keeps
 3 m by default). The figures an earlier version of this page gave (0.976,
 0.732, 0.667, 0.528) could not be reproduced with that code and are
-superseded. With the current defaults (`power=6`):
+superseded. The table below is the September 2026 record with the defaults
+of that time (`power=6`, a 25 cm cut, understorey sources on, an unbridged
+graph); the test-split data it needs is no longer on the machine the
+benchmarks run on, so it has not been re-scored after the October changes:
 
 | test split | eval trees | recall | precision | F1 | Rayextract F1 | best F1 of the other four methods |
 |---|---|---|---|---|---|---|

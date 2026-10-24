@@ -417,7 +417,12 @@ fn segment_tile(cat: &Catalog, nodes: &Nodes, ci: usize, cores: &[[f64; 4]], ste
         let open = open_sides(&ext, &outer);
         let mut edge: Vec<i64> = labels.iter().zip(&pts).filter(|(l, p)| own.contains(l) && margin(&outer, &open, p) < s.edge_margin).map(|(l, _)| *l).collect::<HashSet<_>>().into_iter().collect();
         edge.sort_unstable();
-        if !edge.is_empty() && b < s.max_buffer {
+        // A node at the edge that no stem reached (above the low-vegetation
+        // band) may be a piece of a crown whose path to its stem, or whose
+        // bridge to the rest of its tree, leaves the buffer: in the whole
+        // plot it would be labelled and compete, so the tile is not settled.
+        let loose_edge = labels.iter().zip(&pts).zip(&h).any(|((&l, p), &hh)| l < 0 && hh > g.low_height && margin(&outer, &open, p) < s.edge_margin);
+        if (!edge.is_empty() || loose_edge) && b < s.max_buffer {
             b = (b.max(s.edge_margin) * 2.0).min(s.max_buffer);
             counts.rereads.fetch_add(1, Ordering::Relaxed);
             continue;

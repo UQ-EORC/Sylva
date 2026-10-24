@@ -114,7 +114,7 @@ impl<'a> Graph<'a> {
     /// in flat arrays - a slot table of the search results, a reverse pass,
     /// a sort of each node's run - rather than a vector per node, which for
     /// a few neighbours costs more in headers and slack than in neighbours.
-    fn symmetric_knn_csr(points: &[Point], k: usize, max_distance: f64) -> (Vec<usize>, Vec<u32>) {
+    fn symmetric_knn_csr(points: &[Point], k: usize, max_distance: f64, bridge: bool) -> (Vec<usize>, Vec<u32>) {
         let n = points.len();
         let tree = KdTree::new(points);
         // Up to k + 1 results survive the filter when the point's own entry
@@ -131,8 +131,9 @@ impl<'a> Graph<'a> {
                 }
             }
         });
+        let extra = if bridge { bridges(points, &tree, &found, slots, max_distance) } else { Vec::new() };
         drop(tree);
-        // Degree of each node: what it found plus what found it.
+        // Degree of each node: what it found plus what found it, and the bridges.
         let mut degree = vec![0usize; n];
         for (i, row) in found.chunks(slots).enumerate() {
             for &j in row {
@@ -142,6 +143,10 @@ impl<'a> Graph<'a> {
                 degree[i] += 1;
                 degree[j as usize] += 1;
             }
+        }
+        for &(i, j) in &extra {
+            degree[i as usize] += 1;
+            degree[j as usize] += 1;
         }
         let mut offsets = Vec::with_capacity(n + 1);
         offsets.push(0usize);
@@ -169,6 +174,12 @@ impl<'a> Graph<'a> {
                 neighbors[cursor[j]] = i as u32;
                 cursor[j] += 1;
             }
+        }
+        for &(i, j) in &extra {
+            neighbors[cursor[i as usize]] = j;
+            cursor[i as usize] += 1;
+            neighbors[cursor[j as usize]] = i;
+            cursor[j as usize] += 1;
         }
         drop(found);
         drop(cursor);
@@ -210,6 +221,123 @@ impl<'a> Graph<'a> {
         neighbors.shrink_to_fit();
         (offsets, neighbors)
     }
+}
+
+/// Root of `x` in a union-find forest, halving the path on the way.
+fn find(parent: &mut [u32], mut x: u32) -> u32 {
+    while parent[x as usize] != x {
+        let p = parent[x as usize];
+        parent[x as usize] = parent[p as usize];
+        x = p;
+    }
+    x
+}
+
+/// The edges that join the connected components of a k-nearest-neighbour
+/// graph wherever two of them come within `max_distance`: for every
+/// component but the largest, the closest pair of nodes between it and
+/// each other component within reach, repeated until no two components
+/// are that close. The graph then connects whatever the cloud connects at
+/// `max_distance`, however the points were thinned: a crown joined to its
+/// trunk by a few sparsely sampled branches is no longer at the mercy of
+/// which point each voxel kept, which is what made a k-neighbour graph
+/// fall apart there. A piece near two trees is joined to both, and the
+/// path costs decide which it belongs to, as they would in a radius graph.
+/// `found` is the slot table of the search, `slots` wide per node.
+fn bridges(points: &[Point], tree: &KdTree, found: &[u32], slots: usize, max_distance: f64) -> Vec<(u32, u32)> {
+    let n = points.len();
+    let mut parent: Vec<u32> = (0..n as u32).collect();
+    for (i, row) in found.chunks(slots).enumerate() {
+        for &j in row {
+            if j == u32::MAX {
+                break;
+            }
+            let (a, b) = (find(&mut parent, i as u32), find(&mut parent, j));
+            if a != b {
+                parent[a as usize] = b;
+            }
+        }
+    }
+    let mut extra = Vec::new();
+    // Each pass joins every component to its nearest neighbour component;
+    // chains of components take a few passes, and the count is bounded by
+    // the number of components, which halves at least each pass.
+    for _ in 0..64 {
+        let comp: Vec<u32> = (0..n as u32).map(|i| find(&mut parent, i)).collect();
+        let mut size = vec![0u32; n];
+        for &c in &comp {
+            size[c as usize] += 1;
+        }
+        let largest = (0..n).max_by_key(|&c| size[c]).map(|c| c as u32).unwrap_or(0);
+        if size[largest as usize] as usize == n {
+            break;
+        }
+        // Per node outside the largest component, the nearest node of each
+        // other component within reach: probe the nearest neighbours in
+        // widening batches until the batch reaches past `max_distance`,
+        // then by radius if a dense cloud defeats that.
+        let near: Vec<Vec<(u32, u32, f64)>> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                if comp[i] == largest {
+                    return Vec::new();
+                }
+                let others = |nb: Vec<(usize, f64)>| {
+                    let mut seen: Vec<(u32, u32, f64)> = Vec::new();
+                    for (j, d) in nb {
+                        if d > max_distance {
+                            break;
+                        }
+                        if comp[j] != comp[i] && !seen.iter().any(|&(_, jj, _)| comp[jj as usize] == comp[j]) {
+                            seen.push((i as u32, j as u32, d));
+                        }
+                    }
+                    seen
+                };
+                let mut k = 32;
+                while k <= 4096 {
+                    let nb = tree.knn(&points[i], k);
+                    if nb.len() < k || nb.last().is_some_and(|&(_, d)| d > max_distance) {
+                        return others(nb);
+                    }
+                    k *= 4;
+                }
+                let mut nb = tree.within(&points[i], max_distance);
+                nb.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+                others(nb)
+            })
+            .collect();
+        // The closest pair per pair of components.
+        let mut best: std::collections::HashMap<(u32, u32), (f64, u32, u32)> = std::collections::HashMap::new();
+        for (i, j, d) in near.into_iter().flatten() {
+            let (a, b) = (comp[i as usize], comp[j as usize]);
+            let key = if a < b { (a, b) } else { (b, a) };
+            let e = best.entry(key).or_insert((f64::INFINITY, 0, 0));
+            if d < e.0 {
+                *e = (d, i, j);
+            }
+        }
+        if best.is_empty() {
+            break;
+        }
+        // Every pair's edge goes in (so a piece near two trees reaches
+        // both); the unions decide whether another pass is needed.
+        let mut joined = false;
+        let mut picks: Vec<(f64, u32, u32)> = best.into_values().collect();
+        picks.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        for (_, i, j) in picks {
+            extra.push((i, j));
+            let (a, b) = (find(&mut parent, i), find(&mut parent, j));
+            if a != b {
+                parent[a as usize] = b;
+                joined = true;
+            }
+        }
+        if !joined {
+            break;
+        }
+    }
+    extra
 }
 
 /// Directed graph from per-node adjacency lists (no symmetrisation).
@@ -263,12 +391,23 @@ pub fn directed_knn_graph(points: &[Point], k: usize, max_distance: f64, power: 
 /// The graph borrows `points` (and `wood`): edge costs are computed from
 /// them as the edges are walked, not stored.
 pub fn directed_knn_graph_wood<'a>(points: &'a [Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&'a [bool]>) -> Graph<'a> {
+    directed_knn_graph_full(points, k, max_distance, power, angle_penalty, wood, false)
+}
+
+/// [`directed_knn_graph_wood`] with its components joined wherever two come
+/// within `max_distance` of each other (see `bridges`), so that connectivity
+/// is that of the cloud at `max_distance` and not of the thinning.
+pub fn directed_knn_graph_bridged<'a>(points: &'a [Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&'a [bool]>) -> Graph<'a> {
+    directed_knn_graph_full(points, k, max_distance, power, angle_penalty, wood, true)
+}
+
+fn directed_knn_graph_full<'a>(points: &'a [Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&'a [bool]>, bridge: bool) -> Graph<'a> {
     if let Err(e) = check_graph(points.len(), k, false) {
         // The callers of this one cannot carry an error; refusing loudly is
         // still better than the machine going down.
         panic!("{e}");
     }
-    let (offsets, neighbors) = Graph::symmetric_knn_csr(points, k, max_distance);
+    let (offsets, neighbors) = Graph::symmetric_knn_csr(points, k, max_distance, bridge);
     Graph { offsets, neighbors, weights: Vec::new(), xy: Vec::new(), cost: Some(EdgeCost { points, power, angle_penalty, wood }) }
 }
 
@@ -529,6 +668,35 @@ mod tests {
         assert_eq!(a.1, b.1);
         assert_eq!(a.2, b.2);
         assert_eq!(connected_components(&g), connected_components(&r));
+    }
+
+    #[test]
+    fn bridges_join_what_the_cloud_joins() {
+        // Two dense vertical lines 0.8 m apart: every node's six nearest are
+        // on its own line, so the kNN graph has two components; bridged within
+        // 1 m it has one, within 0.5 m still two.
+        let mut pts: Vec<Point> = (0..200).map(|i| [0.0, 0.0, i as f64 * 0.02]).collect();
+        pts.extend((0..200).map(|i| [0.8, 0.0, i as f64 * 0.02]));
+        let plain = directed_knn_graph(&pts, 6, 1.0, 6.0, true);
+        assert_eq!(connected_components(&plain).0, 2);
+        let bridged = directed_knn_graph_bridged(&pts, 6, 1.0, 6.0, true, None);
+        assert_eq!(connected_components(&bridged).0, 1);
+        assert_eq!(bridged.neighbors.len(), plain.neighbors.len() + 2);
+        let apart = directed_knn_graph_bridged(&pts, 6, 0.5, 6.0, true, None);
+        assert_eq!(connected_components(&apart).0, 2);
+        // A chain of four clumps joins in passes, and a lone far point stays apart.
+        let mut chain: Vec<Point> = Vec::new();
+        for c in 0..4 {
+            chain.extend((0..50).map(|i| [c as f64 * 0.9, 0.0, i as f64 * 0.01]));
+        }
+        chain.push([10.0, 10.0, 0.0]);
+        assert_eq!(connected_components(&directed_knn_graph_bridged(&chain, 6, 1.0, 6.0, true, None)).0, 2);
+        // Bridging an already connected graph adds nothing.
+        let dense = cloud(300, 4, false);
+        let same = directed_knn_graph_bridged(&dense, 6, 1.0, 6.0, true, None);
+        let base = directed_knn_graph(&dense, 6, 1.0, 6.0, true);
+        assert_eq!(connected_components(&base).0, 1);
+        assert_eq!(same.neighbors, base.neighbors);
     }
 
     #[test]
