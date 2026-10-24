@@ -249,6 +249,112 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
     labels
 }
 
+/// The sources of [`segment_nodes`]' search that come from the stems: node
+/// indices, each with the id of its tree, the stem position and the cost
+/// scale of the tree's height prior.
+pub struct Seeds {
+    pub seeds: Vec<usize>,
+    pub seed_tree: Vec<i64>,
+    pub seed_xy: Vec<[f64; 2]>,
+    pub seed_scale: Vec<f64>,
+}
+
+/// Nodes in a flat 2-D grid of square cells, so that the nodes within a
+/// radius of a point are found among the cells the radius reaches instead
+/// of by a pass over them all. `order` holds the node indices sorted by
+/// cell, `starts[k]..starts[k + 1]` the run of cell `cells[k]`.
+struct FlatGrid {
+    cell: f64,
+    cells: Vec<[i64; 2]>,
+    starts: Vec<usize>,
+    order: Vec<u32>,
+}
+
+impl FlatGrid {
+    fn key(x: f64, y: f64, cell: f64) -> [i64; 2] {
+        [(x / cell).floor() as i64, (y / cell).floor() as i64]
+    }
+
+    fn new(points: &[Point], cell: f64) -> FlatGrid {
+        let mut keyed: Vec<([i64; 2], u32)> = points.iter().enumerate().map(|(i, q)| (Self::key(q[0], q[1], cell), i as u32)).collect();
+        keyed.par_sort_unstable();
+        let mut cells = Vec::new();
+        let mut starts = Vec::new();
+        let mut order = Vec::with_capacity(keyed.len());
+        for (k, i) in keyed {
+            if cells.last() != Some(&k) {
+                cells.push(k);
+                starts.push(order.len());
+            }
+            order.push(i);
+        }
+        starts.push(order.len());
+        FlatGrid { cell, cells, starts, order }
+    }
+
+    /// Every node that could lie within `r` of `(x, y)`: the nodes of the
+    /// cells the disc touches, in no particular order. The caller applies
+    /// the exact test. The range is padded a little so that rounding in
+    /// `x - r` cannot leave out a node exactly `r` away.
+    fn candidates(&self, x: f64, y: f64, r: f64) -> impl Iterator<Item = usize> + '_ {
+        let pad = r * 1e-9 + 1e-9;
+        let lo = Self::key(x - r - pad, y - r - pad, self.cell);
+        let hi = Self::key(x + r + pad, y + r + pad, self.cell);
+        (lo[0]..=hi[0])
+            .flat_map(move |cx| (lo[1]..=hi[1]).map(move |cy| [cx, cy]))
+            .filter_map(move |k| self.cells.binary_search(&k).ok())
+            .flat_map(move |slot| self.order[self.starts[slot]..self.starts[slot + 1]].iter().map(|&i| i as usize))
+    }
+}
+
+/// The seeds of each stem among the graph nodes (`work`, heights `hw`), in
+/// the order the search takes them: tree by tree, each tree's seed nodes by
+/// index. With `height_prior`, a tree's cost scale is `1 / h^power` for `h`
+/// the 95th-percentile node height within `height_prior_radius` of its stem
+/// (at least 2 m). The seed nodes are those on the bark ring: distance from
+/// the stem axis within `seed_radius` of half the DBH (of the axis itself
+/// without `seed_ring`), and height within 0.5 m of `seed_height`.
+pub fn collect_seeds(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentParams) -> Seeds {
+    let mut out = Seeds { seeds: Vec::new(), seed_tree: Vec::new(), seed_xy: Vec::new(), seed_scale: Vec::new() };
+    if trees.is_empty() || work.is_empty() {
+        return out;
+    }
+    // One grid serves both queries: cells as wide as the widest, so a disc
+    // of either radius lies within the three-by-three cells about its centre.
+    let ring = trees.iter().map(|t| if p.seed_ring { 0.5 * t.dbh } else { 0.0 } + p.seed_radius).fold(0.0, f64::max);
+    let widest = if p.height_prior { ring.max(p.height_prior_radius) } else { ring };
+    let grid = FlatGrid::new(work, widest.max(1e-3));
+    let mut found: Vec<usize> = Vec::new();
+    for t in trees {
+        let scale = if p.height_prior {
+            let mut hs: Vec<f64> = grid.candidates(t.x, t.y, p.height_prior_radius).filter(|&i| (work[i][0] - t.x).hypot(work[i][1] - t.y) <= p.height_prior_radius).map(|i| hw[i]).collect();
+            hs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let h95 = hs.get(((hs.len() as f64 * 0.95) as usize).min(hs.len().saturating_sub(1))).copied().unwrap_or(2.0);
+            1.0 / h95.max(2.0).powf(p.height_prior_power)
+        } else {
+            1.0
+        };
+        // Seed the bark, not the axis: on a stem wider than `seed_radius` a
+        // disc around the centre lies inside the trunk, where a scan has no
+        // points at all, and the tree starts with nothing (r-lidar's arbor seeds
+        // a whole synthetic trunk shell for the same reason).
+        let inner = if p.seed_ring { 0.5 * t.dbh } else { 0.0 };
+        found.clear();
+        found.extend(grid.candidates(t.x, t.y, inner + p.seed_radius).filter(|&i| {
+            let d = (work[i][0] - t.x).hypot(work[i][1] - t.y);
+            (d - inner).abs() <= p.seed_radius && (hw[i] - p.seed_height).abs() < 0.5
+        }));
+        found.sort_unstable();
+        for &i in &found {
+            out.seeds.push(i);
+            out.seed_tree.push(t.tree_id);
+            out.seed_xy.push([t.x, t.y]);
+            out.seed_scale.push(scale);
+        }
+    }
+    out
+}
+
 /// The graph part of [`segment_trees`] on its nodes (`work`, the points
 /// [`graph_nodes`] keeps, with heights `hw`): the tree id whose seeds reach
 /// each node most cheaply, -1 for nodes no seed reaches and for those the
@@ -261,34 +367,7 @@ pub fn segment_nodes(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentPara
         None
     };
     let graph = directed_knn_graph_wood(work, p.k, p.max_edge, p.power, p.angle_penalty, wood.as_deref());
-    let mut seeds = Vec::new();
-    let mut seed_tree = Vec::new();
-    let mut seed_xy = Vec::new();
-    let mut seed_scale = Vec::new();
-    for t in trees {
-        let scale = if p.height_prior {
-            let mut hs: Vec<f64> = work.iter().zip(hw).filter(|(q, _)| (q[0] - t.x).hypot(q[1] - t.y) <= p.height_prior_radius).map(|(_, &h)| h).collect();
-            hs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let h95 = hs.get(((hs.len() as f64 * 0.95) as usize).min(hs.len().saturating_sub(1))).copied().unwrap_or(2.0);
-            1.0 / h95.max(2.0).powf(p.height_prior_power)
-        } else {
-            1.0
-        };
-        // Seed the bark, not the axis: on a stem wider than `seed_radius` a
-        // disc around the centre lies inside the trunk, where a scan has no
-        // points at all, and the tree starts with nothing (r-lidar's arbor seeds
-        // a whole synthetic trunk shell for the same reason).
-        let inner = if p.seed_ring { 0.5 * t.dbh } else { 0.0 };
-        for (i, q) in work.iter().enumerate() {
-            let d = (q[0] - t.x).hypot(q[1] - t.y);
-            if (d - inner).abs() <= p.seed_radius && (hw[i] - p.seed_height).abs() < 0.5 {
-                seeds.push(i);
-                seed_tree.push(t.tree_id);
-                seed_xy.push([t.x, t.y]);
-                seed_scale.push(scale);
-            }
-        }
-    }
+    let Seeds { mut seeds, mut seed_tree, mut seed_xy, mut seed_scale } = collect_seeds(work, hw, trees, p);
     if seeds.is_empty() {
         return vec![-1; work.len()];
     }
@@ -451,8 +530,24 @@ pub fn resolve_branches(trees: &[Tree], parent: &[Option<usize>]) -> (Vec<Tree>,
 
 /// Fill `height` and `n_points` for each tree from segmentation labels.
 pub fn tree_heights(heights: &[f64], labels: &[i64], trees: &mut [Tree], percentile: f64) {
-    for t in trees.iter_mut() {
-        let mut hs: Vec<f64> = labels.iter().zip(heights).filter(|(&l, _)| l == t.tree_id).map(|(_, &h)| h).collect();
+    // One pass over the labels, bucketing each tree's heights, rather than
+    // a pass per tree. A tree id that several entries share takes the first.
+    let mut slot: HashMap<i64, usize> = HashMap::new();
+    for (k, t) in trees.iter().enumerate() {
+        slot.entry(t.tree_id).or_insert(k);
+    }
+    let mut buckets: Vec<Vec<f64>> = vec![Vec::new(); trees.len()];
+    for (&l, &h) in labels.iter().zip(heights) {
+        if let Some(&k) = slot.get(&l) {
+            buckets[k].push(h);
+        }
+    }
+    for (t, k) in trees.iter_mut().zip(0..) {
+        let mut hs = std::mem::take(&mut buckets[slot[&t.tree_id]]);
+        if slot[&t.tree_id] != k {
+            // A later duplicate of an id: the same points as the first.
+            hs = labels.iter().zip(heights).filter(|(&l, _)| l == t.tree_id).map(|(_, &h)| h).collect();
+        }
         t.n_points = hs.len();
         if hs.is_empty() {
             t.height = f64::NAN;
@@ -689,5 +784,105 @@ mod graph_node_tests {
         }
         let none = SegmentParams { cut_above_ground: 100.0, ..Default::default() };
         assert!(graph_nodes(&pts, &heights, &none).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod seed_and_height_tests {
+    use super::*;
+
+    fn forest(n: usize, seed: u64) -> (Vec<Point>, Vec<f64>, Vec<Tree>) {
+        let mut rng = Rng::new(seed);
+        let mut unit = || (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
+        let mut pts: Vec<Point> = (0..n).map(|_| [20.0 * unit() - 10.0, 20.0 * unit() - 10.0, 12.0 * unit()]).collect();
+        let trees: Vec<Tree> = (0..9)
+            .map(|i| Tree { tree_id: i as i64 + 1, x: 6.0 * (i % 3) as f64 - 6.0, y: 6.0 * (i / 3) as f64 - 6.0, dbh: 0.1 + 0.15 * (i % 4) as f64, height: f64::NAN, n_points: 0, inlier_fraction: 1.0, n_slices: 5, rmse: 0.01, lean_deg: 0.0, quality: 0.9 })
+            .collect();
+        // Bark rings at seed height around every stem, plus a few exact-distance points.
+        for t in &trees {
+            for k in 0..60 {
+                let a = k as f64 * 0.1047;
+                let r = 0.5 * t.dbh + 0.02 * (k % 3) as f64;
+                pts.push([t.x + r * a.cos(), t.y + r * a.sin(), 1.5 + 0.3 * ((k % 5) as f64 - 2.0)]);
+            }
+            pts.push([t.x + 1.5, t.y, 3.0]); // exactly height_prior_radius away
+            pts.push([t.x + 0.5 * t.dbh + 0.25, t.y, 1.5]); // exactly on the ring edge
+        }
+        let hw = pts.iter().map(|q| q[2]).collect();
+        (pts, hw, trees)
+    }
+
+    /// The seed collection as it was: a pass over every node per tree.
+    fn reference(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentParams) -> Seeds {
+        let mut out = Seeds { seeds: Vec::new(), seed_tree: Vec::new(), seed_xy: Vec::new(), seed_scale: Vec::new() };
+        for t in trees {
+            let scale = if p.height_prior {
+                let mut hs: Vec<f64> = work.iter().zip(hw).filter(|(q, _)| (q[0] - t.x).hypot(q[1] - t.y) <= p.height_prior_radius).map(|(_, &h)| h).collect();
+                hs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let h95 = hs.get(((hs.len() as f64 * 0.95) as usize).min(hs.len().saturating_sub(1))).copied().unwrap_or(2.0);
+                1.0 / h95.max(2.0).powf(p.height_prior_power)
+            } else {
+                1.0
+            };
+            let inner = if p.seed_ring { 0.5 * t.dbh } else { 0.0 };
+            for (i, q) in work.iter().enumerate() {
+                let d = (q[0] - t.x).hypot(q[1] - t.y);
+                if (d - inner).abs() <= p.seed_radius && (hw[i] - p.seed_height).abs() < 0.5 {
+                    out.seeds.push(i);
+                    out.seed_tree.push(t.tree_id);
+                    out.seed_xy.push([t.x, t.y]);
+                    out.seed_scale.push(scale);
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn gridded_seeds_are_the_scanned_seeds() {
+        for (seed, prior, ring) in [(1, true, true), (2, false, true), (3, true, false), (4, false, false)] {
+            let (pts, hw, trees) = forest(20_000, seed);
+            let p = SegmentParams { height_prior: prior, seed_ring: ring, ..Default::default() };
+            let a = collect_seeds(&pts, &hw, &trees, &p);
+            let b = reference(&pts, &hw, &trees, &p);
+            assert!(!a.seeds.is_empty());
+            assert_eq!(a.seeds, b.seeds);
+            assert_eq!(a.seed_tree, b.seed_tree);
+            assert_eq!(a.seed_xy, b.seed_xy);
+            assert!(a.seed_scale.iter().zip(&b.seed_scale).all(|(x, y)| x.to_bits() == y.to_bits()));
+        }
+        let (pts, hw, _) = forest(100, 5);
+        assert!(collect_seeds(&pts, &hw, &[], &SegmentParams::default()).seeds.is_empty());
+        assert!(collect_seeds(&[], &[], &forest(10, 6).2, &SegmentParams::default()).seeds.is_empty());
+    }
+
+    #[test]
+    fn one_pass_heights_are_the_per_tree_heights() {
+        let (pts, hw, mut trees) = forest(5000, 7);
+        let labels: Vec<i64> = (0..pts.len()).map(|i| (i % 12) as i64 - 2).collect(); // ids 1..9 plus -2, -1, 0 and 10 (no tree)
+        let mut expect = trees.clone();
+        for t in expect.iter_mut() {
+            let mut hs: Vec<f64> = labels.iter().zip(&hw).filter(|(&l, _)| l == t.tree_id).map(|(_, &h)| h).collect();
+            t.n_points = hs.len();
+            if hs.is_empty() {
+                t.height = f64::NAN;
+                continue;
+            }
+            hs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let pos = ((99.0 / 100.0) * (hs.len() - 1) as f64).round() as usize;
+            t.height = hs[pos.min(hs.len() - 1)];
+        }
+        tree_heights(&hw, &labels, &mut trees, 99.0);
+        for (a, b) in trees.iter().zip(&expect) {
+            assert_eq!(a.n_points, b.n_points);
+            assert_eq!(a.height.to_bits(), b.height.to_bits());
+        }
+        // A tree with no points, and a duplicated id.
+        let mut odd = vec![trees[0].clone(), Tree { tree_id: 77, ..trees[1].clone() }, trees[0].clone()];
+        tree_heights(&hw, &labels, &mut odd, 100.0);
+        assert_eq!(odd[0].n_points, odd[2].n_points);
+        assert_eq!(odd[0].height.to_bits(), odd[2].height.to_bits());
+        assert_eq!(odd[1].n_points, 0);
+        assert!(odd[1].height.is_nan());
     }
 }
