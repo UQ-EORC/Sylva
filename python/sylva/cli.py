@@ -209,7 +209,10 @@ def _cmd_qsm_plot(args):
         args.cylinders = _beside(args.input, "_cylinders", "")
     if args.meshes == "":
         args.meshes = _beside(args.input, "_meshes", "")
-    cloud = io.read(args.input)
+    # Only the coordinates, heights and tree ids are needed; a LAS file's
+    # other attributes would only cost memory on a plot of hundreds of
+    # millions of points.
+    cloud = io.read(args.input, attrs=["height", args.tree_attr] if _is_las(args.input) else None)
     if args.tree_attr not in cloud.attrs:
         raise KeyError(f"{args.input} has no '{args.tree_attr}' attribute; "
                        f"segment it first (sylva trees --segment)")
