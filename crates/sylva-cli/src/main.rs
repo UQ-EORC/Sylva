@@ -52,6 +52,11 @@ enum Command {
         /// Write a cloud with a tree_id attribute to this path.
         #[arg(long)]
         segment: Option<PathBuf>,
+        /// Voxel size of the segmentation graph (m): the cloud above the
+        /// ground cut is thinned to one point per voxel before the graph is
+        /// built, so this sets its size. 0.05 halves a 2 cm plot's graph.
+        #[arg(long, default_value_t = 0.03)]
+        voxel: f64,
     },
     /// Canopy height model (ESRI ASCII grid) from a height-normalised cloud.
     Chm {
@@ -193,7 +198,7 @@ fn main() -> Result<()> {
             }
             println!("{} ground points; wrote {}", ground_pts.len(), output.display());
         }
-        Command::Trees { input, output, min_dbh, segment } => {
+        Command::Trees { input, output, min_dbh, segment, voxel } => {
             // Only the coordinates and heights are needed; the other
             // attributes reach the segmented file by streaming the input.
             let is_las = input.extension().is_some_and(|e| e.eq_ignore_ascii_case("las") || e.eq_ignore_ascii_case("laz"));
@@ -201,7 +206,7 @@ fn main() -> Result<()> {
             let h = heights(&c, &input);
             let mut found = trees::detect_stems(&c.xyz, &h, &trees::StemParams { min_radius: min_dbh / 2.0, ..Default::default() });
             if let Some(p) = segment {
-                let labels = trees::segment_trees(&c.xyz, &h, &found, &trees::SegmentParams::default());
+                let labels = trees::segment_trees(&c.xyz, &h, &found, &trees::SegmentParams { voxel_size: voxel, ..Default::default() });
                 trees::tree_heights(&h, &labels, &mut found, 100.0);
                 let tree_id = Attr::I32(labels.iter().map(|&l| l as i32).collect());
                 drop(labels);

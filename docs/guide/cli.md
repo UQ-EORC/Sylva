@@ -119,13 +119,15 @@ terrain (`.tif`, otherwise `.asc`).
 
 ### `trees`
 
-`sylva trees INPUT [-o CSV] [--min-dbh 0.05] [--min-height 3.0] [--segment PATH]`
+`sylva trees INPUT [-o CSV] [--min-dbh 0.05] [--min-height 3.0] [--segment PATH] [--voxel 0.03]`
 
 Runs detection, segmentation, heights, pruning and crown metrics on a
 height-normalised cloud and writes one CSV row per tree: `tree_id`, `x`,
 `y`, `dbh`, `height`, quality columns and the crown metrics. The CSV goes to
 stdout without `-o`. `--segment` writes the cloud with a `tree_id`
-attribute.
+attribute. `--voxel` is the thinning of the segmentation graph: the
+benchmarks run at 0.05 m, which halves the graph of a 2 cm plot and is
+what a plot of a few hundred million points needs to fit in memory.
 
 ### `chm`
 

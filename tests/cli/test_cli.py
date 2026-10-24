@@ -82,3 +82,11 @@ def test_trees_warns_when_z_stands_in_for_height(tmp_path, capsys):
     io.write(bare.with_attrs(height=bare.xyz[:, 2]), normalised)
     cli.main(["trees", str(normalised), "-o", "-"])
     assert "no height attribute" not in capsys.readouterr().err
+
+
+def test_trees_takes_the_graph_voxel(tmp_path, capsys):
+    src = tmp_path / "plot.laz"
+    io.write(_two_tree_plot(), src)
+    cli.main(["trees", str(src), "-o", "-", "--voxel", "0.05"])
+    out = capsys.readouterr().out
+    assert out.startswith("tree_id,") and out.count("\n") >= 3
