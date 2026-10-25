@@ -65,6 +65,15 @@ enum Command {
         /// a usual value, 0 keeps them).
         #[arg(long, default_value_t = 0.0)]
         min_slenderness: f64,
+        /// With --segment, drop stems found in fewer than --short-slices
+        /// layers whose fit quality is below this (understorey clumps
+        /// fitted as a stem have a poor circle in a few layers; 0.3 is a
+        /// usual value, 0 keeps them).
+        #[arg(long, default_value_t = 0.0)]
+        min_quality_short: f64,
+        /// Layers below which --min-quality-short applies.
+        #[arg(long, default_value_t = 4)]
+        short_slices: i64,
     },
     /// Canopy height model (ESRI ASCII grid) from a height-normalised cloud.
     Chm {
@@ -206,7 +215,7 @@ fn main() -> Result<()> {
             }
             println!("{} ground points; wrote {}", ground_pts.len(), output.display());
         }
-        Command::Trees { input, output, min_dbh, segment, voxel, min_height, min_slenderness } => {
+        Command::Trees { input, output, min_dbh, segment, voxel, min_height, min_slenderness, min_quality_short, short_slices } => {
             // Only the coordinates and heights are needed; the other
             // attributes reach the segmented file by streaming the input.
             let is_las = input.extension().is_some_and(|e| e.eq_ignore_ascii_case("las") || e.eq_ignore_ascii_case("laz"));
@@ -219,7 +228,7 @@ fn main() -> Result<()> {
                 // Short trees and stout "stems" (understorey fitted as a stem)
                 // go, duplicates merge, and the survivors are renumbered, as
                 // the Python command does.
-                let prune = trees::prune::PruneParams { min_height, min_slenderness, ..Default::default() };
+                let prune = trees::prune::PruneParams { min_height, min_slenderness, min_quality_short, short_slices, ..Default::default() };
                 let (kept, labels) = trees::prune::prune_trees(&found, &labels, &prune)?;
                 found = kept.into_iter().map(|(_, t)| t).collect();
                 let tree_id = Attr::I32(labels.iter().map(|&l| l as i32).collect());

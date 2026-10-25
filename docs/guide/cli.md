@@ -119,7 +119,7 @@ terrain (`.tif`, otherwise `.asc`).
 
 ### `trees`
 
-`sylva trees INPUT [-o CSV] [--min-dbh 0.05] [--min-height 3.0] [--min-slenderness 0] [--segment PATH] [--voxel 0.03]`
+`sylva trees INPUT [-o CSV] [--min-dbh 0.05] [--min-height 3.0] [--min-slenderness 0] [--min-quality-short 0] [--short-slices 4] [--segment PATH] [--voxel 0.03]`
 
 Runs detection, segmentation, heights, pruning and crown metrics on a
 height-normalised cloud and writes one CSV row per tree: `tree_id`, `x`,
@@ -131,6 +131,10 @@ what a plot of a few hundred million points needs to fit in memory.
 `--min-slenderness 10` drops stems wider than 0.2 m that are less than ten
 times as tall as they are wide: understorey clumps and stumps fitted as
 stems, which in a savanna with dense regrowth can outnumber the trees.
+`--min-quality-short 0.3` drops stems found in fewer than `--short-slices`
+layers with a circle fit of that poor a quality, which is what the
+understorey clumps that pass the slenderness rule look like: a few layers, a
+poor circle, half the arc covered.
 
 ### `chm`
 

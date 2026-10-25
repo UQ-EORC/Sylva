@@ -152,7 +152,9 @@ def _cmd_trees(args):
     labels = trees.segment_trees(cloud, found, voxel_size=args.voxel)
     trees.tree_heights(cloud, labels, found)
     found, labels = trees.prune_trees(found, labels, min_height=args.min_height,
-                                      min_slenderness=args.min_slenderness)
+                                      min_slenderness=args.min_slenderness,
+                                      min_quality_short=args.min_quality_short,
+                                      short_slices=args.short_slices)
     crowns = trees.crown_metrics_all(cloud, labels)
     if args.segment:
         tree_id = labels.astype(np.int32)
@@ -506,6 +508,12 @@ def main(argv=None):
     s.add_argument("--min-slenderness", type=float, default=0.0,
                    help="drop stems wider than 0.2 m whose height / DBH is below this "
                         "(shrubs and understorey clumps fitted as stems; 10 is a usual value, 0 keeps them)")
+    s.add_argument("--min-quality-short", type=float, default=0.0, metavar="Q",
+                   help="drop stems found in fewer than --short-slices layers whose fit quality is "
+                        "below this (understorey clumps fitted as a stem have a poor circle in a few "
+                        "layers; 0.3 is a usual value, 0 keeps them)")
+    s.add_argument("--short-slices", type=int, default=4,
+                   help="layers below which --min-quality-short applies")
     s.add_argument("--segment", nargs="?", const="", default=None, metavar="PATH",
                    help="write a cloud with a tree_id attribute (bare flag: <input>_segmented "
                         "beside the input)")
