@@ -18,7 +18,7 @@ sylva pad plot_norm.laz --voxel 0.5 > pad.csv
 sylva shots rays.laz plot.parquet                  # ray cloud -> shots file
 sylva voxel plot.parquet plot.vox --voxel 0.25 --ground-class 2 --laser VZ-400 --attenuation fpl ppl
 sylva qsm tree.ply tree_qsm.csv
-sylva qsm-plot plot_trees.laz trees.csv --cylinders qsms/ --meshes meshes/
+sylva qsm-plot plot_trees.laz qsm.csv --stems trees.csv --cylinders qsms/ --meshes meshes/
 sylva coreg survey.PROJ -o survey_coreg/ --merged survey.laz
 sylva als-catalog tiles/                           # airborne tiles: headers only
 sylva als-ground tiles/ ground/ && sylva als-dtm ground/ dtm.tif --resolution 1
@@ -162,6 +162,8 @@ segmented cloud (one that carries a `tree_id` attribute, as `sylva trees
 | `--min-points N` | 2000 | skip trees with fewer points |
 | `--buttress` | off | mesh a flanged base and count it in the volume |
 | `--no-wood` | off | skip the leaf/wood filter (the cloud is wood already) |
+| `--stems CSV` | none | the CSV of `sylva trees`: stem centres and DBH anchor each model |
+| `--stem-radius-cap F` | 0 (off) | set aside main-stem circles wider than F times the DBH; 1.5 for foliage sheathing the bole |
 
 Trees that are too small or that cannot be fitted are listed on stdout rather
 than stopping the run.

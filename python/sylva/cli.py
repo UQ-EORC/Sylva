@@ -203,6 +203,20 @@ def _cmd_qsm(args):
         print(f"{k}: {v}")
 
 
+def _read_stems(path):
+    """The stems of a `sylva trees` CSV (tree_id, x, y, dbh), as the records
+    `qsm.build_plot` anchors each model on."""
+    from types import SimpleNamespace
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    for col in ("tree_id", "x", "y", "dbh"):
+        if rows and col not in rows[0]:
+            raise KeyError(f"{path} has no '{col}' column; it should be the CSV `sylva trees` writes")
+    return [SimpleNamespace(tree_id=int(r["tree_id"]), x=float(r["x"]), y=float(r["y"]),
+                            dbh=float(r["dbh"]) if r["dbh"] not in ("", "nan") else float("nan"))
+            for r in rows]
+
+
 def _cmd_qsm_plot(args):
     args.output = args.output or _beside(args.input, "_trees", ".csv")
     if args.cylinders == "":                     # --cylinders with no path
@@ -217,9 +231,11 @@ def _cmd_qsm_plot(args):
         raise KeyError(f"{args.input} has no '{args.tree_attr}' attribute; "
                        f"segment it first (sylva trees --segment)")
     labels = cloud.attrs[args.tree_attr].astype(int)
-    plot = qsm.build_plot(cloud, labels, voxel_size=args.voxel, wood=not args.no_wood,
+    stems = _read_stems(args.stems) if args.stems else None
+    extra = {"stem_radius_cap": args.stem_radius_cap} if args.stem_radius_cap else {}
+    plot = qsm.build_plot(cloud, labels, stems, voxel_size=args.voxel, wood=not args.no_wood,
                           buttress=args.buttress, min_points=args.min_points,
-                          bin_length=args.bin_length)
+                          bin_length=args.bin_length, **extra)
     plot.to_csv(args.output)
     if args.cylinders:
         plot.write_cylinders(args.cylinders)
@@ -533,6 +549,13 @@ def main(argv=None):
                    help="mesh a buttressed base and count it in the volume")
     s.add_argument("--no-wood", action="store_true",
                    help="skip the leaf/wood filter (the cloud is wood already)")
+    s.add_argument("--stems", metavar="CSV", default=None,
+                   help="the trees CSV of `sylva trees`: its stem centres and DBH anchor each "
+                        "model, without which a leafy small tree can take its trunk radius "
+                        "from a foliage clump")
+    s.add_argument("--stem-radius-cap", type=float, default=0.0, metavar="FACTOR",
+                   help="set aside main-stem circles wider than this factor times the stem's "
+                        "DBH (needs --stems); 1.5 handles foliage sheathing the bole (0 = off)")
     s.set_defaults(func=_cmd_qsm_plot)
 
     s = sub.add_parser("shots", help="convert a ray cloud to a sylva shots file (.parquet)", **fmt)

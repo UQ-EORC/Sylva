@@ -90,3 +90,15 @@ def test_trees_takes_the_graph_voxel(tmp_path, capsys):
     cli.main(["trees", str(src), "-o", "-", "--voxel", "0.05"])
     out = capsys.readouterr().out
     assert out.startswith("tree_id,") and out.count("\n") >= 3
+
+
+def test_qsm_plot_anchors_on_the_stems_csv(tmp_path, capsys):
+    src = tmp_path / "plot.laz"
+    io.write(_two_tree_plot(), src)
+    stems = tmp_path / "stems.csv"
+    cli.main(["trees", str(src), "-o", str(stems)])
+    cli.main(["qsm-plot", str(src), str(tmp_path / "qsm.csv"), "--stems", str(stems),
+              "--stem-radius-cap", "1.5", "--no-wood"])
+    assert "2 QSMs" in capsys.readouterr().out
+    with pytest.raises(SystemExit):                 # a CSV without stem columns is refused
+        cli.main(["qsm-plot", str(src), str(tmp_path / "qsm2.csv"), "--stems", str(tmp_path / "qsm.csv")])
