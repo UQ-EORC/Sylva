@@ -102,3 +102,12 @@ def test_qsm_plot_anchors_on_the_stems_csv(tmp_path, capsys):
     assert "2 QSMs" in capsys.readouterr().out
     with pytest.raises(SystemExit):                 # a CSV without stem columns is refused
         cli.main(["qsm-plot", str(src), str(tmp_path / "qsm2.csv"), "--stems", str(tmp_path / "qsm.csv")])
+
+
+def test_trees_prunes_on_slenderness(tmp_path, capsys):
+    src = tmp_path / "plot.laz"
+    io.write(_two_tree_plot(), src)
+    cli.main(["trees", str(src), "-o", "-", "--min-slenderness", "10"])
+    assert capsys.readouterr().out.count("\n") == 3          # header and two slender stems
+    cli.main(["trees", str(src), "-o", "-", "--min-height", "50"])
+    assert capsys.readouterr().out.count("\n") <= 1         # nothing that tall

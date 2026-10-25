@@ -57,6 +57,14 @@ enum Command {
         /// built, so this sets its size. 0.05 halves a 2 cm plot's graph.
         #[arg(long, default_value_t = 0.03)]
         voxel: f64,
+        /// With --segment, drop trees lower than this (m) after segmentation.
+        #[arg(long, default_value_t = 3.0)]
+        min_height: f64,
+        /// With --segment, drop stems wider than 0.2 m whose height / DBH is
+        /// below this (shrubs and understorey clumps fitted as stems; 10 is
+        /// a usual value, 0 keeps them).
+        #[arg(long, default_value_t = 0.0)]
+        min_slenderness: f64,
     },
     /// Canopy height model (ESRI ASCII grid) from a height-normalised cloud.
     Chm {
@@ -198,7 +206,7 @@ fn main() -> Result<()> {
             }
             println!("{} ground points; wrote {}", ground_pts.len(), output.display());
         }
-        Command::Trees { input, output, min_dbh, segment, voxel } => {
+        Command::Trees { input, output, min_dbh, segment, voxel, min_height, min_slenderness } => {
             // Only the coordinates and heights are needed; the other
             // attributes reach the segmented file by streaming the input.
             let is_las = input.extension().is_some_and(|e| e.eq_ignore_ascii_case("las") || e.eq_ignore_ascii_case("laz"));
@@ -208,6 +216,12 @@ fn main() -> Result<()> {
             if let Some(p) = segment {
                 let labels = trees::segment_trees(&c.xyz, &h, &found, &trees::SegmentParams { voxel_size: voxel, ..Default::default() });
                 trees::tree_heights(&h, &labels, &mut found, 100.0);
+                // Short trees and stout "stems" (understorey fitted as a stem)
+                // go, duplicates merge, and the survivors are renumbered, as
+                // the Python command does.
+                let prune = trees::prune::PruneParams { min_height, min_slenderness, ..Default::default() };
+                let (kept, labels) = trees::prune::prune_trees(&found, &labels, &prune)?;
+                found = kept.into_iter().map(|(_, t)| t).collect();
                 let tree_id = Attr::I32(labels.iter().map(|&l| l as i32).collect());
                 drop(labels);
                 let out_is_las = p.extension().is_some_and(|e| e.eq_ignore_ascii_case("las") || e.eq_ignore_ascii_case("laz"));

@@ -151,7 +151,8 @@ def _cmd_trees(args):
     found = trees.detect_stems(cloud, min_radius=args.min_dbh / 2)
     labels = trees.segment_trees(cloud, found, voxel_size=args.voxel)
     trees.tree_heights(cloud, labels, found)
-    found, labels = trees.prune_trees(found, labels, min_height=args.min_height)
+    found, labels = trees.prune_trees(found, labels, min_height=args.min_height,
+                                      min_slenderness=args.min_slenderness)
     crowns = trees.crown_metrics_all(cloud, labels)
     if args.segment:
         tree_id = labels.astype(np.int32)
@@ -502,6 +503,9 @@ def main(argv=None):
                    help="smallest stem diameter detected (m)")
     s.add_argument("--min-height", type=float, default=3.0,
                    help="drop candidates whose segment is lower than this (m)")
+    s.add_argument("--min-slenderness", type=float, default=0.0,
+                   help="drop stems wider than 0.2 m whose height / DBH is below this "
+                        "(shrubs and understorey clumps fitted as stems; 10 is a usual value, 0 keeps them)")
     s.add_argument("--segment", nargs="?", const="", default=None, metavar="PATH",
                    help="write a cloud with a tree_id attribute (bare flag: <input>_segmented "
                         "beside the input)")
