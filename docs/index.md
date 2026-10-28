@@ -33,7 +33,8 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 | [`sylva.trees`](api/trees.md) | RANSAC circle fitting, stem detection & DBH, basal area, taper profiles, graph-based tree segmentation, tree heights, crown metrics |
 | [`sylva.canopy`](api/canopy.md) | voxel grids, contact-frequency PAD profiles, zenith-ring gap fraction, hinge/Miller LAI, ray-traced density grids from pulse data |
 | [`sylva.voxels`](api/voxels.md) | ray-traced voxels (port of raycloudtools `rayvoxel`): echo-weighted free / potential path lengths, FPL / PPL / transmittance / Bailey attenuation, analytic or estimated leaf-angle `G`, PAD / LAD / WAD, occlusion, sub-voxel exploration, QSM wood volume, `.vox` export |
-| [`sylva.registration`](api/registration.md) | Kabsch, point-to-point / point-to-plane (trimmed) ICP, scan merging |
+| [`sylva.registration`](api/registration.md) | Kabsch, point-to-point / point-to-plane (trimmed) ICP, scan merging, overlay and stem cross-section plots to check a registration by eye |
+| [`sylva.registration_report`](api/registration_report.md) | a self-contained HTML report on how well a set of scans agree: pair residuals, a map of the survey, the worst pairs up close |
 | [`sylva.coreg`](api/coreg.md) | marker-free coregistration of scan positions from the trees and the ground, with reflectors where present, and a report of the stem agreement |
 | [`sylva.qsm`](api/qsm.md) | cylinder fitting, geodesic skeletonisation, cylinder QSMs with volumes and branch orders, a QSM for every tree of a plot, buttress meshes, `_trees.txt` export |
 | [`sylva.change`](api/change.md) | change between two epochs of a plot: alignment, tree matching and increments, plot summaries, point change (C2C, M3C2, DEM of difference, voxel occupancy), QSM change, each labelled trusted or not |

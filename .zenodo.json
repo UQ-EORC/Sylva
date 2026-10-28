@@ -1,0 +1,52 @@
+{
+  "upload_type": "software",
+  "title": "Sylva: terrestrial and airborne laser scanning processing for forest ecology",
+  "creators": [
+    {
+      "name": "Devereux, Tim",
+      "affiliation": "The University of Queensland"
+    }
+  ],
+  "description": "<p>Sylva is an open-source library and command-line tool for processing terrestrial, mobile and airborne laser scans of forests for ecology and remote-sensing research. A Rust core holds every computation and file format; Python gets a numpy-friendly API and a <code>sylva</code> command over it. It reads and writes LAS/LAZ, PLY, XYZ, RIEGL RXP and RDBX and RiSCAN PRO projects, and covers ground classification and terrain models, subsampling and filtering, marker-free coregistration of scan positions, tree segmentation, stem detection and diameter at breast height, cylinder quantitative structure models with volumes and branch orders, leaf and wood separation, ray-traced voxels with plant area density and occlusion, gap-fraction and plant area index profiles, scan quality assessment, change detection between survey epochs, airborne lidar over tiled areas with area-based and individual-tree metrics, fusion of terrestrial and airborne data, full-waveform decomposition, and synthetic scenes with known answers for testing.</p><p>Install with <code>pip install sylva-rs</code>; the Rust crate is on crates.io as <code>sylva-rs</code>. Documentation is at <a href=\"https://uq-eorc.github.io/Sylva/\">uq-eorc.github.io/Sylva</a>.</p>",
+  "license": "GPL-3.0-or-later",
+  "access_right": "open",
+  "language": "eng",
+  "keywords": [
+    "LiDAR",
+    "terrestrial laser scanning",
+    "airborne laser scanning",
+    "forest ecology",
+    "point cloud",
+    "quantitative structure model",
+    "tree segmentation",
+    "plant area density",
+    "Rust",
+    "Python"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/UQ-EORC/Sylva",
+      "relation": "isSupplementTo",
+      "resource_type": "software",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://pypi.org/project/sylva-rs/",
+      "relation": "isIdenticalTo",
+      "resource_type": "software",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://crates.io/crates/sylva-rs",
+      "relation": "isIdenticalTo",
+      "resource_type": "software",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://uq-eorc.github.io/Sylva/",
+      "relation": "isDocumentedBy",
+      "resource_type": "publication-other",
+      "scheme": "url"
+    }
+  ]
+}

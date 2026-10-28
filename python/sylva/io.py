@@ -214,6 +214,37 @@ def write_annotated(src: str | Path, path: str | Path, attrs: Mapping[str, np.nd
     _core.write_annotated(str(src), str(path), arrays, point_format, scale, crs_wkt, o)
 
 
+def write_concat(paths: list[str | Path], path: str | Path, point_format: int = 6,
+                 scale: float = 0.001, crs: str | None = None) -> None:
+    """Write one LAS/LAZ file from several, streamed file by file.
+
+    For a cloud larger than memory, assembled from its tiles: each input is
+    read and written in turn, so only one is held at a time.
+
+    Parameters
+    ----------
+    paths
+        LAS/LAZ files, all with the same attributes (names and types).
+    path
+        ``.las`` or ``.laz`` to write; overwritten if it exists.
+    point_format
+        LAS point data record format.
+    scale
+        Coordinate quantisation in the units of the coordinates; the offset
+        is the floor of the union of the inputs' bounds.
+    crs
+        OGC WKT to store, if any.
+
+    Raises
+    ------
+    OSError
+        If a file cannot be opened or is malformed.
+    ValueError
+        If ``paths`` is empty or an input's attributes differ from the first's.
+    """
+    _core.write_las_concat([str(p) for p in paths], str(path), point_format, scale, crs)
+
+
 def read_ascii(path: str | Path, columns: list[str] | None = None) -> PointCloud:
     """Read a delimited text point cloud.
 
@@ -327,17 +358,40 @@ def read_rxp(path: str | Path, **options) -> PointCloud:
     return PointCloud(xyz, attrs)
 
 
-def read_rxp_shots(path: str | Path, **options) -> Shots:
+def read_rxp_shots(path: str | Path, fill_missing: bool | tuple[float, float] | None = None,
+                   return_report: bool = False, **options) -> Shots | tuple[Shots, dict | None]:
     """Read a RIEGL ``.rxp`` scan as pulses.
 
     Echoes sharing a timestamp are grouped into one pulse. RIEGL records only
-    pulses that returned something, so misses must be added afterwards with
-    :meth:`sylva.Shots.fill_missing` for gap fraction and ray tracing.
+    pulses that returned something; ``fill_missing`` recovers the rest from
+    the timing and geometry of the recorded ones, which gap fraction and ray
+    tracing need.
 
     Parameters
     ----------
     path
         The ``.rxp`` file of one scan position.
+    fill_missing
+        Add the pulses that returned nothing, each at the place it was fired.
+        The scanner fires at a fixed rate while the mirror sweeps the zenith
+        at constant speed, one line per azimuth step, so a time gap of *n*
+        intervals between two recorded pulses of a line holds *n* - 1 misses
+        at the interpolated angles, and the sweep is continued at the
+        measured angular step from the first recorded pulse of a line back to
+        the sky end, and from the last on to the other end. The dead time
+        between lines is left alone. ``True`` takes the zenith limits from
+        the data (which under-fills the sky end when no pulse of the scan
+        returned from there); a ``(first, last)`` pair in degrees, from the
+        scan pattern, is better (:meth:`sylva.riscan.ScanPosition.read_shots`
+        passes it). With it, ``shot_stride`` counts fired pulses, recorded or
+        not, and a pulse whose echoes are all filtered out is dropped rather
+        than counted as a miss.
+    return_report
+        Also return what the reconstruction measured: ``n_lines``,
+        ``pulse_interval`` (s), ``zenith_step`` (degrees per pulse),
+        ``zenith_range``, and the misses added between recorded pulses
+        (``n_gap``), before the first of a line (``n_before``) and after the
+        last (``n_after``). ``None`` without ``fill_missing``.
     **options
         As for :func:`read_rxp`. Thin with ``shot_stride``, not ``stride``.
 
@@ -345,15 +399,17 @@ def read_rxp_shots(path: str | Path, **options) -> Shots:
     -------
     Shots
         Pulses in the scanner frame (origin at 0, 0, 0), with the echo
-        attributes of :func:`read_rxp`. Transform with the SOP before
-        combining scans.
+        attributes of :func:`read_rxp`; the recovered misses follow the
+        recorded pulses. Transform with the SOP before combining scans.
 
     Raises
     ------
     ValueError
         If RiVLib cannot be found or reports an error reading the file.
     """
-    return Shots._from_core(_core.read_rxp_shots(str(path), **options))
+    shots, report = _core.read_rxp_shots(str(path), fill_missing=fill_missing, **options)
+    shots = Shots._from_core(shots)
+    return (shots, report) if return_report else shots
 
 
 def find_rivlib_shim(hint: str | Path | None = None) -> Path:

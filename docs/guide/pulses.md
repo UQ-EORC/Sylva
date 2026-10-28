@@ -8,9 +8,18 @@ ray-traced canopy metrics need.
 ## From RIEGL projects and ray clouds
 
 Pulse data (from `.rxp` or a raycloudtools ray cloud) enables ray-traced
-metrics that account for free space. RiSCAN PRO projects give you every scan
-position's SOP and the angular scan pattern, which is needed to reconstruct
-the no-return pulses that RiVLib's point stream leaves out:
+metrics that account for free space. RiVLib's point stream holds only the
+pulses that returned an echo; `fill_missing` puts the others back, each at
+the place it was fired. A RIEGL scanner fires at a fixed rate while its
+mirror sweeps the zenith at constant speed, one line per azimuth step, so
+within a line the zenith is a linear function of time: a time gap of *n*
+intervals between two recorded pulses holds *n* − 1 misses at the
+interpolated angles, and from the first recorded pulse of a line the sweep
+is continued back to the sky end at the measured angular step (and from
+the last pulse on to the other end). The dead time between lines is left
+alone. The pulse interval and angular step are measured from the data; the
+scan pattern of a RiSCAN PRO project supplies only the zenith limits, which
+is why `ScanPosition.read_shots(fill_missing=True)` is the way to do it:
 
 ```python
 proj = sylva.read_riscan_project("RobsonCreek.RiSCAN")
@@ -20,7 +29,7 @@ zen, gap = canopy.gap_fraction_pattern(shots, shots.to_pointcloud().z - pos.sop[
                                        pos.pattern, min_height=1.0)
 print("PAI", canopy.lai_from_gap_fraction(zen, gap, "hinge"))
 
-full = pos.read_shots(fill_missing=True)             # adds echo-less pulses
+full = pos.read_shots(fill_missing=True)             # the echo-less pulses, in place
 grid = canopy.density_grid(full, voxel_size=1.0)
 dtm = ground.make_dtm(ground.classify_ground_pmf(full.to_pointcloud()), 0.5)
 z, pad = grid.mask_ground(dtm).profile_above_ground(dtm, bin_size=2.0)   # PAD by height
@@ -101,8 +110,16 @@ r["height"], r["pai_hinge_profile"], r["pavd_hinge"]
     canopy nearly every pulse returns, so a few per cent too many fired
     pulses read as gaps and cap the PAI near 3.
   - With `shot_stride` both sides are decimated alike.
-  - Shots that already hold their misses (a ray cloud, `Shots.fill_missing`)
-    need no `fired_per_ring`.
+  - Shots that already hold their misses (a ray cloud,
+    `read_shots(fill_missing=True)`) need no `fired_per_ring`.
+- **Misses for voxels.** `Shots.fill_missing(pattern)` knows only the shots,
+  not their timing, and draws each line's missing pulses at random azimuths.
+  The count per ring is right, so ring-averaged gap fraction is served, but
+  a miss drawn through foliage that returned every pulse traces free space
+  where there was none: over a Banksia woodland plot the voxel PAI came out
+  28 % low against the same pulses with their misses in place. Use the
+  timing reconstruction (`read_shots(fill_missing=True)`) for anything
+  spatially explicit.
 - **Ground.** `fit_ground_plane` fits a robust plane through the lowest
   point of each grid cell, after [Calders et al. (2014)](../references.md).
   Heights are only used for the profile. Returns below the ground

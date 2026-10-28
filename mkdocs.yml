@@ -85,6 +85,7 @@ nav:
           - sylva.filters: api/filters.md
           - sylva.ground: api/ground.md
           - sylva.registration: api/registration.md
+          - sylva.registration_report: api/registration_report.md
           - sylva.coreg: api/coreg.md
       - Forest structure:
           - sylva.trees: api/trees.md

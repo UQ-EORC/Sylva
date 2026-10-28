@@ -37,7 +37,7 @@ positions (36 on a 20 m grid inside the plot, 28 on a ring around it).
 | Step | Sylva | Output |
 |---|---|---|
 | 1. Project | `read_riscan_project` | scan positions, SOPs, scan pattern |
-| 2. Read | `io.read_rxp_shots`, `Shots.fill_missing`, `filters.voxel_downsample` | 2 cm plot cloud, pulse file with misses |
+| 2. Read | `ScanPosition.read_shots(fill_missing=True)`, `filters.voxel_downsample` | 2 cm plot cloud, pulse file with misses |
 | 3. Registration | `coreg.prepare_scan`, `coreg.coregister_prepared` | the ring registered into the inner grid, checked on the ground |
 | 4. Ground | `ground.classify_ground_csf`, `make_dtm`, `normalize_height`, `make_chm` | DTM, CHM, heights |
 | 5. Trees | `trees.detect_stems`, `merge_branches`, `segment_trees`, `prune_trees`, `crown_metrics_all` | tree table, segmented cloud |
@@ -119,12 +119,14 @@ read:
 - **Points.** The pulses' echoes, moved into the project frame with the
   SOP, cropped to the plot plus `BUFFER` and thinned to 2 cm.
 - **Pulses for the canopy.** Every `RAY_EVERY`-th pulse. RiVLib only
-  streams pulses that returned something, so the pulses that went to the
-  sky are added back with `fill_missing`. Without them the free space above
-  the canopy looks unsampled and plant area is overestimated, more and more
-  with height. The number fired per zenith line is counted on the downward
-  lines (100-125 deg), where every pulse hits the ground. This has to happen
-  in the scanner frame, before the SOP.
+  streams pulses that returned something, so `fill_missing=True` puts the
+  pulses that went to the sky back, each where it was fired: the scanner
+  fires at a fixed rate while the mirror sweeps at constant speed, so a time
+  gap between two recorded pulses of a line is a run of misses at the
+  interpolated angles, and each line is continued to the pattern's sky end.
+  Without them the free space above the canopy looks unsampled and plant
+  area is overestimated, more and more with height. This happens in the
+  scanner frame, before the SOP, and the stride then counts fired pulses.
 
 Only the attributes used later are kept, which keeps the pass under about
 25 GB."""),
@@ -134,25 +136,17 @@ lo = np.array([PLOT[0] - BUFFER, PLOT[1] - BUFFER, -np.inf])
 hi = np.array([PLOT[2] + BUFFER, PLOT[3] + BUFFER, np.inf])
 
 
-def fired_per_line(s, pattern):
-    \"\"\"Median pulses per zenith line on the downward lines, where every pulse returns.\"\"\"
-    theta = pattern["theta_start"] + pattern["theta_delta"] * np.arange(pattern["theta_count"])   # line zeniths
-    edges = np.r_[theta - pattern["theta_delta"] / 2, theta[-1] + pattern["theta_delta"] / 2]
-    observed, _ = np.histogram(s.zenith_azimuth()[0], bins=edges)
-    return int(round(np.median(observed[(theta >= 100) & (theta <= 125)])))
 
 
 if not all(p.exists() for p in (cloud_path, rays_path, counts_path, features_path)):
     t0 = time.time()
     parts, rays, features = [], [], []
     for i, pos in enumerate(positions):
-        s = io.read_rxp_shots(pos.rxp, shot_stride=STRIDE)            # scanner frame
+        s = pos.read_shots(fill_missing=True, shot_stride=STRIDE)     # project frame, misses in place
         r = s.subset(np.arange(s.n_shots) % RAY_EVERY == 0)
-        r = r.fill_missing(pos.pattern, pulses_per_line=fired_per_line(r, pos.pattern))
-        r = r.transform(pos.sop)
         r.echo_attrs = {{}}
         rays.append(r)
-        pts = s.transform(pos.sop).to_pointcloud()
+        pts = s.to_pointcloud()
         # Registration features from everything within 40 m of the scanner.
         near = pts[np.linalg.norm(pts.xyz - pos.sop[:3, 3], axis=1) < 40.0]
         features.append(coreg.prepare_scan(sylva.PointCloud(near.xyz), name=pos.name, origin=pos.sop[:3, 3]))

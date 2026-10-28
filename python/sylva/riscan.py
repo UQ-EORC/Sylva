@@ -158,9 +158,10 @@ class ScanPosition:
         pop
             Also apply this project-to-global matrix.
         fill_missing
-            Reconstruct the no-return pulses from the scan pattern (see
-            :meth:`sylva.Shots.fill_missing`) before applying the SOP. Needed
-            for gap fraction and ray tracing.
+            Recover the pulses that returned nothing, each where it was fired
+            (see :func:`sylva.io.read_rxp_shots`), with the sweep's zenith
+            limits from the project's scan pattern. Needed for gap fraction
+            and ray tracing.
         **options
             Passed to :func:`sylva.io.read_rxp_shots`.
 
@@ -177,11 +178,13 @@ class ScanPosition:
         """
         if self.rxp is None:
             raise FileNotFoundError(f"scan position {self.name} has no .rxp")
-        shots = read_rxp_shots(self.rxp, **options)
+        limits: bool | tuple[float, float] = False
         if fill_missing:
             if self.pattern is None:
                 raise ValueError(f"scan position {self.name} has no scan pattern in project.rsp")
-            shots = shots.fill_missing(self.pattern, shot_stride=options.get("shot_stride", 1))
+            p = self.pattern
+            limits = (p["theta_start"], p["theta_start"] + p["theta_delta"] * p["theta_count"])
+        shots = read_rxp_shots(self.rxp, fill_missing=limits, **options)
         return shots.transform(self.transform(pop))
 
 

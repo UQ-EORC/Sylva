@@ -943,7 +943,15 @@ fn from_rsp(root: &Path, rsp: &Path) -> Result<RiscanProject> {
             None => findtext(sp, &["name"]).unwrap_or_default(),
         };
         let mut sop = parse_matrix(findtext(sp, &["sop", "matrix"]).as_deref())?;
-        let pos_dir = root.join("SCANS").join(&name);
+        // The position's folder is its `fold` attribute, which can differ from
+        // the name (RiSCAN names a tilted position "tilt 001" in a folder
+        // "tilt001"); older projects have no attribute and use the name.
+        let pos_dir = [sp.attribute("fold").map(str::to_string), Some(name.clone()), Some(name.replace(' ', ""))]
+            .into_iter()
+            .flatten()
+            .map(|d| root.join("SCANS").join(d))
+            .find(|d| d.is_dir())
+            .unwrap_or_else(|| root.join("SCANS").join(&name));
         let mut files = if pos_dir.is_dir() { scan_files(&pos_dir, true) } else { vec![] };
         let (mut instrument, mut pattern): (Option<String>, Option<ScanPattern>) = (None, None);
         for scan in sp.descendants().filter(|n| is_el(n, "scan")) {
@@ -1467,6 +1475,19 @@ mod tests {
         assert!((m[4].atan2(m[0]).to_degrees() - 60.0).abs() < 25.0);
         assert_eq!(&m[12..], &[0.0, 0.0, 0.0, 1.0]);
         assert_eq!(rotation_zyx(0.0, 0.0, 0.0), Transform::identity().to_row_major());
+    }
+
+    #[test]
+    fn position_folder_comes_from_the_fold_attribute() {
+        // RiSCAN names a tilted position "tilt 001" but keeps it in a folder "tilt001".
+        let root = tmp("fold").join("T.RiSCAN");
+        touch(&root.join("SCANS/tilt001/SINGLESCANS/t.rxp"));
+        std::fs::write(root.join("project.rsp"), r#"<project><name>T</name><scanpositions>
+<scanposition name="tilt 001" fold="tilt001"><singlescans><scan><file>t.rxp</file></scan></singlescans></scanposition>
+</scanpositions></project>"#).unwrap();
+        let p = read_project(&root).unwrap();
+        assert_eq!(p.positions[0].name, "tilt 001");
+        assert_eq!(p.positions[0].scans, vec![root.join("SCANS/tilt001/SINGLESCANS/t.rxp")]);
     }
 
     #[test]

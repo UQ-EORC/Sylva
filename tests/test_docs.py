@@ -9,7 +9,8 @@ import numpy as np
 import pytest
 
 MODULES = ["pointcloud", "raster", "io", "shots", "riscan", "filters", "ground", "trees", "canopy",
-           "voxels", "registration", "coreg", "qsm", "leaves", "quality", "fusion",
+           "voxels", "registration", "registration_report", "coreg", "qsm", "leaves", "quality",
+           "fusion",
            "synthetic", "synthetic.als", "synthetic.model", "als", "als.canopy", "als.metrics",
            "als.tiles", "als.trees", "als.catalogue", "als.engine", "als.ops", "als.trajectory",
            "change.als", "geo.coords", "geo.interpolate", "geo.masks", "util.limits", "util.progress"]

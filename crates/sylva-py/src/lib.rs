@@ -433,6 +433,12 @@ fn write_annotated(py: Python<'_>, src: PathBuf, path: PathBuf, attrs: &Bound<'_
 }
 
 #[pyfunction]
+#[pyo3(signature = (paths, path, point_format=6, scale=0.001, crs_wkt=None))]
+fn write_las_concat(py: Python<'_>, paths: Vec<PathBuf>, path: PathBuf, point_format: u8, scale: f64, crs_wkt: Option<String>) -> PyResult<()> {
+    py.detach(|| sylva_rs::io::las::write_las_concat(&paths, &path, &sylva_rs::io::las::LasWriteOptions { point_format, scale, crs_wkt })).map_err(err)
+}
+
+#[pyfunction]
 #[pyo3(signature = (path, columns=None))]
 fn read_ascii<'py>(py: Python<'py>, path: PathBuf, columns: Option<Vec<String>>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
     let c = py.detach(|| io::ascii::read_ascii(&path, columns.as_deref())).map_err(err)?;
@@ -455,7 +461,21 @@ fn rxp_opts(library: Option<PathBuf>, drop_pseudo_echoes: bool, min_range: f64, 
         Some(p) => MtaDecision::Model(PathBuf::from(p)),
     };
     let mta = MtaOptions { mode, decision, shim, max_zone: max_zone.clamp(1, 8), keep_uncertain, max_lines, ..Default::default() };
-    Ok(io::riegl::RxpOptions { library, drop_pseudo_echoes, min_range, max_range, stride: stride.max(1), max_points, echoes, shot_stride: shot_stride.max(1), mta })
+    Ok(io::riegl::RxpOptions { library, drop_pseudo_echoes, min_range, max_range, stride: stride.max(1), max_points, echoes, shot_stride: shot_stride.max(1), mta, ..Default::default() })
+}
+
+/// `fill_missing`: None/False off; True on with the zenith limits taken from
+/// the data; (first, last) on with those limits (degrees).
+fn fill_option(fill_missing: Option<&Bound<'_, PyAny>>) -> PyResult<(bool, Option<(f64, f64)>)> {
+    let Some(v) = fill_missing else { return Ok((false, None)) };
+    if v.is_none() {
+        return Ok((false, None));
+    }
+    if let Ok(b) = v.extract::<bool>() {
+        return Ok((b, None));
+    }
+    let (lo, hi) = v.extract::<(f64, f64)>().map_err(|_| PyValueError::new_err("fill_missing must be a bool or a (first, last) zenith pair in degrees"))?;
+    Ok((true, Some((lo, hi))))
 }
 
 #[pyfunction]
@@ -469,13 +489,29 @@ fn read_rxp<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>, drop_
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, library=None, drop_pseudo_echoes=true, min_range=0.5, max_range=f64::INFINITY, stride=1, max_points=None, echoes="all".to_string(), shot_stride=1, mta="auto", max_zone=6, keep_uncertain=false, shim=None, max_lines=None, mta_model=None))]
+#[pyo3(signature = (path, library=None, drop_pseudo_echoes=true, min_range=0.5, max_range=f64::INFINITY, stride=1, max_points=None, echoes="all".to_string(), shot_stride=1, mta="auto", max_zone=6, keep_uncertain=false, shim=None, max_lines=None, mta_model=None, fill_missing=None))]
 #[allow(clippy::too_many_arguments)]
 fn read_rxp_shots<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>, drop_pseudo_echoes: bool, min_range: f64, max_range: f64, stride: usize, max_points: Option<usize>, echoes: String, shot_stride: usize,
-                       mta: &str, max_zone: usize, keep_uncertain: bool, shim: Option<PathBuf>, max_lines: Option<usize>, mta_model: Option<String>) -> PyResult<Bound<'py, PyDict>> {
-    let opts = rxp_opts(library, drop_pseudo_echoes, min_range, max_range, stride, max_points, echoes, shot_stride, mta, max_zone, keep_uncertain, shim, max_lines, mta_model)?;
-    let s = py.detach(|| io::riegl::read_rxp_shots(&path, &opts)).map_err(err)?;
-    shots_to_py(py, &s)
+                       mta: &str, max_zone: usize, keep_uncertain: bool, shim: Option<PathBuf>, max_lines: Option<usize>, mta_model: Option<String>, fill_missing: Option<&Bound<'py, PyAny>>) -> PyResult<(Bound<'py, PyDict>, Option<Bound<'py, PyDict>>)> {
+    let mut opts = rxp_opts(library, drop_pseudo_echoes, min_range, max_range, stride, max_points, echoes, shot_stride, mta, max_zone, keep_uncertain, shim, max_lines, mta_model)?;
+    (opts.fill_missing, opts.zenith_range) = fill_option(fill_missing)?;
+    let (s, report) = py.detach(|| io::riegl::read_rxp_shots_with_report(&path, &opts)).map_err(err)?;
+    let report = match report {
+        Some(r) => {
+            let d = PyDict::new(py);
+            d.set_item("n_lines", r.n_lines)?;
+            d.set_item("pulse_interval", r.pulse_interval)?;
+            d.set_item("zenith_step", r.zenith_step)?;
+            d.set_item("zenith_range", r.zenith_range)?;
+            d.set_item("n_gap", r.n_gap)?;
+            d.set_item("n_before", r.n_before)?;
+            d.set_item("n_after", r.n_after)?;
+            d.set_item("n_misses", r.n_misses())?;
+            Some(d)
+        }
+        None => None,
+    };
+    Ok((shots_to_py(py, &s)?, report))
 }
 
 #[pyfunction]
@@ -1805,6 +1841,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(read, m)?,
         wrap_pyfunction!(write, m)?,
         wrap_pyfunction!(write_annotated, m)?,
+        wrap_pyfunction!(write_las_concat, m)?,
         wrap_pyfunction!(read_ascii, m)?,
         wrap_pyfunction!(read_rxp, m)?,
         wrap_pyfunction!(read_rxp_shots, m)?,

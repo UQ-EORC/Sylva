@@ -12,7 +12,7 @@ Free software under the GNU General Public License v3.0 or later; see the
 LICENSE file. There is no warranty, to the extent permitted by law.
 """
 
-from . import als, canopy, change, coreg, filters, fusion, geo, ground, io, leaves, qsm, quality, registration, riscan, synthetic, trees, util, voxels, waveform
+from . import als, canopy, change, coreg, filters, fusion, geo, ground, io, leaves, qsm, quality, registration, registration_report, riscan, synthetic, trees, util, voxels, waveform
 from ._core import __version__ as _core_version
 from .io import read, write
 from .pointcloud import PointCloud
@@ -42,6 +42,7 @@ __all__ = [
     "qsm",
     "quality",
     "registration",
+    "registration_report",
     "riscan",
     "synthetic",
     "trees",

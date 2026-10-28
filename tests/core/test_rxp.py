@@ -211,10 +211,11 @@ def test_scan_position_reads_in_project_coordinates():
     np.testing.assert_allclose(shots.echo_xyz()[single], pos.read(max_points=n).xyz[single],
                                atol=1e-6)
     np.testing.assert_allclose(shots.echo_xyz(), pos.read(max_points=n).xyz, atol=5e-3)
-    # The misses are added in the scanner frame, where the pattern's lines are, then moved.
+    # The misses are recovered in the scanner frame, with the pattern's zenith limits, then moved.
     filled = pos.read_shots(fill_missing=True, max_points=n, shot_stride=8)
-    own = io.read_rxp_shots(SCAN, max_points=n, shot_stride=8).fill_missing(pos.pattern,
-                                                                           shot_stride=8)
+    p = pos.pattern
+    limits = (p["theta_start"], p["theta_start"] + p["theta_delta"] * p["theta_count"])
+    own = io.read_rxp_shots(SCAN, fill_missing=limits, max_points=n, shot_stride=8)
     assert filled.n_shots == own.n_shots > shots.n_shots // 8
     np.testing.assert_allclose(filled.direction, own.direction @ pos.sop[:3, :3].T, atol=1e-12)
     with pytest.raises(ValueError, match=f"scan position {pos.name} has no scan pattern"):
@@ -261,3 +262,37 @@ def test_misses_follow_from_the_scan_pattern(rivlib):
     # Every line that had fewer now holds exactly the pulses fired.
     after = np.histogram(np.degrees(np.arccos(np.clip(full.direction[:, 2], -1, 1))), edges)[0]
     np.testing.assert_array_equal(after, np.maximum(observed, per_line))
+
+
+def test_misses_recovered_from_pulse_timing():
+    """The no-return pulses of a whole scan, each at the slot it was fired.
+
+    The scanner fires at a fixed rate while the mirror sweeps the zenith at
+    constant speed, one line per azimuth step. The reconstruction finds the
+    lines, the pulse interval and the zenith step in the data; the only
+    thing the pattern supplies is the sweep's zenith limits.
+    """
+    pos = _position()
+    p = pos.pattern
+    limits = (p["theta_start"], p["theta_start"] + p["theta_delta"] * p["theta_count"])
+    shots, report = io.read_rxp_shots(SCAN, fill_missing=limits, return_report=True)
+    recorded = io.read_rxp_shots(SCAN)
+    assert report["n_misses"] == shots.n_shots - recorded.n_shots > 0
+    assert shots.n_echoes == recorded.n_echoes
+    # One line per azimuth step, a few more than nominal as the scanner overshoots.
+    assert abs(report["n_lines"] - p["phi_count"]) < 0.05 * p["phi_count"]
+    # The angular step is the pattern's, measured; every fired pulse is now there.
+    assert abs(report["zenith_step"] - p["theta_delta"]) < 0.05 * p["theta_delta"]
+    fired = (limits[1] - limits[0]) / abs(report["zenith_step"]) * report["n_lines"]
+    assert abs(shots.n_shots - fired) < 0.03 * fired
+    # Misses lie within the sweep, and none in the dead time between lines.
+    zen = np.degrees(np.arccos(np.clip(shots.direction[recorded.n_shots:, 2], -1, 1)))
+    assert zen.min() > limits[0] - 1 and zen.max() < limits[1] + 1
+    # The stride thins the fired sequence, recorded and recovered alike.
+    thinned = io.read_rxp_shots(SCAN, fill_missing=limits, shot_stride=8)
+    assert abs(thinned.n_shots * 8 - shots.n_shots) < 0.01 * shots.n_shots
+    assert abs(thinned.n_echoes * 8 - shots.n_echoes) < 0.02 * shots.n_echoes
+    # Without limits the recorded extremes stand in: fewer misses at the sky end, never more.
+    inferred = io.read_rxp_shots(SCAN, fill_missing=True)
+    assert recorded.n_shots < inferred.n_shots <= shots.n_shots
+

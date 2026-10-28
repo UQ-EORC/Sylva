@@ -252,15 +252,21 @@ class Shots:
 
     def fill_missing(self, pattern: dict, pulses_per_line: int | None = None,
                      seed: int = 0, shot_stride: int = 1) -> Shots:
-        """Add the pulses that returned nothing.
+        """Add the pulses that returned nothing, by count per zenith line.
 
-        RiVLib's point stream only contains echoes, so a pulse that went to the
-        sky is simply absent. Given the angular scan ``pattern`` this compares,
-        per zenith line, the pulses fired against the shots observed and adds
-        the difference as shots with ``echo_count == 0`` spread uniformly in
-        azimuth (the exact azimuths cannot be recovered because the mirror
-        angles are not on the nominal grid). Ray-traced metrics then see the
-        free space these pulses sampled.
+        Prefer ``read_rxp_shots(..., fill_missing=...)`` or
+        ``ScanPosition.read_shots(fill_missing=True)``, which recover each
+        miss at the place it was fired from the pulse timing. This method
+        only knows the shots, not their timing: given the angular scan
+        ``pattern`` it compares, per zenith line, the pulses fired against the
+        shots observed and adds the difference as shots with
+        ``echo_count == 0`` at *random* azimuths along the line. The count
+        per ring is right, so ring-averaged gap fraction is served, but the
+        misses land anywhere on the ring, including through foliage that
+        returned every pulse. Ray-traced voxels then see free space where
+        there was none, and plant area density comes out low in dense canopy
+        (28 % low over a Banksia woodland plot against the same pulses with
+        their misses in place). Do not use it for voxels.
 
         ``pulses_per_line`` defaults to :meth:`pulses_per_line`, which corrects
         for the scanner firing slightly more pulses than the nominal grid but

@@ -84,6 +84,29 @@ Medioni 1992) solved by Low's (2004) linearisation; see the
 - **Checking the result.** ICP's RMSE mixes noise with misregistration.
   `quality.stem_noise` separates the two, giving the horizontal offset of
   every scan measured on the stems (see [Scan quality](quality.md)).
+- **Looking at it.** A small RMSE does not show a systematic offset in z, a
+  slight rotation, or doubled stems. `reg.plot_overlay(scan_b, scan_a, T)`
+  draws a thin plan slab and a thin side slab with the two scans in different
+  colours, before and after `T`, and a last column coloured by the distance
+  to the nearest point of the other scan. A good registration leaves one copy
+  of every stem and of the ground; `centre` and `radius` zoom in on a stem,
+  where a centimetre of misfit is visible. The distance colours go with the
+  square root of the distance, so the first centimetres are easy to tell
+  apart. `reg.plot_sections(scan_b, scan_a, T)` goes closer: for each
+  stem (or the best-seen objects, when you give no `centres`) it draws a
+  thin horizontal cross section at breast height and a vertical one, before
+  and after `T`, with the median distance in the title. A stem that
+  registers is one ring and one column.
+- **Checking a whole survey.** `registration_report.write_report("report.html",
+  clouds, transforms, names)` measures how well each scan agrees with its
+  nearest neighbours, with no ground truth, and writes one self-contained
+  HTML page: a map of the scan positions with every pair coloured by its
+  residual, the same as a matrix, tables of the pairs and the scans (worst
+  first), and an overlay and cross sections of the worst pairs. Use RiSCAN
+  SOPs or `transform_for` of a `coreg` result as `transforms`; write a report
+  for each registration to compare them. `pair_residuals` gives the numbers
+  alone. The plots need matplotlib, which is not a dependency of Sylva
+  itself.
 
 ## Coregistering a survey
 

@@ -583,6 +583,35 @@ impl LasWriter {
     }
 }
 
+/// One LAS/LAZ file from several, streamed file by file, so a cloud larger
+/// than memory is assembled from its tiles. Every input must carry the same
+/// attributes (names and types) as the first; the header's offset is the
+/// floor of the union of the inputs' bounds.
+pub fn write_las_concat(inputs: &[std::path::PathBuf], path: impl AsRef<Path>, opts: &LasWriteOptions) -> Result<()> {
+    let Some(first_path) = inputs.first() else {
+        return Err(Error::Invalid("no input files".to_string()));
+    };
+    let mut lo = [f64::INFINITY; 3];
+    for f in inputs {
+        let b = Reader::from_path(f)?.header().bounds();
+        lo = [lo[0].min(b.min.x), lo[1].min(b.min.y), lo[2].min(b.min.z)];
+    }
+    let first = read_las(first_path)?;
+    let mut writer = LasWriter::create(path, opts, &[], &extra_schema(&first.attrs), lo)?;
+    writer.write(&first)?;
+    for f in &inputs[1..] {
+        let c = read_las(f)?;
+        for (k, a) in &first.attrs {
+            match c.attrs.get(k) {
+                Some(b) if b.dtype() == a.dtype() => {}
+                _ => return Err(Error::Invalid(format!("{}: attribute {k} differs from {}", f.display(), first_path.display()))),
+            }
+        }
+        writer.write(&c)?;
+    }
+    writer.close()
+}
+
 pub(crate) fn _unused(_: Error) {}
 
 #[cfg(test)]

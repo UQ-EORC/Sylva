@@ -20,6 +20,7 @@ use libloading::{Library, Symbol};
 
 use crate::error::{Error, Result};
 use crate::pointcloud::Attr;
+use crate::shots::reconstruct::{reconstruct_misses, MissReport};
 use crate::{Point, PointCloud, Shots};
 
 // The types below describe RiVLib's C interface to Rust. `#[repr(C)]` lays a
@@ -188,6 +189,14 @@ pub struct RxpOptions {
     /// [`super::rxp_mta`]. The default tries the shim and falls back to plain
     /// `libscanifc` reading when it is not built.
     pub mta: super::rxp_mta::MtaOptions,
+    /// Recover the pulses that returned nothing from the timing and geometry
+    /// of those that did ([`crate::shots::reconstruct`]); `shot_stride` then
+    /// counts fired pulses, recorded or not. Only `read_rxp_shots` carries them,
+    /// and it then reads without MTA resolution.
+    pub fill_missing: bool,
+    /// First and last zenith of the mirror sweep (degrees) for `fill_missing`,
+    /// from the scan pattern; `None` takes the extremes recorded.
+    pub zenith_range: Option<(f64, f64)>,
 }
 
 impl Default for RxpOptions {
@@ -202,6 +211,8 @@ impl Default for RxpOptions {
             max_points: None,
             echoes: "all".into(),
             mta: Default::default(),
+            fill_missing: false,
+            zenith_range: None,
         }
     }
 }
@@ -213,6 +224,9 @@ struct RawRxp {
     deviation: Vec<u16>,
     flags: Vec<u16>,
     time_ns: Vec<u64>,
+    /// Directions of the recovered no-return pulses (`fill_missing`).
+    misses: Vec<Point>,
+    report: Option<MissReport>,
 }
 
 fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
@@ -251,11 +265,17 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
         let mut xyz_buf = vec![Xyz32::default(); CHUNK];
         let mut attr_buf = vec![Attributes::default(); CHUNK];
         let mut time_buf = vec![0u64; CHUNK];
-        let mut raw = RawRxp { xyz: Vec::new(), amplitude: Vec::new(), reflectance: Vec::new(), deviation: Vec::new(), flags: Vec::new(), time_ns: Vec::new() };
+        let mut raw = RawRxp { xyz: Vec::new(), amplitude: Vec::new(), reflectance: Vec::new(), deviation: Vec::new(), flags: Vec::new(), time_ns: Vec::new(), misses: Vec::new(), report: None };
         let mut counter = 0usize;
         // Pulses are runs of echoes sharing a timestamp.
         let mut pulse = 0usize;
         let mut last_time = u64::MAX;
+        // With fill_missing every recorded pulse is kept here (time and the
+        // direction of its first echo, before any filter) so the gaps between
+        // them can be found; the stride is applied afterwards to the fired
+        // sequence. Each kept echo remembers its pulse.
+        let fill = opts.fill_missing;
+        let (mut pulse_time, mut pulse_dir, mut echo_pulse): (Vec<u64>, Vec<Point>, Vec<u32>) = (Vec::new(), Vec::new(), Vec::new());
         loop {
             let mut got = 0u32;
             let mut eof = 0i32;
@@ -272,8 +292,13 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
                 if time_buf[i] != last_time {
                     last_time = time_buf[i];
                     pulse += 1;
+                    if fill {
+                        let p = xyz_buf[i];
+                        pulse_time.push(time_buf[i]);
+                        pulse_dir.push([p.x as f64, p.y as f64, p.z as f64]);
+                    }
                 }
-                if opts.shot_stride > 1 && pulse % opts.shot_stride != 0 {
+                if !fill && opts.shot_stride > 1 && pulse % opts.shot_stride != 0 {
                     continue;
                 }
                 if opts.stride > 1 && counter % opts.stride != 0 {
@@ -304,6 +329,9 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
                 raw.deviation.push(a.deviation);
                 raw.flags.push(a.flags);
                 raw.time_ns.push(time_buf[i]);
+                if fill {
+                    echo_pulse.push((pulse - 1) as u32);
+                }
                 if opts.max_points.map(|m| raw.xyz.len() >= m).unwrap_or(false) {
                     break;
                 }
@@ -317,6 +345,28 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
         }
         // SAFETY: handle was opened above.
         unsafe { close(handle) };
+        if fill {
+            let rec = reconstruct_misses(&pulse_time, &pulse_dir, opts.zenith_range, opts.shot_stride);
+            drop(pulse_time);
+            drop(pulse_dir);
+            if opts.shot_stride > 1 {
+                let keep: Vec<bool> = echo_pulse.iter().map(|&p| rec.keep[p as usize]).collect();
+                let mut k = keep.iter();
+                raw.xyz.retain(|_| *k.next().unwrap());
+                let mut k = keep.iter();
+                raw.amplitude.retain(|_| *k.next().unwrap());
+                let mut k = keep.iter();
+                raw.reflectance.retain(|_| *k.next().unwrap());
+                let mut k = keep.iter();
+                raw.deviation.retain(|_| *k.next().unwrap());
+                let mut k = keep.iter();
+                raw.flags.retain(|_| *k.next().unwrap());
+                let mut k = keep.iter();
+                raw.time_ns.retain(|_| *k.next().unwrap());
+            }
+            raw.misses = rec.misses;
+            raw.report = Some(rec.report);
+        }
         Ok(raw)
     })
 }
@@ -329,28 +379,62 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
 /// `return_number`, `number_of_returns`, `scan_line_index`, `shot_index_line`
 /// and `mirror_facet`.
 pub fn read_rxp(path: impl AsRef<Path>, opts: &RxpOptions) -> Result<PointCloud> {
-    use super::rxp_mta::{find_shim, read_rxp_mta, MtaMode};
-    match opts.mta.mode {
-        MtaMode::Off => {}
-        MtaMode::On => return read_rxp_mta(path.as_ref(), opts, &opts.mta),
-        MtaMode::Auto => {
-            if find_shim(opts.mta.shim.as_deref()).is_ok() {
-                return read_rxp_mta(path.as_ref(), opts, &opts.mta);
-            }
-        }
+    if mta_active(opts) {
+        return super::rxp_mta::read_rxp_mta(path.as_ref(), opts, &opts.mta);
     }
-    let raw = read_raw(path.as_ref(), opts)?;
+    Ok(cloud_from_raw(read_raw(path.as_ref(), opts)?))
+}
+
+/// Whether these options resolve MTA: asked for, or left automatic with the
+/// shim built.
+fn mta_active(opts: &RxpOptions) -> bool {
+    use super::rxp_mta::{find_shim, MtaMode};
+    match opts.mta.mode {
+        MtaMode::Off => false,
+        MtaMode::On => true,
+        MtaMode::Auto => find_shim(opts.mta.shim.as_deref()).is_ok(),
+    }
+}
+
+fn cloud_from_raw(raw: RawRxp) -> PointCloud {
     let mut cloud = PointCloud::new(raw.xyz);
     cloud.attrs.insert("amplitude".into(), Attr::F32(raw.amplitude));
     cloud.attrs.insert("reflectance".into(), Attr::F32(raw.reflectance));
     cloud.attrs.insert("deviation".into(), Attr::U16(raw.deviation));
     cloud.attrs.insert("echo_type".into(), Attr::U8(raw.flags.iter().map(|f| (f & 3) as u8).collect()));
     cloud.attrs.insert("gps_time".into(), Attr::F64(raw.time_ns.iter().map(|&t| t as f64 * 1e-9).collect()));
-    Ok(cloud)
+    cloud
 }
 
 /// Read an `.rxp` file as pulses. Echoes sharing a timestamp form one shot.
+/// With `fill_missing` the pulses that returned nothing follow the recorded
+/// ones as echo-less shots, and the report says what was recovered.
+pub fn read_rxp_shots_with_report(path: impl AsRef<Path>, opts: &RxpOptions) -> Result<(Shots, Option<MissReport>)> {
+    if !opts.fill_missing && mta_active(opts) {
+        let cloud = read_rxp(path, opts)?;
+        return Ok((Shots::from_pointcloud(&cloud, [0.0, 0.0, 0.0]), None));
+    }
+    let mut raw = read_raw(path.as_ref(), opts)?;
+    let misses = std::mem::take(&mut raw.misses);
+    let report = raw.report.take();
+    let cloud = cloud_from_raw(raw);
+    let mut shots = Shots::from_pointcloud(&cloud, [0.0, 0.0, 0.0]);
+    if !misses.is_empty() {
+        let n = misses.len();
+        let empty = Shots {
+            origin: vec![[0.0, 0.0, 0.0]; n],
+            direction: misses,
+            echo_start: vec![0; n],
+            echo_count: vec![0; n],
+            echo_range: Vec::new(),
+            echo_attrs: shots.echo_attrs.iter().map(|(k, v)| (k.clone(), v.take(&[]))).collect(),
+        };
+        shots = Shots::concatenate(&[&shots, &empty])?;
+    }
+    Ok((shots, report))
+}
+
+/// Read an `.rxp` file as pulses (see [`read_rxp_shots_with_report`]).
 pub fn read_rxp_shots(path: impl AsRef<Path>, opts: &RxpOptions) -> Result<Shots> {
-    let cloud = read_rxp(path, opts)?;
-    Ok(Shots::from_pointcloud(&cloud, [0.0, 0.0, 0.0]))
+    read_rxp_shots_with_report(path, opts).map(|(s, _)| s)
 }

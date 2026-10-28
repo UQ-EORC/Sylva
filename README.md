@@ -22,7 +22,8 @@ command over it.
 | `sylva.trees` | RANSAC circle fitting, stem detection & DBH, basal area, taper profiles, graph-based tree segmentation, tree heights, crown metrics, crown shape (stacked-hull volume, asymmetry) |
 | `sylva.canopy` | voxel grids, contact-frequency PAD profiles, zenith-ring gap fraction, hinge/Miller LAI, ray-traced density grids from pulse data, Jupp gap-probability profiles with hinge / linear / weighted PAI, clumping index and canopy height |
 | `sylva.voxels` | ray-traced voxels (port of raycloudtools `rayvoxel`): echo-weighted free / potential path lengths, FPL / PPL / transmittance / Bailey attenuation, analytic or estimated leaf-angle `G`, PAD / LAD / WAD, occlusion, sub-voxel exploration, QSM wood volume, `.vox` export, occlusion profiles and per-tree sampling (is the top real?) |
-| `sylva.registration` | Kabsch, point-to-point / point-to-plane (trimmed) ICP, scan merging |
+| `sylva.registration` | Kabsch, point-to-point / point-to-plane (trimmed) ICP, scan merging, overlay and stem cross-section plots to check a registration by eye |
+| `sylva.registration_report` | a self-contained HTML report on how well a set of scans agree: pair residuals, a map of the survey, the worst pairs up close |
 | `sylva.coreg` | marker-free coregistration of scan positions from the trees: terrain model, stem maps, global stem-map and reflector matching, robust point-to-plane ICP, pose graph with outlier rejection, recovery of stragglers, joint multi-view refinement, stem agreement report; tilted scans levelled with the scanner attitude; scanner `.PROJ` projects |
 | `sylva.qsm` | cylinder fitting, geodesic skeletonisation, cylinder QSMs with volumes and branch orders, a QSM for every tree of a plot anchored on its measured DBH, buttress meshes, `_trees.txt` export, tree metrics (branch table, taper, lean, sweep, crown, share of the model fitted to points) |
 | `sylva.leaves` | leaf / wood labels, leaf angle distribution, leaf area density from points or voxels, leaf meshes placed on a QSM |
@@ -34,7 +35,7 @@ command over it.
 | `sylva.als.canopy` | ALS and UAV pulses from the flight trajectory (SBET or text, or estimated), gap-fraction and PAD profiles corrected for beam angle, ray-traced voxels |
 | `sylva.fusion` | TLS and ALS together: a plot registered on a survey (canopy and terrain search, robust ICP, residuals and uncertainty), TLS stems linked to ALS trees with the trees under each crown, merged clouds and plant area profiles weighted by sampling, plot values upscaled by regression with leave-one-out checks |
 | `sylva.waveform` | full waveforms: LAS 1.3/1.4 wave packets and PulseWaves read and written, Gaussian decomposition into echoes, waveforms to pulses |
-| `sylva.Shots` | pulse-centric data (origin, direction, CSR echoes) for ray-based metrics, with a compact Parquet file format that stores misses without far points and streams into the voxeliser; pulses that returned nothing rebuilt from the scan pattern or from the returns alone |
+| `sylva.Shots` | pulse-centric data (origin, direction, CSR echoes) for ray-based metrics, with a compact Parquet file format that stores misses without far points and streams into the voxeliser; pulses that returned nothing recovered in place from the pulse timing (or from the scan pattern, or the returns alone) |
 | `sylva.synthetic` | synthetic trees, plots, scans, repeat surveys, airborne flights and waveforms with known answers, for examples and tests |
 
 ## Contributing
