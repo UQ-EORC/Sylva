@@ -12,29 +12,6 @@ remote sensing. A Rust core (the `sylva-rs` crate) holds every computation and f
 format; Python gets a numpy-friendly API (`import sylva`) and a `sylva`
 command over it.
 
-## Citation
-
-If Sylva contributed to your work, please cite it. Every release is archived
-on Zenodo, which gives it a DOI: https://doi.org/10.5281/zenodo.23718985
-always resolves to the latest version, and each version has its own.
-
-> Devereux, T. (2026). *Sylva: terrestrial and airborne laser scanning
-> processing for forest ecology* (version 0.3.1) [Computer software].
-> The University of Queensland. https://doi.org/10.5281/zenodo.23718986
-
-```bibtex
-@software{sylva,
-  author       = {Devereux, Tim},
-  title        = {Sylva: terrestrial and airborne laser scanning processing
-                  for forest ecology},
-  year         = {2026},
-  version      = {0.3.1},
-  organization = {The University of Queensland},
-  doi          = {10.5281/zenodo.23718986},
-  url          = {https://github.com/UQ-EORC/Sylva}
-}
-```
-
 | Module | What it does |
 |---|---|
 | `sylva.io` | LAS/LAZ (typed extra bytes, CRS from and to the WKT or GeoTIFF records), PLY (incl. raycloudtools ray clouds), XYZ/CSV/PTS, RIEGL `.rxp` via RiVLib (converted much like RiSCAN PRO: MTA resolution and its filters, with a small shim built from the SDK; the MTA resolution is a work in progress and not an exact match) and `.rdbx` (RDB 2) via librdb, RiSCAN project parsing |
@@ -65,6 +42,29 @@ always resolves to the latest version, and each version has its own.
 ## Contributing
 
 Feedback, issues, and PRs all welcome. For issues please use [GitHub issues](https://github.com/UQ-EORC/Sylva/issues) (not a personal message) so the community can benefit.
+
+## Citation
+
+If Sylva contributed to your work, please cite it. Every release is archived
+on Zenodo, which gives it a DOI: https://doi.org/10.5281/zenodo.23718985
+always resolves to the latest version, and each version has its own.
+
+> Devereux, T. (2026). *Sylva: terrestrial and airborne laser scanning
+> processing for forest ecology* (version 0.3.1) [Computer software].
+> The University of Queensland. https://doi.org/10.5281/zenodo.23718986
+
+```bibtex
+@software{sylva,
+  author       = {Devereux, Tim},
+  title        = {Sylva: terrestrial and airborne laser scanning processing
+                  for forest ecology},
+  year         = {2026},
+  version      = {0.3.1},
+  organization = {The University of Queensland},
+  doi          = {10.5281/zenodo.23718986},
+  url          = {https://github.com/UQ-EORC/Sylva}
+}
+```
 
 ## Install
 
