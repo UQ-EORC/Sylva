@@ -5,6 +5,7 @@ NOTE: This software is still in ALPHA development.
 [![PyPI](https://img.shields.io/pypi/v/sylva-rs)](https://pypi.org/project/sylva-rs/)
 [![crates.io](https://img.shields.io/crates/v/sylva-rs)](https://crates.io/crates/sylva-rs)
 [![Documentation](https://img.shields.io/badge/docs-uq--eorc.github.io%2FSylva-blue)](https://uq-eorc.github.io/Sylva/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23718985.svg)](https://doi.org/10.5281/zenodo.23718985)
 
 Terrestrial and airborne laser scanning processing for forest ecology and
 remote sensing. A Rust core (the `sylva-rs` crate) holds every computation and file
@@ -176,11 +177,13 @@ Build the site with `pip install -e '.[docs]' && mkdocs serve`.
 
 ## Citation
 
-If Sylva contributed to your work, please cite it:
+If Sylva contributed to your work, please cite it. Every release is archived
+on Zenodo, which gives it a DOI: https://doi.org/10.5281/zenodo.23718985
+always resolves to the latest version, and each version has its own.
 
 > Devereux, T. (2026). *Sylva: terrestrial and airborne laser scanning
-> processing for forest ecology* (version 0.2.1) [Computer software].
-> The University of Queensland. https://github.com/UQ-EORC/Sylva
+> processing for forest ecology* (version 0.3.1) [Computer software].
+> The University of Queensland. https://doi.org/10.5281/zenodo.23718986
 
 ```bibtex
 @software{sylva,
@@ -188,8 +191,9 @@ If Sylva contributed to your work, please cite it:
   title        = {Sylva: terrestrial and airborne laser scanning processing
                   for forest ecology},
   year         = {2026},
-  version      = {0.2.1},
+  version      = {0.3.1},
   organization = {The University of Queensland},
+  doi          = {10.5281/zenodo.23718986},
   url          = {https://github.com/UQ-EORC/Sylva}
 }
 ```

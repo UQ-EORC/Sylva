@@ -7,6 +7,14 @@ authors:
     family-names: Devereux
     email: devereux.tj@gmail.com
     affiliation: The University of Queensland
+doi: 10.5281/zenodo.23718986
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23718985
+    description: The concept DOI, resolving to the latest version
+  - type: doi
+    value: 10.5281/zenodo.23718986
+    description: Version 0.3.1
 repository-code: "https://github.com/UQ-EORC/Sylva"
 url: "https://uq-eorc.github.io/Sylva/"
 version: 0.3.1
@@ -25,3 +33,4 @@ keywords:
   - quantitative structure model
 license: GPL-3.0-or-later
 year: 2026
+date-released: "2026-10-28"
