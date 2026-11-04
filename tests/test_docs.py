@@ -13,7 +13,8 @@ MODULES = ["pointcloud", "raster", "io", "shots", "riscan", "filters", "ground",
            "fusion",
            "synthetic", "synthetic.als", "synthetic.model", "als", "als.canopy", "als.metrics",
            "als.tiles", "als.trees", "als.catalogue", "als.engine", "als.ops", "als.trajectory",
-           "change.als", "geo.coords", "geo.interpolate", "geo.masks", "util.limits", "util.progress"]
+           "change.als", "geo.coords", "geo.interpolate", "geo.masks", "util.image", "util.limits",
+           "util.progress"]
 
 
 #: Packages that were one module before they were split: each submodule is checked.

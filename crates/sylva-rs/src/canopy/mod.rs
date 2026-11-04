@@ -4,6 +4,7 @@
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Canopy structure: voxels, plant area density, gap fraction, LAI.
 
+pub mod hemi;
 pub mod profile;
 
 use crate::error::{Error, Result};

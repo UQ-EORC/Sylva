@@ -13,6 +13,7 @@ import numpy as np
 
 from . import _core
 from .pointcloud import PointCloud
+from .util import image as _image
 
 
 @dataclass
@@ -173,6 +174,263 @@ class Shots:
         """
         return _core.shots_zenith_azimuth(self.direction)
 
+    def scan_lines(self) -> tuple[np.ndarray, float, str]:
+        """Where the scan lines begin, for pulses in acquisition order.
+
+        A scanner sweeps one angle along each line, the zenith (RIEGL: the
+        mirror sweeps a vertical line, then the head steps in azimuth) or the
+        azimuth (a head turning a full circle per elevation step), and turns
+        back between lines; so a line ends where the swept angle jumps back
+        against the sweep by more than ten degrees. The swept angle is the
+        one that moves more between consecutive pulses. When every shot has
+        an echo with a ``gps_time``, the jump must also span the dead time of
+        a turn, which keeps the stray out-of-sequence pulses of a fast
+        scanner from starting lines of their own.
+
+        Returns
+        -------
+        starts : numpy.ndarray
+            Shot index at which each line begins, then ``n_shots``: line
+            ``i`` is ``starts[i]:starts[i + 1]``.
+        sweep : float
+            ``1.0`` when the swept angle grows along a line (zenith: sky to
+            ground), ``-1.0`` when it falls.
+        along : {"zenith", "azimuth"}
+            The angle swept along a line.
+        """
+        zen, az = self.zenith_azimuth()
+        if self.n_shots < 2:
+            return np.array([0, self.n_shots], dtype=np.int64), 1.0, "zenith"
+        daz = (np.diff(az) + 180.0) % 360.0 - 180.0
+        zenith_sweeps = np.nanmedian(np.abs(np.diff(zen))) >= np.nanmedian(np.abs(daz))
+        along = "zenith" if zenith_sweeps else "azimuth"
+        time = None
+        if "gps_time" in self.echo_attrs and (self.echo_count > 0).all():
+            time = np.ascontiguousarray(self.echo_attrs["gps_time"], dtype=float)[self.echo_start]
+        angle = zen if along == "zenith" else az
+        starts, sweep = _core.shots_scan_lines(np.ascontiguousarray(angle, dtype=float), time)
+        return starts.astype(np.int64), float(sweep), along
+
+    def angular_steps(self) -> tuple[float, float]:
+        """The scan pattern's angular increments, from the pulses.
+
+        The step along a line is the median change of the swept angle between
+        consecutive pulses of a line; the step between lines is the median
+        change of the other angle from one line's middle to the next's.
+
+        Returns
+        -------
+        zenith_step, azimuth_step : float
+            Degrees; 0.03 for either that cannot be told.
+        """
+        zen, az = self.zenith_azimuth()
+        starts, _, along = self.scan_lines()
+        n_lines = len(starts) - 1
+        line = np.repeat(np.arange(n_lines), np.diff(starts))
+        within = line[1:] == line[:-1]
+        daz = (np.diff(az) + 180.0) % 360.0 - 180.0
+        swept, other = (zen, az) if along == "zenith" else (az, zen)
+        dswept = (daz if along == "azimuth" else np.diff(zen))[within]
+        dswept = np.abs(dswept[np.isfinite(dswept)])
+        along_step = float(np.median(dswept[dswept > 1e-6])) if (dswept > 1e-6).any() else 0.03
+        mids = np.array([np.nanmedian(other[starts[i]:starts[i + 1]]) for i in range(n_lines)])
+        dmid = np.diff(mids)
+        if along == "zenith":
+            dmid = (dmid + 180.0) % 360.0 - 180.0
+        dmid = np.abs(dmid[np.isfinite(dmid)])
+        between = float(np.median(dmid[dmid > 1e-6])) if (dmid > 1e-6).any() else 0.03
+        return (along_step, between) if along == "zenith" else (between, along_step)
+
+    def _line_columns(self, zen: np.ndarray, az: np.ndarray) -> np.ndarray | None:
+        """The scan line of every pulse, for a scanner sweeping the zenith along
+        its lines: the line index for the recorded pulses, and for a recovered
+        miss the line whose azimuth is nearest once the swing of azimuth along
+        a line (a smooth curve of zenith set by the mirror geometry, about a
+        degree on a VZ) is taken out. None when the lines cannot be told."""
+        rec = self.echo_count > 0
+        if rec.sum() < 1000:
+            return None
+        sub = self if rec.all() else self.subset(rec)
+        zr, ar = (zen, az) if rec.all() else sub.zenith_azimuth()
+        starts, _, along = sub.scan_lines()
+        n_lines = len(starts) - 1
+        if along != "zenith" or n_lines < 3:
+            return None
+        line = np.repeat(np.arange(n_lines), np.diff(starts))
+        # Each line's azimuth: the median over its pulses (sort within lines, take the middle).
+        order = np.lexsort((ar, line))
+        az0 = ar[order][starts[:-1] + np.diff(starts) // 2]
+        col = np.empty(len(zen), dtype=np.int64)
+        col[rec] = line
+        if rec.all():
+            return col
+        # The swing: the median offset from the line's azimuth per degree of zenith.
+        res = (ar - az0[line] + 180.0) % 360.0 - 180.0
+        edges = np.arange(np.floor(np.nanmin(zr)), np.ceil(np.nanmax(zr)) + 1.0)
+        b = np.clip(np.digitize(zr, edges) - 1, 0, len(edges) - 2)
+        order = np.lexsort((res, b))
+        counts = np.bincount(b, minlength=len(edges) - 1)
+        first = np.concatenate([[0], np.cumsum(counts)[:-1]])
+        have = counts > 0
+        swing = np.interp(zen[~rec], (0.5 * (edges[:-1] + edges[1:]))[have],
+                          res[order][first[have] + counts[have] // 2]) if have.sum() >= 2 else 0.0
+        target = (az[~rec] - swing) % 360.0
+        # Nearest line by azimuth, the circle closed by a copy either side.
+        srt = np.argsort(az0)
+        ring = np.concatenate([az0[srt] - 360.0, az0[srt], az0[srt] + 360.0])
+        who = np.concatenate([srt, srt, srt])
+        k = np.searchsorted(ring, target)
+        k = np.clip(k, 1, len(ring) - 1)
+        left_closer = (target - ring[k - 1]) < (ring[k] - target)
+        col[~rec] = who[np.where(left_closer, k - 1, k)]
+        return col
+
+    def scan_image(self, field="range", echo: str = "first", cmap: str = "viridis",
+                   grid: str = "angles", steps: tuple[float, float] | None = None,
+                   sky_up: bool = True) -> ScanImage:
+        """The scanner's own view of the scan: the pulses on their grid,
+        zenith down the image and azimuth across it, coloured by a field.
+
+        A pulse that returned nothing is NaN, so the gaps show.
+
+        Parameters
+        ----------
+        field
+            What to show: ``"range"`` (m, default), ``"n_echoes"``,
+            ``"zenith"`` or ``"azimuth"`` (degrees), the name of an echo
+            attribute (``"amplitude"``, ``"reflectance"``, ``"deviation"``,
+            ...), or an array with one value per echo or per shot.
+        echo : {"first", "last"}
+            Which echo of a multi-echo pulse supplies a per-echo field.
+        cmap
+            Default colour map for :meth:`ScanImage.save`; see
+            :func:`sylva.util.image.colormap`.
+        grid : {"angles", "lines"}
+            ``"angles"``: each pulse at its zenith and azimuth step of the
+            scan pattern, one row per zenith step and one column per azimuth
+            step, whatever order the pulses come in; recovered misses land
+            where they were fired, and steps the scanner skipped stay NaN.
+            For a scanner sweeping the zenith along its lines the columns
+            are the lines themselves, since a line's azimuth is not
+            constant: on a VZ it swings by about a degree over the sweep, a
+            smooth curve of the zenith set by the mirror geometry, which
+            would slide pulses into the next column part way along every
+            line. A recovered miss goes to the line nearest its azimuth
+            with that swing taken out.
+            ``"lines"``: scan line by index along the line, as recorded
+            (:meth:`scan_lines`); lines shorter than the longest leave NaN
+            at their end, and misses appended after the recorded pulses
+            form lines of their own.
+        steps
+            ``(zenith_step, azimuth_step)`` in degrees for the angle grid,
+            e.g. ``theta_delta`` and ``phi_delta`` of a RiSCAN scan pattern;
+            estimated by :meth:`angular_steps` if None.
+        sky_up
+            Put the sky (lowest zenith) at the top of the image, whichever
+            way the scanner sweeps.
+
+        Returns
+        -------
+        ScanImage
+            On the angle grid ``(zenith steps, azimuth steps)``. On the line
+            grid, for a scanner that sweeps the zenith along its lines
+            (RIEGL) one column per line and one row per pulse along it; for
+            one that sweeps the azimuth, one row per line and one column per
+            pulse.
+
+        Raises
+        ------
+        ValueError
+            For an unknown field, echo or grid, or an array of the wrong
+            length.
+
+        Examples
+        --------
+        >>> s = io.read_rxp_shots(pos.rxp, fill_missing=True)
+        >>> s.scan_image().save("range.png")
+        >>> s.scan_image("reflectance", cmap="gray").save("refl.png", vmin=-20, vmax=0)
+        """
+        if echo not in ("first", "last"):
+            raise ValueError(f"echo must be 'first' or 'last', got {echo!r}")
+        if grid not in ("angles", "lines"):
+            raise ValueError(f"grid must be 'angles' or 'lines', got {grid!r}")
+        has = self.echo_count > 0
+        last = self.echo_start + self.echo_count - 1
+        pick = np.where(has, self.echo_start if echo == "first" else last, 0)
+
+        def per_shot(v: np.ndarray) -> np.ndarray:
+            out = np.full(self.n_shots, np.nan)
+            out[has] = v[pick[has]]
+            return out
+
+        zen, az = self.zenith_azimuth()
+        if isinstance(field, str):
+            name = field
+            if field == "range":
+                values = per_shot(self.echo_range)
+            elif field == "n_echoes":
+                values = self.echo_count.astype(float)
+            elif field in ("zenith", "azimuth"):
+                values = zen if field == "zenith" else az
+            elif field in self.echo_attrs:
+                values = per_shot(np.asarray(self.echo_attrs[field], dtype=float))
+            else:
+                have = ", ".join(sorted(self.echo_attrs)) or "none"
+                raise ValueError(f"unknown field {field!r}; use range, n_echoes, zenith, azimuth "
+                                 f"or an echo attribute ({have})")
+        else:
+            arr = np.asarray(field, dtype=float).ravel()
+            name = "value"
+            if len(arr) == self.n_shots:
+                values = arr
+            elif len(arr) == self.n_echoes:
+                values = per_shot(arr)
+            else:
+                raise ValueError(f"field has {len(arr)} values for {self.n_shots} shots / "
+                                 f"{self.n_echoes} echoes")
+        starts, sweep, along = self.scan_lines()
+        n_lines = len(starts) - 1
+        if grid == "angles":
+            if steps is None:
+                steps = self.angular_steps() if self.n_shots > 1 else (0.03, 0.03)
+            dz, da = float(steps[0]), float(steps[1])
+            if not (dz > 0 and da > 0):
+                raise ValueError(f"steps must be positive, got {steps}")
+            ok = np.isfinite(zen) & np.isfinite(az)
+            line_cols = self._line_columns(zen, az)
+            if ok.any():
+                rows = np.rint((zen - np.nanmin(zen)) / dz).astype(np.int64)
+                if line_cols is not None:
+                    cols = line_cols
+                else:
+                    cols = np.rint((az - np.nanmin(az)) / da).astype(np.int64)
+                shape = (int(rows[ok].max()) + 1, int(cols[ok].max()) + 1)
+            else:
+                rows = cols = np.zeros(0, np.int64)
+                shape = (0, 0)
+            data = np.full(shape, np.nan)
+            # A recorded pulse and a miss on the same step: the value wins.
+            order = np.argsort(np.isfinite(values[ok]), kind="stable")
+            data[rows[ok][order], cols[ok][order]] = values[ok][order]
+            if not sky_up:
+                data = data[::-1]
+            return ScanImage(data, name, starts, 1.0, "zenith", cmap, grid, (dz, da))
+        lengths = np.diff(starts)
+        longest = int(lengths.max()) if n_lines else 0
+        data = np.full((longest, n_lines), np.nan)   # (index along the line, line)
+        if self.n_shots:
+            line = np.repeat(np.arange(n_lines), lengths)
+            data[np.arange(self.n_shots) - starts[line], line] = values
+        if along == "zenith":
+            flip = sweep < 0
+        else:
+            data = data.T   # (line, index): lines step through the zenith
+            first, last = zen[starts[0]:starts[1]], zen[starts[-2]:starts[-1]]
+            flip = n_lines > 1 and np.nanmean(first) > np.nanmean(last)
+        if sky_up and flip:
+            data = data[::-1]
+        return ScanImage(data, name, starts, sweep, along, cmap, grid)
+
     @classmethod
     def concatenate(cls, parts: list[Shots]) -> Shots:
         """Stack pulse sets, e.g. several scan positions.
@@ -249,6 +507,54 @@ class Shots:
         edges = [float(e) for e in np.asarray(zenith_edges, dtype=float)]
         n = None if pulses_per_line is None else int(pulses_per_line)
         return np.rint(_core.canopy_expected_per_zenith(pattern, edges, n)).astype(np.int64)
+
+    def fill_missing_from_timing(self, zenith_range: tuple[float, float] | None = None,
+                                 shot_stride: int = 1, return_report: bool = False):
+        """Add the pulses that returned nothing, each where it was fired, from
+        the pulse timing: the reconstruction of
+        :func:`sylva.io.read_rxp_shots` for shots already in memory, e.g.
+        built by :meth:`from_pointcloud` from points that kept their
+        ``gps_time``. Every shot needs an echo with a ``gps_time``, and the
+        shots must be in acquisition order in the scanner's frame.
+
+        Parameters
+        ----------
+        zenith_range
+            The sweep's first and last zenith (degrees) from the scan
+            pattern; None takes the extremes recorded, which under-fills
+            the sky end of every line when nothing returned from there.
+        shot_stride
+            Keep every ``shot_stride``-th fired pulse, recorded or not.
+        return_report
+            Also return the report of :func:`sylva.io.read_rxp_shots`.
+
+        Returns
+        -------
+        Shots
+            The recorded pulses (those on kept stride slots) followed by the
+            recovered misses, whose origin is this scan's.
+        report : dict
+            With ``return_report``.
+
+        Raises
+        ------
+        ValueError
+            If a shot has no echo, or there is no ``gps_time``.
+        """
+        if "gps_time" not in self.echo_attrs:
+            raise ValueError("the shots carry no gps_time echo attribute")
+        if not (self.echo_count > 0).all():
+            raise ValueError("every shot needs an echo to time it; the shots already hold misses")
+        time = np.ascontiguousarray(self.echo_attrs["gps_time"], dtype=float)[self.echo_start]
+        misses, keep, report = _core.shots_reconstruct_misses(time, self.direction, zenith_range,
+                                                              int(shot_stride))
+        kept = self.subset(keep) if shot_stride > 1 else self
+        origin = np.median(self.origin, axis=0) if self.n_shots else np.zeros(3)
+        zeros = np.zeros(len(misses), dtype=np.int64)
+        extra = Shots(np.tile(origin, (len(misses), 1)), misses, zeros, zeros, np.zeros(0),
+                      {k: np.zeros(0, dtype=v.dtype) for k, v in kept.echo_attrs.items()})
+        out = Shots.concatenate([kept, extra])
+        return (out, report) if return_report else out
 
     def fill_missing(self, pattern: dict, pulses_per_line: int | None = None,
                      seed: int = 0, shot_stride: int = 1) -> Shots:
@@ -440,3 +746,89 @@ class Shots:
                           "positions, so ray-traced products (voxels, occlusion, sampling) will describe "
                           "pulses from the origin, not the scan", stacklevel=2)
         return shots
+
+
+@dataclass
+class ScanImage:
+    """A scan laid out as the scanner acquired it: one column per scan line,
+    one row per pulse along the line. Build with :meth:`Shots.scan_image`.
+
+    Attributes
+    ----------
+    data
+        Values of the field, zenith down the image and azimuth across it.
+        On the angle grid ``(zenith steps, azimuth steps)``; on the line
+        grid ``(pulses per line, lines)`` for a scanner sweeping the zenith
+        along its lines, ``(lines, pulses per line)`` for one sweeping the
+        azimuth. NaN for pulses that returned nothing, steps the scanner
+        skipped and the unfilled end of short lines.
+    field
+        The field shown.
+    line_start
+        Shot index at which each line begins, then ``n_shots``.
+    sweep
+        ``1.0`` when the swept angle grows along a line, else ``-1.0``.
+    along
+        ``"zenith"`` or ``"azimuth"``: the angle swept along a line.
+    cmap
+        Default colour map.
+    grid
+        ``"angles"`` or ``"lines"``: how the pulses were laid out.
+    steps
+        ``(zenith_step, azimuth_step)`` in degrees of the angle grid; None
+        on the line grid.
+    """
+
+    data: np.ndarray
+    field: str
+    line_start: np.ndarray
+    sweep: float
+    along: str = "zenith"
+    cmap: str = "viridis"
+    grid: str = "lines"
+    steps: tuple[float, float] | None = None
+
+    @property
+    def n_lines(self) -> int:
+        """Scan lines in the image."""
+        return len(self.line_start) - 1
+
+    def to_rgb(self, cmap: str | None = None, vmin: float | None = None, vmax: float | None = None,
+               log: bool = False) -> np.ndarray:
+        """Colour the image.
+
+        Parameters
+        ----------
+        cmap
+            Colour map; the image's default if None (see
+            :func:`sylva.util.image.colormap`).
+        vmin, vmax
+            Colour limits; the 2nd and 98th percentiles of the field by
+            default.
+        log
+            Colour ``log10`` of the field, which suits range and amplitude.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``uint8`` of shape ``(rows, lines, 3)``; NaN is black.
+        """
+        return _image.to_rgb(self.data, cmap or self.cmap, vmin, vmax, log)
+
+    def save(self, path: str | Path, cmap: str | None = None, vmin: float | None = None,
+             vmax: float | None = None, log: bool = False) -> Path:
+        """Write the image as a PNG (see :meth:`to_rgb`).
+
+        Parameters
+        ----------
+        path
+            Output file.
+        cmap, vmin, vmax, log
+            As for :meth:`to_rgb`.
+
+        Returns
+        -------
+        pathlib.Path
+            The file written.
+        """
+        return _image.write_png(path, self.to_rgb(cmap, vmin, vmax, log))

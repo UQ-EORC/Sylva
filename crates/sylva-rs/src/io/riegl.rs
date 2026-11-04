@@ -192,7 +192,7 @@ pub struct RxpOptions {
     /// Recover the pulses that returned nothing from the timing and geometry
     /// of those that did ([`crate::shots::reconstruct`]); `shot_stride` then
     /// counts fired pulses, recorded or not. Only `read_rxp_shots` carries them,
-    /// and it then reads without MTA resolution.
+    /// with MTA resolution first where the shim is built.
     pub fill_missing: bool,
     /// First and last zenith of the mirror sweep (degrees) for `fill_missing`,
     /// from the scan pattern; `None` takes the extremes recorded.
@@ -270,10 +270,12 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
         // Pulses are runs of echoes sharing a timestamp.
         let mut pulse = 0usize;
         let mut last_time = u64::MAX;
+        let mut registered = false;
         // With fill_missing every recorded pulse is kept here (time and the
-        // direction of its first echo, before any filter) so the gaps between
-        // them can be found; the stride is applied afterwards to the fired
-        // sequence. Each kept echo remembers its pulse.
+        // direction of its first echo beyond min_range, before any other
+        // filter) so the gaps between them can be found; the stride is
+        // applied afterwards to the fired sequence. Each kept echo remembers
+        // its pulse.
         let fill = opts.fill_missing;
         let (mut pulse_time, mut pulse_dir, mut echo_pulse): (Vec<u64>, Vec<Point>, Vec<u32>) = (Vec::new(), Vec::new(), Vec::new());
         loop {
@@ -292,11 +294,28 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
                 if time_buf[i] != last_time {
                     last_time = time_buf[i];
                     pulse += 1;
-                    if fill {
-                        let p = xyz_buf[i];
-                        pulse_time.push(time_buf[i]);
-                        pulse_dir.push([p.x as f64, p.y as f64, p.z as f64]);
-                    }
+                    registered = false;
+                }
+                let a = attr_buf[i];
+                let p = xyz_buf[i];
+                let r = ((p.x as f64).powi(2) + (p.y as f64).powi(2) + (p.z as f64).powi(2)).sqrt();
+                // A pulse that returned nothing still leaves a record: a
+                // pseudo echo, or the scanner's own near-range echo a few
+                // centimetres out (a VZ-2000i: 0.1-0.2 m, 2.4 million of them
+                // in a rainforest tilt scan, nearly all alone on their pulse).
+                // Neither makes the pulse a recorded one, so a pulse with no
+                // other echo is left for the reconstruction to find by the
+                // gap it leaves in the timing.
+                if opts.drop_pseudo_echoes && a.flags & FLAG_PSEUDO_ECHO != 0 {
+                    continue;
+                }
+                if r < opts.min_range {
+                    continue;
+                }
+                if fill && !registered {
+                    pulse_time.push(time_buf[i]);
+                    pulse_dir.push([p.x as f64, p.y as f64, p.z as f64]);
+                    registered = true;
                 }
                 if !fill && opts.shot_stride > 1 && pulse % opts.shot_stride != 0 {
                     continue;
@@ -304,13 +323,7 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
                 if opts.stride > 1 && counter % opts.stride != 0 {
                     continue;
                 }
-                let a = attr_buf[i];
-                if opts.drop_pseudo_echoes && a.flags & FLAG_PSEUDO_ECHO != 0 {
-                    continue;
-                }
-                let p = xyz_buf[i];
-                let r = ((p.x as f64).powi(2) + (p.y as f64).powi(2) + (p.z as f64).powi(2)).sqrt();
-                if r < opts.min_range || r > opts.max_range {
+                if r > opts.max_range {
                     continue;
                 }
                 let echo = a.flags & 3;
@@ -330,7 +343,7 @@ fn read_raw(path: &Path, opts: &RxpOptions) -> Result<RawRxp> {
                 raw.flags.push(a.flags);
                 raw.time_ns.push(time_buf[i]);
                 if fill {
-                    echo_pulse.push((pulse - 1) as u32);
+                    echo_pulse.push((pulse_time.len() - 1) as u32);
                 }
                 if opts.max_points.map(|m| raw.xyz.len() >= m).unwrap_or(false) {
                     break;
@@ -410,28 +423,52 @@ fn cloud_from_raw(raw: RawRxp) -> PointCloud {
 /// With `fill_missing` the pulses that returned nothing follow the recorded
 /// ones as echo-less shots, and the report says what was recovered.
 pub fn read_rxp_shots_with_report(path: impl AsRef<Path>, opts: &RxpOptions) -> Result<(Shots, Option<MissReport>)> {
-    if !opts.fill_missing && mta_active(opts) {
-        let cloud = read_rxp(path, opts)?;
-        return Ok((Shots::from_pointcloud(&cloud, [0.0, 0.0, 0.0]), None));
+    if mta_active(opts) {
+        if !opts.fill_missing {
+            let cloud = read_rxp(path, opts)?;
+            return Ok((Shots::from_pointcloud(&cloud, [0.0, 0.0, 0.0]), None));
+        }
+        // The echoes assigned to their pulses by the MTA resolution first:
+        // on the raw stream an echo filed under the wrong pulse leaves a
+        // false miss (two per cent of a VZ-2000i rainforest scan). Every
+        // pulse and echo is read so that the gaps between pulses are real;
+        // the stride is applied to the fired sequence afterwards.
+        let mut all = opts.clone();
+        all.shot_stride = 1;
+        all.stride = 1;
+        all.max_points = None;
+        all.echoes = "all".into();
+        let cloud = super::rxp_mta::read_rxp_mta(path.as_ref(), &all, &all.mta)?;
+        let shots = Shots::from_pointcloud(&cloud, [0.0, 0.0, 0.0]);
+        let times = shots.echo_attrs.get("gps_time").map(|a| a.to_f64()).ok_or_else(|| Error::invalid("the MTA stream carries no gps_time"))?;
+        let time_ns: Vec<u64> = shots.echo_start.iter().map(|&s| (times[s] * 1e9).round().max(0.0) as u64).collect();
+        let rec = reconstruct_misses(&time_ns, &shots.direction, opts.zenith_range, opts.shot_stride);
+        let kept = if opts.shot_stride > 1 { shots.subset(&rec.keep) } else { shots };
+        return with_misses(kept, rec.misses).map(|s| (s, Some(rec.report)));
     }
     let mut raw = read_raw(path.as_ref(), opts)?;
     let misses = std::mem::take(&mut raw.misses);
     let report = raw.report.take();
     let cloud = cloud_from_raw(raw);
-    let mut shots = Shots::from_pointcloud(&cloud, [0.0, 0.0, 0.0]);
-    if !misses.is_empty() {
-        let n = misses.len();
-        let empty = Shots {
-            origin: vec![[0.0, 0.0, 0.0]; n],
-            direction: misses,
-            echo_start: vec![0; n],
-            echo_count: vec![0; n],
-            echo_range: Vec::new(),
-            echo_attrs: shots.echo_attrs.iter().map(|(k, v)| (k.clone(), v.take(&[]))).collect(),
-        };
-        shots = Shots::concatenate(&[&shots, &empty])?;
+    let shots = Shots::from_pointcloud(&cloud, [0.0, 0.0, 0.0]);
+    with_misses(shots, misses).map(|s| (s, report))
+}
+
+/// The recovered misses appended to the recorded pulses as echo-less shots.
+fn with_misses(shots: Shots, misses: Vec<Point>) -> Result<Shots> {
+    if misses.is_empty() {
+        return Ok(shots);
     }
-    Ok((shots, report))
+    let n = misses.len();
+    let empty = Shots {
+        origin: vec![[0.0, 0.0, 0.0]; n],
+        direction: misses,
+        echo_start: vec![0; n],
+        echo_count: vec![0; n],
+        echo_range: Vec::new(),
+        echo_attrs: shots.echo_attrs.iter().map(|(k, v)| (k.clone(), v.take(&[]))).collect(),
+    };
+    Shots::concatenate(&[&shots, &empty])
 }
 
 /// Read an `.rxp` file as pulses (see [`read_rxp_shots_with_report`]).

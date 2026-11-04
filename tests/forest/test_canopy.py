@@ -183,3 +183,146 @@ def test_fired_pulses_from_points_recovers_the_misses():
     shots = Shots(np.zeros((m, 3)), direction[open_sky], np.arange(m), np.ones(m, np.int64), np.full(m, 10.0))
     fired = fired_pulses_from_points(shots, edges)
     assert np.allclose(fired[inside], truth[inside], rtol=0.01)
+
+
+def _dir(zen_deg, az_deg):
+    z, a = np.radians(zen_deg), np.radians(az_deg)
+    return np.array([np.sin(z) * np.sin(a), np.sin(z) * np.cos(a), np.cos(z)])
+
+
+def _single_echo_shots(directions, hit, ranges=10.0, attrs=None):
+    counts = hit.astype(np.int64)
+    starts = np.concatenate([[0], np.cumsum(counts)[:-1]])
+    n_echo = int(counts.sum())
+    return Shots(np.zeros((len(directions), 3)), directions, starts, counts,
+                 np.full(n_echo, ranges), attrs or {})
+
+
+def test_hemispherical_photo_from_pulses_reads_the_gap_fraction(rng):
+    # Uniform directions over the hemisphere, 30 % hits: every ring reads 0.7.
+    n = 200000
+    v = rng.normal(size=(n, 3))
+    v[:, 2] = np.abs(v[:, 2])
+    v /= np.linalg.norm(v, axis=1, keepdims=True)
+    hit = rng.uniform(size=n) < 0.3
+    shots = _single_echo_shots(v, hit, attrs={"reflectance": np.full(hit.sum(), -5.0)})
+    photo = canopy.hemispherical_photo(shots, size=200, value="reflectance")
+    assert photo.from_pulses and photo.value_name == "reflectance"
+    assert photo.shots.sum() == n and photo.hits.sum() == hit.sum() and photo.ground.sum() == 0
+    zen, gap = photo.gap_fraction_zenith()
+    assert zen.tolist() == list(np.arange(2.5, 90, 5))
+    assert np.allclose(gap, 0.7, atol=0.03)
+    hinge = -np.log(0.7) * np.cos(np.radians(57.5)) / 0.5
+    assert photo.lai("hinge") == pytest.approx(hinge, rel=0.05)
+    assert np.nanmean(photo.value) == pytest.approx(-5.0)
+    assert np.nanmin(photo.range) == 10.0
+    g = photo.gap
+    assert np.isnan(g[~photo.mask]).all()
+    assert np.nanmean(g) == pytest.approx(0.7, abs=0.02)
+    # Pixels are gap-fraction, so the thresholded canopy mask is sparse at 30 % hits.
+    assert photo.canopy.mean() < 0.1
+    for kind in ("binary", "gap", "range", "value"):
+        rgb = photo.to_rgb(kind)
+        assert rgb.shape == (200, 200, 3) and rgb.dtype == np.uint8
+    assert (photo.to_rgb("binary")[~photo.mask] == 0).all()
+    with pytest.raises(ValueError, match="unknown kind"):
+        photo.to_rgb("depth")
+    # The same rings as gap_fraction_zenith counts directly, up to the pixel
+    # quantisation of the ring edges.
+    heights = np.full(shots.n_echoes, 5.0)
+    _, direct = canopy.gap_fraction_zenith(shots, heights)
+    assert np.allclose(gap, direct[: len(gap)], atol=0.02)
+    with pytest.raises(ValueError, match="echo_heights has"):
+        canopy.hemispherical_photo(shots, size=50, echo_heights=np.zeros(3))
+
+
+def test_hemispherical_photo_ground_pulses(rng):
+    # Half the hits are below min_height: ground pulses, which count as gap,
+    # canopy or not at all.
+    n = 100000
+    v = rng.normal(size=(n, 3))
+    v[:, 2] = np.abs(v[:, 2])
+    v /= np.linalg.norm(v, axis=1, keepdims=True)
+    hit = rng.uniform(size=n) < 0.6
+    shots = _single_echo_shots(v, hit)
+    heights = np.where(rng.uniform(size=hit.sum()) < 0.5, 5.0, 0.5)
+    photos = {g: canopy.hemispherical_photo(shots, size=200, echo_heights=heights, min_height=1.0,
+                                            ground_as=g) for g in ("gap", "canopy", "unseen")}
+    assert photos["gap"].ground.sum() == (heights <= 1.0).sum()
+    for g, expect in (("gap", 0.7), ("canopy", 0.4), ("unseen", 0.4 / 0.7)):
+        _, gap = photos[g].gap_fraction_zenith()
+        assert np.allclose(gap, expect, atol=0.05), g   # fewer pulses per ring when unseen
+        assert np.nanmean(photos[g].gap) == pytest.approx(expect, abs=0.03), g
+    rgb = photos["gap"].to_rgb("binary")
+    shades = set(np.unique(rgb[photos["gap"].mask]).tolist())
+    assert 64 in shades and shades <= {0, 64, 128, 255}   # 128: pixels no pulse passed through
+    with pytest.raises(ValueError, match="ground_as must be"):
+        canopy.hemispherical_photo(shots, size=50, ground_as="sky")
+
+
+def test_hemispherical_photo_orientation_and_lenses():
+    shots = _single_echo_shots(_dir(45.0, 45.0)[None, :], np.array([True]), ranges=5.0)
+    # North-east at 45 degrees: top-left as a camera sees the sky, top-right as a map.
+    (row, col), = np.argwhere(canopy.hemispherical_photo(shots, size=100).hits)
+    assert row < 50 and col < 50
+    (row, col), = np.argwhere(canopy.hemispherical_photo(shots, size=100, mirror=False).hits)
+    assert row < 50 and col > 50
+    # Turning north to the pulse's azimuth puts it straight up the image.
+    (row, col), = np.argwhere(canopy.hemispherical_photo(shots, size=100, north=45.0).hits)
+    assert row == 25 and col in (49, 50)
+    # Equidistant puts 45 degrees half way out; equisolid further, stereographic nearer.
+    def r_of(lens):
+        (row, col), = np.argwhere(canopy.hemispherical_photo(shots, size=400, lens=lens).hits)
+        return np.hypot(row + 0.5 - 200, col + 0.5 - 200) / 200
+    assert r_of("equidistant") == pytest.approx(0.5, abs=0.01)
+    assert r_of("equisolid") > 0.52 > 0.48 > r_of("stereographic")
+    # Pixel angles: zenith zero at the centre, the north azimuth up the middle column.
+    photo = canopy.hemispherical_photo(shots, size=101, north=30.0)
+    zen, az = photo.zenith_azimuth()
+    assert zen[50, 50] == pytest.approx(0.0, abs=1.0)
+    assert az[10, 50] == pytest.approx(30.0, abs=1.0)
+    assert np.isnan(zen[0, 0])
+    with pytest.raises(ValueError, match="unknown lens"):
+        canopy.hemispherical_photo(shots, size=50, lens="fish")
+    with pytest.raises(ValueError, match="orthographic"):
+        canopy.hemispherical_photo(shots, size=50, lens="orthographic", max_zenith=100)
+    # Beyond the rim is not in the image; a wider lens shows it.
+    low = _single_echo_shots(_dir(120.0, 0.0)[None, :], np.array([True]))
+    assert canopy.hemispherical_photo(low, size=50).shots.sum() == 0
+    assert canopy.hemispherical_photo(low, size=50, max_zenith=130).shots.sum() == 1
+
+
+def test_hemispherical_photo_from_points(tmp_path):
+    # A disc of points at 10 m above the viewpoint fills the sky to 30 degrees.
+    g = np.arange(-6.0, 6.01, 0.05)
+    x, y = np.meshgrid(g, g)
+    keep = np.hypot(x, y) <= 10 * np.tan(np.radians(30))
+    xyz = np.column_stack([x[keep], y[keep], np.full(keep.sum(), 10.0)])
+    cloud = PointCloud(xyz, {"height": xyz[:, 2]})
+    photo = canopy.hemispherical_photo_from_cloud(cloud, size=300, footprint=1.0, value="height")
+    assert not photo.from_pulses and photo.shots.sum() == 0
+    zen, gap = photo.gap_fraction_zenith(np.arange(0, 91, 10))
+    assert gap[:2].max() < 0.05 and gap[0] == 0.0
+    assert gap[4:].min() == 1.0
+    assert np.nanmean(photo.value) == pytest.approx(10.0)
+    assert set(np.unique(photo.gap[photo.mask])) == {0.0, 1.0}
+    # Filters by height and range; a bad attribute name is an error.
+    assert canopy.hemispherical_photo_from_cloud(cloud, size=50, min_height=20.0).hits.sum() == 0
+    assert canopy.hemispherical_photo_from_cloud(cloud, size=50, max_range=5.0).hits.sum() == 0
+    # A spacing paints each point as wide as it subtends: 0.5 m at 10 m is
+    # about 2.9 degrees, which closes the 0.05 m sampling gaps completely.
+    spaced = canopy.hemispherical_photo_from_cloud(cloud, size=300, spacing=0.5)
+    assert spaced.gap_fraction_zenith(np.arange(0, 31, 10))[1].max() == 0.0
+    with pytest.raises(ValueError, match="spacing"):
+        canopy.hemispherical_photo_from_cloud(cloud, size=50, spacing=-1.0)
+    with pytest.raises(ValueError, match="no attribute"):
+        canopy.hemispherical_photo_from_cloud(cloud, size=50, value="colour")
+    with pytest.raises(ValueError, match="without a value"):
+        canopy.hemispherical_photo_from_cloud(cloud, size=50).to_rgb("value")
+    # A PNG of the right size comes out.
+    out = photo.save(tmp_path / "hemi.png", kind="range")
+    head = out.read_bytes()[:24]
+    assert head[:8] == b"\x89PNG\r\n\x1a\n"
+    width, height = np.frombuffer(head[16:24], dtype=">u4")
+    assert (width, height) == (300, 300)
+

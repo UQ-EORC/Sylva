@@ -379,7 +379,14 @@ def read_rxp_shots(path: str | Path, fill_missing: bool | tuple[float, float] | 
         at the interpolated angles, and the sweep is continued at the
         measured angular step from the first recorded pulse of a line back to
         the sky end, and from the last on to the other end. The dead time
-        between lines is left alone. ``True`` takes the zenith limits from
+        between lines is left alone. A pulse whose only record is a pseudo
+        echo or an echo under ``min_range`` (the scanner's own near-range
+        echo, which a VZ-2000i writes for every pulse that returned nothing)
+        is a miss. For a scanner that keeps several pulses in flight (the
+        VZ-2000i and other VZ-i models) the echoes are first assigned to
+        their pulses by the MTA resolution of :func:`read_rxp` when it is
+        available; on the raw stream, an echo filed under the wrong pulse
+        leaves a false miss, two per cent of a Robson Creek scan. ``True`` takes the zenith limits from
         the data (which under-fills the sky end when no pulse of the scan
         returned from there); a ``(first, last)`` pair in degrees, from the
         scan pattern, is better (:meth:`sylva.riscan.ScanPosition.read_shots`

@@ -497,21 +497,38 @@ fn read_rxp_shots<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>,
     (opts.fill_missing, opts.zenith_range) = fill_option(fill_missing)?;
     let (s, report) = py.detach(|| io::riegl::read_rxp_shots_with_report(&path, &opts)).map_err(err)?;
     let report = match report {
-        Some(r) => {
-            let d = PyDict::new(py);
-            d.set_item("n_lines", r.n_lines)?;
-            d.set_item("pulse_interval", r.pulse_interval)?;
-            d.set_item("zenith_step", r.zenith_step)?;
-            d.set_item("zenith_range", r.zenith_range)?;
-            d.set_item("n_gap", r.n_gap)?;
-            d.set_item("n_before", r.n_before)?;
-            d.set_item("n_after", r.n_after)?;
-            d.set_item("n_misses", r.n_misses())?;
-            Some(d)
-        }
+        Some(r) => Some(miss_report_to_py(py, &r)?),
         None => None,
     };
     Ok((shots_to_py(py, &s)?, report))
+}
+
+fn miss_report_to_py<'py>(py: Python<'py>, r: &sylva_rs::shots::reconstruct::MissReport) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    d.set_item("n_lines", r.n_lines)?;
+    d.set_item("pulse_interval", r.pulse_interval)?;
+    d.set_item("zenith_step", r.zenith_step)?;
+    d.set_item("zenith_range", r.zenith_range)?;
+    d.set_item("n_gap", r.n_gap)?;
+    d.set_item("n_before", r.n_before)?;
+    d.set_item("n_after", r.n_after)?;
+    d.set_item("n_misses", r.n_misses())?;
+    Ok(d)
+}
+
+/// The timing reconstruction of misses on pulses already in memory: `time`
+/// in seconds per pulse, `direction` (n, 3). Returns the miss directions,
+/// which recorded pulses fall on a kept stride slot, and the report.
+#[pyfunction]
+#[pyo3(signature = (time, direction, zenith_range=None, stride=1))]
+fn shots_reconstruct_misses<'py>(py: Python<'py>, time: PyReadonlyArray1<f64>, direction: PyReadonlyArray2<f64>, zenith_range: Option<(f64, f64)>, stride: usize) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<bool>>, Bound<'py, PyDict>)> {
+    let dir = xyz_from_py(direction)?;
+    let t: Vec<u64> = time.as_array().iter().map(|&s| (s * 1e9).round().max(0.0) as u64).collect();
+    if t.len() != dir.len() {
+        return Err(PyValueError::new_err(format!("time has {} values for {} pulses", t.len(), dir.len())));
+    }
+    let rec = py.detach(|| sylva_rs::shots::reconstruct::reconstruct_misses(&t, &dir, zenith_range, stride));
+    Ok((xyz_into_py(py, rec.misses), rec.keep.into_pyarray(py), miss_report_to_py(py, &rec.report)?))
 }
 
 #[pyfunction]
@@ -804,6 +821,63 @@ fn gap_fraction_zenith<'py>(py: Python<'py>, shots: &Bound<'_, PyDict>, echo_hei
     let edges: Vec<f64> = zenith_edges.map(|e| e.as_array().to_vec()).unwrap_or_else(|| (0..=18).map(|i| i as f64 * 5.0).collect());
     let (c, g) = canopy::gap_fraction_zenith(&s, &h, min_height, &edges);
     Ok((c.into_pyarray(py), g.into_pyarray(py)))
+}
+
+fn hemi_geometry(size: usize, lens: &str, max_zenith: f64, north: f64, mirror: bool) -> PyResult<sylva_rs::canopy::hemi::HemiGeometry> {
+    let lens = sylva_rs::canopy::hemi::Lens::parse(lens).map_err(err)?;
+    sylva_rs::canopy::hemi::HemiGeometry::new(size, lens, max_zenith, north, mirror).map_err(err)
+}
+
+type HemiArrays<'py> = (Bound<'py, PyArray1<u32>>, Bound<'py, PyArray1<u32>>, Bound<'py, PyArray1<u32>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<u32>>);
+
+fn hemi_to_py(py: Python<'_>, img: sylva_rs::canopy::hemi::HemiImage) -> HemiArrays<'_> {
+    (img.shots.into_pyarray(py), img.hits.into_pyarray(py), img.ground.into_pyarray(py), img.range.into_pyarray(py), img.value_sum.into_pyarray(py), img.value_n.into_pyarray(py))
+}
+
+#[pyfunction]
+#[pyo3(signature = (shots, size, lens, max_zenith, north, mirror, echo_heights=None, min_height=0.0, max_range=None, value=None))]
+#[allow(clippy::too_many_arguments)]
+fn hemi_from_shots<'py>(py: Python<'py>, shots: &Bound<'_, PyDict>, size: usize, lens: &str, max_zenith: f64, north: f64, mirror: bool, echo_heights: Option<PyReadonlyArray1<f64>>, min_height: f64, max_range: Option<f64>, value: Option<PyReadonlyArray1<f64>>) -> PyResult<HemiArrays<'py>> {
+    let s = shots_from_py(shots)?;
+    let g = hemi_geometry(size, lens, max_zenith, north, mirror)?;
+    let h = echo_heights.map(|a| a.as_array().to_vec());
+    let v = value.map(|a| a.as_array().to_vec());
+    let img = py.detach(|| sylva_rs::canopy::hemi::from_shots(&s, g, h.as_deref(), min_height, max_range, v.as_deref())).map_err(err)?;
+    Ok(hemi_to_py(py, img))
+}
+
+#[pyfunction]
+#[pyo3(signature = (xyz, origin, size, lens, max_zenith, north, mirror, footprint, spacing=0.0, max_range=None, value=None))]
+#[allow(clippy::too_many_arguments)]
+fn hemi_from_points<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, origin: (f64, f64, f64), size: usize, lens: &str, max_zenith: f64, north: f64, mirror: bool, footprint: f64, spacing: f64, max_range: Option<f64>, value: Option<PyReadonlyArray1<f64>>) -> PyResult<HemiArrays<'py>> {
+    let pts = xyz_from_py(xyz)?;
+    let g = hemi_geometry(size, lens, max_zenith, north, mirror)?;
+    let v = value.map(|a| a.as_array().to_vec());
+    let o = [origin.0, origin.1, origin.2];
+    let img = py.detach(|| sylva_rs::canopy::hemi::from_points(&pts, o, g, footprint, spacing, max_range, v.as_deref())).map_err(err)?;
+    Ok(hemi_to_py(py, img))
+}
+
+#[pyfunction]
+fn hemi_pixel_angles<'py>(py: Python<'py>, size: usize, lens: &str, max_zenith: f64, north: f64, mirror: bool) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+    let g = hemi_geometry(size, lens, max_zenith, north, mirror)?;
+    let (zen, az) = g.pixel_angles();
+    Ok((zen.into_pyarray(py), az.into_pyarray(py)))
+}
+
+#[pyfunction]
+#[pyo3(signature = (zenith_deg, time=None))]
+fn shots_scan_lines<'py>(py: Python<'py>, zenith_deg: PyReadonlyArray1<f64>, time: Option<PyReadonlyArray1<f64>>) -> PyResult<(Bound<'py, PyArray1<u64>>, f64)> {
+    let zen = zenith_deg.as_array().to_vec();
+    let t = time.map(|a| a.as_array().to_vec());
+    if let Some(t) = &t {
+        if t.len() != zen.len() {
+            return Err(PyValueError::new_err(format!("time has {} values for {} pulses", t.len(), zen.len())));
+        }
+    }
+    let lines = sylva_rs::shots::reconstruct::scan_lines(&zen, t.as_deref());
+    let starts: Vec<u64> = lines.starts.iter().map(|&i| i as u64).collect();
+    Ok((starts.into_pyarray(py), lines.sweep))
 }
 
 #[pyfunction]
@@ -1885,6 +1959,11 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(pad_profile_voxel, m)?,
         wrap_pyfunction!(gap_fraction_zenith, m)?,
         wrap_pyfunction!(lai_from_gap_fraction, m)?,
+        wrap_pyfunction!(hemi_from_shots, m)?,
+        wrap_pyfunction!(hemi_from_points, m)?,
+        wrap_pyfunction!(hemi_pixel_angles, m)?,
+        wrap_pyfunction!(shots_scan_lines, m)?,
+        wrap_pyfunction!(shots_reconstruct_misses, m)?,
         wrap_pyfunction!(canopy_cover, m)?,
         wrap_pyfunction!(density_grid, m)?,
         wrap_pyfunction!(write_shots, m)?,

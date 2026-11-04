@@ -95,15 +95,74 @@ fn quantile(v: &mut [f64], q: f64) -> f64 {
     *x
 }
 
+/// The scan lines of a stream of pulses in acquisition order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScanLines {
+    /// Index of the first pulse of each line, then the number of pulses:
+    /// line `i` is `starts[i]..starts[i + 1]`.
+    pub starts: Vec<usize>,
+    /// `1.0` when the zenith grows along a line (the mirror sweeps from the
+    /// sky towards the ground), `-1.0` when it falls.
+    pub sweep: f64,
+}
+
+impl ScanLines {
+    pub fn n_lines(&self) -> usize {
+        self.starts.len().saturating_sub(1)
+    }
+}
+
+/// Split pulses in acquisition order into scan lines.
+///
+/// A scanner sweeps the zenith along each line and turns its mirror between
+/// lines, so a line ends where the zenith (degrees) jumps back against the
+/// sweep by more than ten degrees. The sweep direction is the sign the
+/// zenith mostly moves in between consecutive pulses. With `time` (seconds
+/// per pulse) the jump must also span the dead time of a mirror turn: a
+/// stream can hold stray pulses whose direction is out of sequence (a
+/// VZ-400i at 600 kHz: one pulse in a thousand, in bursts, jumping 5-90
+/// degrees between pulses an interval apart), and each one taken for a line
+/// would have its sky end filled with thousands of misses. The dead-time
+/// threshold is a rough pulse interval (the median of every time step, which
+/// the within-line steps dominate) scaled far past the scanner's jitter but
+/// well short of any line turn.
+pub fn scan_lines(zenith_deg: &[f64], time: Option<&[f64]>) -> ScanLines {
+    let n = zenith_deg.len();
+    let mut dz: Vec<f64> = (1..n).map(|i| zenith_deg[i] - zenith_deg[i - 1]).filter(|d| d.is_finite()).collect();
+    let sweep = if dz.is_empty() || median(&mut dz) >= 0.0 { 1.0 } else { -1.0 };
+    drop(dz);
+    let dead_time = time.filter(|_| n > 1).map(|t| {
+        let mut all_dt: Vec<f64> = (1..n).map(|i| t[i] - t[i - 1]).collect();
+        (20.0 * median(&mut all_dt)).max(50e-6)
+    });
+    let mut starts = vec![0usize];
+    for i in 1..n {
+        let back = (zenith_deg[i] - zenith_deg[i - 1]) * sweep < -10.0;
+        let turned = match (time, dead_time) {
+            (Some(t), Some(d)) => t[i] - t[i - 1] > d,
+            _ => true,
+        };
+        if back && turned {
+            starts.push(i);
+        }
+    }
+    starts.push(n);
+    ScanLines { starts, sweep }
+}
+
 /// Recover the unrecorded pulses of one scan.
 ///
 /// `time_ns` and `direction` describe every recorded pulse in stream order
 /// (echoes already grouped; the direction is that of any echo). `zenith_range`
 /// is the sweep's first and last zenith (degrees) from the scan pattern;
-/// widened to the extremes recorded; `None` uses the extremes alone, which
-/// under-fills the sky end of every line when no pulse of the scan returned
-/// from there. `stride` keeps every
-/// `stride`-th fired pulse, recorded or not, counted along the sweep.
+/// widened to the extremes recorded, and drawn in to where lines typically
+/// begin and end when that is within half a degree, since a scanner records
+/// its first pulses a few steps after the nominal start; `None` uses the
+/// extremes alone, which under-fills the sky end of every line when no pulse
+/// of the scan returned from there. A run of at most half a degree missing
+/// at either end of a line is the scanner settling, not sky, and is left
+/// alone. `stride` keeps every `stride`-th fired pulse, recorded or not,
+/// counted along the sweep.
 ///
 /// Returns nothing to add (and `keep` all true) for fewer than two pulses.
 pub fn reconstruct_misses(time_ns: &[u64], direction: &[Point], zenith_range: Option<(f64, f64)>, stride: usize) -> Reconstruction {
@@ -116,10 +175,8 @@ pub fn reconstruct_misses(time_ns: &[u64], direction: &[Point], zenith_range: Op
     let (zen, az): (Vec<f64>, Vec<f64>) = direction.iter().map(zen_az).unzip();
     let t: Vec<f64> = time_ns.iter().map(|&x| x as f64 * 1e-9).collect();
 
-    // Sweep direction: the sign the zenith mostly moves in between consecutive pulses.
-    let mut dz: Vec<f64> = (1..n).map(|i| zen[i] - zen[i - 1]).filter(|d| d.is_finite()).collect();
-    let sweep = if median(&mut dz) >= 0.0 { 1.0 } else { -1.0 };
-    drop(dz);
+    let lines = scan_lines(&zen, Some(&t));
+    let (sweep, starts) = (lines.sweep, lines.starts);
     // The sweep's limits: the pattern's, widened to whatever was recorded
     // beyond them (the mirror overshoots the nominal lines by a few steps).
     // The recorded extremes are taken as a 1-in-10,000 quantile and the
@@ -132,27 +189,7 @@ pub fn reconstruct_misses(time_ns: &[u64], direction: &[Point], zenith_range: Op
         Some((a, b)) => ((a.min(b) - 2.0).max(mn).min(a.min(b)), (a.max(b) + 2.0).min(mx).max(a.max(b))),
         None => (mn, mx),
     };
-    let (sweep_start, sweep_end) = if sweep > 0.0 { (lo, hi) } else { (hi, lo) };
-
-    // Line boundaries: the zenith jumps back against the sweep, across the
-    // dead time while the mirror turns. The dead time is required because a
-    // stream can hold stray pulses whose direction is out of sequence (a
-    // VZ-400i at 600 kHz: one pulse in a thousand, in bursts, jumping 5-90
-    // degrees between pulses an interval apart); each one taken for a line
-    // would have its sky end filled with thousands of misses. The threshold
-    // is a rough interval (the median of every time step, which the
-    // within-line steps dominate) scaled far past the scanner's jitter but
-    // well short of any line turn.
-    let mut all_dt: Vec<f64> = (1..n).map(|i| t[i] - t[i - 1]).collect();
-    let dead_time = (20.0 * median(&mut all_dt)).max(50e-6);
-    drop(all_dt);
-    let mut starts = vec![0usize];
-    for i in 1..n {
-        if (zen[i] - zen[i - 1]) * sweep < -10.0 && t[i] - t[i - 1] > dead_time {
-            starts.push(i);
-        }
-    }
-    starts.push(n);
+    let (mut sweep_start, mut sweep_end) = if sweep > 0.0 { (lo, hi) } else { (hi, lo) };
 
     // Pulse interval: the adjacent-pulse cluster of within-line time steps,
     // then refined with every within-line step counted in whole intervals.
@@ -203,24 +240,54 @@ pub fn reconstruct_misses(time_ns: &[u64], direction: &[Point], zenith_range: Op
     // zenith test missed (a line with no recorded pulse between); never fill it.
     let max_gap = ((hi - lo) / step.abs() * 1.05).ceil();
 
+    // The zenith a line's recorded part begins and ends at: the extreme over
+    // its first (last) few pulses rather than the first (last) pulse alone,
+    // so a stray out-of-sequence pulse at a line's edge cannot set the fill.
+    let earliest = |s: &[f64]| s.iter().cloned().fold(if sweep > 0.0 { f64::INFINITY } else { f64::NEG_INFINITY }, |m, z| if sweep > 0.0 { m.min(z) } else { m.max(z) });
+    let latest = |s: &[f64]| s.iter().cloned().fold(if sweep > 0.0 { f64::NEG_INFINITY } else { f64::INFINITY }, |m, z| if sweep > 0.0 { m.max(z) } else { m.min(z) });
+    // Where lines typically begin and end. A scanner records its first pulse
+    // a few steps after the pattern's nominal start (a VZ-2000i: 0.15
+    // degrees, four pulses), and filling back to the nominal start would
+    // draw a ring of misses round every scan. So when most lines begin
+    // within half a degree of the limit, the typical beginning is the
+    // sweep's start; a larger offset is open sky at the top of every line,
+    // which the limit from the scan pattern is there to fill. The same at
+    // the end.
+    let mut firsts: Vec<f64> = starts.windows(2).map(|w| earliest(&zen[w[0]..(w[0] + 8).min(w[1])])).collect();
+    let mut lasts: Vec<f64> = starts.windows(2).map(|w| latest(&zen[w[1].saturating_sub(8).max(w[0])..w[1]])).collect();
+    let typical_start = quantile(&mut firsts, if sweep > 0.0 { 0.1 } else { 0.9 });
+    let typical_end = quantile(&mut lasts, if sweep > 0.0 { 0.9 } else { 0.1 });
+    const SETTLE: f64 = 0.5;
+    if (typical_start - sweep_start) * sweep > 0.0 && (typical_start - sweep_start) * sweep <= SETTLE {
+        sweep_start = typical_start;
+    }
+    if (sweep_end - typical_end) * sweep > 0.0 && (sweep_end - typical_end) * sweep <= SETTLE {
+        sweep_end = typical_end;
+    }
+    // Likewise a single line that begins or ends within half a degree of
+    // the sweep's limit has merely settled a few steps late or stopped a
+    // few early, which drawn as misses would ring every scan with sky; a
+    // longer run at a line's end is open sky and is filled.
+    let settle_steps = (SETTLE / step.abs()).floor() as usize;
+    let (lo, hi) = (sweep_start.min(sweep_end), sweep_start.max(sweep_end));
+
     let mut slot: usize = 0; // fired-pulse counter along the sweep, for the stride
     let mut report = MissReport { n_lines: starts.len() - 1, pulse_interval: interval, zenith_step: step, zenith_range: (lo, hi), ..Default::default() };
+    debug_assert!(lo <= hi);
     let push_miss = |zen: f64, az: f64, slot: &mut usize, misses: &mut Vec<Point>| {
         if *slot % stride == 0 {
             misses.push(dir(zen, az));
         }
         *slot += 1;
     };
-    // The zenith a line's recorded part begins and ends at: the extreme over
-    // its first (last) few pulses rather than the first (last) pulse alone,
-    // so a stray out-of-sequence pulse at a line's edge cannot set the fill.
-    let earliest = |s: &[f64]| s.iter().cloned().fold(if sweep > 0.0 { f64::INFINITY } else { f64::NEG_INFINITY }, |m, z| if sweep > 0.0 { m.min(z) } else { m.max(z) });
-    let latest = |s: &[f64]| s.iter().cloned().fold(if sweep > 0.0 { f64::NEG_INFINITY } else { f64::INFINITY }, |m, z| if sweep > 0.0 { m.max(z) } else { m.min(z) });
     for w in starts.windows(2) {
         let (a, b) = (w[0], w[1]);
         // Before the first recorded pulse: back along the sweep to its start.
         let z_first = earliest(&zen[a..(a + 8).min(b)]);
-        let n_before = (((z_first - sweep_start) * sweep + half) / step.abs()).floor().max(0.0) as usize;
+        let mut n_before = (((z_first - sweep_start) * sweep + half) / step.abs()).floor().max(0.0) as usize;
+        if n_before <= settle_steps {
+            n_before = 0;
+        }
         for k in (1..=n_before).rev() {
             push_miss(z_first - k as f64 * step, az[a], &mut slot, &mut out.misses);
         }
@@ -247,7 +314,10 @@ pub fn reconstruct_misses(time_ns: &[u64], direction: &[Point], zenith_range: Op
         // After the last recorded pulse: on along the sweep to its end.
         let l = b - 1;
         let z_last = latest(&zen[b.saturating_sub(8).max(a)..b]);
-        let n_after = (((sweep_end - z_last) * sweep + half) / step.abs()).floor().max(0.0) as usize;
+        let mut n_after = (((sweep_end - z_last) * sweep + half) / step.abs()).floor().max(0.0) as usize;
+        if n_after <= settle_steps {
+            n_after = 0;
+        }
         for k in 1..=n_after {
             push_miss(z_last + k as f64 * step, az[l], &mut slot, &mut out.misses);
         }
@@ -296,7 +366,8 @@ mod tests {
         missing.extend((0..20).map(|k| (1, k)));
         let (t, d, _) = scan(&missing);
         let r = reconstruct_misses(&t, &d, Some((30.0, 130.0)), 1);
-        assert_eq!((r.report.n_gap, r.report.n_before, r.report.n_after), (2, 20, 1));
+        // The single missing slot at the end of line 2 is within the settling allowance.
+        assert_eq!((r.report.n_gap, r.report.n_before, r.report.n_after), (2, 20, 0));
         let got: Vec<(f64, f64)> = r.misses.iter().map(zen_az).collect();
         // the gap: zeniths 30.5 and 30.6 on line 0 (azimuth 10)
         assert!((got[0].0 - 30.5).abs() < 1e-6 && (got[0].1 - 10.0).abs() < 1e-6);
@@ -304,10 +375,8 @@ mod tests {
         // the sky end of line 1: 30.0 .. 31.9 in order, azimuth 11
         assert!((got[2].0 - 30.0).abs() < 1e-6 && (got[2].1 - 11.0).abs() < 1e-6);
         assert!((got[21].0 - 31.9).abs() < 1e-6);
-        // the last slot of line 2: 130.0
-        assert!((got[22].0 - 130.0).abs() < 1e-6 && (got[22].1 - 12.0).abs() < 1e-6);
         // dead time between lines was not filled
-        assert_eq!(r.misses.len(), 23);
+        assert_eq!(r.misses.len(), 22);
     }
 
     #[test]
@@ -319,6 +388,57 @@ mod tests {
         let kept_recorded = r.keep.iter().filter(|&&k| k).count();
         assert_eq!(kept_recorded + r.misses.len(), (3 * per_line).div_ceil(4));
         assert_eq!(r.misses.len(), 5); // slots 0, 4, 8, 12, 16 of line 1
+    }
+
+    #[test]
+    fn a_late_but_consistent_line_start_is_not_filled_back_to_the_pattern() {
+        // Every line records from slot 3 (30.3 deg) on: the scanner's habit,
+        // not sky, so nothing is filled before it; but a line that starts at
+        // slot 10 is filled back to the typical start, 30.3.
+        let mut missing: Vec<(usize, usize)> = (0..3).flat_map(|l| (0..3).map(move |k| (l, k))).collect();
+        missing.extend((3..10).map(|k| (1, k)));
+        let (t, d, _) = scan(&missing);
+        let r = reconstruct_misses(&t, &d, Some((30.0, 130.0)), 1);
+        assert_eq!((r.report.n_before, r.report.n_gap, r.report.n_after), (7, 0, 0));
+        assert!((r.report.zenith_range.0 - 30.3).abs() < 1e-9);
+        // A line starting four steps late (0.4 deg) has only settled late.
+        let (t, d, _) = scan(&(0..4).map(|k| (1, k)).collect::<Vec<_>>());
+        assert_eq!(reconstruct_misses(&t, &d, Some((30.0, 130.0)), 1).report.n_before, 0);
+        // Starting two degrees late on every line is open sky, filled to the pattern.
+        let sky: Vec<(usize, usize)> = (0..3).flat_map(|l| (0..20).map(move |k| (l, k))).collect();
+        let (t, d, _) = scan(&sky);
+        let r = reconstruct_misses(&t, &d, Some((30.0, 130.0)), 1);
+        assert_eq!(r.report.n_before, 60);
+    }
+
+    #[test]
+    fn a_long_run_of_sky_inside_a_line_is_filled() {
+        // Line 1 returns nothing from slot 630 (93 deg) to 997 (129.7 deg): a
+        // tilted scan looking up into open sky, its last three pulses on the
+        // scanner's own base. All 368 missing pulses are gaps, not line ends.
+        let missing: Vec<(usize, usize)> = (630..998).map(|k| (1, k)).collect();
+        let (t, d, _) = scan(&missing);
+        let r = reconstruct_misses(&t, &d, Some((30.0, 130.0)), 1);
+        assert_eq!((r.report.n_gap, r.report.n_before, r.report.n_after), (368, 0, 0));
+        let zen: Vec<f64> = r.misses.iter().map(|m| zen_az(m).0).collect();
+        assert!((zen[0] - 93.0).abs() < 1e-6 && (zen[367] - 129.7).abs() < 1e-6);
+    }
+
+    #[test]
+    fn scan_lines_split_on_the_zenith_turn_with_or_without_time() {
+        // Three lines sweeping 30-150 degrees, the third cut short.
+        let zen: Vec<f64> = (0..5).map(|i| 30.0 + 30.0 * i as f64).cycle().take(13).collect();
+        let l = scan_lines(&zen, None);
+        assert_eq!((l.n_lines(), l.sweep, l.starts), (3, 1.0, vec![0, 5, 10, 13]));
+        // The same sweep downwards.
+        let down: Vec<f64> = zen.iter().map(|z| 180.0 - z).collect();
+        assert_eq!(scan_lines(&down, None).starts, vec![0, 5, 10, 13]);
+        // With time, a jump back within the dead time is a stray pulse, not a line.
+        let mut t: Vec<f64> = (0..13).map(|i| i as f64 * 1e-5).collect();
+        t[5] += 1e-3;
+        assert_eq!(scan_lines(&zen, Some(&t)).starts, vec![0, 5, 13]);
+        assert_eq!(scan_lines(&[], None).starts, vec![0, 0]);
+        assert_eq!(scan_lines(&[45.0], Some(&[0.0])).starts, vec![0, 1]);
     }
 
     #[test]

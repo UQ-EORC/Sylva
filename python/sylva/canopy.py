@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -14,12 +15,13 @@ from . import _core
 from .pointcloud import PointCloud
 from .raster import Raster
 from .shots import Shots
+from .util import image as _image
 
 __all__ = [
     "VoxelGrid", "voxelize", "vertical_profile", "pad_profile_voxel", "gap_fraction_zenith",
     "gap_fraction_pattern", "lai_from_gap_fraction", "canopy_cover", "DensityGrid",
     "density_grid", "fit_ground_plane", "fired_pulses_per_ring", "fired_pulses_from_points",
-    "GapProfile",
+    "GapProfile", "HemisphericalPhoto", "hemispherical_photo", "hemispherical_photo_from_cloud",
 ]
 
 
@@ -860,3 +862,441 @@ class GapProfile:
         """
         return _core.canopy_gap_report(*self._core_args(), *self._scan_lists(), float(top_fraction),
                                        float(saturation_gap))
+
+
+@dataclass
+class HemisphericalPhoto:
+    """A synthetic hemispherical photograph: the sky as seen from the scanner
+    through a fisheye lens, the zenith at the image centre and ``max_zenith``
+    on the rim, north at the top.
+
+    Build one with :func:`hemispherical_photo` (from pulses, which gives a
+    gap fraction per pixel) or :func:`hemispherical_photo_from_cloud` (from
+    points, which gives canopy or sky per pixel), then read :attr:`gap`,
+    :meth:`gap_fraction_zenith` and :meth:`lai`, or :meth:`save` it to look
+    at or to process like a real photograph.
+
+    Attributes
+    ----------
+    size, lens, max_zenith, north, mirror
+        The projection: pixels on a side, the lens name, the zenith angle
+        (degrees) on the rim, the azimuth (degrees) at the top, and whether
+        east is on the left as in an upward photograph.
+    shots
+        ``(size, size)`` pulses fired through each pixel; all zero when built
+        from points.
+    hits
+        Pulses (or points) that met canopy in each pixel.
+    ground
+        Pulses that returned, but only from at or below ``min_height`` or
+        beyond ``max_range``: terrain and understorey, and on a slope the
+        hillside above the horizon. All zero when built from points.
+    range
+        Range (m) to the nearest hit per pixel; NaN without one.
+    value
+        Mean of the chosen ``value`` over the hits per pixel; NaN without.
+    value_name
+        What ``value`` is.
+    ground_as : {"gap", "canopy", "unseen"}
+        How a ground pulse counts in :attr:`gap` and the ring statistics.
+        ``"gap"``: as a gap, the convention of :class:`GapProfile` and Jupp
+        et al. (2009), since the path to its return held no canopy.
+        ``"canopy"``: as a hit, as a thresholded photograph would read a
+        hillside. ``"unseen"``: as no pulse at all, since it never reached
+        the sky; the rings then describe only the directions that did.
+    """
+
+    size: int
+    lens: str
+    max_zenith: float
+    north: float
+    mirror: bool
+    shots: np.ndarray
+    hits: np.ndarray
+    ground: np.ndarray
+    range: np.ndarray
+    value: np.ndarray
+    value_name: str | None = None
+    ground_as: str = "gap"
+
+    @classmethod
+    def _from_core(cls, arrays, size: int, lens: str, max_zenith: float, north: float, mirror: bool,
+                   value_name: str | None, ground_as: str = "gap") -> HemisphericalPhoto:
+        if ground_as not in ("gap", "canopy", "unseen"):
+            raise ValueError(f"ground_as must be 'gap', 'canopy' or 'unseen', got {ground_as!r}")
+        shots, hits, ground, rng, vsum, vn = (np.asarray(a).reshape(size, size) for a in arrays)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            value = np.where(vn > 0, vsum / vn, np.nan)
+        return cls(int(size), lens, float(max_zenith), float(north), bool(mirror), shots, hits,
+                   ground, rng, value, value_name, ground_as)
+
+    def _counts(self) -> tuple[np.ndarray, np.ndarray]:
+        """Hits and shots per pixel with the ground pulses counted as ``ground_as`` says."""
+        if self.ground_as == "canopy":
+            return self.hits + self.ground, self.shots
+        if self.ground_as == "unseen":
+            return self.hits, self.shots - self.ground
+        return self.hits, self.shots
+
+    @property
+    def from_pulses(self) -> bool:
+        """Whether the photograph counts pulses (else points)."""
+        return bool(self.shots.any())
+
+    @property
+    def mask(self) -> np.ndarray:
+        """``(size, size)`` True inside the image circle."""
+        c = self.size / 2.0
+        y, x = np.mgrid[0:self.size, 0:self.size]
+        return np.hypot(x + 0.5 - c, y + 0.5 - c) <= c
+
+    @property
+    def gap(self) -> np.ndarray:
+        """Gap fraction per pixel: the share of pulses that met no canopy
+        (ground pulses as ``ground_as`` says), or 1 where no point lies and
+        0 where one does. NaN outside the image circle and in pixels no
+        pulse passed through."""
+        inside = self.mask
+        if self.from_pulses:
+            hits, shots = self._counts()
+            with np.errstate(invalid="ignore", divide="ignore"):
+                g = np.where(shots > 0, 1.0 - hits / shots, np.nan)
+        else:
+            g = np.where(self.hits > 0, 0.0, 1.0)
+        return np.where(inside, g, np.nan)
+
+    @property
+    def canopy(self) -> np.ndarray:
+        """``(size, size)`` True where the pixel is mostly canopy (gap below
+        one half)."""
+        return self.gap < 0.5
+
+    def zenith_azimuth(self) -> tuple[np.ndarray, np.ndarray]:
+        """Zenith and azimuth of every pixel centre.
+
+        Returns
+        -------
+        zenith, azimuth : numpy.ndarray
+            Degrees, ``(size, size)``; azimuth clockwise from +y (RIEGL
+            convention); NaN outside the image circle.
+        """
+        zen, az = _core.hemi_pixel_angles(self.size, self.lens, self.max_zenith, self.north,
+                                          self.mirror)
+        return zen.reshape(self.size, self.size), az.reshape(self.size, self.size)
+
+    def gap_fraction_zenith(self, zenith_edges=None) -> tuple[np.ndarray, np.ndarray]:
+        """Gap fraction by zenith ring, as hemispherical-photograph software
+        reads it off the image.
+
+        From pulses each ring's gap fraction is its misses over its pulses
+        (ground pulses as ``ground_as`` says); from points it is the share
+        of the ring's pixels that are sky.
+
+        Parameters
+        ----------
+        zenith_edges
+            Ring edges (degrees from up); 0 to ``max_zenith`` in 5 degree
+            rings if None.
+
+        Returns
+        -------
+        centres_deg, gap : numpy.ndarray
+            Ring centres and gap fraction; NaN for rings without pulses or
+            pixels.
+        """
+        if zenith_edges is None:
+            zenith_edges = np.arange(0.0, self.max_zenith + 1e-9, 5.0)
+            if zenith_edges[-1] < self.max_zenith - 1e-9:
+                zenith_edges = np.append(zenith_edges, self.max_zenith)
+        edges = np.asarray(zenith_edges, dtype=float)
+        zen, _ = self.zenith_azimuth()
+        ring = np.digitize(zen, edges) - 1
+        valid = np.isfinite(zen) & (ring >= 0) & (ring < len(edges) - 1)
+        nb = len(edges) - 1
+        if self.from_pulses:
+            hits, shots = self._counts()
+            num = np.bincount(ring[valid], weights=(shots - hits)[valid], minlength=nb)
+            den = np.bincount(ring[valid], weights=shots[valid], minlength=nb)
+        else:
+            num = np.bincount(ring[valid], weights=(self.hits[valid] == 0), minlength=nb)
+            den = np.bincount(ring[valid], minlength=nb).astype(float)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            gap = np.where(den > 0, num / den, np.nan)
+        return 0.5 * (edges[:-1] + edges[1:]), gap
+
+    def lai(self, method: str = "hinge", zenith_edges=None) -> float:
+        """Effective plant area index from the ring gap fractions, by
+        :func:`lai_from_gap_fraction`.
+
+        Parameters
+        ----------
+        method : {"hinge", "miller"}
+            Estimator; ``"miller"`` wants rings out to 90 degrees.
+        zenith_edges
+            Ring edges (degrees); see :meth:`gap_fraction_zenith`.
+
+        Returns
+        -------
+        float
+            Effective PAI (m² m⁻²), not corrected for clumping.
+        """
+        zen, gap = self.gap_fraction_zenith(zenith_edges)
+        return lai_from_gap_fraction(zen, gap, method)
+
+    def to_rgb(self, kind: str = "binary", cmap: str | None = None, vmin: float | None = None,
+               vmax: float | None = None) -> np.ndarray:
+        """Render the photograph.
+
+        Parameters
+        ----------
+        kind : {"binary", "gap", "range", "value"}
+            ``"binary"``: sky white, canopy black, ground (pulses that
+            returned only from below ``min_height``, mostly) dark grey,
+            pixels no pulse passed through mid grey, as a thresholded
+            photograph. ``"gap"``: the gap
+            fraction, ``"range"``: range to the nearest hit, ``"value"``: the
+            mean value, each through ``cmap``.
+        cmap
+            Colour map (see :func:`sylva.util.image.colormap`); ``gray`` for
+            gap, ``viridis`` otherwise.
+        vmin, vmax
+            Colour limits; the 2nd and 98th percentiles by default.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``uint8`` of shape ``(size, size, 3)``; black outside the circle.
+
+        Raises
+        ------
+        ValueError
+            For an unknown ``kind``, or ``"value"`` without one.
+        """
+        inside = self.mask
+        if kind == "binary":
+            gap = self.gap
+            grey = np.where(np.isnan(gap), 128, np.where(gap >= 0.5, 255, 0)).astype(np.uint8)
+            if self.from_pulses:
+                misses = self.shots - self.hits - self.ground
+                grey[(self.ground > self.hits) & (self.ground >= misses)] = 64
+            grey[~inside] = 0
+            return np.repeat(grey[:, :, None], 3, axis=2)
+        if kind == "gap":
+            data, cmap = self.gap, cmap or "gray"
+            if vmin is None and vmax is None:
+                vmin, vmax = 0.0, 1.0
+        elif kind == "range":
+            data = self.range
+        elif kind == "value":
+            if self.value_name is None:
+                raise ValueError("the photograph was built without a value")
+            data = self.value
+        else:
+            raise ValueError(f"unknown kind {kind!r}; use binary, gap, range or value")
+        rgb = _image.to_rgb(np.where(inside, data, np.nan), cmap or "viridis", vmin, vmax)
+        return rgb
+
+    def save(self, path: str | Path, kind: str = "binary", cmap: str | None = None,
+             vmin: float | None = None, vmax: float | None = None) -> Path:
+        """Write the photograph as a PNG (see :meth:`to_rgb`).
+
+        Parameters
+        ----------
+        path
+            Output file.
+        kind, cmap, vmin, vmax
+            As for :meth:`to_rgb`.
+
+        Returns
+        -------
+        pathlib.Path
+            The file written.
+        """
+        return _image.write_png(path, self.to_rgb(kind, cmap, vmin, vmax))
+
+
+def _echo_value(shots: Shots, value) -> tuple[np.ndarray | None, str | None]:
+    if value is None:
+        return None, None
+    if isinstance(value, str):
+        if value == "range":
+            return np.ascontiguousarray(shots.echo_range, dtype=float), "range"
+        if value not in shots.echo_attrs:
+            raise ValueError(f"no echo attribute {value!r}; have {sorted(shots.echo_attrs)}")
+        return np.ascontiguousarray(shots.echo_attrs[value], dtype=float), value
+    return np.ascontiguousarray(value, dtype=float), "value"
+
+
+def _photo_from_shots(shots: Shots, size: int, lens: str, max_zenith: float, north: float,
+                      mirror: bool, echo_heights, min_height: float, max_range: float | None, value,
+                      ground_as: str) -> HemisphericalPhoto:
+    h = None if echo_heights is None else np.ascontiguousarray(echo_heights, dtype=float)
+    v, name = _echo_value(shots, value)
+    arrays = _core.hemi_from_shots(shots._to_core(attrs=False), int(size), lens, float(max_zenith),
+                                   float(north), bool(mirror), h, float(min_height),
+                                   None if max_range is None else float(max_range), v)
+    return HemisphericalPhoto._from_core(arrays, int(size), lens, max_zenith, north, mirror, name,
+                                         ground_as)
+
+
+def hemispherical_photo(shots: Shots, size: int = 2000, lens: str = "equidistant",
+                        max_zenith: float = 90.0, north: float = 0.0, mirror: bool = True,
+                        echo_heights=None, min_height: float = 0.0, max_range: float | None = None,
+                        value=None, ground_as: str = "gap") -> HemisphericalPhoto:
+    """The hemispherical photograph a scan position took: each pulse through
+    a pixel is a shot, a hit when it has an echo above ``min_height`` and
+    within ``max_range``, and ground when it returned but only from lower
+    or further, so the pixel's gap fraction is the share that met nothing.
+
+    Needs the pulses that returned nothing: a ray cloud, shots read with
+    their misses (:func:`sylva.io.read_rxp_shots` with ``fill_missing``), or
+    :meth:`sylva.Shots.fill_missing`. Give the shots in a levelled frame
+    (after the SOP) so that the zenith is up; the origins are not used. An
+    upright VZ scan leaves the cone above 30 degrees unsampled; see
+    :func:`hemispherical_photo_from_cloud` for a photograph from points
+    alone, such as a whole coregistered plot seen from the position.
+
+    Parameters
+    ----------
+    shots
+        Pulses of one scan position.
+    size
+        Pixels on a side. About twice ``max_zenith`` over the scan's angular
+        step keeps one pulse per pixel: 4500 for a 0.04 degree scan to the
+        horizon; coarser pools pulses and smooths the gap fraction, finer
+        leaves pixels empty.
+    lens : {"equidistant", "equisolid", "orthographic", "stereographic"}
+        Fisheye projection. ``"equidistant"`` (``r ∝ θ``) is what most
+        photograph analysis assumes; ``"equisolid"`` (``r ∝ 2 sin(θ/2)``)
+        is the Sigma 8 mm and Nikon FC-E8.
+    max_zenith
+        Zenith angle (degrees) on the image rim; up to 180 except for an
+        orthographic lens (90).
+    north
+        Azimuth (degrees clockwise from +y) at the top of the image.
+    mirror
+        True puts east on the left, as a camera on the ground sees it;
+        False puts east on the right, as on a map.
+    echo_heights
+        Height above ground per echo (``shots.n_echoes``), for
+        ``min_height``; without it every echo is canopy.
+    min_height
+        Echoes at or below this height (m) do not count as canopy.
+    max_range
+        Echoes beyond this range (m) do not count, for the sky seen through
+        a tall canopy or to keep the photograph to one tree.
+    value
+        An echo attribute name (``"reflectance"``, ``"range"``, ...) or one
+        value per echo, averaged over the hits of each pixel.
+    ground_as : {"gap", "canopy", "unseen"}
+        How ground pulses count in the gap fraction; see
+        :attr:`HemisphericalPhoto.ground_as`. On a slope the hillside fills
+        a sector above the horizon with them: ``"gap"`` reads it as sky,
+        ``"unseen"`` leaves it out.
+
+    Returns
+    -------
+    HemisphericalPhoto
+
+    Raises
+    ------
+    ValueError
+        For an unknown lens or ``ground_as``, an impossible ``max_zenith``
+        or arrays of the wrong length.
+
+    Examples
+    --------
+    >>> s = io.read_rxp_shots(pos.rxp, fill_missing=True).transform(pos.sop)
+    >>> xyz = s.echo_xyz()
+    >>> a, b, c = canopy.fit_ground_plane(xyz, centre=pos.sop[:2, 3], radius=25)
+    >>> heights = xyz[:, 2] - (a * xyz[:, 0] + b * xyz[:, 1] + c)
+    >>> photo = canopy.hemispherical_photo(s, size=4500, echo_heights=heights)
+    >>> photo.save("hemi.png")
+    >>> photo.lai()
+    """
+    if echo_heights is not None and len(echo_heights) != shots.n_echoes:
+        raise ValueError(f"echo_heights has {len(echo_heights)} values for {shots.n_echoes} echoes")
+    return _photo_from_shots(shots, size, lens, max_zenith, north, mirror, echo_heights, min_height,
+                             max_range, value, ground_as)
+
+
+def hemispherical_photo_from_cloud(cloud: PointCloud, origin=(0.0, 0.0, 0.0), size: int = 2000,
+                                   lens: str = "equidistant", max_zenith: float = 90.0,
+                                   north: float = 0.0, mirror: bool = True, footprint: float = 0.0,
+                                   spacing: float = 0.0, max_range: float | None = None,
+                                   min_height: float | None = None, height_attr: str = "height",
+                                   value=None) -> HemisphericalPhoto:
+    """A hemispherical photograph rendered from points: every point seen
+    from ``origin`` paints its pixel (or a disc of ``footprint`` around it)
+    as canopy, and the rest of the sky is a gap. This is the photograph a
+    camera would take, thresholded, from anywhere in a coregistered cloud,
+    a whole plot of merged scans included; it does not know which gaps a
+    scanner really saw through, so where the points are sparse it
+    over-reads the gaps (:func:`hemispherical_photo` does not).
+
+    Parameters
+    ----------
+    cloud
+        Points in a levelled frame (z up), e.g. one scan after its SOP or a
+        merged plot.
+    origin
+        Viewpoint in the cloud's frame: the scanner, or any point.
+    size, lens, max_zenith, north, mirror
+        The projection; see :func:`hemispherical_photo`.
+    footprint
+        Angular width (degrees) each point is painted with at least, e.g.
+        the beam divergence (0.02-0.035 for a RIEGL VZ); 0 paints one pixel.
+    spacing
+        The cloud's point spacing (m), e.g. the voxel size it was thinned
+        to: a point is painted as wide as that spacing subtends at its
+        range (2 cm at 10 m is 0.11 degrees), so that leaves do not show
+        their sampling up close while far ones stay sharp. The larger of
+        the two widths is used.
+    max_range
+        Points beyond this range (m) are not drawn.
+    min_height
+        Points at or below this height (m, from ``height_attr``) are not
+        drawn; None draws every point.
+    height_attr
+        Attribute holding height above ground, for ``min_height``.
+    value
+        An attribute name or one value per point, averaged per pixel.
+
+    Returns
+    -------
+    HemisphericalPhoto
+        With ``shots`` all zero; :attr:`HemisphericalPhoto.gap` is 0 or 1.
+
+    Raises
+    ------
+    ValueError
+        For an unknown lens or attribute, an impossible ``max_zenith`` or a
+        negative ``footprint`` or ``spacing``.
+
+    Examples
+    --------
+    >>> photo = canopy.hemispherical_photo_from_cloud(plot, origin=pos.sop[:3, 3], spacing=0.02)
+    >>> photo.save("hemi_points.png")
+    """
+    xyz = cloud.xyz
+    v = None
+    name = None
+    if value is not None:
+        if isinstance(value, str):
+            if value not in cloud.attrs:
+                raise ValueError(f"no attribute {value!r}; have {sorted(cloud.attrs)}")
+            v, name = np.asarray(cloud.attrs[value], dtype=float), value
+        else:
+            v, name = np.asarray(value, dtype=float), "value"
+    if min_height is not None:
+        keep = np.asarray(cloud.heights(height_attr)) > min_height
+        xyz = xyz[keep]
+        if v is not None:
+            v = v[keep]
+    arrays = _core.hemi_from_points(np.ascontiguousarray(xyz, dtype=float),
+                                    tuple(float(o) for o in origin), int(size), lens,
+                                    float(max_zenith), float(north), bool(mirror),
+                                    float(np.radians(footprint)), float(spacing),
+                                    None if max_range is None else float(max_range),
+                                    None if v is None else np.ascontiguousarray(v))
+    return HemisphericalPhoto._from_core(arrays, int(size), lens, max_zenith, north, mirror, name)
