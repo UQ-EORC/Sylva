@@ -8,6 +8,10 @@ Field data rarely comes with ground truth. These plots have known stems, and
 the scans reproduce what breaks forest registration: point density and noise
 that fall off with range, incidence drop-out, and above all mutual occlusion,
 which is why two scans of one plot may share only a fraction of their stems.
+
+The plot (a few dozen trees and seven terrain coefficients) is drawn here; the
+points of a scan are sampled by the core (``sylva_rs::coreg::simulate``), with
+the same random stream as the NumPy implementation it replaced.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .. import _core
 from ..pointcloud import PointCloud
 from .transforms import invert, se3_exp, yaw_transform
 
@@ -273,146 +278,27 @@ def scan_plot(
     scanner : numpy.ndarray
         ``(3,)`` scanner position in the plot frame.
     """
-    rng = np.random.default_rng(seed)
+    trees = (
+        np.array(
+            [[t.x, t.y, t.base_z, t.dbh, t.height, *np.asarray(t.lean, dtype=float).reshape(3),
+              t.taper, t.crown_base] for t in plot.trees],
+            dtype=float,
+        ).reshape(-1, 10)
+    )
     scanner_xy = np.asarray(scanner_xy, dtype=float).reshape(2)
-    scanner = np.array(
-        [*scanner_xy, float(plot.terrain(scanner_xy.reshape(1, 2))[0]) + scanner_height]
+    xyz, label, ranges, visible, scanner = _core.coreg_simulate_scan(
+        trees, [float(c) for c in plot.terrain_coeffs], float(plot.size),
+        [float(scanner_xy[0]), float(scanner_xy[1])], int(seed),
+        max_range=float(max_range), scanner_height=float(scanner_height),
+        angular_step=float(angular_step), range_noise=float(range_noise),
+        ground_density=float(ground_density), foliage_density=float(foliage_density),
+        understorey_density=float(understorey_density), occlusion=bool(occlusion),
+        world_frame=bool(world_frame), min_stem_returns=int(min_stem_returns),
     )
-    blockers = (
-        np.array([[t.x, t.y, 0.5 * t.dbh] for t in plot.trees]) if plot.trees else np.zeros((0, 3))
-    )
-    chunks, labels = [], []
-    visible = np.zeros(len(plot.trees), dtype=bool)
-    for i, tree in enumerate(plot.trees):
-        pts = _sample_stem(tree, scanner, rng, max_range, angular_step)
-        if len(pts) == 0:
-            continue
-        if occlusion:
-            pts = pts[_visible_mask(pts, scanner, blockers, skip=i)]
-        visible[i] = len(pts) >= min_stem_returns
-        if len(pts):
-            chunks.append(pts)
-            labels.append(np.full(len(pts), i, dtype=np.int32))
-    foliage = _sample_foliage(plot, scanner, rng, max_range, foliage_density)
-    if occlusion and len(foliage):
-        foliage = foliage[_visible_mask(foliage, scanner, blockers, skip=-1, fraction=0.55)]
-    ground = _sample_ground(plot, scanner, rng, max_range, ground_density)
-    if occlusion and len(ground):
-        ground = ground[_visible_mask(ground, scanner, blockers, skip=-1)]
-    under = _sample_understorey(plot, scanner, rng, max_range, understorey_density)
-    for part, label in ((foliage, -2), (ground, -1), (under, -3)):
-        if len(part):
-            chunks.append(part)
-            labels.append(np.full(len(part), label, dtype=np.int32))
-    if not chunks:
+    scanner = np.array(scanner)
+    if len(xyz) == 0:
         return PointCloud(np.zeros((0, 3))), visible, scanner
-    xyz = np.vstack(chunks)
-    ranges = np.linalg.norm(xyz - scanner, axis=1)
-    xyz = xyz + rng.normal(0, range_noise, size=xyz.shape) * (1.0 + ranges[:, None] / max_range)
-    if not world_frame:
-        xyz = xyz - scanner
-    return PointCloud(xyz, {"label": np.concatenate(labels), "range": ranges}), visible, scanner
-
-
-def _sample_stem(tree: Tree, scanner, rng, max_range, angular_step) -> np.ndarray:
-    """The scanner-facing half of a stem at a realistic angular density."""
-    distance = float(np.hypot(tree.x - scanner[0], tree.y - scanner[1]))
-    if distance > max_range or distance < 0.3:
-        return np.zeros((0, 3))
-    top = min(tree.crown_base, tree.height)
-    n_vert = int(np.clip(top / (distance * angular_step), 8, 4000))
-    n_horiz = int(np.clip(tree.dbh * np.pi / (distance * angular_step), 4, 800))
-    n = int(np.clip(n_vert * n_horiz, 0, 60000))
-    if n < 10:
-        return np.zeros((0, 3))
-    h = rng.uniform(0.05, top, size=n)
-    axis_pts = tree.axis_point(h)
-    radius = tree.radius_at(h)
-    to_scanner = scanner[:2] - axis_pts[:, :2]
-    bearing = np.arctan2(to_scanner[:, 1], to_scanner[:, 0])
-    offset = rng.uniform(-np.pi / 2, np.pi / 2, size=n)
-    keep = rng.random(n) < np.cos(offset) ** 0.7  # grazing incidence drops out
-    theta = bearing + offset
-    xyz = np.column_stack(
-        [
-            axis_pts[:, 0] + radius * np.cos(theta),
-            axis_pts[:, 1] + radius * np.sin(theta),
-            axis_pts[:, 2],
-        ]
-    )
-    return xyz[keep]
-
-
-def _sample_ground(plot: Plot, scanner, rng, max_range, density) -> np.ndarray:
-    n = int(density * np.pi * max_range**2)
-    r = rng.uniform(
-        0.5, max_range, size=n
-    )  # uniform in radius: the 1/r thinning of grazing returns
-    phi = rng.uniform(0, 2 * np.pi, size=n)
-    xy = scanner[:2] + np.column_stack([r * np.cos(phi), r * np.sin(phi)])
-    xy = xy[np.all(np.abs(xy) <= plot.size / 2 + 5.0, axis=1)]
-    return np.column_stack([xy, plot.terrain(xy) + rng.normal(0, 0.015, len(xy))])
-
-
-def _sample_foliage(plot: Plot, scanner, rng, max_range, density) -> np.ndarray:
-    out = []
-    for tree in plot.trees:
-        d = float(np.hypot(tree.x - scanner[0], tree.y - scanner[1]))
-        if d > max_range:
-            continue
-        n = int(np.clip(density * (tree.height - tree.crown_base) / max(d / 8.0, 1.0), 0, 8000))
-        if n < 5:
-            continue
-        crown_r = 0.25 * tree.height * rng.uniform(0.6, 1.0)
-        h = rng.uniform(tree.crown_base, tree.height, size=n)
-        centre = tree.axis_point(h)
-        spread = (
-            crown_r
-            * (1.0 - (h - tree.crown_base) / max(tree.height - tree.crown_base, 1e-6)) ** 0.5
-        )
-        angle = rng.uniform(0, 2 * np.pi, n)
-        rad = spread * np.sqrt(rng.random(n))
-        out.append(
-            np.column_stack(
-                [
-                    centre[:, 0] + rad * np.cos(angle),
-                    centre[:, 1] + rad * np.sin(angle),
-                    centre[:, 2] + rng.normal(0, 0.3, n),
-                ]
-            )
-        )
-    return np.vstack(out) if out else np.zeros((0, 3))
-
-
-def _sample_understorey(plot: Plot, scanner, rng, max_range, density) -> np.ndarray:
-    """Low vegetation: the main source of false stems."""
-    n = int(density * np.pi * max_range**2)
-    r = rng.uniform(0.5, max_range, size=n)
-    phi = rng.uniform(0, 2 * np.pi, size=n)
-    xy = scanner[:2] + np.column_stack([r * np.cos(phi), r * np.sin(phi)])
-    xy = xy[np.all(np.abs(xy) <= plot.size / 2 + 5.0, axis=1)]
-    return np.column_stack([xy, plot.terrain(xy) + rng.exponential(0.45, len(xy))])
-
-
-def _visible_mask(points, scanner, blockers, skip: int = -1, fraction: float = 1.0) -> np.ndarray:
-    """Points not shadowed by a stem (opaque vertical cylinders, in plan view)."""
-    if len(blockers) == 0 or len(points) == 0:
-        return np.ones(len(points), dtype=bool)
-    d = points[:, :2] - scanner[:2]
-    length = np.maximum(np.linalg.norm(d, axis=1), 1e-9)
-    direction = d / length[:, None]
-    visible = np.ones(len(points), dtype=bool)
-    for j, (bx, by, br) in enumerate(blockers):
-        if j == skip:
-            continue
-        to_blocker = np.array([bx, by]) - scanner[:2]
-        along = direction @ to_blocker
-        perp = np.abs(direction[:, 0] * to_blocker[1] - direction[:, 1] * to_blocker[0])
-        hit = (perp < br) & (along > 0.05) & (along < length - br)
-        if fraction < 1.0:
-            hit &= np.random.default_rng(j).random(len(points)) < fraction
-        visible &= ~hit
-    return visible
+    return PointCloud(xyz, {"label": label, "range": ranges}), visible, scanner
 
 
 @dataclass

@@ -12,6 +12,7 @@ pub mod pipeline;
 pub mod posegraph;
 pub mod reflectors;
 pub mod refine;
+pub mod simulate;
 pub mod stemmap;
 pub mod survey;
 pub mod transforms;

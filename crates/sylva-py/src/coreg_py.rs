@@ -4,7 +4,8 @@
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Bindings for coregistration's numerical layers: rigid transforms
 //! (sylva_rs::coreg::transforms), reflective targets (coreg_reflectors), the
-//! pose graph (coreg_posegraph) and joint refinement (coreg_refine).
+//! pose graph (coreg_posegraph), joint refinement (coreg_refine) and the
+//! virtual scans of sylva.coreg.simulate (coreg_simulate_scan).
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
 
 use std::path::PathBuf;
@@ -17,6 +18,7 @@ use pyo3::types::{PyDict, PyList};
 use sylva_rs::coreg::posegraph as pg;
 use sylva_rs::coreg::reflectors as rf;
 use sylva_rs::coreg::refine as refine;
+use sylva_rs::coreg::simulate as sim;
 use sylva_rs::coreg::transforms as tf;
 use sylva_rs::Point;
 
@@ -335,6 +337,28 @@ fn coreg_refine_joint<'py>(py: Python<'py>, points: Vec<PyReadonlyArray2<f64>>, 
     Ok(d)
 }
 
+/// A virtual scan of a synthetic plot: `trees` is `(n, 10)` with columns x, y,
+/// base z, DBH, height, the three lean components, taper and crown base;
+/// returns the points, their labels, the pre-noise ranges, the visible flags
+/// per tree and the scanner position.
+#[pyfunction]
+#[pyo3(signature = (trees, terrain, size, scanner_xy, seed, max_range=30.0, scanner_height=1.6, angular_step=0.0012, range_noise=0.004, ground_density=150.0, foliage_density=2500.0, understorey_density=70.0, occlusion=true, world_frame=true, min_stem_returns=150))]
+fn coreg_simulate_scan<'py>(py: Python<'py>, trees: PyReadonlyArray2<f64>, terrain: [f64; 7], size: f64, scanner_xy: [f64; 2], seed: u64, max_range: f64, scanner_height: f64, angular_step: f64, range_noise: f64,
+                            ground_density: f64, foliage_density: f64, understorey_density: f64, occlusion: bool, world_frame: bool, min_stem_returns: usize)
+                            -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<i32>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<bool>>, (f64, f64, f64))> {
+    let t = trees.as_array();
+    if t.ndim() != 2 || t.shape()[1] != 10 {
+        return Err(PyValueError::new_err(format!("trees must have shape (n, 10), got {:?}", t.shape())));
+    }
+    let trees: Vec<sim::Tree> = (0..t.shape()[0])
+        .map(|i| sim::Tree { x: t[[i, 0]], y: t[[i, 1]], base_z: t[[i, 2]], dbh: t[[i, 3]], height: t[[i, 4]], lean: [t[[i, 5]], t[[i, 6]], t[[i, 7]]], taper: t[[i, 8]], crown_base: t[[i, 9]] })
+        .collect();
+    let p = sim::ScanParams { max_range, scanner_height, angular_step, range_noise, ground_density, foliage_density, understorey_density, occlusion, world_frame, min_stem_returns };
+    let s = py.detach(|| sim::scan_plot(&trees, size, &terrain, scanner_xy, seed, &p));
+    let sc = (s.scanner[0], s.scanner[1], s.scanner[2]);
+    Ok((crate::xyz_into_py(py, s.xyz), s.label.into_pyarray(py), s.range.into_pyarray(py), s.visible.into_pyarray(py), sc))
+}
+
 /// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
@@ -358,6 +382,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         wrap_pyfunction!(coreg_default_information, m)?,
         wrap_pyfunction!(coreg_adjoint, m)?,
         wrap_pyfunction!(coreg_plane_edge_information, m)?,
+        wrap_pyfunction!(coreg_simulate_scan, m)?,
         wrap_pyfunction!(coreg_posegraph_residuals, m)?,
         wrap_pyfunction!(coreg_posegraph_total_error, m)?,
         wrap_pyfunction!(coreg_posegraph_components, m)?,
