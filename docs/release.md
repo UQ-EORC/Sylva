@@ -47,9 +47,9 @@ replaced, and the name is claimed for good. PyPI is the same in practice.
 ## Cutting a release
 
 1. Set the version in `Cargo.toml` (`[workspace.package]`), in `pyproject.toml`,
-   in the `sylva-rs` dependency of `crates/sylva-cli/Cargo.toml`, in
-   `CITATION.cff` (version and date) and in the citation of `README.md` and
-   `docs/index.md`; run `cargo check` so `Cargo.lock` follows.
+   in the `sylva-rs` dependency of `crates/sylva-cli/Cargo.toml` and in
+   `CITATION.cff` (version and date); run `cargo check` so `Cargo.lock`
+   follows.
 2. Check locally:
 
     ```bash
@@ -60,7 +60,8 @@ replaced, and the name is claimed for good. PyPI is the same in practice.
 
 3. Commit, tag and push: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
 4. Once Zenodo has archived the release, record its version DOI in
-   `CITATION.cff`, `README.md` and `docs/index.md`.
+   `CITATION.cff`, and bump the version and DOI of the citation in
+   `README.md` and `docs/index.md`.
 
 The `release` workflow then tests, checks that the tag matches both version
 numbers, builds abi3 wheels (one per platform serves every Python ≥ 3.10) for
