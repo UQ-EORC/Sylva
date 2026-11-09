@@ -20,20 +20,28 @@ use crate::{Error, Point, Result};
 
 /// Values of the `state` metric.
 pub const UNOBSERVED: u8 = 0;
+/// Reached only by pulses already stopped by an echo before it.
 pub const OCCLUDED: u8 = 1;
+/// Crossed by a pulse, holds no echo.
 pub const EMPTY: u8 = 2;
+/// Holds at least one echo.
 pub const FILLED: u8 = 3;
 
 /// A raw accumulator by name, in its stored precision.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FieldData {
+    /// The integer counters (`num_hits`, `num_beams`, ...) and `predominant_tree`.
     I32(Vec<i32>),
+    /// The single-precision sums, `ppl_lambda` and `wood_volume`.
     F32(Vec<f32>),
+    /// `ground_height`, `(ny, nx)`.
     F64(Vec<f64>),
+    /// `subvoxel_counts`, `(nz, ny, nx, split³)`.
     U8(Vec<u8>),
 }
 
 impl FieldData {
+    /// The values widened to `f64`.
     pub fn to_f64(&self) -> Vec<f64> {
         match self {
             FieldData::I32(v) => v.iter().map(|&x| x as f64).collect(),
@@ -51,15 +59,23 @@ pub struct OcclusionProfile {
     /// Layer centres (m above the ground or the grid floor); one fewer than
     /// the other columns when the canopy space is thinner than a voxel.
     pub height: Vec<f64>,
+    /// Voxels of the canopy space in each layer.
     pub n_voxels: Vec<i64>,
+    /// Share (0–1) of each layer's voxels a pulse went through or ended in; NaN for an empty layer.
     pub observed: Vec<f64>,
+    /// Share (0–1) of each layer's voxels reached only by pulses already stopped; NaN for an empty layer.
     pub occluded: Vec<f64>,
+    /// Share (0–1) of each layer's voxels nothing came near; NaN for an empty layer.
     pub unobserved: Vec<f64>,
+    /// Mean pulses entering a voxel of each layer; NaN for an empty layer.
     pub mean_beams: Vec<f64>,
     /// Plot totals: shares observed, occluded, unobserved, and the top used.
     pub total_observed: f64,
+    /// Share (0–1) of the whole canopy space that was occluded.
     pub total_occluded: f64,
+    /// Share (0–1) of the whole canopy space that was unobserved.
     pub total_unobserved: f64,
+    /// Top of the canopy space used (m): `max_height`, or the highest filled voxel.
     pub top: f64,
 }
 

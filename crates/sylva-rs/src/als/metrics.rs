@@ -93,6 +93,7 @@ impl Default for MetricParams {
 }
 
 impl MetricParams {
+    /// Reject non-finite heights and a non-positive `entropy_bin` with an error.
     pub fn check(&self) -> Result<()> {
         if !self.threshold.is_finite() {
             return Err(Error::invalid(format!("threshold must be a finite height, got {}", self.threshold)));
@@ -115,8 +116,11 @@ impl MetricParams {
 /// Which optional attributes the returns have; each adds its metrics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Available {
+    /// An `intensity` attribute (digital numbers): adds the `i*` metrics.
     pub intensity: bool,
+    /// A `return_number` attribute: adds `p1th`..`p5th`, and lets `cover` use first returns only.
     pub returns: bool,
+    /// A `classification` attribute: adds `pground` (and `ipground` with intensity).
     pub classification: bool,
 }
 
@@ -184,9 +188,13 @@ pub fn select(all: &[String], wanted: Option<&[String]>) -> Result<Vec<usize>> {
 /// (NaN when absent).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Return {
+    /// Height above ground (m).
     pub z: f64,
+    /// Recorded intensity (digital numbers); NaN when the cloud has none.
     pub intensity: f64,
+    /// Return number within its pulse (1 = first); NaN when the cloud has none.
     pub return_number: f64,
+    /// LAS classification code (2 = ground); NaN when the cloud has none.
     pub classification: f64,
 }
 
@@ -518,7 +526,9 @@ pub fn chunk_cells(cat: &Catalog, chunk: &Chunk, cloud: &PointCloud, grid: &Rast
 /// Metric rasters on the catalogue grid, one per name.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetricRasters {
+    /// Metric names, in the order of [`metric_names`] or as selected.
     pub names: Vec<String>,
+    /// One raster per name, on the catalogue grid; NaN in cells without returns.
     pub rasters: Vec<Raster>,
 }
 
@@ -590,7 +600,14 @@ fn ret_attrs(cols: &Columns, i: usize) -> Return {
 #[derive(Debug, Clone)]
 pub enum Plot {
     /// A circle; a point on the circle is inside.
-    Circle { x: f64, y: f64, radius: f64 },
+    Circle {
+        /// Centre easting (m, in the points' CRS).
+        x: f64,
+        /// Centre northing (m, in the points' CRS).
+        y: f64,
+        /// Radius (m).
+        radius: f64,
+    },
     /// Polygons (closed sets, holes excluded), as [`crate::geo::masks`] tests them.
     Polygon(MultiPolygon),
 }

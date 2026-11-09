@@ -53,21 +53,60 @@ class GroundModel:
         self.observed = np.ascontiguousarray(self.observed, dtype=bool)
 
     def height_at(self, xy: np.ndarray) -> np.ndarray:
-        """Terrain height at ``(n, 2)`` locations (clamped at the edges)."""
+        """Terrain height at ``(n, 2)`` locations (clamped at the edges).
+
+        Parameters
+        ----------
+        xy
+            ``(n, 2)`` horizontal positions (m) in the frame the model was fitted in.
+            Positions beyond the grid are moved to its edge, so they take the height of the
+            nearest edge cell.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(n,)`` bilinearly interpolated terrain elevation (m).
+        """
         xy = np.ascontiguousarray(np.asarray(xy, dtype=np.float64).reshape(-1, 2))
         return _core.coreg_ground_height(
             self.elevation, float(self.origin[0]), float(self.origin[1]), float(self.cell_size), xy
         )
 
     def support(self, xy: np.ndarray) -> np.ndarray:
-        """Were ``(n, 2)`` locations backed by ground returns?"""
+        """Were ``(n, 2)`` locations backed by ground returns?
+
+        Parameters
+        ----------
+        xy
+            ``(n, 2)`` horizontal positions (m) in the model's frame; positions beyond the
+            grid are moved to its edge.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(n,)`` bool: True where the nearest cell was observed rather than filled.
+        """
         xy = np.ascontiguousarray(np.asarray(xy, dtype=np.float64).reshape(-1, 2))
         return _core.coreg_ground_support(
             self.observed, float(self.origin[0]), float(self.origin[1]), float(self.cell_size), xy
         )
 
     def normalise(self, points: np.ndarray, dtype=np.float64) -> np.ndarray:
-        """Heights above ground of ``(n, 3)`` points."""
+        """Heights above ground of ``(n, 3)`` points.
+
+        Parameters
+        ----------
+        points
+            ``(n, 3)`` points in the model's frame, z up.
+        dtype
+            Type of the result; float64 by default (float32 halves the memory of a whole
+            scan's heights).
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(n,)`` ``z`` minus the interpolated terrain under each point (m).
+        """
         points = np.asarray(points, dtype=np.float64).reshape(-1, 3)
         if len(points) == 0:
             return np.zeros(0, dtype=dtype)

@@ -32,7 +32,8 @@ accident.
 
 | Directory | What |
 |---|---|
-| `io/`, `riscan.rs` | file formats: LAS/LAZ, PLY, text, RIEGL `.rxp`, RiSCAN projects |
+| `io/`, `riscan.rs` | file formats: LAS/LAZ, PLY, text, meshes, GeoTIFF, shots Parquet, RIEGL `.rxp` / `.rdbx` and MTA, RiSCAN projects |
+| `pointcloud.rs`, `transform.rs`, `error.rs` | the point cloud type, rigid transforms, the error type |
 | `filters.rs`, `cluster.rs`, `geo/` | subsampling, neighbourhoods, crops, masks, coordinates |
 | `ground.rs`, `raster.rs` | ground classification, DTM/CHM rasters |
 | `trees/`, `qsm/`, `leaves/` | stems, segmentation, cylinder models, foliage |
@@ -46,7 +47,7 @@ Two types carry most of the data. `PointCloud` is an `(N, 3)` array of
 coordinates plus named attributes; `Shots` is pulse-centric — per-pulse origin
 and direction with a compressed list of echoes. A `Point` is simply
 `[f64; 3]`, an array of three doubles, and `Attr` is "an attribute column of
-one of nine numeric types" (`pointcloud.rs:18`).
+one of nine numeric types" (`pointcloud.rs:38`).
 
 ## The constructs that carry the code
 
@@ -85,7 +86,9 @@ let hits: Vec<_> = (0..shots.n_shots())
 ```
 
 `fold` gives every thread its own scratch and output; `reduce` merges those.
-This is how `Engine::add` traces pulses (`voxel/traverse.rs`).
+This is how `Engine::add` traces pulses (`voxel/traverse.rs`; the real code
+builds its per-thread state by hand and maps it to the hits before the
+`reduce`, but the shape is this).
 
 **Shared counters are atomics.** Where threads must write the same grid, each
 accumulator is an atomic the hardware updates indivisibly, so no locking is
@@ -134,10 +137,11 @@ once and assume it was repeated; it is not a run-time cost.
 class method. `Default` provides the default settings structs, `Display`
 provides the text form used in error messages.
 
-**`unsafe` appears in exactly one place**: loading RiVLib, the proprietary
-RIEGL library, at run time (`io/riegl.rs`). Calling into C cannot be checked
-by the compiler, so each block carries a `SAFETY:` note saying why it is
-sound. Nothing else in the crate uses it.
+**`unsafe` appears in three files, all for the same reason**: loading the
+proprietary RIEGL libraries at run time, RiVLib in `io/riegl.rs` and
+`io/rxp_mta.rs` and the RDB SDK in `io/rdb.rs`. Calling into C cannot be
+checked by the compiler, so each block carries a `SAFETY:` note saying why it
+is sound. Nothing else in the crate uses it.
 
 ## Conventions
 
@@ -147,7 +151,7 @@ for the person running the command, not for the developer.
 
 *Progress.* Long work opens a task with `util::progress::start(label, total)`
 and counts up; nothing is printed unless a caller is watching. See
-`sylva.progress` in the Python docs.
+`sylva.util.progress` in the Python docs.
 
 *Memory.* Allocations that scale with settings rather than with the data —
 voxel grids, neighbour graphs — are sized and checked first
@@ -155,16 +159,17 @@ voxel grids, neighbour graphs — are sized and checked first
 of killing the process.
 
 *Tests.* Unit tests live at the bottom of the file they test, inside
-`#[cfg(test)] mod tests`, which is compiled only by `cargo test`. They are the
-quickest description of what a function is expected to do, and they read as
-plain assertions.
+`#[cfg(test)] mod tests`, which is compiled only by `cargo test`; a few
+end-to-end tests sit in `crates/sylva-rs/tests/`. They are the quickest
+description of what a function is expected to do, and they read as plain
+assertions.
 
 ## From Python to the core
 
-A Python call reaches Rust in three short steps. Taking `crop_box_mask`:
+A Python call reaches Rust in three short steps. Taking `crop_box`:
 
-1. `python/sylva/filters.py` — the public function: docstring, argument
-   checking, NumPy in and out.
+1. `python/sylva/filters.py` — the public function `crop_box`: docstring,
+   argument checking, NumPy in and out; it calls `_core.crop_box_mask`.
 2. `crates/sylva-py/src/filters_py.rs` — the binding. It converts and nothing
    else:
 
@@ -180,6 +185,8 @@ A Python call reaches Rust in three short steps. Taking `crop_box_mask`:
 3. `crates/sylva-rs/src/filters.rs` — the computation itself.
 
 So to find what a Python function does, open the file of the same name under
-`crates/sylva-rs/src/`; the binding in between is only plumbing. The division
+`crates/sylva-rs/src/` (usually: `voxels.py` is `voxel/`, `coreg/stems.py` is
+`coreg/stemmap.rs`, `qsm/mesh.py` is `io/mesh.rs`, and the plotting modules
+have no Rust side); the binding in between is only plumbing. The division
 of labour, and why it is drawn there, is in
 [The Rust core](rust-core.md).

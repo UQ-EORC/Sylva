@@ -37,9 +37,13 @@ use super::{positive, non_negative};
 /// A tree as matching sees it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TreeRow {
+    /// x of the stem position (m); both epochs in one frame.
     pub x: f64,
+    /// y of the stem position (m); both epochs in one frame.
     pub y: f64,
+    /// DBH (m); NaN when unknown, which disables the DBH criteria for this tree.
     pub dbh: f64,
+    /// Tree height (m); NaN when unknown, which drops the height term of the cost.
     pub height: f64,
 }
 
@@ -56,6 +60,7 @@ pub struct MatchParams {
     /// Weights of the squared relative DBH and height differences in the
     /// cost, next to the squared distance over `max_distance`.
     pub dbh_weight: f64,
+    /// Weight of the squared relative height difference in the cost.
     pub height_weight: f64,
     /// A stem explains a neighbour that lost its match (a merge or a split)
     /// when its DBH is at least this fraction of the quadratic sum of the
@@ -72,7 +77,9 @@ impl Default for MatchParams {
 /// Status of a tree of the first epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusA {
+    /// Matched to a tree of the second epoch.
     Survivor,
+    /// Not found in the second epoch.
     Dead,
     /// Found in the second epoch only as part of a neighbour's stem.
     Merged,
@@ -83,7 +90,9 @@ pub enum StatusA {
 /// Status of a tree of the second epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusB {
+    /// Matched to a tree of the first epoch.
     Survivor,
+    /// Not present in the first epoch.
     Recruit,
     /// Part of a stem that the first epoch saw as one with a neighbour.
     Split,
@@ -93,6 +102,7 @@ pub enum StatusB {
 }
 
 impl StatusA {
+    /// The status as a lower-case string: `survivor`, `dead`, `merged` or `split`.
     pub fn name(self) -> &'static str {
         match self {
             StatusA::Survivor => "survivor",
@@ -104,6 +114,7 @@ impl StatusA {
 }
 
 impl StatusB {
+    /// The status as a lower-case string: `survivor`, `recruit`, `split` or `merged`.
     pub fn name(self) -> &'static str {
         match self {
             StatusB::Survivor => "survivor",
@@ -121,13 +132,17 @@ pub struct TreeMatch {
     pub pairs: Vec<(usize, usize)>,
     /// Horizontal distance of each pair (m).
     pub distance: Vec<f64>,
+    /// Assignment cost of each pair, `(d / max_distance)² + dbh_weight ddbh² + height_weight dh²` with the relative DBH and height differences.
     pub cost: Vec<f64>,
+    /// Status of every tree of the first epoch.
     pub status_a: Vec<StatusA>,
+    /// Status of every tree of the second epoch.
     pub status_b: Vec<StatusB>,
     /// For a merged tree of the first epoch, the stem of the second it went
     /// into; for a split tree of the second, the stem of the first it came
     /// from; otherwise the matched partner, or `None`.
     pub related_a: Vec<Option<usize>>,
+    /// Counterpart of `related_a` for the trees of the second epoch.
     pub related_b: Vec<Option<usize>>,
 }
 
@@ -387,6 +402,7 @@ pub fn match_trees(a: &[TreeRow], b: &[TreeRow], p: &MatchParams) -> Result<Tree
 pub struct IncrementParams {
     /// Heights (m above ground) of the stem slices.
     pub slice_heights: Vec<f64>,
+    /// Vertical extent (m) of each slice, centred on its height.
     pub slice_thickness: f64,
     /// Only points this close to the stem centre (m) enter a slice.
     pub search_radius: f64,
@@ -407,6 +423,7 @@ pub struct IncrementParams {
     /// `top_gap`, count towards its top: segmentation often leaves a thin
     /// leader unassigned.
     pub top_radius: f64,
+    /// Largest vertical gap (m) between successive unassigned points continuing a tree's top.
     pub top_gap: f64,
     /// Distance (m) from the RANSAC circle within which slice points are
     /// inliers; NaN for `max(0.01, 3 sigma)`. Give both epochs the same
@@ -434,17 +451,23 @@ impl Default for IncrementParams {
 pub struct TreeMeasure {
     /// Diameter and its standard error at each slice height (NaN if none).
     pub diameter: Vec<f64>,
+    /// Standard error of the fitted diameter at each slice (m); NaN where no circle was fitted.
     pub diameter_se: Vec<f64>,
     /// DBH at 1.3 m from a weighted line through the slice diameters.
     pub dbh: f64,
+    /// Standard error of `dbh` (m), including `dbh_accuracy`.
     pub dbh_se: f64,
     /// Change of diameter per metre of height (negative for a tapering stem).
     pub taper: f64,
     /// Highest point above ground and its uncertainty.
     pub height: f64,
+    /// One-sigma uncertainty of `height` (m).
     pub height_se: f64,
+    /// Crown projection area (m²); NaN when the tree has no crown metrics.
     pub crown_area: f64,
+    /// Crown volume (m³) of the stacked hulls of the crown; NaN when the tree has no crown metrics.
     pub crown_volume: f64,
+    /// Points labelled with this tree (finite height only).
     pub n_points: usize,
 }
 
@@ -677,6 +700,7 @@ pub enum Change {
 }
 
 impl Change {
+    /// The class as a lower-case string: `growth`, `below_detection`, `decrease` or `unmeasured`.
     pub fn name(self) -> &'static str {
         match self {
             Change::Growth => "growth",
@@ -690,17 +714,27 @@ impl Change {
 /// Increment of one survivor.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Increment {
+    /// DBH increment (m), the weighted mean of the paired slice differences; NaN with fewer than `min_slices` pairs.
     pub d_dbh: f64,
+    /// Standard error of `d_dbh` (m), registration uncertainty included.
     pub d_dbh_se: f64,
+    /// Minimum detectable DBH increment (m): `d_dbh_se` times the normal quantile of `confidence`.
     pub d_dbh_mdi: f64,
     /// Slices measured in both epochs.
     pub n_slices: usize,
+    /// Class of the DBH increment against its minimum detectable increment.
     pub dbh_change: Change,
+    /// Height increment (m), second epoch minus first.
     pub d_height: f64,
+    /// Standard error of `d_height` (m), from the two height uncertainties.
     pub d_height_se: f64,
+    /// Minimum detectable height increment (m).
     pub d_height_mdi: f64,
+    /// Class of the height increment against its minimum detectable increment.
     pub height_change: Change,
+    /// Crown projection area change (m²), descriptive only (no detection level).
     pub d_crown_area: f64,
+    /// Crown volume change (m³), descriptive only (no detection level).
     pub d_crown_volume: f64,
     /// A decrease in DBH beyond detection, or an increase above
     /// `max_dbh_increment`.

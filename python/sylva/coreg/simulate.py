@@ -36,11 +36,35 @@ class Tree:
     crown_base: float
 
     def radius_at(self, h):
-        """Stem radius at height ``h`` above the base."""
+        """Stem radius at height ``h`` above the base.
+
+        Parameters
+        ----------
+        h
+            Height above the stem base (m), a scalar or an array.
+
+        Returns
+        -------
+        numpy.ndarray
+            Radius (m): half the DBH at 1.3 m, narrowing by ``taper`` m per metre of height,
+            never below 0.01 m.
+        """
         return np.maximum(0.5 * self.dbh - self.taper * (np.asarray(h, dtype=float) - 1.3), 0.01)
 
     def axis_point(self, h) -> np.ndarray:
-        """Axis position at height ``h`` above the base."""
+        """Axis position at height ``h`` above the base.
+
+        Parameters
+        ----------
+        h
+            Height above the stem base (m), a scalar or ``(n,)`` array.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(n, 3)`` points on the stem axis in the plot frame: the base displaced along the
+            unit ``lean`` vector until it has risen ``h``.
+        """
         h = np.atleast_1d(np.asarray(h, dtype=float))
         return (
             np.array([self.x, self.y, self.base_z])
@@ -58,7 +82,18 @@ class Plot:
     seed: int = 0
 
     def terrain(self, xy: np.ndarray) -> np.ndarray:
-        """Terrain elevation at ``(n, 2)`` locations."""
+        """Terrain elevation at ``(n, 2)`` locations.
+
+        Parameters
+        ----------
+        xy
+            ``(n, 2)`` horizontal positions (m) in the plot frame.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(n,)`` elevation (m): a plane plus two sinusoids, from ``terrain_coeffs``.
+        """
         xy = np.asarray(xy, dtype=float).reshape(-1, 2)
         a = self.terrain_coeffs
         return (
@@ -78,6 +113,7 @@ class Plot:
 
     @property
     def diameters(self) -> np.ndarray:
+        """``(n,)`` DBH of every simulated tree, m."""
         return np.array([t.dbh for t in self.trees])
 
 
@@ -96,6 +132,28 @@ def simulate_plot(
     """A plot of ``n_trees`` on undulating terrain.
 
     Positions by dart throwing with a minimum spacing, DBH log-normal.
+
+    Parameters
+    ----------
+    size
+        Side of the square plot (m), centred on the origin of the plot frame.
+    n_trees
+        Trees to place; fewer if the spacing cannot be met in ``400 * n_trees`` throws.
+    seed
+        Seed of every random draw.
+    dbh_mean, dbh_sigma
+        Median DBH (m) and the standard deviation of its logarithm; DBH is clipped to
+        0.07-0.95 m, and tree height follows DBH.
+    min_spacing
+        Least distance between stems (m).
+    slope
+        Largest terrain gradient along x and along y (rise over run), each drawn uniformly
+        from ``[-slope, slope]``.
+    relief
+        Largest amplitude (m) of each of the two sinusoidal undulations (wavelengths of
+        about 75 m in x and 57 m in y).
+    max_lean_deg
+        Largest stem lean from vertical (degrees), drawn uniformly from 0.
 
     Returns
     -------
@@ -162,6 +220,46 @@ def scan_plot(
     min_stem_returns: int = 150,
 ) -> tuple[PointCloud, np.ndarray, np.ndarray]:
     """A virtual scan of ``plot`` from ``scanner_xy``.
+
+    Parameters
+    ----------
+    plot
+        The plot to scan.
+    scanner_xy
+        ``(2,)`` horizontal scanner position (m) in the plot frame; the scanner stands
+        ``scanner_height`` above the terrain there.
+    seed
+        Seed of the sampling and the noise.
+    max_range
+        Trees further away (m) are not seen; ground and understorey are sampled out to this
+        range, and the range noise doubles between the scanner and it.
+    scanner_height
+        Scanner height above the ground (m).
+    angular_step
+        Beam spacing (radians): a stem returns about one point per ``angular_step`` squared
+        of the solid angle it fills, before grazing-incidence drop-out; 0.0012 rad is about
+        0.07 degrees.
+    range_noise
+        Standard deviation (m) of the Gaussian noise added to each coordinate at zero
+        range; it grows linearly to twice that at ``max_range``.
+    ground_density
+        Ground returns per m² of the disc of radius ``max_range`` round the scanner, drawn
+        uniform in range (so denser near the scanner), with 0.015 m of vertical noise.
+    foliage_density
+        Crown points per metre of crown depth for a tree within 8 m, falling as 1/range
+        beyond that and capped at 8000 per tree.
+    understorey_density
+        Low-vegetation returns per m² of the same disc as ``ground_density``, their heights
+        exponential with a 0.45 m mean: the source of false stems.
+    occlusion
+        Drop points shadowed by stems (opaque vertical cylinders in plan view); foliage is
+        shadowed with probability 0.55, as a leaky crown.
+    world_frame
+        Return the points in the plot frame. If False, the scanner position is subtracted,
+        giving a scanner-centred frame with the plot's orientation (no yaw; see
+        :func:`simulate_survey`).
+    min_stem_returns
+        Stem points a tree needs after occlusion to count as visible.
 
     Returns
     -------
@@ -334,7 +432,19 @@ class Survey:
     visible: list[np.ndarray] = field(default_factory=list)
 
     def overlap_stems(self, i: int, j: int) -> int:
-        """Trees detectable in both scans: an upper bound on matches."""
+        """Trees detectable in both scans: an upper bound on matches.
+
+        Parameters
+        ----------
+        i, j
+            Scan indices into ``clouds``.
+
+        Returns
+        -------
+        int
+            Trees with at least ``min_stem_returns`` stem points in both scans
+            (``visible[i] & visible[j]``).
+        """
         return int((self.visible[i] & self.visible[j]).sum())
 
 
@@ -354,9 +464,32 @@ def simulate_survey(
     Each cloud is in its own scanner frame with an unknown yaw, as a levelled
     but unoriented TLS survey. ``levelled=False`` adds a little roll and pitch.
 
+    Parameters
+    ----------
+    n_scans
+        Scan positions, spread evenly round a circle of ``scan_radius`` and jittered by
+        1.5 m; with more than 3 scans the first is moved to the plot centre instead.
+    plot
+        The plot to scan; ``simulate_plot(seed=seed)`` if None.
+    seed
+        Seed of the positions, yaws and tilts, and of each scan's sampling.
+    scan_radius
+        Radius (m) of the circle of scan positions about the plot centre.
+    max_range
+        Scanner range (m), passed to :func:`scan_plot`.
+    levelled
+        Each pose is a yaw and a translation only, as a levelled scanner gives.
+    tilt_deg
+        With ``levelled=False``, standard deviation (degrees) of the roll and pitch drawn
+        for each pose.
+    **scan_kwargs
+        Further keyword arguments of :func:`scan_plot` (densities, noise, occlusion).
+
     Returns
     -------
     Survey
+        ``clouds[k]`` is in scanner ``k``'s frame; ``true_transforms[k]`` maps it back
+        into the plot frame.
     """
     rng = np.random.default_rng(seed)
     plot = plot or simulate_plot(seed=seed)

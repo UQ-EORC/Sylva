@@ -26,16 +26,26 @@ use crate::Point;
 /// One retro-reflective target, in the scan's own frame.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reflector {
+    /// x of the target's centre (m), in the scan's own frame.
     pub x: f64,
+    /// y of the centre (m).
     pub y: f64,
+    /// z of the centre (m).
     pub z: f64,
+    /// Return strength (dB): the list's value, or the median over the cluster's
+    /// returns when detected; NaN if unknown.
     pub reflectance: f64,
+    /// Target width (m): the list's value, or the horizontal diagonal of the
+    /// detected cluster's bounding box; NaN if unknown.
     pub diameter: f64,
+    /// Returns that formed the target; 0 if unknown.
     pub n_points: i64,
+    /// Target name from the list; empty when detected from the cloud.
     pub name: String,
 }
 
 impl Reflector {
+    /// The centre as a point, `[x, y, z]` (m).
     pub fn position(&self) -> Point {
         [self.x, self.y, self.z]
     }
@@ -311,11 +321,17 @@ pub fn detect_reflectors(xyz: &[Point], reflectance: Option<&[f64]>, min_reflect
 /// Alignment of two target sets; `transform` maps source into target.
 #[derive(Debug, Clone)]
 pub struct ReflectorMatch {
+    /// `target_from_source`, a rigid 4x4 transform from the Kabsch fit of the
+    /// matched targets; identity when no triangle fitted at all.
     pub transform: Mat4,
+    /// Targets matched one-to-one within `tolerance`.
     pub n_inliers: usize,
+    /// RMS 3-D distance (m) between matched targets after the final fit;
+    /// infinite when fewer than 3 matched.
     pub rmse: f64,
     /// `(source, target)` indices of the matched targets.
     pub correspondences: Vec<[usize; 2]>,
+    /// At least `min_inliers` targets matched; check it before using `transform`.
     pub success: bool,
 }
 

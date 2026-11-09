@@ -17,12 +17,19 @@ use crate::error::{Error, Result};
 /// they were written as integers.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Json {
+    /// JSON `null`.
     Null,
+    /// JSON `true` or `false`.
     Bool(bool),
+    /// A number written without a fraction or exponent.
     Int(i64),
+    /// A number written with a fraction or exponent, or `NaN`, `Infinity`, `-Infinity`.
     Float(f64),
+    /// A string, with escapes decoded.
     Str(String),
+    /// An array, in order.
     Array(Vec<Json>),
+    /// An object as `(key, value)` pairs in the order written; duplicate keys are kept, the last one wins in [`get`](Self::get).
     Object(Vec<(String, Json)>),
 }
 

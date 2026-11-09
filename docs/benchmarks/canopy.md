@@ -1,9 +1,11 @@
 # Canopy gap profiles
 
 Eleven TERN plots scanned with a RIEGL VZ-2000i, 36–138 upright scan
-positions each. `canopy.GapProfile` reads the raw RXPs: every 4th pulse with
-all its echoes, fired pulses rebuilt from the downward zenith lines, and a
-ground plane fitted per scan to its downward echoes. It is compared with:
+positions each. The raw RXPs are read with `io.read_rxp(shot_stride=4)`,
+every 4th pulse with all its echoes; `canopy.GapProfile.add_scan` takes each
+scan's `Shots`, with fired pulses rebuilt from the downward zenith lines
+(`canopy.fired_pulses_per_ring`) and a ground plane fitted per scan to its
+downward echoes (`canopy.fit_ground_plane`). It is compared with:
 
 - **[pylidar-tls-canopy](../references.md)'s [Jupp et al.
   (2009)](../references.md) profiles** of the same scans (hinge
@@ -33,7 +35,7 @@ ground plane fitted per scan to its downward echoes. It is compared with:
   r is 0.97–1.00 per plot.
 - **Robson Creek** lets less than 0.1 % of pulses through at 57.5°. The
   hinge PAI there is bounded by the number of pulses, not measured, and the
-  report flags it (`saturated`).
+  report flags it (`saturated`, below `report(saturation_gap=0.005)`).
 - **Against the photographs** taken within 120 days (5 plots), Sylva's
   effective hinge PAI gives r = 0.96 at 0.89 × the photo value. Correcting
   for clumping ([Lang & Xiang 1986](../references.md) over scan-sector segments) overshoots it

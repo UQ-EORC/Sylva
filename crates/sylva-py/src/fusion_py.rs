@@ -3,6 +3,12 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Bindings for sylva_rs::fusion (TLS and ALS together).
+//!
+//! Backs the sylva.fusion package: registration.py, link.py, merge.py,
+//! upscaling.py and synthetic.py. Clouds and crowns arrive as `(N, 3)`
+//! float64 arrays, rasters and shots as dicts of arrays, transforms as 4x4
+//! arrays; results are new arrays or dicts of plain values. Core errors
+//! become ValueError or OSError through `crate::err`.
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 use nalgebra::Matrix4;
@@ -402,6 +408,7 @@ fn fusion_scan_spheres<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: 
     Ok(out)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(fusion_register, m)?,

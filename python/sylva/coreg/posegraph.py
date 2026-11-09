@@ -67,7 +67,19 @@ def default_information(
 
 def adjoint(T: np.ndarray) -> np.ndarray:
     """``(6, 6)`` adjoint of a transform on ``[omega, v]`` twists:
-    ``T @ se3_exp(xi) @ invert(T) == se3_exp(adjoint(T) @ xi)``."""
+    ``T @ se3_exp(xi) @ invert(T) == se3_exp(adjoint(T) @ xi)``.
+
+    Parameters
+    ----------
+    T
+        ``(4, 4)`` (or ``(3, 4)``) rigid transform.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(6, 6)`` matrix carrying a twist from one side of ``T`` to the other, rotation
+        block first.
+    """
     return _core.coreg_adjoint(_mat4(T))
 
 
@@ -225,9 +237,32 @@ class PoseGraph:
     ) -> PoseGraphEdge:
         """Add a measurement that scan ``i`` maps into scan ``j`` by ``transform``.
 
+        Parameters
+        ----------
+        i, j
+            Node indices of the source and target scans, ``i != j``.
+        transform
+            ``(4, 4)`` measured ``j_from_i``: points of scan ``i`` into scan ``j``'s frame.
+        information
+            ``(6, 6)`` information matrix of the measurement, rotation block first (from
+            :func:`plane_edge_information`). If None, :func:`default_information` is built
+            from ``rmse``, ``fitness`` and ``n_correspondences``.
+        fitness, rmse, n_correspondences
+            ICP quality of the pair: inlier fraction, inlier RMSE (m) and correspondence
+            count. ``fitness * n_correspondences`` is also the edge's weight in
+            :meth:`initialise`.
+        label
+            Free text carried on the edge, for reports.
+
         Returns
         -------
         PoseGraphEdge
+            The edge appended to ``edges``.
+
+        Raises
+        ------
+        ValueError
+            On an endpoint out of range or ``i == j``.
         """
         if not (0 <= i < self.n_nodes and 0 <= j < self.n_nodes):
             raise ValueError("edge endpoints out of range")
@@ -249,9 +284,16 @@ class PoseGraph:
         optimum, which matters because the SE(3) cost is not convex. Nodes in
         components without an anchor keep the identity.
 
+        Parameters
+        ----------
+        reference
+            Node whose pose defines the world frame; replaces the graph's ``reference`` if
+            given, otherwise the current one is kept.
+
         Returns
         -------
         list of numpy.ndarray
+            The ``(4, 4)`` ``world_from_scan`` pose of every node, also stored in ``poses``.
         """
         if reference is not None:
             self.reference = reference
@@ -269,7 +311,22 @@ class PoseGraph:
         return nodes, poses
 
     def residual(self, edge: PoseGraphEdge, poses: list[np.ndarray] | None = None) -> np.ndarray:
-        """6-vector error of one edge under ``poses`` (default: the current ones)."""
+        """6-vector error of one edge under ``poses`` (default: the current ones).
+
+        Parameters
+        ----------
+        edge
+            An edge of this graph.
+        poses
+            ``world_from_scan`` per node, ``(4, 4)`` each; the graph's ``poses`` if None.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(6,)`` twist ``se3_log(invert(edge.transform) @ invert(poses[j]) @ poses[i])``,
+            rotation (radians) first, then translation (m); zero when the poses agree with
+            the measurement.
+        """
         poses = poses or self.poses
         i, j, T, _, _ = _edge_arrays([edge])
         return _core.coreg_posegraph_residuals(i, j, T, _poses_array(poses))[0]
@@ -277,7 +334,21 @@ class PoseGraph:
     def total_error(
         self, poses: list[np.ndarray] | None = None, edges: list[PoseGraphEdge] | None = None
     ) -> float:
-        """Sum of squared Mahalanobis edge errors over ``edges`` (default: all)."""
+        """Sum of squared Mahalanobis edge errors over ``edges`` (default: all).
+
+        Parameters
+        ----------
+        poses
+            ``world_from_scan`` per node, ``(4, 4)`` each; the graph's ``poses`` if None.
+        edges
+            Edges to sum over; all of the graph's if None.
+
+        Returns
+        -------
+        float
+            ``sum(r^T information r)`` over the edges, each ``r`` from :meth:`residual`;
+            dimensionless.
+        """
         poses = poses or self.poses
         edges = self.edges if edges is None else edges
         i, j, T, info, _ = _edge_arrays(edges)
@@ -351,7 +422,19 @@ class PoseGraph:
         )
 
     def relative(self, i: int, j: int) -> np.ndarray:
-        """Optimised transform mapping scan ``i`` into scan ``j``'s frame."""
+        """Optimised transform mapping scan ``i`` into scan ``j``'s frame.
+
+        Parameters
+        ----------
+        i, j
+            Node indices.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(4, 4)`` ``j_from_i``, ``invert(poses[j]) @ poses[i]``, comparable with the
+            ``transform`` of an edge between them.
+        """
         return invert(self.poses[j]) @ self.poses[i]
 
 

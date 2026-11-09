@@ -19,8 +19,11 @@ use crate::{Error, Point, Result};
 /// One named object of an OBJ file; `faces` index `vertices` from 0.
 #[derive(Debug, Clone, Copy)]
 pub struct ObjMesh<'a> {
+    /// Object name written after `o` (e.g. `wood`, `leaves`, `tree_1`).
     pub name: &'a str,
+    /// Vertex coordinates (m), written with four decimals.
     pub vertices: &'a [Point],
+    /// Triangles as three 0-based indices into `vertices`.
     pub faces: &'a [[u32; 3]],
 }
 

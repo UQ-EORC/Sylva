@@ -76,12 +76,15 @@ impl Default for GroundParams {
 /// on purpose: the registration was tuned on the heights it gives.
 #[derive(Debug, Clone)]
 pub struct GroundModel {
+    /// Number of columns (cells along x).
     pub nx: usize,
+    /// Number of rows (cells along y).
     pub ny: usize,
     /// `(ny, nx)` row-major terrain height, NaN-free.
     pub elevation: Vec<f64>,
     /// `(x0, y0)`.
     pub origin: [f64; 2],
+    /// Cell size (m), the same along x and y.
     pub cell_size: f64,
     /// `(ny, nx)` row-major: cell backed by real ground points.
     pub observed: Vec<bool>,

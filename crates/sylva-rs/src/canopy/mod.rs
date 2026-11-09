@@ -14,22 +14,29 @@ use crate::{Point, Shots};
 /// Dense 3-D grid of per-voxel values. Index is `x + nx * (y + ny * z)`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VoxelGrid {
+    /// Minimum corner of the grid (m).
     pub origin: Point,
+    /// Voxel edge (m).
     pub voxel_size: f64,
+    /// `[nx, ny, nz]`.
     pub shape: [usize; 3],
+    /// Points in each voxel, by flat index.
     pub counts: Vec<u32>,
 }
 
 impl VoxelGrid {
     #[inline]
+    /// Flat index of voxel `(i, j, k)`.
     pub fn flat(&self, i: usize, j: usize, k: usize) -> usize {
         i + self.shape[0] * (j + self.shape[1] * k)
     }
 
+    /// Voxels in the grid.
     pub fn len(&self) -> usize {
         self.shape[0] * self.shape[1] * self.shape[2]
     }
 
+    /// Whether the grid has no voxels.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -250,15 +257,22 @@ pub fn canopy_cover(chm: &[f64], threshold: f64) -> f64 {
 /// a hit. Unbounded shots (no echo) traverse until they leave the grid.
 #[derive(Debug, Clone)]
 pub struct DensityGrid {
+    /// Minimum corner of the grid (m).
     pub origin: Point,
+    /// Voxel edge (m).
     pub voxel_size: f64,
+    /// `[nx, ny, nz]`; flat index `i + nx (j + ny k)`.
     pub shape: [usize; 3],
+    /// Pulses entering each voxel.
     pub n_rays: Vec<u32>,
+    /// Echoes inside each voxel.
     pub n_hits: Vec<u32>,
+    /// Summed beam path through each voxel (m).
     pub path_length: Vec<f64>,
 }
 
 impl DensityGrid {
+    /// An empty grid of `shape` voxels at `origin`.
     pub fn new(origin: Point, voxel_size: f64, shape: [usize; 3]) -> Self {
         let n = shape[0] * shape[1] * shape[2];
         DensityGrid { origin, voxel_size, shape, n_rays: vec![0; n], n_hits: vec![0; n], path_length: vec![0.0; n] }
@@ -438,8 +452,11 @@ fn _unused(a: &Point, b: &Point) -> Point {
 pub struct PgapHistogram {
     /// Zenith ring edges (deg).
     pub zenith_edges: Vec<f64>,
+    /// Azimuth sectors (equal, 360 / n degrees each).
     pub n_azimuth: usize,
+    /// Height bin size (m).
     pub height_bin: f64,
+    /// Height bins from the ground up.
     pub n_heights: usize,
     /// Weighted returns `[ring][sector][height]`: each echo of a pulse with
     /// `n` echoes counts `1 / n` (equal weighting, Armston et al. 2013). Heights at or above the top bin go in the
@@ -450,12 +467,14 @@ pub struct PgapHistogram {
 }
 
 impl PgapHistogram {
+    /// An empty histogram (at least one azimuth sector).
     pub fn new(zenith_edges: Vec<f64>, n_azimuth: usize, height_bin: f64, n_heights: usize) -> Self {
         let n_rings = zenith_edges.len().saturating_sub(1);
         let n_azimuth = n_azimuth.max(1);
         PgapHistogram { zenith_edges, n_azimuth, height_bin, n_heights, hits: vec![0.0; n_rings * n_azimuth * n_heights], shots: vec![0.0; n_rings * n_azimuth] }
     }
 
+    /// Zenith rings.
     pub fn n_rings(&self) -> usize {
         self.zenith_edges.len().saturating_sub(1)
     }

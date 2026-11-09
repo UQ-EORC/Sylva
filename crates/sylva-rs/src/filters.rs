@@ -216,22 +216,27 @@ pub fn statistical_outlier_mask(points: &[Point], k: usize, std_ratio: f64) -> V
     mean_d.iter().map(|&d| d <= thr).collect()
 }
 
+/// The cloud without its statistical outliers (Rusu et al. 2008):
+/// [`statistical_outlier_mask`] of the coordinates applied to every column.
 pub fn statistical_outlier_removal(cloud: &PointCloud, k: usize, std_ratio: f64) -> PointCloud {
     cloud.filter(&statistical_outlier_mask(&cloud.xyz, k, std_ratio))
 }
 
-/// Radius outlier removal mask: keep points with at least `min_neighbors` others within `radius`.
 /// Number of points within `radius` of every point, itself included.
 pub fn count_within(points: &[Point], radius: f64) -> Vec<usize> {
     let tree = KdTree::new(points);
     points.par_iter().map(|p| tree.count_within(p, radius)).collect()
 }
 
+/// Radius outlier removal mask: `true` for a point with at least `min_neighbors`
+/// other points within `radius` (m).
 pub fn radius_outlier_mask(points: &[Point], radius: f64, min_neighbors: usize) -> Vec<bool> {
     let tree = KdTree::new(points);
     points.par_iter().map(|p| tree.count_within(p, radius).saturating_sub(1) >= min_neighbors).collect()
 }
 
+/// The cloud without its radius outliers: [`radius_outlier_mask`] applied to
+/// every column.
 pub fn radius_outlier_removal(cloud: &PointCloud, radius: f64, min_neighbors: usize) -> PointCloud {
     cloud.filter(&radius_outlier_mask(&cloud.xyz, radius, min_neighbors))
 }

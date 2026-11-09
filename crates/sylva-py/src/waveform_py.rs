@@ -300,6 +300,7 @@ fn synthetic_waveforms<'py>(py: Python<'py>, shots: &Bound<'_, PyDict>, gps_time
     Ok((waveforms_to_py(py, &w)?, echoes_to_py(py, &e)?))
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(waveform_info, m)?,

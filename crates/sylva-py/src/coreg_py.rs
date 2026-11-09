@@ -335,6 +335,7 @@ fn coreg_refine_joint<'py>(py: Python<'py>, points: Vec<PyReadonlyArray2<f64>>, 
     Ok(d)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(coreg_skew, m)?,

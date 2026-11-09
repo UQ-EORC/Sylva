@@ -82,12 +82,15 @@ impl Lens {
 /// the left; without it east is on the right, as on a map.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HemiGeometry {
+    /// Image side (pixels); the image circle has this diameter.
     pub size: usize,
+    /// How zenith maps to the distance from the image centre.
     pub lens: Lens,
     /// Zenith angle on the image rim (radians).
     pub max_zenith: f64,
     /// Azimuth at the top of the image (radians, clockwise from +y).
     pub north: f64,
+    /// Lay the image out as a camera on the ground sees the sky (east on the left).
     pub mirror: bool,
 }
 
@@ -205,6 +208,7 @@ impl HemiGeometry {
 /// zero and a pixel is canopy wherever `hits` is positive.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HemiImage {
+    /// Size, lens and orientation of the image.
     pub geometry: HemiGeometry,
     /// Pulses fired through the pixel.
     pub shots: Vec<u32>,
@@ -218,6 +222,7 @@ pub struct HemiImage {
     pub range: Vec<f64>,
     /// Sum and count of the optional per-hit value, for its mean.
     pub value_sum: Vec<f64>,
+    /// Hits that carried a value, per pixel.
     pub value_n: Vec<u32>,
 }
 

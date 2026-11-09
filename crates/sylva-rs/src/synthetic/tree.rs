@@ -57,10 +57,15 @@ use crate::{Point, PointCloud};
 
 /// Point labels of the synthetic scenes (`label` attribute).
 pub const LABEL_GROUND: u8 = 1;
+/// Stem wood (branch order 0).
 pub const LABEL_STEM: u8 = 2;
+/// Branch wood (order 1 and up).
 pub const LABEL_BRANCH: u8 = 3;
+/// Leaf blades.
 pub const LABEL_LEAF: u8 = 4;
+/// Understorey: shrubs and grass of a plot.
 pub const LABEL_UNDERSTOREY: u8 = 5;
+/// Dead wood: fallen logs and stumps of a plot.
 pub const LABEL_DEAD_WOOD: u8 = 6;
 
 /// Samples of a stem cross-section's radius around the axis.
@@ -69,10 +74,15 @@ const SECTION: usize = 256;
 /// Tree forms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Archetype {
+    /// A broadleaf tree: ellipsoidal crown from 35 % of the height, planophile leaves.
     Broadleaf,
+    /// A conifer: a central leader to the top with whorls of five branches, a conical crown, needle-like leaves with a spherical angle distribution.
     Conifer,
+    /// A eucalypt: a clear bole to 55 % of the height, then a sparse forked crown of erectophile leaves.
     Eucalypt,
+    /// A savanna tree: a low forked crown, flat and wide (radius half the height), with small leaves.
     Savanna,
+    /// A shrub: forks near the ground into several limbs under an ellipsoidal crown; the understorey of plots.
     Shrub,
 }
 
@@ -130,6 +140,7 @@ pub struct Form {
 }
 
 impl Archetype {
+    /// Parse an archetype name ("broadleaf", "conifer", "eucalypt", "savanna" or "shrub"); any other name is an error.
     pub fn parse(name: &str) -> Result<Self> {
         match name {
             "broadleaf" => Ok(Archetype::Broadleaf),
@@ -141,6 +152,7 @@ impl Archetype {
         }
     }
 
+    /// The lowercase name [`Archetype::parse`] accepts.
     pub fn name(&self) -> &'static str {
         match self {
             Archetype::Broadleaf => "broadleaf",
@@ -151,6 +163,7 @@ impl Archetype {
         }
     }
 
+    /// The architectural constants and allometries of the archetype.
     pub fn form(&self) -> Form {
         match self {
             Archetype::Broadleaf => Form { leaf_k: 1500.0, crown_k: 1.0, allometry: (28.0, 0.035, 1.0), crown_base: 0.35, crown_radius: 0.25, leader: 0.8, forks: 2, fork_angle: 20.0, whorl: 1, internode: 0.45, angle: [55.0, 45.0, 40.0, 40.0], tropism: [0.12, 0.08, 0.04, 0.0], ratio: [0.0, 0.5, 0.45, 0.4], spacing: [0.45, 0.2, 0.08], envelope: Envelope::Ellipsoid, lai: 4.0, leaf: (0.10, 0.05), lad: "planophile", taper: 0.8, butt_swell: 0.25, lean: 2.0, sweep: 0.02 },
@@ -165,6 +178,7 @@ impl Archetype {
 /// Settings of [`tree_model`]. `None` takes the archetype's value.
 #[derive(Debug, Clone)]
 pub struct TreeSpec {
+    /// Tree form to grow.
     pub archetype: Archetype,
     /// Stem base.
     pub base: Point,
@@ -179,8 +193,11 @@ pub struct TreeSpec {
     pub crown_base: Option<f64>,
     /// Highest branch order (1 to 4).
     pub max_order: u32,
+    /// Lean of the stem axis from the vertical (degrees), towards a random azimuth.
     pub lean_deg: Option<f64>,
+    /// Slope amplitude of the stem's smooth curvature (dimensionless; 0 for a straight stem).
     pub sweep: Option<f64>,
+    /// Extra radius at the ground relative to the taper (fraction, e.g. 0.3).
     pub butt_swell: Option<f64>,
     /// Number of buttress flanges (0 for none).
     pub buttresses: usize,
@@ -202,15 +219,20 @@ pub struct TreeSpec {
     pub epicormic: f64,
     /// Points per m² of wood surface and of leaf (one side).
     pub point_density: f64,
+    /// Exponent `e` of the pipe-model radius rule `r ∝ W^(1/e)` in the leaf area `W` a segment carries (2 for the pipe model).
     pub pipe_exponent: f64,
     /// Smallest radius of a twig (m).
     pub min_radius: f64,
     /// Distance along the stem at which `dbh` applies (m).
     pub breast_height: f64,
+    /// Random seed; the same seed gives the same tree on every machine.
     pub seed: u64,
 }
 
 impl TreeSpec {
+    /// A spec taking the archetype's defaults: branch orders to 3, no buttresses, a
+    /// round section without bark fissures, no epicormic shoots, 2000 points per m²,
+    /// pipe exponent 2, twigs down to 1.5 mm radius and breast height 1.3 m.
     pub fn new(archetype: Archetype, base: Point, dbh: f64, height: f64, seed: u64) -> Self {
         TreeSpec { archetype, base, dbh, height, crown_radius: None, crown_base: None, max_order: 3, lean_deg: None, sweep: None, butt_swell: None, buttresses: 0, buttress_height: 1.0, buttress_extent: 0.5, ellipticity: 0.0, bark_depth: 0.0, leaf_area: None, leaf_size: None, lad: None, epicormic: 0.0, point_density: 2000.0, pipe_exponent: 2.0, min_radius: 0.0015, breast_height: 1.3, seed }
     }
@@ -259,15 +281,19 @@ impl TreeSpec {
 /// A leaf of a synthetic tree: an elliptical blade.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Leaf {
+    /// Centre of the blade (m).
     pub centre: Point,
     /// Unit normal (pointing up).
     pub normal: Point,
     /// Unit direction of the blade's length (from the petiole to the tip).
     pub axis: Point,
+    /// Length of the blade along `axis` (m).
     pub length: f64,
+    /// Width of the blade across `axis` (m).
     pub width: f64,
     /// Row of the cylinder the leaf is attached to.
     pub cylinder: usize,
+    /// Whether the leaf is on an epicormic shoot.
     pub epicormic: bool,
 }
 
@@ -291,8 +317,11 @@ pub struct SynthTree {
     pub qsm: Qsm,
     /// Whether each cylinder is part of an epicormic shoot.
     pub cylinder_epicormic: Vec<bool>,
+    /// The leaf blades; the cloud's `leaf` attribute indexes this table.
     pub leaves: Vec<Leaf>,
+    /// Tree form the tree was grown from.
     pub archetype: Archetype,
+    /// Stem base, as given in the spec (m).
     pub base: Point,
     /// Stem axis at breast height (`s_ref` along the stem).
     pub stem_bh: Point,
@@ -306,12 +335,16 @@ pub struct SynthTree {
     pub crown_area: f64,
     /// `(xmin, ymin, xmax, ymax)` of the crown.
     pub crown_extent: [f64; 4],
+    /// One-sided area of all the blades, epicormic included (m²).
     pub leaf_area: f64,
+    /// One-sided area of the blades on epicormic shoots (m²).
     pub epicormic_leaf_area: f64,
+    /// Leaf angle distribution the leaf normals were drawn from.
     pub lad: Lad,
 }
 
 impl SynthTree {
+    /// Volume of all the cylinders (m³): the wood volume of the sampled surface.
     pub fn wood_volume(&self) -> f64 {
         self.qsm.cylinders.iter().map(|c| c.volume()).sum()
     }
@@ -390,6 +423,7 @@ pub struct LadSampler {
 impl LadSampler {
     const BINS: usize = 4096;
 
+    /// Tabulate the cumulative distribution of `lad` over 4096 bins of `[0, π/2]` by Simpson's rule.
     pub fn new(lad: &Lad) -> Self {
         let h = PI / 2.0 / Self::BINS as f64;
         let mut cdf = Vec::with_capacity(Self::BINS + 1);

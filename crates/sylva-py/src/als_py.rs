@@ -378,6 +378,7 @@ fn synthetic_trajectory_positions<'py>(py: Python<'py>, time: PyReadonlyArray1<f
     Ok(xyz_to_py(py, &py.detach(|| t.positions(&times))))
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(als_catalog, m)?,

@@ -237,7 +237,19 @@ class ScanFeatures:
         return not self.error and len(self.icp_points) > 0
 
     def location(self, pose: np.ndarray) -> np.ndarray:
-        """Where the scanner stood in the world, given this scan's ``world_from_scan``."""
+        """Where the scanner stood in the world, given this scan's ``world_from_scan``.
+
+        Parameters
+        ----------
+        pose
+            ``(4, 4)`` ``world_from_levelled_scan`` of this scan, as in
+            :attr:`SurveyResult.poses`.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(3,)`` scanner position in the world frame (m).
+        """
         return transform_points(pose, self.origin[None])[0]
 
     def __repr__(self) -> str:
@@ -296,14 +308,18 @@ class PairResult:
 
     @property
     def fitness(self) -> float:
+        """Fraction of source points with an ICP correspondence within the cut-off;
+        0 if ICP did not run."""
         return self.icp.fitness if self.icp else 0.0
 
     @property
     def rmse(self) -> float:
+        """ICP inlier RMSE, m; inf if ICP did not run."""
         return self.icp.inlier_rmse if self.icp else float("inf")
 
     @property
     def n_stem_matches(self) -> int:
+        """Stem pairs kept as inliers by the stem-map match; 0 if none was attempted."""
         return self.match.n_inliers if self.match else 0
 
     @property
@@ -342,17 +358,42 @@ class SurveyResult:
 
     @property
     def names(self) -> list[str]:
+        """Scan position names, in the order of ``scans`` and ``poses``."""
         return [s.name for s in self.scans]
 
     def transform_for(self, index: int) -> np.ndarray:
-        """``world_from_scan`` of one scan, applying directly to its raw points."""
+        """``world_from_scan`` of one scan, applying directly to its raw points.
+
+        Parameters
+        ----------
+        index
+            Position of the scan in ``scans`` and ``poses``.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(4, 4)`` ``poses[index] @ scans[index].levelling``: the pose with the
+            levelling rotation composed back in, so it maps the scan as read from file.
+        """
         return self.poses[index] @ self.scans[index].levelling
 
     def successful_pairs(self) -> list[PairResult]:
+        """The scan pairs whose registration succeeded (the pose-graph edges)."""
         return [p for p in self.pairs if p.success]
 
     def pair_for_edge(self, edge_index: int) -> PairResult | None:
-        """The pair behind a pose-graph edge."""
+        """The pair behind a pose-graph edge.
+
+        Parameters
+        ----------
+        edge_index
+            Index of the edge in the pose graph, as in ``optimisation.rejected_edges``.
+
+        Returns
+        -------
+        PairResult or None
+            None if the index is out of range.
+        """
         if not 0 <= edge_index < len(self.edge_to_pair):
             return None
         return self.pairs[self.edge_to_pair[edge_index]]
@@ -416,9 +457,15 @@ class SurveyResult:
     def save(self, path: str | Path) -> Path:
         """Write the transforms and quality as JSON (``transforms.json``).
 
+        Parameters
+        ----------
+        path
+            Output file; read back with :func:`load_transforms`.
+
         Returns
         -------
         pathlib.Path
+            The path written.
         """
         path = Path(path)
         _core.coreg_survey_save(

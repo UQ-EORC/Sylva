@@ -267,20 +267,30 @@ pub fn median_measured_length<'a>(models: impl IntoIterator<Item = &'a [Row]>) -
 /// A tree's buttress as a plot holds it.
 #[derive(Debug, Clone, Copy)]
 pub struct ButtressView<'a> {
+    /// Mesh vertices (m), in the plot's frame.
     pub vertices: &'a [Point],
+    /// Triangles as indices into `vertices`.
     pub faces: &'a [[u32; 3]],
+    /// Buttress volume from the ground to `top` (m³).
     pub volume: f64,
+    /// Buttress top, height above ground (m).
     pub top: f64,
+    /// Buttress top as absolute z (m).
     pub top_z: f64,
 }
 
 /// One tree of a plot: its model, and what `build_plot` recorded about it.
 #[derive(Debug, Clone, Copy)]
 pub struct PlotEntry<'a> {
+    /// The tree's label in the segmentation.
     pub tree_id: i64,
+    /// The tree's cylinder rows ([`Row`]).
     pub rows: &'a [Row],
+    /// Points the tree had before thinning (None for a model not from `build_plot`).
     pub points: Option<i64>,
+    /// Highest point above ground (m); None without heights.
     pub height: Option<f64>,
+    /// The buttress found and meshed under the tree, if any.
     pub buttress: Option<ButtressView<'a>>,
 }
 
@@ -310,17 +320,25 @@ pub fn py_round(x: f64, digits: usize) -> f64 {
 /// One row of the plot table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableRow {
+    /// The tree's label in the segmentation.
     pub tree_id: i64,
     /// Points of the tree (None for a model not from `build_plot`).
     pub points: Option<i64>,
+    /// Wood volume (m³, [`tree_volume`]): buttress plus the cylinders above it, or all cylinders.
     pub volume_m3: f64,
+    /// Diameter at 1.3 m above the base along the stem (m); NaN for an empty model.
     pub dbh_m: f64,
+    /// Highest point above ground (m); NaN when no height was recorded.
     pub height_m: f64,
+    /// Cylinders in the model (count).
     pub n_cylinders: usize,
     /// Share of the volume and length fitted to points rather than priors.
     pub measured_volume: f64,
+    /// Share (0-1) of the length fitted to points rather than priors.
     pub measured_length: f64,
+    /// Buttress volume (m³); None without a buttress.
     pub buttress_m3: Option<f64>,
+    /// Buttress top, height above ground (m); None without a buttress.
     pub buttress_top_m: Option<f64>,
 }
 

@@ -10,9 +10,10 @@ Conventions used throughout:
   m³ m⁻³ (wood volume). Angles are degrees unless a parameter says radians.
 - Point arrays are `(N, 3)` float64. Voxel arrays are `(nz, ny, nx)`, and
   grid `shape` properties are `(nx, ny, nz)`.
-- Functions return new objects and never modify their inputs. The exceptions
-  are `GapProfile.add_scan`, `RayVoxelGrid.add_wood_volume` and
-  `trees.tree_heights`, which say so.
+- Functions return new objects and never modify their arguments. The
+  exceptions are `GapProfile.add_scan`, `RayVoxelGrid.add_wood_volume` and
+  `trees.tree_heights`, which say so; `TreeStore.set_values` writes into
+  its store on disk.
 - Anything random takes a `seed`, so a run can be repeated exactly.
 - Errors: bad files raise `OSError`, bad arguments raise `ValueError`, and
   missing attributes raise `KeyError` or `ValueError` with the attribute's

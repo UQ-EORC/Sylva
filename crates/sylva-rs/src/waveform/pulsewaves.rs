@@ -56,15 +56,25 @@ const FLUCTUATE: i32 = 0x8FFF_FFFFu32 as i32;
 pub struct Sampling {
     /// 0 undefined, 1 outgoing, 2 returning.
     pub kind: u8,
+    /// Detector channel the sampling was recorded on.
     pub channel: u8,
+    /// Bits storing each segment's duration from the anchor in the pulse's waves; 0 when it is not stored.
     pub bits_for_duration: u8,
+    /// Scale of the stored duration: `duration = duration_scale * stored + duration_offset` (sampling units).
     pub duration_scale: f32,
+    /// Offset of the stored duration (sampling units).
     pub duration_offset: f32,
+    /// Bits storing the number of segments per pulse; 0 when `n_segments` is fixed.
     pub bits_for_segments: u8,
+    /// Bits storing each segment's sample count; 0 when `n_samples` is fixed.
     pub bits_for_samples: u8,
+    /// Segments per pulse when not stored per pulse.
     pub n_segments: u16,
+    /// Samples per segment when not stored per pulse.
     pub n_samples: u32,
+    /// Bits per sample (8 or 16 are read).
     pub bits_per_sample: u16,
+    /// Index of the lookup table that turns samples into physical units; 0 for none.
     pub lookup_table: u16,
     /// Sampling unit (ns).
     pub units: f32,
@@ -73,31 +83,48 @@ pub struct Sampling {
 /// A pulse descriptor: composition and samplings.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Descriptor {
+    /// Distance from the scanner's optical centre to the anchor along the beam, in sampling units; `0x8FFFFFFF` when it varies and is not given.
     pub optical_center_to_anchor: i32,
+    /// Bytes of extra data at the start of each pulse's waves, skipped on reading.
     pub extra_waves_bytes: u16,
+    /// Index of the scanner VLR this descriptor refers to.
     pub scanner: u32,
     /// Sampling unit of the composition (ns).
     pub units: f32,
+    /// The samplings (outgoing shot, returning channels) that make up each pulse's waves.
     pub samplings: Vec<Sampling>,
 }
 
 /// What a `.pls` header says.
 #[derive(Debug, Clone)]
 pub struct PlsInfo {
+    /// PulseWaves version as `(major, minor)`.
     pub version: (u8, u8),
+    /// Pulse records in the file.
     pub n_pulses: u64,
+    /// Bytes per pulse record (48 for format 0).
     pub pulse_size: u32,
+    /// Pulse record format; 0 is the only one read.
     pub pulse_format: u32,
+    /// Pulse compression type; 0 for none (the only kind read).
     pub pulse_compression: u32,
+    /// Byte offset of the first pulse record.
     pub offset_to_pulses: u64,
+    /// Scale of the stored pulse times: `gps_time = t_scale * stored + t_offset` (s).
     pub t_scale: f64,
+    /// Offset of the stored pulse times (s).
     pub t_offset: f64,
+    /// Coordinate quantisation per axis (m per stored unit) of the anchor and target points.
     pub scale: [f64; 3],
+    /// Coordinate offset per axis (m): a stored integer `i` is `i * scale + offset`.
     pub offset: [f64; 3],
     /// `[min_x, min_y, min_z, max_x, max_y, max_z]`.
     pub bounds: [f64; 6],
+    /// System identifier text of the header (the scanner).
     pub system: String,
+    /// Generating software text of the header.
     pub software: String,
+    /// Pulse descriptors by index (VLR record id minus 200000).
     pub descriptors: BTreeMap<u32, Descriptor>,
     /// First lookup table of each table VLR, by index.
     pub tables: BTreeMap<u32, Vec<f32>>,
@@ -248,16 +275,22 @@ pub fn read_info(path: impl AsRef<Path>) -> Result<PlsInfo> {
 /// Which waveforms to read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kinds {
+    /// Only returning waveforms (sampling kind 2).
     Returning,
+    /// Only outgoing (emitted pulse) waveforms (sampling kind 1).
     Outgoing,
+    /// Every sampling, outgoing and returning.
     All,
 }
 
 /// Options for [`read_waveforms`].
 #[derive(Debug, Clone)]
 pub struct PlsReadOptions {
+    /// Index of the first pulse record to read.
     pub start: u64,
+    /// Pulse records to read; None for all from `start`.
     pub count: Option<u64>,
+    /// Which samplings of each pulse to keep.
     pub kinds: Kinds,
     /// Turn sample values into physical units with the lookup tables.
     pub lookup: bool,

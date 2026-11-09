@@ -249,6 +249,7 @@ fn synthetic_stand(n: usize, size: f64, min_spacing: f64, heights: (f64, f64), s
     als::stand(n, size, min_spacing, heights, seed).map_err(err)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(als_trees_lmf_raster, m)?,

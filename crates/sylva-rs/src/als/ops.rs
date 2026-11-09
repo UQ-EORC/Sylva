@@ -39,6 +39,7 @@ pub const HIGH_NOISE_CLASS: u8 = 18;
 /// How to divide the work.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RunOptions {
+    /// How the area is cut into chunks: one per tile or a regular grid.
     pub layout: Layout,
     /// Buffer around each chunk (m).
     pub buffer: f64,
@@ -124,7 +125,9 @@ fn ground_points(cloud: &PointCloud) -> Result<Vec<Point>> {
 /// Ground filter for [`classify_ground`].
 #[derive(Debug, Clone)]
 pub enum GroundMethod {
+    /// Cloth simulation filtering (Zhang et al. 2016), with its settings.
     Csf(CsfParams),
+    /// Progressive morphological filter (Zhang et al. 2003), with its settings.
     Pmf(PmfParams),
 }
 
@@ -225,7 +228,10 @@ pub enum Heights {
     Dtm(Raster),
     /// z minus a DTM made per chunk from its ground points (with the
     /// buffer) at this resolution, as [`dtm`] with [`DtmMethod::Lowest`].
-    Auto { resolution: f64 },
+    Auto {
+        /// Cell size (m) of the per-chunk DTM.
+        resolution: f64,
+    },
 }
 
 impl Heights {
@@ -328,9 +334,19 @@ fn core_with_buffer_ground(data: &ChunkData) -> PointCloud {
 pub enum NoiseMethod {
     /// [`filters::statistical_outlier_mask`]; its threshold is the mean
     /// neighbour distance over the chunk and its buffer.
-    Sor { k: usize, std_ratio: f64 },
+    Sor {
+        /// Neighbours (count) whose mean distance is the point's statistic.
+        k: usize,
+        /// Standard deviations above the chunk mean of that statistic at which a point is noise.
+        std_ratio: f64,
+    },
     /// [`filters::radius_outlier_mask`]; purely local, so tile edges cannot show.
-    Ror { radius: f64, min_neighbors: usize },
+    Ror {
+        /// Search radius (m).
+        radius: f64,
+        /// Fewest other points (count) within `radius` for a point to be kept.
+        min_neighbors: usize,
+    },
 }
 
 /// Remove noise from every tile (or with `classify`, keep every point and
@@ -562,13 +578,24 @@ pub enum Decimation {
     /// Keep `round(fraction * n)` points of each chunk at random
     /// ([`filters::random_indices`], seeded with `seed` plus the tile's
     /// position in the catalogue, or the chunk's index on a grid).
-    Random { fraction: f64, seed: u64 },
+    Random {
+        /// Share (0-1) of each chunk's points to keep.
+        fraction: f64,
+        /// Base of the random seed, so that a run repeats exactly.
+        seed: u64,
+    },
     /// Keep the first point (in file order) of each `size` m voxel, on a
     /// grid anchored at the origin of the coordinates.
-    Voxel { size: f64 },
+    Voxel {
+        /// Voxel edge (m).
+        size: f64,
+    },
     /// Keep the highest point of each `size` m cell in x, y (first in file
     /// order on ties), on a grid anchored at the origin: a surface for CHMs.
-    Highest { size: f64 },
+    Highest {
+        /// Cell size (m).
+        size: f64,
+    },
 }
 
 /// Thin every tile. Needs no buffer: each point's fate depends only on the

@@ -82,18 +82,24 @@ impl Default for ButtressParams {
 /// A buttressed base as a closed mesh, with its cross-section profile.
 #[derive(Debug, Clone, Default)]
 pub struct Buttress {
+    /// Mesh vertices (m), in the points' frame; empty when the base could not be rebuilt.
     pub vertices: Vec<Point>,
+    /// Triangles as indices into `vertices`.
     pub faces: Vec<[u32; 3]>,
     /// Volume from ground to `top` (m³).
     pub volume: f64,
     /// Buttress top, height above ground (m), and as absolute z.
     pub top: f64,
+    /// Buttress top as absolute z, `ground_z + top` (m).
     pub top_z: f64,
     /// Per slice: bottom height (m), area (m²), solidity, and whether the
     /// outline stayed open (part of the bark unseen).
     pub heights: Vec<f64>,
+    /// Cross-section area of each slice (m²).
     pub areas: Vec<f64>,
+    /// Area over convex-hull area of each slice (0-1; 1 is convex).
     pub solidities: Vec<f64>,
+    /// Whether each slice's outline stayed open (part of the bark unseen).
     pub open: Vec<bool>,
 }
 

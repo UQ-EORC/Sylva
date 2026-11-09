@@ -295,7 +295,9 @@ pub struct RdbxAttribute {
     pub dtype: &'static str,
     /// Resolution the values are stored with.
     pub resolution: f64,
+    /// Smallest value the attribute can hold, as the database declares it (not the data minimum).
     pub minimum: f64,
+    /// Largest value the attribute can hold, as the database declares it (not the data maximum).
     pub maximum: f64,
     /// Value standing for "no value", if the attribute defines one.
     pub invalid: Option<f64>,
@@ -310,6 +312,7 @@ pub struct RdbxAttribute {
 pub struct RdbxInfo {
     /// Version string of the `librdb` that read the file.
     pub library_version: String,
+    /// Points in the database (count), from the index statistics.
     pub point_count: u64,
     /// The attribute the spatial index is built on, usually `riegl.xyz`.
     pub primary_attribute: String,

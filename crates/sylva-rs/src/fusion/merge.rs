@@ -30,9 +30,15 @@ use crate::Point;
 /// Where the TLS stops and the ALS starts.
 #[derive(Debug, Clone)]
 pub enum Split {
+    /// One height above ground (m) everywhere.
     Height(f64),
     /// Height per column; NaN cells and points off the grid take `fallback`.
-    Raster { raster: Raster, fallback: f64 },
+    Raster {
+        /// Split height above ground (m) per cell.
+        raster: Raster,
+        /// Height (m) used where the raster is NaN or a point lies off it.
+        fallback: f64,
+    },
 }
 
 impl Split {
@@ -71,14 +77,19 @@ pub fn select(points: &[Point], heights: &[f64], split: &Split, below: bool) -> 
 
 /// A voxel grid's fields, arrays in `(nz, ny, nx)` order.
 pub struct VoxelFields<'a> {
+    /// `(x, y, z)` (m) of the lattice's lower south-west corner.
     pub origin: Point,
+    /// Voxel edge (m).
     pub voxel_size: f64,
     /// `[nz, ny, nx]`.
     pub shape: [usize; 3],
+    /// Pulses entering each voxel (`num_beams`, count), the measure of how well it was sampled.
     pub beams: &'a [f64],
     /// A PAD field (mean estimator), or hits and free path lengths (pooled).
     pub pad: Option<&'a [f64]>,
+    /// Weighted hits per voxel (`num_hits_weighted`), for the pooled estimator.
     pub hits: Option<&'a [f64]>,
+    /// Summed free path length per voxel (`free_path_length`, m), for the pooled estimator.
     pub path: Option<&'a [f64]>,
 }
 
@@ -86,10 +97,15 @@ pub struct VoxelFields<'a> {
 /// share of voxels observed, and the voxels in it.
 #[derive(Debug, Clone, Default)]
 pub struct LayerStats {
+    /// Height above ground (m) of the bottom of each bin.
     pub height: Vec<f64>,
+    /// Plant area density of the bin (m²/m³); NaN where no voxel was observed.
     pub pad: Vec<f64>,
+    /// Mean pulses entering a voxel of the bin (count), unreached voxels counting 0.
     pub beams: Vec<f64>,
+    /// Share (0-1) of the bin's voxels crossed by at least `min_beams` pulses.
     pub observed: Vec<f64>,
+    /// Voxels in the bin over the area summarised.
     pub n_voxels: Vec<usize>,
 }
 
@@ -175,12 +191,16 @@ pub fn layer_stats(v: &VoxelFields, mask: Option<&[bool]>, dtm: Option<&Raster>,
 /// How [`fuse`] weights the two instruments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FuseMode {
+    /// By the pulses that sampled each bin (the variance of a gap-fraction estimate falls with the beams).
     Beams,
+    /// By the share of the bin each instrument observed.
     Observed,
+    /// The instrument with more pulses alone.
     Best,
 }
 
 impl FuseMode {
+    /// The mode named `"beams"`, `"observed"` or `"best"`; any other string is an error.
     pub fn parse(s: &str) -> Result<FuseMode> {
         match s {
             "beams" => Ok(FuseMode::Beams),
@@ -195,11 +215,17 @@ impl FuseMode {
 /// to 1; NaN where neither saw the bin) and the inputs.
 #[derive(Debug, Clone, Default)]
 pub struct Fused {
+    /// Height above ground (m) of the bottom of each bin.
     pub height: Vec<f64>,
+    /// Fused plant area density of the bin (m²/m³); NaN where neither instrument saw it.
     pub pad: Vec<f64>,
+    /// Weight (0-1) of the TLS in each bin.
     pub weight_tls: Vec<f64>,
+    /// Weight (0-1) of the ALS in each bin, `1 - weight_tls` where either saw it.
     pub weight_als: Vec<f64>,
+    /// The TLS summary per bin, on the fused bins.
     pub tls: LayerStats,
+    /// The ALS summary per bin, on the fused bins.
     pub als: LayerStats,
     /// Lowest height above which the ALS carries at least half the weight
     /// in every bin.

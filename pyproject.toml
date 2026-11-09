@@ -16,8 +16,15 @@ keywords = ["lidar", "tls", "forestry", "point cloud", "qsm", "remote sensing", 
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
-    "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Rust",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: GIS",
@@ -57,6 +64,8 @@ select = ["E", "F", "I", "B", "UP", "NPY"]
 [tool.ruff.lint.per-file-ignores]
 # Notebook cells are kept as they read best in a notebook.
 "docs/examples/*" = ["E501", "E402", "E702", "I001", "B905", "E401", "E741", "F401"]
+# The generated stub keeps one signature per line, however long.
+"python/sylva/_core.pyi" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["sylva"]

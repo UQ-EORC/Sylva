@@ -51,6 +51,7 @@ pub struct MissReport {
 }
 
 impl MissReport {
+    /// Total misses recovered (count): gaps within lines plus those extrapolated before and after.
     pub fn n_misses(&self) -> usize {
         self.n_gap + self.n_before + self.n_after
     }
@@ -63,6 +64,7 @@ pub struct Reconstruction {
     pub misses: Vec<Point>,
     /// Which recorded pulses fall on a kept stride slot (all true for stride 1).
     pub keep: Vec<bool>,
+    /// What the reconstruction measured and how many misses of each kind it produced.
     pub report: MissReport,
 }
 
@@ -107,6 +109,7 @@ pub struct ScanLines {
 }
 
 impl ScanLines {
+    /// Number of scan lines found (count).
     pub fn n_lines(&self) -> usize {
         self.starts.len().saturating_sub(1)
     }

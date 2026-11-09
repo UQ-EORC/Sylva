@@ -270,10 +270,15 @@ fn build_nodes(cat: &Catalog, dir: &Path, height_attr: &str, voxel: f64, cut: f6
 /// The branch merging of [`trees::merge_branches`] with its own graph.
 #[derive(Debug, Clone)]
 pub struct MergeSettings {
+    /// Graph settings of the merging's own least-cost-path graph (`k`, `voxel_size`, ...).
     pub graph: SegmentParams,
+    /// Graph nodes below this height (m) count as ground.
     pub ground_height: f64,
+    /// Half-width of a candidate's trunk zone in stem radii (`trunk_scale * dbh / 2`).
     pub trunk_scale: f64,
+    /// Smallest half-width (m) of the trunk zone.
     pub trunk_min: f64,
+    /// Only candidates within this horizontal distance (m) are compared.
     pub search_radius: f64,
 }
 
@@ -320,6 +325,7 @@ pub struct Segmented {
     /// Graph nodes claimed by two tiles for different trees (0 when every
     /// tile's crowns lie within its buffer).
     pub conflicts: u64,
+    /// Chunks processed and points held, for checking that memory stayed bounded.
     pub info: RunInfo,
 }
 
@@ -691,7 +697,9 @@ pub fn segment_trees(cat: &Catalog, stems: &[Tree], out_dir: &Path, format: Opti
 /// One tree of a store: its points per tile, in catalogue order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TreeEntry {
+    /// Label of the tree in the store's tiles.
     pub tree_id: i64,
+    /// Points of the tree over every tile.
     pub n_points: usize,
     /// `[xmin, ymin, zmin, xmax, ymax, zmax]` of its points.
     pub bounds: [f64; 6],

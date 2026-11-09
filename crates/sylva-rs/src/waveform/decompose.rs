@@ -52,11 +52,13 @@ pub struct DecomposeOptions {
     pub threshold: f64,
     /// Smallest amplitude of an echo (sample units), whatever the noise.
     pub min_amplitude: f64,
+    /// How candidate echoes are found before the fit.
     pub peaks: PeakMethod,
     /// Most echoes per waveform.
     pub max_echoes: usize,
     /// Bounds on the fitted Gaussian standard deviation (ns).
     pub min_width: f64,
+    /// Largest fitted Gaussian standard deviation (ns).
     pub max_width: f64,
     /// Noise standard deviation to use instead of the estimate.
     pub noise: Option<f64>,
@@ -87,6 +89,7 @@ impl Default for DecomposeOptions {
 }
 
 impl DecomposeOptions {
+    /// Reject settings out of range (negative widths or thresholds, `min_width` above `max_width`, ...) with an error.
     pub fn validate(&self) -> Result<()> {
         if !(self.smooth >= 0.0) || !self.smooth.is_finite() {
             return Err(Error::invalid(format!("smooth must be zero or positive, got {}", self.smooth)));
@@ -217,8 +220,11 @@ pub fn smooth(y: &[f64], sigma: f64) -> Vec<f64> {
 /// A candidate or fitted echo, in samples: centre, amplitude, standard deviation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Component {
+    /// Position of the peak, in samples after the first sample.
     pub centre: f64,
+    /// Peak height above the background (sample units).
     pub amplitude: f64,
+    /// Standard deviation of the Gaussian, in samples.
     pub sigma: f64,
 }
 
@@ -458,10 +464,13 @@ pub fn fit_gaussians(y: &[f64], init: &[Component], min_sigma: f64, max_sigma: f
 pub struct WaveFit {
     /// Echoes in samples (centre after the first sample), ascending.
     pub components: Vec<Component>,
+    /// Background level subtracted from the samples (sample units).
     pub background: f64,
+    /// Standard deviation of the noise (sample units), estimated or as given.
     pub noise: f64,
     /// Root mean square residual of the fit (sample units).
     pub rmse: f64,
+    /// Levenberg-Marquardt iterations over all fits of the waveform.
     pub iterations: usize,
 }
 
@@ -566,10 +575,15 @@ pub fn decompose_one(samples: &[f32], interval: f64, opts: &DecomposeOptions) ->
 /// Per-waveform results of [`decompose`].
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FitStats {
+    /// Background level of each waveform (sample units).
     pub background: Vec<f64>,
+    /// Noise standard deviation of each waveform (sample units).
     pub noise: Vec<f64>,
+    /// Root mean square residual of each fit (sample units).
     pub rmse: Vec<f64>,
+    /// Echoes found in each waveform.
     pub n_echoes: Vec<u32>,
+    /// Levenberg-Marquardt iterations spent on each waveform.
     pub iterations: Vec<u32>,
 }
 

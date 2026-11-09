@@ -52,18 +52,25 @@ const HEIGHT: &str = "__sylva_height";
 /// Settings of [`metric_change`].
 #[derive(Debug, Clone)]
 pub struct MetricChangeParams {
+    /// Settings of the metrics themselves (height threshold, entropy bin, noise handling), as in [`crate::als::metrics`].
     pub metrics: MetricParams,
     /// Metrics to compare (all when None).
     pub names: Option<Vec<String>>,
+    /// Cell size (m) of the metric grid, on the first survey's catalogue grid.
     pub resolution: f64,
+    /// Cell size (m) of each survey's DTM, which normalises its heights.
     pub dtm_resolution: f64,
+    /// How each survey's DTM is made from its ground returns.
     pub dtm: DtmKind,
     /// Permutations per cell (0 for none: no level of detection).
     pub permutations: usize,
     /// Side (m) of the squares within which pulses are permuted.
     pub stratum: f64,
+    /// Seed of the permutations, mixed with each cell's index so that the result does not depend on the chunking.
     pub seed: u64,
+    /// Two-sided confidence of the permutation interval (0–1), e.g. 0.95.
     pub confidence: f64,
+    /// Thin the denser survey towards the other's pulse density before comparing; None compares the surveys as they are.
     pub harmonise: Option<Harmonise>,
 }
 
@@ -76,16 +83,24 @@ impl Default for MetricChangeParams {
 /// Metric rasters of two surveys and their differences.
 #[derive(Debug, Clone)]
 pub struct MetricChange {
+    /// Names of the metrics compared, in the order of the rasters below.
     pub names: Vec<String>,
+    /// Each metric of the first survey.
     pub a: Vec<Raster>,
+    /// Each metric of the second survey, moved into the first survey's frame.
     pub b: Vec<Raster>,
+    /// `b - a` per metric; NaN where either is NaN.
     pub difference: Vec<Raster>,
     /// Mean of the permutation distribution, its interval, half-width and
     /// standard deviation.
     pub bias: Vec<Raster>,
+    /// `alpha / 2` quantile of the permutation distribution per metric; NaN without permutations.
     pub lower: Vec<Raster>,
+    /// `1 - alpha / 2` quantile of the permutation distribution per metric; NaN without permutations.
     pub upper: Vec<Raster>,
+    /// Half-width `(upper - lower) / 2` of the interval per metric: the level of detection.
     pub lod: Vec<Raster>,
+    /// Standard deviation of the permutation distribution per metric.
     pub sigma: Vec<Raster>,
     /// Codes of [`super::surface::CLASSES`], per metric.
     pub classes: Vec<Vec<u8>>,
@@ -104,8 +119,11 @@ impl Stream {
 /// One survey's returns in a cell: the returns, their pulse keys and positions.
 #[derive(Debug, Clone, Default)]
 pub struct CellReturns {
+    /// The returns, in the cell's canonical order.
     pub returns: Vec<Return>,
+    /// Pulse key of each return; returns of one pulse share a key.
     pub keys: Vec<u64>,
+    /// Horizontal position (m) of each return.
     pub xy: Vec<[f64; 2]>,
 }
 
@@ -344,12 +362,19 @@ pub fn metric_change(cat_a: &Catalog, cat_b: &Catalog, alignment: Option<&Alignm
 /// Plant area index of two surveys compared per cell.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PaiChange {
+    /// PAI of the first survey per cell; NaN where no pulse entered the column.
     pub pai_a: Raster,
+    /// PAI of the second survey per cell; NaN where no pulse entered the column.
     pub pai_b: Raster,
+    /// Standard deviation of `pai_a`; NaN where the cell is saturated (no pulse reached the ground).
     pub sigma_a: Raster,
+    /// Standard deviation of `pai_b`; NaN where the cell is saturated.
     pub sigma_b: Raster,
+    /// `pai_b - pai_a`; NaN where either is NaN.
     pub difference: Raster,
+    /// Standard deviation of `difference`, `sqrt(sigma_a² + sigma_b²)`; NaN where either survey is saturated.
     pub sigma: Raster,
+    /// Level of detection: `sigma` times the normal quantile of the confidence.
     pub lod: Raster,
     /// Codes of [`PAI_CLASSES`].
     pub classes: Vec<u8>,

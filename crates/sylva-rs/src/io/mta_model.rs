@@ -55,11 +55,17 @@ pub struct MtaModel {
 /// What the model needs to know about one echo besides the per-zone evidence.
 #[derive(Clone, Copy, Debug)]
 pub struct EchoInfo {
+    /// Echo amplitude (dB).
     pub amplitude: f32,
+    /// RIEGL pulse shape deviation of the echo (dimensionless; small values mean an undistorted pulse).
     pub deviation: f32,
+    /// Range under the zone-1 hypothesis (m), RiVLib's range before any MTA shift.
     pub r1: f32,
+    /// Whether the echo arrived after the next pulse was fired (shim flag bit 5).
     pub late: bool,
+    /// Echoes recorded for the same pulse (count, capped at 255).
     pub n_echoes: u8,
+    /// 1-based position of this echo among its pulse's echoes, nearest first (capped at 255).
     pub idx_in_shot: u8,
     /// Strongest amplitude among the closer echoes of the same pulse (-1 if none).
     pub prev_amp: f32,

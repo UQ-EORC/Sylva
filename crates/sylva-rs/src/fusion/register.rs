@@ -67,6 +67,7 @@ pub enum Refine {
 }
 
 impl Refine {
+    /// The refinement named `"none"`, `"ground"` or `"all"`; any other string is an error.
     pub fn parse(s: &str) -> Result<Refine> {
         match s {
             "none" => Ok(Refine::None),
@@ -76,6 +77,7 @@ impl Refine {
         }
     }
 
+    /// The refinement as the Python API spells it: `"none"`, `"ground"` or `"all"`.
     pub fn name(self) -> &'static str {
         match self {
             Refine::None => "none",
@@ -110,6 +112,7 @@ pub struct RegisterParams {
     pub min_overlap: f64,
     /// Peaks of the coarse search refined.
     pub n_candidates: usize,
+    /// Which points the ICP refinement uses, or none to keep the search result.
     pub refine: Refine,
     /// ICP voxel pyramid (m), coarse to fine.
     pub icp_voxel_sizes: Vec<f64>,
@@ -120,6 +123,7 @@ pub struct RegisterParams {
     /// Largest horizontal move (m) and turn (degrees) of the ICP from the
     /// search result.
     pub max_refine_shift: f64,
+    /// Largest heading change (degrees) the ICP may make from the search result.
     pub max_refine_turn: f64,
     /// Run the quadrant jackknife.
     pub jackknife: bool,
@@ -180,11 +184,17 @@ impl RegisterParams {
 /// One pose of the search: heading (degrees) and shift (m) of the pivot.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Candidate {
+    /// Heading (degrees, counter-clockwise) added to the initial one.
     pub heading: f64,
+    /// Eastward shift of the pivot (m).
     pub dx: f64,
+    /// Northward shift of the pivot (m).
     pub dy: f64,
+    /// Combined correlation `(chm_r + dtm_weight * dtm_r) / (1 + dtm_weight)`; -inf when too few TLS cells fell on ALS data.
     pub score: f64,
+    /// Pearson correlation of the TLS and ALS canopy height models at this pose.
     pub chm_r: f64,
+    /// Pearson correlation of the two DTMs at this pose; NaN when the DTM is not used.
     pub dtm_r: f64,
     /// TLS CHM cells that fell on ALS data.
     pub overlap: usize,
@@ -193,16 +203,22 @@ pub struct Candidate {
 /// Summary of the ICP refinement.
 #[derive(Debug, Clone)]
 pub struct IcpSummary {
+    /// Share (0-1) of the source points that found a correspondence within the cut-off.
     pub fitness: f64,
+    /// Root mean square distance (m) of those correspondences.
     pub rmse: f64,
+    /// Correspondences used.
     pub n: usize,
+    /// ICP iterations run.
     pub iterations: usize,
+    /// Whether the ICP converged before running out of iterations.
     pub converged: bool,
     /// False when the ICP moved too far from the search and was dropped.
     pub accepted: bool,
     /// Horizontal move (m) and heading change (degrees) of the ICP from
     /// the peak it started at.
     pub shift: f64,
+    /// Heading change (degrees) of the ICP from the peak it started at.
     pub turn: f64,
     /// The peak (index into the candidates) the kept ICP started from.
     pub start: usize,
@@ -214,13 +230,18 @@ pub struct Residuals {
     /// TLS ground points minus the ALS DTM (m): count, median, normalised
     /// median absolute deviation, RMSE.
     pub ground_n: usize,
+    /// Median of TLS ground minus ALS DTM (m).
     pub ground_median: f64,
+    /// Normalised median absolute deviation of that difference (m).
     pub ground_nmad: f64,
+    /// Root mean square of that difference (m).
     pub ground_rmse: f64,
     /// Distance (m) of TLS canopy points to the nearest ALS canopy return
     /// (within 5 m): count, median, 90th percentile.
     pub canopy_n: usize,
+    /// Median of those canopy distances (m).
     pub canopy_median: f64,
+    /// 90th percentile of those canopy distances (m).
     pub canopy_p90: f64,
 }
 
@@ -229,16 +250,20 @@ pub struct Residuals {
 pub struct Registration {
     /// Fine and coarse cell sizes used (m) and the ALS density (returns per m²).
     pub resolution: f64,
+    /// Cell size (m) of the coarse search.
     pub coarse_resolution: f64,
+    /// ALS returns per m² over the plot.
     pub als_density: f64,
     /// Maps the TLS input coordinates into the ALS frame.
     pub transform: Matrix4<f64>,
     /// The same after the search, before the ICP: the best peak.
     pub search_transform: Matrix4<f64>,
+    /// Centre of the TLS ground after `initial` (ALS frame): the point the heading turns about and that `shift`, `covariance` and `jackknife` refer to.
     pub pivot: Point,
     /// Heading (degrees, counter-clockwise) and shift (m) of the pivot
     /// added to `initial`.
     pub heading: f64,
+    /// Shift (m) of the pivot in x, y and z.
     pub shift: [f64; 3],
     /// Refined peaks of the search, best first.
     pub candidates: Vec<Candidate>,
@@ -246,14 +271,18 @@ pub struct Registration {
     /// one peak): 0 for a clear answer, near 1 when two poses fit about as
     /// well.
     pub ambiguity: f64,
+    /// Summary of the ICP run kept; None without refinement.
     pub icp: Option<IcpSummary>,
     /// Formal covariance of `[rx, ry, rz, tx, ty, tz]` (radians, m) at the pivot.
     pub covariance: Option<Matrix6<f64>>,
     /// Jackknife standard errors of the pivot's x, y, z (m) and the heading
     /// (degrees) over the four quadrants.
     pub jackknife: Option<[f64; 4]>,
+    /// Ground and canopy residuals of the final registration.
     pub residuals: Residuals,
+    /// TLS points used.
     pub n_tls: usize,
+    /// ALS returns used (those within reach of the plot).
     pub n_als: usize,
 }
 
@@ -606,7 +635,7 @@ pub fn register(tls: &[Point], tls_ground: &[bool], als: &[Point], als_ground: &
     if tls.iter().chain(als).any(|q| !q.iter().all(|v| v.is_finite())) {
         return Err(Error::invalid("point coordinates must be finite"));
     }
-    // Thin the TLS (ground and the rest apart) to a tenth of a fine cell:
+    // Thin the TLS (ground and the rest apart) to a fifth of a fine cell, at most 10 cm:
     // nothing below needs more, and a plot of tens of millions of points
     // shrinks to a few million.
     let voxel = (0.2 * p.resolution).min(0.1);

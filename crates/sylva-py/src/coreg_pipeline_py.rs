@@ -828,6 +828,7 @@ fn coreg_load_transforms(path: PathBuf) -> PyResult<Vec<(String, Vec<Vec<f64>>)>
     cs::load_transforms(&path).map_err(err)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(coreg_prepare_scan, m)?,

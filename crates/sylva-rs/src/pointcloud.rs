@@ -36,14 +36,23 @@ use crate::Point;
 /// stored type does not matter and the variant directly where it does.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Attr {
+    /// 64-bit floats (numpy float64): heights, distances, GPS time.
     F64(Vec<f64>),
+    /// 32-bit floats (numpy float32): reflectance, amplitude and other measured scalars.
     F32(Vec<f32>),
+    /// 64-bit signed integers (numpy int64).
     I64(Vec<i64>),
+    /// 32-bit signed integers (numpy int32).
     I32(Vec<i32>),
+    /// 32-bit unsigned integers (numpy uint32): tree and cluster identifiers.
     U32(Vec<u32>),
+    /// 16-bit unsigned integers (numpy uint16): LAS intensity and point source id.
     U16(Vec<u16>),
+    /// 8-bit unsigned integers (numpy uint8): LAS classification, return number, number of returns.
     U8(Vec<u8>),
+    /// 8-bit signed integers (numpy int8): the LAS scan angle rank.
     I8(Vec<i8>),
+    /// Booleans (numpy bool): keep-masks and per-point flags.
     Bool(Vec<bool>),
 }
 
@@ -64,10 +73,12 @@ macro_rules! attr_dispatch {
 }
 
 impl Attr {
+    /// Number of values in the column, the point count of the cloud it belongs to.
     pub fn len(&self) -> usize {
         attr_dispatch!(self, v => v.len())
     }
 
+    /// Whether the column holds no values.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -167,11 +178,14 @@ attr_from!(f64 => F64, f32 => F32, i64 => I64, i32 => I32, u32 => U32, u16 => U1
 /// recorded test output.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PointCloud {
+    /// Coordinates, one `[x, y, z]` per point (m), in whatever frame the cloud was read or transformed into.
     pub xyz: Vec<Point>,
+    /// Named per-point columns, each as long as `xyz`, kept sorted by name.
     pub attrs: BTreeMap<String, Attr>,
 }
 
 impl PointCloud {
+    /// A cloud of these coordinates and no attributes.
     pub fn new(xyz: Vec<Point>) -> Self {
         PointCloud { xyz, attrs: BTreeMap::new() }
     }
@@ -190,10 +204,12 @@ impl PointCloud {
         Ok(PointCloud { xyz, attrs })
     }
 
+    /// Number of points.
     pub fn len(&self) -> usize {
         self.xyz.len()
     }
 
+    /// Whether the cloud has no points.
     pub fn is_empty(&self) -> bool {
         self.xyz.is_empty()
     }
@@ -232,10 +248,12 @@ impl PointCloud {
         self.attr_f64(attr).unwrap_or_else(|| self.xyz.iter().map(|p| p[2]).collect())
     }
 
+    /// Every point's x coordinate (m), as a lazy sequence like [`PointCloud::z`].
     pub fn x(&self) -> impl Iterator<Item = f64> + '_ {
         self.xyz.iter().map(|p| p[0])
     }
 
+    /// Every point's y coordinate (m), as a lazy sequence like [`PointCloud::z`].
     pub fn y(&self) -> impl Iterator<Item = f64> + '_ {
         self.xyz.iter().map(|p| p[1])
     }

@@ -43,8 +43,11 @@ use crate::{Error, Point, Result};
 
 /// Voxel states of a ray-traced grid (as `sylva.voxels.STATES`).
 pub const UNOBSERVED: u8 = 0;
+/// Voxel state: reached only by pulses already stopped by an earlier return.
 pub const OCCLUDED: u8 = 1;
+/// Voxel state: crossed by pulses, none of which returned (observed empty).
 pub const EMPTY: u8 = 2;
+/// Voxel state: holds returns.
 pub const FILLED: u8 = 3;
 
 /// Voxel states of a ray-traced grid: 0 unobserved, 1 occluded (reached
@@ -53,6 +56,7 @@ pub const FILLED: u8 = 3;
 pub struct StateGrid {
     /// Minimum corner of the grid.
     pub origin: Point,
+    /// Side of a voxel (m).
     pub voxel_size: f64,
     /// `[nx, ny, nz]`.
     pub shape: [usize; 3],
@@ -128,6 +132,7 @@ pub struct CompareParams {
     pub top_band: f64,
     /// As in [`tree_metrics`].
     pub crown_branch_length: f64,
+    /// Slice height (m) of the crown volume, as in [`tree_metrics`].
     pub crown_slice: f64,
 }
 
@@ -184,22 +189,28 @@ impl CompareParams {
 pub struct TaperBin {
     /// Bottom and top of the bin above the base (m).
     pub z0: f64,
+    /// Top of the bin above the base (m).
     pub z1: f64,
     /// Stem radius at the bin centre in each model (m), from a line through
     /// its measured radii; NaN without measured cylinders.
     pub radius_a: f64,
+    /// Stem radius of the later model at the bin centre (m); NaN without measured cylinders.
     pub radius_b: f64,
     /// `radius_b - radius_a` (m) and its standard uncertainty (m).
     pub increment: f64,
+    /// Standard uncertainty of `increment` (m): the residual scatter about both lines and `radius_sigma`.
     pub sigma: f64,
     /// Measured stem cylinders centred in the bin.
     pub n_fits_a: usize,
+    /// Measured stem cylinders of the later model centred in the bin.
     pub n_fits_b: usize,
     /// Share of the stem length in the bin that is measured.
     pub measured_a: f64,
+    /// Share (0–1) of the later model's stem length in the bin that is measured.
     pub measured_b: f64,
     /// Stem volume in the bin (m3), cylinders split by height.
     pub volume_a: f64,
+    /// Stem volume of the later model in the bin (m3).
     pub volume_b: f64,
     /// Both models fitted the bin to points (`min_fits`, `min_measured`).
     pub fitted: bool,
@@ -211,25 +222,37 @@ pub struct TaperBin {
 /// Two branches matched between the epochs.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BranchMatch {
+    /// Branch id in the earlier model.
     pub id_a: u32,
+    /// Branch id in the later model.
     pub id_b: u32,
+    /// Branch order in the earlier model (0 the stem).
     pub order_a: u32,
+    /// Branch order in the later model (0 the stem).
     pub order_b: u32,
     /// Distance between the bases (m) and angle between the directions (deg).
     pub base_distance: f64,
+    /// Angle between the two branch directions (deg).
     pub angle: f64,
     /// The parents are matched to each other (or both are roots).
     pub parent_consistent: bool,
+    /// Branch length in the earlier model (m), the sum of its cylinder lengths.
     pub length_a: f64,
+    /// Branch length in the later model (m).
     pub length_b: f64,
+    /// Branch volume in the earlier model (m3).
     pub volume_a: f64,
+    /// Branch volume in the later model (m3).
     pub volume_b: f64,
+    /// Length-weighted mean cylinder radius of the branch in the earlier model (m).
     pub mean_radius_a: f64,
+    /// Length-weighted mean cylinder radius of the branch in the later model (m).
     pub mean_radius_b: f64,
     /// Distance between the two tips (m).
     pub tip_shift: f64,
     /// Measured share of the length in each model.
     pub measured_a: f64,
+    /// Share (0–1) of the branch length measured in the later model.
     pub measured_b: f64,
     /// Standard uncertainty of `volume_b - volume_a` from the radius scatter (m3).
     pub volume_sigma: f64,
@@ -254,6 +277,7 @@ pub enum BranchStatus {
 }
 
 impl BranchStatus {
+    /// The status as a lower-case string: `lost`, `new`, `unobserved` or `present`.
     pub fn as_str(self) -> &'static str {
         match self {
             BranchStatus::Lost => "lost",
@@ -267,18 +291,26 @@ impl BranchStatus {
 /// A branch in one model without a match in the other.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BranchChange {
+    /// Branch id in its model.
     pub id: u32,
+    /// Branch order (0 the stem).
     pub order: u32,
     /// Branch it grows from (-1 for a root).
     pub parent: i64,
+    /// Start of the branch's first cylinder (m, the models' frame).
     pub base: Point,
+    /// Branch length (m), the sum of its cylinder lengths.
     pub length: f64,
+    /// Branch volume (m3).
     pub volume: f64,
+    /// Share (0–1) of the branch length in measured cylinders.
     pub measured: f64,
+    /// What became of the branch; see [`BranchStatus`].
     pub status: BranchStatus,
     /// Share of samples along the branch the other epoch's grid observed,
     /// and share of those holding returns; NaN without a grid.
     pub observed_share: f64,
+    /// Share (0–1) of the observed samples that hold returns; NaN without a grid or without observed samples.
     pub filled_share: f64,
     /// Standard uncertainty of the volume from the radius scatter (m3).
     pub volume_sigma: f64,
@@ -290,12 +322,16 @@ pub struct BranchChange {
 /// Volume change of one branch order (0 the stem).
 #[derive(Debug, Clone, PartialEq)]
 pub struct OrderChange {
+    /// Branch order (0 the stem).
     pub order: u32,
+    /// Volume of this order in the earlier model (m3).
     pub volume_a: f64,
+    /// Volume of this order in the later model (m3).
     pub volume_b: f64,
     /// `volume_b - volume_a` split into the part both models measured and
     /// the rest.
     pub trusted_change: f64,
+    /// The rest of `volume_b - volume_a` (m3): parts only one model measured or whose radius came from a prior.
     pub untrusted_change: f64,
 }
 
@@ -304,36 +340,58 @@ pub struct OrderChange {
 pub struct QsmChange {
     /// Height of the stem base shared by both profiles (the earlier model's).
     pub base_z: f64,
+    /// Tree height of the earlier model (m); NaN for an empty model.
     pub height_a: f64,
+    /// Tree height of the later model (m); NaN for an empty model.
     pub height_b: f64,
+    /// A measured cylinder reaches within `top_band` of the top in both models.
     pub height_trusted: bool,
+    /// Stem diameter at 1.3 m in the earlier model (m).
     pub dbh_a: f64,
+    /// Stem diameter at 1.3 m in the later model (m).
     pub dbh_b: f64,
+    /// The taper bin holding 1.3 m is trusted.
     pub dbh_trusted: bool,
+    /// Projected crown area of the earlier model (m2), from [`tree_metrics`].
     pub crown_area_a: f64,
+    /// Projected crown area of the later model (m2).
     pub crown_area_b: f64,
+    /// Stacked-hull crown volume of the earlier model (m3), from [`tree_metrics`].
     pub crown_volume_a: f64,
+    /// Stacked-hull crown volume of the later model (m3).
     pub crown_volume_b: f64,
+    /// Both models measured at least `min_measured` of their branch length and no unmatched branch is unobserved.
     pub crown_trusted: bool,
+    /// Whole-tree wood volume of the earlier model (m3).
     pub volume_a: f64,
+    /// Whole-tree wood volume of the later model (m3).
     pub volume_b: f64,
     /// Measured share of each model's volume.
     pub measured_volume_a: f64,
+    /// Share (0–1) of the later model's volume in measured cylinders.
     pub measured_volume_b: f64,
     /// `volume_b - volume_a` = `trusted_change + untrusted_change` (m3).
     pub trusted_change: f64,
+    /// Part of the volume change (m3) that only one model measured or that rests on prior radii.
     pub untrusted_change: f64,
     /// Standard uncertainty of `trusted_change` (m3).
     pub trusted_sigma: f64,
+    /// Volume change by branch order; index = order, 0 the stem.
     pub orders: Vec<OrderChange>,
+    /// The stem profile, one bin per `height_step` above `base_z`, bottom first.
     pub taper: Vec<TaperBin>,
     /// Weighted mean increment over the trusted bins (m), its uncertainty,
     /// and the number of bins; NaN without trusted bins.
     pub taper_increment: f64,
+    /// Standard uncertainty of `taper_increment` (m), scaled up by the Birge ratio when the bins scatter more than their uncertainties allow; NaN without trusted bins.
     pub taper_sigma: f64,
+    /// Trusted bins behind `taper_increment`.
     pub n_taper_bins: usize,
+    /// Matched branch pairs, the stem pair included.
     pub matched: Vec<BranchMatch>,
+    /// Branches of the earlier model without a match in the later one.
     pub lost: Vec<BranchChange>,
+    /// Branches of the later model without a match in the earlier one.
     pub new: Vec<BranchChange>,
 }
 
@@ -866,12 +924,16 @@ pub fn compare_qsms(a: &Qsm, b: &Qsm, grid_a: Option<&StateGrid>, grid_b: Option
 /// What happened to a tree between the epochs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fate {
+    /// Standing in both epochs.
     Survivor,
+    /// Standing in the first epoch only.
     Death,
+    /// Standing in the second epoch only.
     Recruit,
 }
 
 impl Fate {
+    /// The fate as a lower-case string: `survivor`, `death` or `recruit`.
     pub fn as_str(self) -> &'static str {
         match self {
             Fate::Survivor => "survivor",
@@ -885,36 +947,60 @@ impl Fate {
 /// no id or was not modelled).
 #[derive(Debug, Clone, Copy)]
 pub struct PlotTree<'a> {
+    /// Whether the tree is a survivor, a death or a recruit.
     pub fate: Fate,
+    /// Tree id in the first epoch, if it has one.
     pub id_a: Option<i64>,
+    /// Tree id in the second epoch, if it has one.
     pub id_b: Option<i64>,
+    /// Its model in the first epoch, if modelled.
     pub a: Option<&'a Qsm>,
+    /// Its model in the second epoch, if modelled.
     pub b: Option<&'a Qsm>,
 }
 
 /// One row of the plot table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlotRow {
+    /// Whether the tree is a survivor, a death or a recruit.
     pub fate: Fate,
+    /// Tree id in the first epoch, if it has one.
     pub id_a: Option<i64>,
+    /// Tree id in the second epoch, if it has one.
     pub id_b: Option<i64>,
+    /// Whole-tree volume in the first epoch (m3); 0 for a recruit, NaN without a model.
     pub volume_a: f64,
+    /// Whole-tree volume in the second epoch (m3); 0 for a death, NaN without a model.
     pub volume_b: f64,
+    /// `volume_b - volume_a` (m3): a death counts in full as negative, a recruit as positive; NaN when a model is missing.
     pub change: f64,
+    /// Part of `change` both models measured (m3); for a death or recruit, its measured volume.
     pub trusted_change: f64,
+    /// The rest of `change` (m3).
     pub untrusted_change: f64,
+    /// Standard uncertainty of `trusted_change` (m3); 0 for a death or recruit.
     pub trusted_sigma: f64,
     /// Stem (order 0) and branch (order >= 1) parts of `change`.
     pub stem_change: f64,
+    /// Branch (order >= 1) part of `change` (m3).
     pub branch_change: f64,
+    /// Mean stem radius increment of a survivor (m); NaN for other fates or without trusted bins.
     pub taper_increment: f64,
+    /// Standard uncertainty of `taper_increment` (m).
     pub taper_sigma: f64,
+    /// Tree height in the first epoch (m); NaN for a recruit or without a model.
     pub height_a: f64,
+    /// Tree height in the second epoch (m); NaN for a death or without a model.
     pub height_b: f64,
+    /// Branch pairs matched between the epochs (compared survivors only).
     pub n_matched: usize,
+    /// Unmatched branches of the first epoch with status lost.
     pub n_lost: usize,
+    /// Unmatched branches of either epoch whose space the other epoch's grid did not observe.
     pub n_unobserved: usize,
+    /// Unmatched branches of either epoch whose space holds returns in the other epoch's grid.
     pub n_present: usize,
+    /// Unmatched branches of the second epoch with status new.
     pub n_new: usize,
     /// Why a row has no comparison (a missing model), else empty.
     pub note: String,
@@ -924,21 +1010,29 @@ pub struct PlotRow {
 /// in `n_unmodelled`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlotTotals {
+    /// Trees standing in both epochs.
     pub n_survivors: usize,
+    /// Trees standing in the first epoch only.
     pub n_deaths: usize,
+    /// Trees standing in the second epoch only.
     pub n_recruits: usize,
+    /// Trees without a volume change (a model missing), left out of the sums.
     pub n_unmodelled: usize,
     /// Volume change of the survivors, its trusted part and that part's
     /// standard uncertainty.
     pub growth: f64,
+    /// Trusted part of `growth` (m3).
     pub growth_trusted: f64,
+    /// Standard uncertainty of `growth_trusted` (m3), the survivors' trusted sigmas added in quadrature.
     pub growth_sigma: f64,
     /// Volume of the dead trees in the earlier epoch and of the recruits in
     /// the later one (both positive).
     pub mortality: f64,
+    /// Volume of the recruits in the later epoch (m3, positive).
     pub recruitment: f64,
     /// `growth - mortality + recruitment`, and its trusted part.
     pub net: f64,
+    /// Trusted part of `net` (m3).
     pub net_trusted: f64,
 }
 
@@ -946,8 +1040,11 @@ pub struct PlotTotals {
 /// comparison per tree, in the order given, and the totals.
 #[derive(Debug, Clone)]
 pub struct PlotChange {
+    /// One row per tree, in the order given.
     pub rows: Vec<PlotRow>,
+    /// Full comparison of each compared survivor; None for the other rows.
     pub changes: Vec<Option<QsmChange>>,
+    /// Plot totals over the rows with a volume change.
     pub totals: PlotTotals,
 }
 

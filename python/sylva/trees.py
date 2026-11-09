@@ -394,8 +394,13 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
     voxel_size
         Graph resolution (m); 0 uses every point (slow on plots).
     seed_height, seed_radius
-        Graph nodes within ``seed_radius`` of a stem and below
-        ``seed_height`` start that tree's search.
+        Graph nodes within ``seed_radius`` of a stem's bark shell (with
+        ``seed_ring``) or of its axis, from the ground cut to half a metre
+        above ``seed_height``, start that tree's search.
+    seed_ring
+        Seed along the bark shell (a ring of half-width ``seed_radius`` about
+        the fitted radius) rather than a disc about the axis, so a trunk is
+        labelled to within a hand of the ground.
     power
         Exponent on edge length; higher prefers many short steps, so paths
         stay inside a crown rather than jumping the gaps between neighbouring

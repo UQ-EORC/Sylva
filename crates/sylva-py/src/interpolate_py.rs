@@ -3,6 +3,12 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Bindings for sylva_rs::geo::interpolate.
+//!
+//! Backs sylva.geo.interpolate: nearest, majority and IDW transfer of values
+//! between point sets, gridding points to a raster and sampling a raster at
+//! points. Points are `(N, 3)` float64 arrays; a raster is `data` with
+//! `xmin`, `ymin`, `resolution`, returned as a dict. Bad shapes and unknown
+//! method names raise ValueError, the latter via `crate::err`.
 
 use std::borrow::Cow;
 
@@ -75,6 +81,7 @@ fn interp_sample_raster<'py>(py: Python<'py>, data: PyReadonlyArray2<f64>, xmin:
     Ok(py.detach(|| interpolate::sample_raster(&r, &p, m)).into_pyarray(py))
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(interp_nearest_indices, m)?)?;
     m.add_function(wrap_pyfunction!(interp_majority_indices, m)?)?;

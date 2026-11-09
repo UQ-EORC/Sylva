@@ -171,6 +171,7 @@ impl PyScanTiler {
     }
 }
 
+/// Adds this file's functions and classes to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(voxel_downsample_indices_at, m)?)?;
     m.add_function(wrap_pyfunction!(tiles_thin, m)?)?;

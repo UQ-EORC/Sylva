@@ -55,11 +55,13 @@ impl From<parquet::errors::ParquetError> for Error {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// How [`write_shots`] lays out a shots Parquet file.
 pub struct ShotsWriteOptions {
     /// Store angles and ranges as `f64` (exact round trip) instead of `f32`.
     pub double: bool,
     /// Pulses per row group, the unit of streaming reads.
     pub row_group_size: usize,
+    /// zstd compression level, 1 (fast) to 22 (smallest).
     pub zstd_level: i32,
     /// Origins closer than this (m) are one scanner position, their mean.
     /// Ray clouds carry the origin of every ray with rounding noise (LAZ ray
@@ -310,7 +312,9 @@ pub struct ShotsFile {
     origin_scale: f64,
     /// Bounding box of the echoes.
     pub bounds: (Point, Point),
+    /// Pulses in the file (count), echoes or not.
     pub n_shots: usize,
+    /// Echoes in the file over all pulses (count).
     pub n_echoes: usize,
 }
 
@@ -341,6 +345,8 @@ macro_rules! reader_of {
 }
 
 impl ShotsFile {
+    /// Open a shots Parquet file and read its metadata (scanner positions, attributes,
+    /// bounds, counts); the pulses themselves are read per row group with [`read_group`](Self::read_group).
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let file = File::open(path).map_err(|e| Error::file(path, e.to_string()))?;
@@ -385,6 +391,7 @@ impl ShotsFile {
         ShotsFile::open(&self.path)
     }
 
+    /// Number of row groups, the unit of streaming reads (count).
     pub fn n_groups(&self) -> usize {
         self.reader.num_row_groups()
     }
@@ -394,6 +401,7 @@ impl ShotsFile {
         &self.scans
     }
 
+    /// Names of the per-echo attributes stored in the file, in column order.
     pub fn attr_names(&self) -> impl Iterator<Item = &str> {
         self.attrs.iter().map(|a| a.0.as_str())
     }

@@ -58,22 +58,28 @@ pub struct Waveforms {
     pub interval: Vec<f64>,
     /// Range per nanosecond of round-trip time (m/ns).
     pub metres_per_ns: Vec<f64>,
+    /// Index into `samples` of each waveform's first sample.
     pub sample_start: Vec<usize>,
+    /// Samples in each waveform.
     pub sample_count: Vec<u32>,
+    /// All sample values end to end (digital numbers, or physical units after a lookup table).
     pub samples: Vec<f32>,
     /// Per-waveform attributes (`kind`, `channel`, `intensity`, ...).
     pub attrs: BTreeMap<String, Attr>,
 }
 
 impl Waveforms {
+    /// Number of waveforms.
     pub fn len(&self) -> usize {
         self.anchor.len()
     }
 
+    /// True when there are no waveforms.
     pub fn is_empty(&self) -> bool {
         self.anchor.is_empty()
     }
 
+    /// Samples over all waveforms.
     pub fn n_samples(&self) -> usize {
         self.samples.len()
     }
@@ -236,10 +242,12 @@ pub struct Echoes {
 }
 
 impl Echoes {
+    /// Number of echoes.
     pub fn len(&self) -> usize {
         self.time.len()
     }
 
+    /// True when there are no echoes.
     pub fn is_empty(&self) -> bool {
         self.time.is_empty()
     }

@@ -31,7 +31,9 @@ use crate::raster::Raster;
 pub struct GapParams {
     /// Cells no higher than this (m) are gap.
     pub height: f64,
+    /// Smallest area (m²) of a gap; smaller low regions are not gaps.
     pub min_area: f64,
+    /// Largest area (m²) of a gap; larger low regions are not gaps (infinity for no limit).
     pub max_area: f64,
     /// 8 (edges and corners) or 4 (edges).
     pub connectivity: u8,
@@ -44,6 +46,7 @@ impl Default for GapParams {
 }
 
 impl GapParams {
+    /// Checks the settings: a finite height, `0 <= min_area <= max_area`, connectivity 4 or 8.
     pub fn check(&self) -> Result<()> {
         if !self.height.is_finite() {
             return Err(Error::invalid(format!("height must be a finite number, got {}", self.height)));
@@ -61,15 +64,19 @@ impl GapParams {
 /// One gap.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Gap {
+    /// Gap number, from 1, as in [`Gaps::labels`].
     pub id: u32,
+    /// CHM cells in the gap.
     pub n_cells: usize,
     /// Area (m²).
     pub area: f64,
     /// Centre of its cells.
     pub x: f64,
+    /// y of the centre of its cells (m, CHM frame).
     pub y: f64,
     /// Mean and largest CHM height of its cells (m).
     pub mean_height: f64,
+    /// Largest CHM height of its cells (m).
     pub max_height: f64,
     /// Its outline: one polygon per part (parts touch only at corners),
     /// exteriors counter-clockwise, holes clockwise, along cell edges.
@@ -81,6 +88,7 @@ pub struct Gap {
 pub struct Gaps {
     /// Gap of each cell (0 for none), on the CHM's grid.
     pub labels: Vec<u32>,
+    /// The gaps in id order (`gaps[i].id == i + 1`).
     pub gaps: Vec<Gap>,
     /// Area (m²) of the cells with a CHM value.
     pub area_with_data: f64,
@@ -312,7 +320,9 @@ pub const GAP_CELLS: [&str; 6] = ["canopy", "stable_gap", "formed", "closed", "u
 /// Gaps of two surveys compared.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GapChange {
+    /// Gaps of the first survey.
     pub a: Gaps,
+    /// Gaps of the second survey.
     pub b: Gaps,
     /// Code of [`GAP_CELLS`] per cell.
     pub cells: Vec<u8>,
@@ -320,10 +330,12 @@ pub struct GapChange {
     /// "shrunk", "stable" or "uncertain" (its changes are not significant
     /// or not observed); its area closed (m²).
     pub status_a: Vec<&'static str>,
+    /// Area (m²) of each first-survey gap's cells that closed.
     pub closed_area: Vec<f64>,
     /// Per gap of the second survey: "new", "expanded", "stable" or
     /// "uncertain"; its area formed (m²).
     pub status_b: Vec<&'static str>,
+    /// Area (m²) of each second-survey gap's cells that formed.
     pub formed_area: Vec<f64>,
     /// Area (m²) per cell code.
     pub areas: [f64; 6],

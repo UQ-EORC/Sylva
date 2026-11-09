@@ -16,11 +16,17 @@ const EPS: f64 = 1e-10;
 /// Analytic leaf angle distribution (de Wit 1965 types and parametric ones).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Lad {
+    /// Leaf normals spread evenly over the sphere (density `sin θ`); `G = 0.5` at every zenith.
     Spherical,
+    /// Every inclination equally likely.
     Uniform,
+    /// Mostly horizontal leaves (de Wit 1965).
     Planophile,
+    /// Mostly vertical leaves.
     Erectophile,
+    /// Mostly oblique leaves, around 45 degrees.
     Plagiophile,
+    /// Horizontal and vertical leaves, few oblique.
     Extremophile,
     /// Campbell's (1990) ellipsoidal distribution with axis ratio `chi`.
     Ellipsoidal(f64),
@@ -58,6 +64,7 @@ impl Lad {
         })
     }
 
+    /// The rayvoxel `--lad` name.
     pub fn name(&self) -> &'static str {
         match self {
             Lad::Spherical => "spherical",
@@ -374,6 +381,9 @@ impl RayVoxels {
         2.0 * (n - 1.0) * self.get_f(F::HitsWeighted, idx) as f64 / (EPS + n * self.get_f(F::PathLength, idx) as f64)
     }
 
+    /// Beam-section gap probability of the voxel (0–1): `exp(−bs_intercepted / bs_free_path)`,
+    /// else the share of the entering section that was not intercepted; 1 where no beam entered
+    /// or beam metrics are off.
     pub fn transmittance(&self, idx: usize) -> f64 {
         let f = |fld: F| self.get_f(fld, idx) as f64;
         if f(F::BsFreePath) > EPS {
@@ -402,6 +412,7 @@ impl RayVoxels {
         (s.atan2(c).rem_euclid(2.0 * PI), s.hypot(c))
     }
 
+    /// Weighted mean distance from the scanner to the voxel centre (m); 0 where no beam entered.
     pub fn mean_laser_distance(&self, idx: usize) -> f64 {
         let n = self.get_f(F::NumBeamsWeighted, idx);
         if n > 0.0 { (self.get_f(F::SumOfLaserDistances, idx) / n) as f64 } else { 0.0 }
@@ -577,6 +588,7 @@ impl RayVoxels {
         }
     }
 
+    /// Names [`RayVoxels::metric`] accepts besides `pad_`, `lad_`, `wad_` and `attenuation_<method>`.
     pub const METRICS: [&'static str; 19] = [
         "state", "pad_g0_5", "surface_area", "pad_g_corrected", "transmittance", "mean_zenith_angle",
         "mean_azimuth_angle", "azimuth_concentration", "mean_laser_dist", "sd_path_length", "distance_from_ground",

@@ -33,6 +33,7 @@ impl Default for Transform {
 }
 
 impl Transform {
+    /// The identity transform, which leaves every point where it is.
     pub fn identity() -> Self {
         Self::default()
     }
@@ -53,6 +54,7 @@ impl Transform {
         Ok(Transform(Matrix4::from_row_slice(v)))
     }
 
+    /// The 16 entries in row-major order, the layout of [`Transform::from_row_major`] and of a RIEGL `.dat` matrix.
     pub fn to_row_major(&self) -> [f64; 16] {
         let mut out = [0.0; 16];
         for r in 0..4 {
@@ -63,6 +65,7 @@ impl Transform {
         out
     }
 
+    /// A pure translation by `(dx, dy, dz)` (m).
     pub fn translation(dx: f64, dy: f64, dz: f64) -> Self {
         Self::from_rt(Matrix3::identity(), Vector3::new(dx, dy, dz))
     }
@@ -94,15 +97,18 @@ impl Transform {
         Self::from_rt(rz * ry * rx, Vector3::zeros())
     }
 
+    /// The top-left 3x3 block: the rotation (or, for an affine transform, its linear part).
     pub fn rotation(&self) -> Matrix3<f64> {
         self.0.fixed_view::<3, 3>(0, 0).into_owned()
     }
 
+    /// The translation in the last column (m).
     pub fn translation_vec(&self) -> Vector3<f64> {
         self.0.fixed_view::<3, 1>(0, 3).into_owned()
     }
 
     #[inline]
+    /// Carry a point: rotate, then translate (m in, m out).
     pub fn apply(&self, p: &Point) -> Point {
         let m = &self.0;
         [
@@ -128,6 +134,7 @@ impl Transform {
         Transform(self.0 * other.0)
     }
 
+    /// The inverse transform, or an `Invalid` error when the matrix is singular.
     pub fn inverse(&self) -> Result<Transform> {
         self.0.try_inverse().map(Transform).ok_or_else(|| Error::invalid("singular transform"))
     }

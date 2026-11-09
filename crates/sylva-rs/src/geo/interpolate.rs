@@ -261,6 +261,7 @@ pub enum GridMethod {
 }
 
 impl GridMethod {
+    /// The method named `idw`, `tin` or `natural`; any other name is an error.
     pub fn parse(name: &str) -> Result<Self> {
         match name {
             "idw" => Ok(GridMethod::Idw),
@@ -274,6 +275,7 @@ impl GridMethod {
 /// Settings for [`grid`].
 #[derive(Debug, Clone, Copy)]
 pub struct GridParams {
+    /// Interpolation method used between the points.
     pub method: GridMethod,
     /// Inverse-distance exponent (IDW only).
     pub power: f64,
@@ -542,6 +544,7 @@ pub enum SampleMethod {
 }
 
 impl SampleMethod {
+    /// The method named `bilinear` or `nearest`; any other name is an error.
     pub fn parse(name: &str) -> Result<Self> {
         match name {
             "bilinear" => Ok(SampleMethod::Bilinear),

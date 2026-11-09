@@ -20,6 +20,8 @@ use crate::filters::Rng;
 use crate::trees::Tree;
 use crate::Point;
 
+/// Settings of [`detect_stems`]: the stem band and its layers, the 2-D clustering, the RANSAC circle fits
+/// and how circles are linked into stems. The coregistration-mode flags reproduce the stem maps of the coregistration pipeline.
 #[derive(Debug, Clone)]
 pub struct StemParams {
     /// Bottom of the stem search band (m above ground).
@@ -32,30 +34,38 @@ pub struct StemParams {
     pub slice_step: f64,
     /// Height at which positions and DBH are reported.
     pub reference_height: f64,
+    /// Smallest circle radius accepted (m), for a layer's circle and for half the DBH.
     pub min_radius: f64,
+    /// Largest circle radius accepted (m), for a layer's circle and for half the DBH.
     pub max_radius: f64,
     /// 2-D grid cell for connected-component clustering (about half the smallest stem radius).
     pub cluster_cell: f64,
+    /// Clusters with fewer points than this are dropped (count).
     pub min_cluster_points: usize,
     /// Clusters wider than this cannot be a single stem.
     pub max_cluster_extent: f64,
+    /// Three-point circle hypotheses drawn per RANSAC fit (count).
     pub ransac_iterations: usize,
     /// Inlier band around a hypothesised circle (m).
     pub ransac_tolerance: f64,
     /// Split merged clusters (stem + neighbour) into up to this many circles.
     pub max_circles_per_cluster: usize,
+    /// Fewest inliers a circle may have (count); a cluster with fewer points left is not fitted.
     pub min_circle_inliers: usize,
     /// Fraction of the circumference that must be observed (a single scan sees ~0.5).
     pub min_coverage: f64,
     /// Longest contiguous arc (degrees) the inliers must cover; 0 disables.
     /// 130-180 deg suits merged multi-scan plots.
     pub min_arc_deg: f64,
+    /// Largest RMS radial residual of its inliers a circle may have (m).
     pub max_circle_rmse: f64,
     /// Max lateral offset between consecutive layers.
     pub link_radius: f64,
     /// Max relative radius change between layers.
     pub link_radius_ratio: f64,
+    /// Fewest layers a chain of linked circles must span to count as a stem (count).
     pub min_slices: usize,
+    /// Largest lean of the fitted stem axis from vertical (degrees).
     pub max_lean_deg: f64,
     /// Absolute radius tolerance for linking (so 5 cm saplings can still link).
     pub link_radius_abs: f64,
@@ -63,11 +73,13 @@ pub struct StemParams {
     /// patches with a near-horizontal normal (bark), which removes foliage and
     /// horizontal branches that bridge neighbouring stems into one cluster.
     pub prefilter: bool,
+    /// Neighbours per point for the prefilter's local PCA (count).
     pub prefilter_k: usize,
     /// Max |normal_z| for a point to count as stem surface.
     pub prefilter_max_nz: f64,
     /// Max surface variation `l1 / (l1 + l2 + l3)` (0 = perfect plane).
     pub prefilter_max_variation: f64,
+    /// Seed of the RANSAC random stream: one stream from it with `shared_rng`, otherwise `seed + layer` per layer.
     pub seed: u64,
     /// RANSAC adaptive stop granularity: the stop is checked before every
     /// block of this many hypotheses (coregistration mode scores 32 at a time); 0 checks
@@ -200,12 +212,19 @@ impl StemParams {
 /// A circle fitted to one layer.
 #[derive(Debug, Clone, Copy)]
 pub struct CircleFit {
+    /// Circle centre x (m, cloud frame).
     pub x: f64,
+    /// Circle centre y (m, cloud frame).
     pub y: f64,
+    /// Fitted radius (m).
     pub radius: f64,
+    /// Height above ground of the layer's centre (m).
     pub height: f64,
+    /// Points within `ransac_tolerance` of the circle (count).
     pub n_inliers: usize,
+    /// RMS radial residual of the inliers (m).
     pub rmse: f64,
+    /// Fraction of the 36 angular bins around the centre that the inliers occupy (0-1).
     pub coverage: f64,
 }
 

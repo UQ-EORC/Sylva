@@ -3,6 +3,12 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Bindings for raster geometry and heights above a raster.
+//!
+//! Backs sylva.raster (cell indices, cell centres, hillshade) and the
+//! height-above-ground step of sylva.ground via sylva_rs::raster and
+//! sylva_rs::ground. A grid arrives as a 2-D float64 array with `xmin`,
+//! `ymin` and `resolution`, points as `(N, 3)`; every result is a new array
+//! and a wrong point shape is a ValueError from `crate::xyz_from_py`.
 #![allow(clippy::type_complexity)]
 
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
@@ -40,6 +46,7 @@ fn raster_hillshade<'py>(py: Python<'py>, data: PyReadonlyArray2<f64>, resolutio
     Ok(PyArray1::from_vec(py, h.data).reshape([h.nrows, h.ncols])?)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(raster_cell_index, m)?)?;
     m.add_function(wrap_pyfunction!(raster_cell_centers, m)?)?;

@@ -41,14 +41,20 @@ pub fn kabsch(source: &[Point], target: &[Point]) -> Result<Transform> {
 }
 
 #[derive(Debug, Clone)]
+/// Settings of [`icp`]: how correspondences are chosen, when to stop, and
+/// which error metric is minimised.
 pub struct IcpParams {
+    /// Pairs further apart than this (m) are ignored; the start must be within about this of the solution.
     pub max_correspondence_distance: f64,
+    /// Iteration limit.
     pub max_iterations: usize,
+    /// Stop when the RMSE changes by less than this (m) between iterations.
     pub tolerance: f64,
     /// `point` or `plane`.
     pub method: String,
     /// Fraction of closest correspondences kept (trimmed ICP); 1.0 = all.
     pub trim: f64,
+    /// Neighbours for the PCA normals of the `plane` method when the target has no `nx`, `ny`, `nz` columns.
     pub normal_k: usize,
 }
 
@@ -59,10 +65,15 @@ impl Default for IcpParams {
 }
 
 #[derive(Debug, Clone)]
+/// What [`icp`] converged to.
 pub struct IcpResult {
+    /// Transform mapping `source` onto `target`, the initial transform included.
     pub transform: Transform,
+    /// Root-mean-square distance of the kept correspondences at the last iteration (m).
     pub rmse: f64,
+    /// Iterations run before converging or reaching `max_iterations`.
     pub iterations: usize,
+    /// Correspondences kept at the last iteration, after trimming.
     pub n_correspondences: usize,
 }
 

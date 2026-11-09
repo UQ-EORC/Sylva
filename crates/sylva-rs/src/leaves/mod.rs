@@ -58,15 +58,19 @@ pub struct LeafAngles {
     pub bin_centres: Vec<f64>,
     /// Probability per bin (sums to 1).
     pub density: Vec<f64>,
+    /// Mean inclination (rad).
     pub mean: f64,
+    /// Standard deviation of the inclination (rad).
     pub std: f64,
     /// Beta distribution on `t = 2 theta / pi`: `f(t) ~ t^(a-1) (1-t)^(b-1)`,
     /// which is Goel & Strebel's (1984) `(mu, nu) = (beta_b, beta_a)`, the
     /// order of [`crate::voxel::Lad::TwoParamBeta`].
     pub beta_a: f64,
+    /// Second beta parameter (see `beta_a`).
     pub beta_b: f64,
     /// Campbell's ellipsoidal parameter (1 spherical, > 1 planophile).
     pub chi: f64,
+    /// Nearest de Wit (1965) type by name; `None` when the histogram is empty.
     pub de_wit: Option<&'static str>,
 }
 
@@ -245,9 +249,11 @@ fn classify_thinned(points: &[Point], voxel_size: f64, classify: impl Fn(&[Point
 }
 
 #[derive(Debug, Clone)]
+/// Shape and placement rules of the leaves [`insert_leaves`] puts down.
 pub struct LeafParams {
     /// Blade length and greatest width (m).
     pub length: f64,
+    /// Greatest blade width (m).
     pub width: f64,
     /// Shape of one blade, in unit leaf space.
     pub blade: LeafBlade,
@@ -256,6 +262,7 @@ pub struct LeafParams {
     pub max_branch_distance: f64,
     /// Random displacement of a leaf centre from its seed point (m).
     pub jitter: f64,
+    /// Seed of the random draws (positions, angles, blade directions).
     pub seed: u64,
 }
 
@@ -271,7 +278,9 @@ impl Default for LeafParams {
 /// or made of several leaflets, not only a flat outline.
 #[derive(Debug, Clone)]
 pub struct LeafBlade {
+    /// Vertices as `(along, across, up)` in unit leaf space.
     pub vertices: Vec<Point>,
+    /// Triangles as indices into `vertices`.
     pub faces: Vec<[u32; 3]>,
 }
 
@@ -309,23 +318,31 @@ pub fn single_leaf_area(length: f64, width: f64) -> f64 {
 }
 
 #[derive(Debug, Clone, Default)]
+/// The leaves placed by [`insert_leaves`]: one triangle mesh plus a record per leaf.
 pub struct LeafMesh {
+    /// Vertices of every leaf (m).
     pub vertices: Vec<Point>,
+    /// Triangles as indices into `vertices`.
     pub faces: Vec<[u32; 3]>,
     /// Per leaf: centre, unit normal, inclination (rad), nearest cylinder (-1 if none in reach).
     pub centres: Vec<Point>,
+    /// Unit normal of each leaf.
     pub normals: Vec<Point>,
+    /// Inclination of each leaf (rad, 0 horizontal).
     pub inclination: Vec<f64>,
+    /// Index of the nearest QSM cylinder of each leaf, −1 when none within `max_branch_distance`.
     pub cylinder: Vec<i64>,
     /// One-sided area of one leaf (m2).
     pub leaf_area: f64,
 }
 
 impl LeafMesh {
+    /// Leaves placed.
     pub fn n_leaves(&self) -> usize {
         self.centres.len()
     }
 
+    /// One-sided area of all leaves (m²).
     pub fn total_area(&self) -> f64 {
         self.leaf_area * self.n_leaves() as f64
     }

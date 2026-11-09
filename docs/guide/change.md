@@ -228,7 +228,7 @@ MDI, and the plot intervals covered the truth in 16 to 20 of 20 plots. The
 MDI is therefore not conservative for data with pronounced edge effects:
 filter mixed pixels first, or raise `slice_correlation`.
 
-`tests/test_change_trees.py` repeats these checks on smaller plots, and
+`tests/change/test_change_trees.py` repeats these checks on smaller plots, and
 covers the failure modes: stems that moved by 0.3 m, two stems merged into
 one and split again, a tree felled with a new one grown beside it, epochs
 processed with different settings, and increments too small to detect.
@@ -278,7 +278,7 @@ d = change.distances(a, b, "m3c2", core, normal_scale=0.5, projection_scale=0.3,
                      max_depth=0.2, registration_sigma=0.002)
 np.nanmedian(d.lod)                    # 0.0054 m
 d.distance[d.significant].mean()       # 0.030 m: the 3 cm deposit, and nothing else
-sylva.write(d.to_cloud(), "m3c2.laz")  # distance, lod, significant, normals, counts
+sylva.write(d.to_cloud(), "m3c2.laz")  # distance, lod, significant, normals (nx, ny, nz), counts and spreads
 ```
 
 Inside the disc every core point is significant with a mean distance of

@@ -29,7 +29,7 @@ t.volume_by_order()              # {0: 1.747, 1: 0.071, 2: 0.035, 3: 0.014}
 t.qsm                            # the wood as cylinders: a sylva.qsm.QSM
 t.leaves["normal"], t.leaves["area"]
 t.leaf_angles().mean_deg         # 63.3 (erectophile: 63.2)
-t.leaf_angles().g(np.radians([0, 45, 90]))   # G function: 0.43, 0.48, 0.54
+t.leaf_angles().g(np.radians([0, 45, 90]))   # G function: 0.42, 0.48, 0.54
 t.points.attrs["label"]          # 2 stem, 3 branch, 4 leaf
 ```
 
@@ -188,7 +188,7 @@ than 10 cm in range, trail from the stem's edges towards the wall.
 
 ## Checks against the truth
 
-The test suite (`tests/test_synthetic_model.py`) checks that:
+The test suite (`tests/synthetic/test_synthetic_model.py`) checks that:
 
 - wood and leaf points lie on their cylinders and blades, the cylinder table
   gives the volume per order and in total, the leaf table gives the leaf

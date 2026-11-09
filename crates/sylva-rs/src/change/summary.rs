@@ -26,22 +26,34 @@ use super::positive;
 /// errors. A NaN increment (not measured) is imputed.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Survivor {
+    /// DBH in the first epoch (m).
     pub dbh: f64,
+    /// Standard error of `dbh` (m); NaN or 0 adds no noise.
     pub dbh_se: f64,
+    /// Tree height in the first epoch (m).
     pub height: f64,
+    /// Standard error of `height` (m); NaN or 0 adds no noise.
     pub height_se: f64,
+    /// DBH increment between the epochs (m); NaN when not measured (imputed from a measured survivor).
     pub d_dbh: f64,
+    /// Standard error of `d_dbh` (m).
     pub d_dbh_se: f64,
+    /// Height increment between the epochs (m); NaN when not measured (imputed from a measured survivor).
     pub d_height: f64,
+    /// Standard error of `d_height` (m).
     pub d_height_se: f64,
 }
 
 /// A tree seen in one epoch only (dead or recruit).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Single {
+    /// DBH (m) in the epoch the tree was seen.
     pub dbh: f64,
+    /// Standard error of `dbh` (m); NaN or 0 adds no noise.
     pub dbh_se: f64,
+    /// Tree height (m) in the epoch the tree was seen.
     pub height: f64,
+    /// Standard error of `height` (m); NaN or 0 adds no noise.
     pub height_se: f64,
 }
 
@@ -52,12 +64,15 @@ pub struct SummaryParams {
     pub area: f64,
     /// Years between the epochs.
     pub years: f64,
+    /// Monte Carlo draws behind the intervals; 0 leaves the intervals NaN.
     pub n_draws: usize,
+    /// Central share (0–1) of the draws the interval covers, e.g. 0.95.
     pub confidence: f64,
     /// Stem volume = `form_factor * basal area * height`.
     pub form_factor: f64,
     /// Oven-dry wood density (t/m³) for biomass; NaN leaves biomass out.
     pub wood_density: f64,
+    /// Seed of the Monte Carlo draws.
     pub seed: u64,
 }
 
@@ -70,10 +85,15 @@ impl Default for SummaryParams {
 /// One plot-level quantity: its estimate and interval.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Quantity {
+    /// Name of the quantity, e.g. `basal_area_growth`, `mortality_rate` or `n_deaths`.
     pub name: &'static str,
+    /// Unit of the estimate, e.g. `m²/ha/yr`, `1/yr` or `trees`.
     pub unit: &'static str,
+    /// Point estimate: no noise, unmeasured survivors at the mean measured increment.
     pub estimate: f64,
+    /// Lower end of the `confidence` interval of the draws; NaN without draws.
     pub low: f64,
+    /// Upper end of the `confidence` interval of the draws; NaN without draws.
     pub high: f64,
 }
 

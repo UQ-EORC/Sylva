@@ -108,7 +108,7 @@ See [Command line](cli.md) for every command and option.
 ## Reproducibility
 
 - **Seeds.** Every function with a random element takes a `seed` (default
-  0), including RANSAC fits, random thinning and the azimuths of
+  0, except `leaves.add_leaves`, which uses 1), including RANSAC fits, random thinning and the azimuths of
   reconstructed misses.
 - **Repeat runs.** With the same inputs, parameters and version, stem
   detection, segmentation, QSMs and ray-traced voxels repeat exactly; this
@@ -205,7 +205,8 @@ with progress.task("fitting QSMs", len(trees)) as t:
 ```
 
 Reported by the core: tree segmentation, QSM building, pulse tracing, buttress
-meshing and leaf placement; from Python: scan pair registration.
+meshing and leaf placement; from Python: reading scans, tiling, and the
+chunks of the airborne commands.
 
 
 ## When it will not fit in memory

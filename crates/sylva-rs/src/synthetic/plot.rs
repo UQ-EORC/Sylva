@@ -38,10 +38,18 @@ use crate::{Point, PointCloud};
 #[derive(Debug, Clone, PartialEq)]
 pub enum DbhDistribution {
     /// Weibull with `shape` and `scale` (m), truncated below at `min_dbh`.
-    Weibull { shape: f64, scale: f64 },
+    Weibull {
+        /// Weibull shape parameter (dimensionless, positive); 1 is an exponential distribution.
+        shape: f64,
+        /// Weibull scale parameter (m): the 63rd percentile of the untruncated distribution.
+        scale: f64,
+    },
     /// Negative exponential above `min_dbh` with mean excess `mean` (m): the
     /// reverse-J of uneven-aged stands (de Liocourt's constant quotient).
-    ReverseJ { mean: f64 },
+    ReverseJ {
+        /// Mean DBH excess over `min_dbh` (m) of the exponential tail.
+        mean: f64,
+    },
     /// These diameters (m), one tree each; the density is then ignored.
     Given(Vec<f64>),
 }
@@ -58,6 +66,9 @@ pub struct Terrain {
 }
 
 impl Terrain {
+    /// A plane rising `slope` per metre towards `aspect_deg` plus micro-relief of
+    /// standard deviation `roughness` (m) and correlation length `length` (m), as 64
+    /// random Fourier modes drawn from `seed`; no modes when either is zero.
     pub fn new(slope: f64, aspect_deg: f64, roughness: f64, length: f64, seed: u64) -> Terrain {
         const K: usize = 64;
         let mut rng = Generator::new(seed);
@@ -69,6 +80,7 @@ impl Terrain {
         Terrain { slope, aspect_deg, modes }
     }
 
+    /// Terrain height at `(x, y)` (m): the plane plus the sum of the modes.
     pub fn height(&self, x: f64, y: f64) -> f64 {
         let a = self.aspect_deg.to_radians();
         let mut z = self.slope * (x * a.sin() + y * a.cos());
@@ -98,15 +110,21 @@ pub struct PlotSpec {
     pub size: f64,
     /// Stems per hectare.
     pub density: f64,
+    /// Diameter distribution the stems are drawn from (m).
     pub dbh: DbhDistribution,
+    /// Smallest diameter (m); draws below it are rejected. Given diameters are not truncated.
     pub min_dbh: f64,
     /// Archetypes and their weights.
     pub archetypes: Vec<(Archetype, f64)>,
     /// Standard deviation of the log of height about the allometry.
     pub height_noise: f64,
+    /// Terrain rise per metre towards `aspect_deg` (0.1 is 5.7 degrees); within ±1.
     pub slope: f64,
+    /// Direction of steepest ascent, degrees clockwise from north (+y).
     pub aspect_deg: f64,
+    /// Standard deviation of the terrain micro-relief (m); 0 for a plane.
     pub roughness: f64,
+    /// Correlation length of the micro-relief (m).
     pub roughness_length: f64,
     /// Understorey shrubs per hectare.
     pub shrubs: f64,
@@ -116,20 +134,29 @@ pub struct PlotSpec {
     pub grass_height: f64,
     /// Fallen logs and stumps per hectare.
     pub logs: f64,
+    /// Stumps per hectare (0.2 to 1 m tall, 10 to 30 cm radius).
     pub stumps: f64,
     /// Terrain points per m², over the plot and `margin` m beyond it.
     pub ground_density: f64,
+    /// Terrain beyond the plot edge on every side (m).
     pub margin: f64,
     /// Points per m² of wood, leaf, understorey and dead wood.
     pub point_density: f64,
+    /// Highest branch order grown on the trees (1 to 4); shrubs use at most 2.
     pub max_order: u32,
+    /// Leaf angle distribution of every tree; `None` takes each archetype's default.
     pub lad: Option<Lad>,
     /// Epicormic shoots per metre of bole.
     pub epicormic: f64,
+    /// Random seed; every tree's seed is drawn from it, so the plot does not depend on the number of threads.
     pub seed: u64,
 }
 
 impl PlotSpec {
+    /// The default plot with this seed: a 30 m square at 600 broadleaf stems per
+    /// hectare, Weibull diameters (shape 1.8, scale 0.22 m) above 7 cm, a 0.1 slope
+    /// facing east with 5 cm micro-relief, 400 shrubs, 60 logs and 40 stumps per
+    /// hectare, 20 % grass cover, 400 ground points and 1000 surface points per m².
     pub fn new(seed: u64) -> PlotSpec {
         PlotSpec { size: 30.0, density: 600.0, dbh: DbhDistribution::Weibull { shape: 1.8, scale: 0.22 }, min_dbh: 0.07, archetypes: vec![(Archetype::Broadleaf, 1.0)], height_noise: 0.1, slope: 0.1, aspect_deg: 90.0, roughness: 0.05, roughness_length: 2.0, shrubs: 400.0, grass_cover: 0.2, grass_height: 0.5, logs: 60.0, stumps: 40.0, ground_density: 400.0, margin: 2.0, point_density: 1000.0, max_order: 3, lad: None, epicormic: 0.0, seed }
     }
@@ -168,30 +195,44 @@ impl PlotSpec {
 /// Truth of one tree of a plot.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlotTree {
+    /// Tree number, 1 upwards in order of decreasing DBH; the `tree_id` of its points.
     pub id: i32,
+    /// Tree form the tree was grown from.
     pub archetype: Archetype,
     /// Stem base on the terrain.
     pub base: Point,
     /// Stem axis 1.3 m along the stem above the terrain.
     pub stem_bh: Point,
+    /// Area-equivalent diameter of the stem section 1.3 m along the stem (m).
     pub dbh: f64,
     /// Highest point above the terrain at the stem.
     pub height: f64,
+    /// Height above the terrain at the stem of the lowest first-order branch that is not epicormic (m).
     pub crown_base: f64,
+    /// Area of the convex hull of the crown seen from above (m²).
     pub crown_area: f64,
+    /// Volume of all the tree's cylinders (m³).
     pub wood_volume: f64,
+    /// Volume of the stem cylinders, branch order 0 (m³).
     pub stem_volume: f64,
+    /// Volume of the branch cylinders (m³): `wood_volume` less `stem_volume`.
     pub branch_volume: f64,
+    /// One-sided area of all the tree's leaf blades, epicormic included (m²).
     pub leaf_area: f64,
 }
 
 /// A fallen log (kind 0) or a stump (kind 1): a cylinder.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeadWood {
+    /// 0 for a fallen log, 1 for a stump.
     pub kind: u8,
+    /// One end of the axis (m): a log's end rests 0.8 radius above the terrain, a stump starts 0.1 m below it.
     pub start: Point,
+    /// Unit direction from `start` to the other end; `(0, 0, 1)` for a stump.
     pub axis: Point,
+    /// Length along the axis (m); a stump's includes the 0.1 m below ground.
     pub length: f64,
+    /// Radius of the cylinder (m): 0.05 to 0.25 for a log, 0.1 to 0.3 for a stump.
     pub radius: f64,
 }
 
@@ -204,17 +245,23 @@ pub struct Plot {
     /// (-1 off the trees), `cylinder` and `leaf` (rows of the tables, -1
     /// elsewhere) and `epicormic`.
     pub cloud: PointCloud,
+    /// Truth of each tree, in `tree_id` order (row `i` is tree `i + 1`).
     pub trees: Vec<PlotTree>,
     /// Wood cylinders of all trees; `parent` refers to rows of the same tree.
     pub cylinders: Vec<Cylinder>,
+    /// `tree_id` of each row of `cylinders`.
     pub cylinder_tree: Vec<i32>,
+    /// Leaf blades of all trees; `cylinder` refers to rows of `cylinders`.
     pub leaves: Vec<Leaf>,
+    /// `tree_id` of each row of `leaves`.
     pub leaf_tree: Vec<i32>,
+    /// Fallen logs and stumps, each a cylinder.
     pub dead_wood: Vec<DeadWood>,
     /// Shrubs as `(x, y, height, leaf area)`.
     pub shrubs: Vec<[f64; 4]>,
     /// Grass tufts as `(x, y, radius)`.
     pub grass: Vec<[f64; 3]>,
+    /// The terrain surface the scene stands on.
     pub terrain: Terrain,
 }
 

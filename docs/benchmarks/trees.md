@@ -16,8 +16,10 @@ reference coverage are ignored. raycloudtools' `rayextract trees`
 
 Scored in October 2026 with the current defaults on the plot clouds and
 reference labels as kept beside the harvest benchmark (the `basis` arrays):
-ground by PMF on a 5 cm thinning, a 0.5 m DTM, stems detected with the
-defaults, the graph on 5 cm voxels, pruned at 3 m (left) and 5 m (right).
+ground by PMF (the protocol's choice; `sylva ground` defaults to CSF) on a
+5 cm thinning, a 0.5 m DTM, stems detected with the defaults, the graph on
+5 cm voxels (`voxel_size=0.05`; the default is 3 cm), pruned at 3 m (left)
+and 5 m (right).
 The same figures come out at three different corners of the thinning grid,
 which was not so before (below).
 
@@ -37,7 +39,7 @@ four plots with this protocol:
    the thinning's. On a synthetic plot of interlocking crowns that took the
    share of tree points left unlabelled from 31 % to under 1 %.
 2. **Stems are seeded along the whole bark shell** from the ground to half a
-   metre above breast height, and the ground cut dropped from 0.25 m to 0.1 m
+   metre above `seed_height` (1.5 m by default, so to 2 m), and the ground cut dropped from 0.25 m to 0.1 m
    (0 with a ground classification), so a trunk is labelled to within a hand
    of the ground. Neither changed a single tree's outcome once the grid was
    held still; what the earlier cut was protecting against turned out to be

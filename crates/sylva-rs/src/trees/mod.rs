@@ -22,16 +22,25 @@ use crate::Point;
 /// Summary of a detected tree.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tree {
+    /// Identifier 1..n, given by quality rank at detection; matches the labels of [`segment_trees`].
     pub tree_id: i64,
+    /// Stem centre x at the reference height (breast height, 1.3 m by default), in the cloud's frame (m).
     pub x: f64,
+    /// Stem centre y at the reference height, in the cloud's frame (m).
     pub y: f64,
+    /// Stem diameter at the reference height (m), read from the inlier-weighted linear taper of the layer circles.
     pub dbh: f64,
+    /// Tree height above ground (m), a percentile of the labelled points' heights; NaN until [`tree_heights`] fills it.
     pub height: f64,
+    /// Circle-inlier count at detection; the number of points labelled with this tree once [`tree_heights`] has run.
     pub n_points: usize,
     /// Fraction of the circumference observed (angular coverage), 0..1.
     pub inlier_fraction: f64,
+    /// Number of horizontal layers whose circles were linked into this stem (count).
     pub n_slices: usize,
+    /// Inlier-weighted mean circle-fit residual over the stem's layers (m).
     pub rmse: f64,
+    /// Lean of the fitted stem axis from vertical (degrees).
     pub lean_deg: f64,
     /// Heuristic 0..1 confidence from fit residual, coverage and slice support.
     pub quality: f64,
@@ -85,12 +94,18 @@ fn circle_through_3(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Option<(f64, f64, 
     Some((ux, uy, (a[0] - ux).hypot(a[1] - uy)))
 }
 
+/// Settings of [`fit_circle_ransac`]: the inlier band, the number of hypotheses and the radii a hypothesis may have.
 #[derive(Debug, Clone)]
 pub struct RansacCircleParams {
+    /// Inlier band: a point whose radial residual is below this (m) counts as an inlier.
     pub threshold: f64,
+    /// Number of random three-point circle hypotheses drawn (count).
     pub iterations: usize,
+    /// Hypotheses with a radius below this (m) are rejected.
     pub min_radius: f64,
+    /// Hypotheses with a radius above this (m) are rejected.
     pub max_radius: f64,
+    /// Seed of the random stream that draws the hypotheses, for repeatable fits.
     pub seed: u64,
 }
 
@@ -157,14 +172,18 @@ pub fn dbh_profile(points: &[Point], heights: &[f64], cx: f64, cy: f64, at_heigh
 
 // ------------------------------------------------------------- segmentation
 
+/// Settings of [`segment_trees`]: the kNN graph, the stem seeds, the edge costs and the near-ground rules.
 #[derive(Debug, Clone)]
 pub struct SegmentParams {
+    /// Neighbours per node in the directed kNN graph (count).
     pub k: usize,
     /// Neighbours farther than this are not linked.
     pub max_edge: f64,
     /// Build the graph on a voxel downsample of this size (0 = full cloud).
     pub voxel_size: f64,
+    /// Seeds are the graph nodes below this height above ground (m) plus 0.5 m that lie in a stem's seed ring.
     pub seed_height: f64,
+    /// Half-width of the seed ring about the stem surface (m), or the disc radius about its axis without `seed_ring`.
     pub seed_radius: f64,
     /// Edge cost exponent on distance.
     pub power: f64,
@@ -183,6 +202,7 @@ pub struct SegmentParams {
     /// `height_prior_radius` of the stem (raycloudtools' per-root scaling), so
     /// tall trees win contested crown points over understorey stems.
     pub height_prior: bool,
+    /// Horizontal radius about the stem (m) within which graph nodes supply the tree's height estimate.
     pub height_prior_radius: f64,
     /// Seed a ring around the stem surface rather than a disc around its
     /// axis, so a trunk wider than `seed_radius` still gets seeds.
@@ -196,12 +216,15 @@ pub struct SegmentParams {
     /// understorey the graph reaches along the surface are left unassigned
     /// instead of being modelled as part of the tree.
     pub low_height: f64,
+    /// Horizontal radius from the tree's base (m) within which points below `low_height` keep their label; 1.5 DBH if that is larger.
     pub low_radius: f64,
     /// Classify graph nodes as wood by local anisotropy (`1 - l_min / l_max`
     /// over `wood_k` neighbours) above `wood_threshold`, and
     /// apply wood / leaf cost factors so foliage cannot bridge trees.
     pub wood_costs: bool,
+    /// Neighbours per node for the local PCA that classifies wood (count).
     pub wood_k: usize,
+    /// Anisotropy `1 - l_min / l_max` above which a node counts as wood (fraction 0-1).
     pub wood_threshold: f64,
     /// Understorey competes for points (after raycloudtools, where every
     /// point's path runs to the ground and small plants keep their own).
@@ -213,6 +236,7 @@ pub struct SegmentParams {
     /// tree and lost up to four, and what they take from a crown they take
     /// through foliage regardless of how they are costed.
     pub understorey_height: f64,
+    /// Height band above `cut_above_ground` (m) in which graph nodes clear of every stem become understorey sources.
     pub understorey_band: f64,
     /// Corner of the voxel grid of the graph; None anchors it at the
     /// cloud's minimum corner rounded down to whole metres, so that nothing
@@ -284,9 +308,13 @@ pub fn segment_trees_masked(points: &[Point], heights: &[f64], trees: &[Tree], p
 /// indices, each with the id of its tree, the stem position and the cost
 /// scale of the tree's height prior.
 pub struct Seeds {
+    /// Indices of the seed nodes among the graph nodes, tree by tree, each tree's in node order.
     pub seeds: Vec<usize>,
+    /// The `tree_id` of each seed's tree; -1 for an understorey source.
     pub seed_tree: Vec<i64>,
+    /// Horizontal position of each seed's stem (m, cloud frame), the origin of the gravity term.
     pub seed_xy: Vec<[f64; 2]>,
+    /// Cost scale of each seed's tree from the height prior, `1 / max(h, 2)^height_prior_power`; 1 without the prior.
     pub seed_scale: Vec<f64>,
 }
 
@@ -665,20 +693,26 @@ pub struct CrownShape {
     /// Vertical projection: convex hull area (m2), its equivalent diameter
     /// and greatest width (m).
     pub projected_area: f64,
+    /// Diameter of the circle with the projected area (m).
     pub diameter: f64,
+    /// Greatest distance between two vertices of the projected hull (m).
     pub max_width: f64,
     /// Stacked convex hulls of horizontal slices (m3): follows the crown's
     /// taper and skirt, unlike one 3-D hull.
     pub volume: f64,
     /// Outer surface of the stacked hulls (m2): side walls plus top.
     pub surface: f64,
+    /// z of the lowest crown point (m, the input points' frame); `z_min` when there are too few points.
     pub base_height: f64,
+    /// z of the highest crown point (m, the input points' frame); NaN when there are too few points.
     pub top_height: f64,
     /// Horizontal offset of the crown's area centroid from `base_xy` (m),
     /// its direction (deg, counter-clockwise from +x) and the offset relative
     /// to the equivalent crown radius.
     pub offset: f64,
+    /// Direction of the centroid offset (degrees, counter-clockwise from +x).
     pub offset_direction: f64,
+    /// Offset divided by the equivalent crown radius (dimensionless); NaN when the projection has no area.
     pub asymmetry: f64,
 }
 

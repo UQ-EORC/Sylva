@@ -55,17 +55,51 @@ def identity() -> np.ndarray:
 
 
 def skew(v: np.ndarray) -> np.ndarray:
-    """The 3x3 skew-symmetric matrix of a 3-vector."""
+    """The 3x3 skew-symmetric matrix of a 3-vector.
+
+    Parameters
+    ----------
+    v
+        ``(3,)`` vector.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(3, 3)`` matrix with ``skew(v) @ u == cross(v, u)``.
+    """
     return _core.coreg_skew(np.asarray(v, dtype=float).reshape(3))
 
 
 def so3_exp(w: np.ndarray) -> np.ndarray:
-    """Rotation matrix of a rotation vector."""
+    """Rotation matrix of a rotation vector.
+
+    Parameters
+    ----------
+    w
+        ``(3,)`` rotation vector: unit axis times angle (radians).
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(3, 3)`` rotation matrix.
+    """
     return _core.coreg_so3_exp(np.asarray(w, dtype=float).reshape(3))
 
 
 def so3_log(R: np.ndarray) -> np.ndarray:
-    """Rotation vector of a rotation matrix."""
+    """Rotation vector of a rotation matrix.
+
+    Parameters
+    ----------
+    R
+        ``(3, 3)`` rotation matrix; a ``(4, 4)`` transform is accepted and its rotation
+        block used.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(3,)`` rotation vector, unit axis times angle (radians, in ``[0, pi]``).
+    """
     return _core.coreg_so3_log(np.ascontiguousarray(np.asarray(R, dtype=float)[:3, :3]))
 
 
@@ -86,17 +120,53 @@ def se3_exp(xi: np.ndarray) -> np.ndarray:
 
 
 def se3_log(T: np.ndarray) -> np.ndarray:
-    """Twist ``[w, t]`` of a transform; the inverse of :func:`se3_exp`."""
+    """Twist ``[w, t]`` of a transform; the inverse of :func:`se3_exp`.
+
+    Parameters
+    ----------
+    T
+        ``(4, 4)`` (or ``(3, 4)``) rigid transform.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(6,)`` twist, rotation first: ``w`` in radians, ``t`` in m.
+    """
     return _core.coreg_se3_log(_mat4(T))
 
 
 def invert(T: np.ndarray) -> np.ndarray:
-    """Inverse of a rigid transform."""
+    """Inverse of a rigid transform.
+
+    Parameters
+    ----------
+    T
+        ``(4, 4)`` (or ``(3, 4)``) rigid transform.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(4, 4)`` inverse, ``[R^T, -R^T t]``, mapping back from the target frame of ``T``
+        to its source frame.
+    """
     return _core.coreg_invert(_mat4(T))
 
 
 def transform_points(T: np.ndarray, points: np.ndarray) -> np.ndarray:
-    """Apply a transform to ``(n, 3)`` points."""
+    """Apply a transform to ``(n, 3)`` points.
+
+    Parameters
+    ----------
+    T
+        ``(4, 4)`` (or ``(3, 4)``) rigid transform.
+    points
+        ``(n, 3)`` points in the source frame of ``T``.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(n, 3)`` points ``R @ p + t`` in the target frame of ``T``; a new array.
+    """
     pts = np.asarray(points, dtype=float)
     if pts.size == 0:
         return pts.reshape(0, 3).copy()
@@ -104,7 +174,20 @@ def transform_points(T: np.ndarray, points: np.ndarray) -> np.ndarray:
 
 
 def transform_vectors(T: np.ndarray, vectors: np.ndarray) -> np.ndarray:
-    """Rotate ``(n, 3)`` directions (the translation is ignored)."""
+    """Rotate ``(n, 3)`` directions (the translation is ignored).
+
+    Parameters
+    ----------
+    T
+        ``(4, 4)`` (or ``(3, 4)``) rigid transform; only its rotation is used.
+    vectors
+        ``(n, 3)`` directions, such as stem axes or normals, in the source frame of ``T``.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(n, 3)`` directions ``R @ v`` in the target frame; a new array.
+    """
     vec = np.asarray(vectors, dtype=float)
     if vec.size == 0:
         return vec.reshape(0, 3).copy()
@@ -112,7 +195,20 @@ def transform_vectors(T: np.ndarray, vectors: np.ndarray) -> np.ndarray:
 
 
 def yaw_transform(yaw: float, tx: float = 0.0, ty: float = 0.0, tz: float = 0.0) -> np.ndarray:
-    """A rotation of ``yaw`` radians about +z followed by a translation."""
+    """A rotation of ``yaw`` radians about +z followed by a translation.
+
+    Parameters
+    ----------
+    yaw
+        Rotation about +z (radians, anticlockwise seen from above).
+    tx, ty, tz
+        Translation (m) applied after the rotation; 0 by default.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(4, 4)`` transform, ``q = R_z(yaw) @ p + [tx, ty, tz]``.
+    """
     return _core.coreg_yaw_transform(float(yaw), float(tx), float(ty), float(tz))
 
 
@@ -152,6 +248,25 @@ def kabsch_2d_yaw(
     """Least-squares yaw and translation (4 degrees of freedom) between point sets.
 
     The right estimator for levelled scans, whose roll and pitch are known.
+
+    Parameters
+    ----------
+    source, target
+        ``(n, 3)`` corresponding points, ``n >= 2``. The yaw is fitted on ``x, y``; the
+        translation also carries the mean ``z`` offset.
+    weights
+        Optional ``(n,)`` weights; equal if None.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(4, 4)`` transform mapping ``source`` onto ``target``: a rotation about +z and a
+        translation.
+
+    Raises
+    ------
+    ValueError
+        On mismatched shapes, fewer than 2 points or zero total weight.
     """
     src = np.asarray(source, dtype=float)
     dst = np.asarray(target, dtype=float)
@@ -162,12 +277,36 @@ def kabsch_2d_yaw(
 
 
 def rotation_angle(T: np.ndarray) -> float:
-    """Rotation magnitude of a transform, in radians (exact near zero)."""
+    """Rotation magnitude of a transform, in radians (exact near zero).
+
+    Parameters
+    ----------
+    T
+        ``(4, 4)`` transform or ``(3, 3)`` rotation matrix.
+
+    Returns
+    -------
+    float
+        Rotation angle (radians) in ``[0, pi]``.
+    """
     return float(
         _core.coreg_rotation_angle(np.ascontiguousarray(np.asarray(T, dtype=float)[:3, :3]))
     )
 
 
 def transform_difference(A: np.ndarray, B: np.ndarray) -> tuple[float, float]:
-    """``(rotation_rad, translation_m)`` of the discrepancy ``A^-1 B``."""
+    """``(rotation_rad, translation_m)`` of the discrepancy ``A^-1 B``.
+
+    Parameters
+    ----------
+    A, B
+        ``(4, 4)`` (or ``(3, 4)``) rigid transforms between the same two frames, such as an
+        estimate and a reference.
+
+    Returns
+    -------
+    tuple of float
+        Rotation angle (radians) and translation length (m) of ``invert(A) @ B``; both 0
+        when the transforms agree.
+    """
     return _core.coreg_transform_difference(_mat4(A), _mat4(B))

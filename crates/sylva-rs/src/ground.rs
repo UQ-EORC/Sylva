@@ -11,6 +11,7 @@ use crate::{Point, PointCloud};
 
 /// ASPRS ground class.
 pub const GROUND_CLASS: u8 = 2;
+/// ASPRS class for a point not identified as ground (LAS "unclassified").
 pub const UNCLASSIFIED: u8 = 1;
 
 /// Cloth Simulation Filter parameters (Zhang et al. 2016).
@@ -22,7 +23,9 @@ pub struct CsfParams {
     pub rigidness: usize,
     /// Height above the settled cloth below which a point is ground (m).
     pub class_threshold: f64,
+    /// Maximum number of simulation steps; the run also stops once no cell moves more than 0.1 mm.
     pub iterations: usize,
+    /// Simulation time step (dimensionless); a free cell falls 0.2 * time_step^2 m a step. The default rarely needs changing.
     pub time_step: f64,
 }
 
@@ -170,10 +173,15 @@ pub fn csf_ground_mask(points: &[Point], p: &CsfParams) -> Vec<bool> {
 /// Progressive Morphological Filter parameters (Zhang et al. 2003).
 #[derive(Debug, Clone)]
 pub struct PmfParams {
+    /// Cell size of the minimum-height grid the filter opens (m).
     pub cell_size: f64,
+    /// Largest opening window (m); should exceed the footprint of the largest non-ground object (a crown, a building).
     pub max_window: f64,
+    /// Terrain slope (rise over run, dimensionless) that grows the height threshold with window size.
     pub slope: f64,
+    /// Height threshold for the smallest window (m).
     pub initial_distance: f64,
+    /// Upper limit on the height threshold (m).
     pub max_distance: f64,
 }
 

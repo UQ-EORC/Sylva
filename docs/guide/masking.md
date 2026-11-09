@@ -138,7 +138,7 @@ NaN is false except `!=`. Boolean attributes are conditions on their own
 (`withheld & z > 1`). Errors name the problem and its position:
 
 ```text
-ValueError: unknown attribute 'hieght' at position 0 (did you mean 'height'?); the cloud has: x, y, z, classification, height, intensity
+ValueError: unknown attribute 'hieght' at position 0 (did you mean 'height'?); the cloud has: x, y, z, classification, height, tree_id
     hieght > 2
     ^
 ```

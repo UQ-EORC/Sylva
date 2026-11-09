@@ -21,16 +21,22 @@ use crate::error::{Error, Result};
 /// One attribute value of a feature.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Property {
+    /// No value (a null field, or a shapefile field left empty).
     Null,
+    /// A true/false value (a shapefile logical field or a JSON boolean).
     Bool(bool),
+    /// A whole number (a shapefile integer field, or a numeric field without a fractional part).
     Int(i64),
+    /// A real number.
     Float(f64),
+    /// Text; shapefile dates come as `YYYY-MM-DD` and datetimes as `YYYY-MM-DDTHH:MM:SS`.
     Str(String),
 }
 
 /// One record of a polygon layer.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Feature {
+    /// The record's shape, in the coordinates stored in the file (the layer's CRS is not applied).
     pub geometry: MultiPolygon,
     /// Attribute name and value: in field order for a shapefile, sorted by
     /// name for GeoJSON.
@@ -40,6 +46,7 @@ pub struct Feature {
 /// A polygon layer read from a file.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Layer {
+    /// The records of the layer in file order, one per shape or GeoJSON feature.
     pub features: Vec<Feature>,
     /// CRS as stored in the file (WKT or a name such as `EPSG:28355`).
     pub crs: Option<String>,

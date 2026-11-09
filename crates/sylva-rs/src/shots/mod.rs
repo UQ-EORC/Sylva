@@ -19,6 +19,8 @@ use crate::transform::{add, normalize, scale, sub, Transform};
 use crate::{Point, PointCloud};
 
 #[derive(Debug, Clone, Default, PartialEq)]
+/// A set of laser pulses: where each was fired from, which way it went and the
+/// ranges of its echoes, so a pulse with no echo is kept as a record of free space.
 pub struct Shots {
     /// Beam origin per shot.
     pub origin: Vec<Point>,
@@ -35,10 +37,12 @@ pub struct Shots {
 }
 
 impl Shots {
+    /// Number of pulses (count), echoes or not.
     pub fn n_shots(&self) -> usize {
         self.origin.len()
     }
 
+    /// Total number of echoes over all pulses (count).
     pub fn n_echoes(&self) -> usize {
         self.echo_range.len()
     }

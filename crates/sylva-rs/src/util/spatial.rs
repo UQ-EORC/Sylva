@@ -17,6 +17,7 @@ pub struct KdTree {
 }
 
 impl KdTree {
+    /// Build the tree over `points`; an empty slice gives a tree that returns no neighbours.
     pub fn new(points: &[Point]) -> Self {
         // kiddo cannot build an empty tree; keep a sentinel that is never returned.
         let tree = if points.is_empty() {
@@ -86,6 +87,7 @@ impl KdTree {
 pub type VoxelKey = [i64; 3];
 
 #[inline]
+/// Integer voxel coordinates of `p` on a grid of cubic voxels of edge `size` (m) anchored at `origin`.
 pub fn voxel_key(p: &Point, origin: &Point, size: f64) -> VoxelKey {
     [
         ((p[0] - origin[0]) / size).floor() as i64,

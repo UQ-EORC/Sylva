@@ -209,6 +209,7 @@ fn open_blocked_voxels(path: PathBuf) -> PyResult<PyBlockedVoxels> {
     Ok(PyBlockedVoxels { inner: BlockedGrid::open(&path).map_err(err)? })
 }
 
+/// Adds this file's functions and classes to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBlockedVoxels>()?;
     m.add_function(wrap_pyfunction!(ray_voxelize_blocks, m)?)?;

@@ -36,26 +36,53 @@ pub type Mat4 = Matrix4<f64>;
 /// Tunables for [`icp`].
 #[derive(Debug, Clone)]
 pub struct IcpConfig {
+    /// Voxel size (m) of each pyramid level, coarse to fine; source and target
+    /// are thinned to voxel centroids at each.
     pub voxel_sizes: Vec<f64>,
     /// Correspondence cut-off per level; `None` means `5 x voxel`.
     pub max_distances: Option<Vec<f64>>,
+    /// Iteration cap per level.
     pub max_iterations: usize,
     /// `"point_to_plane"` or `"point_to_point"`.
     pub method: String,
     /// `"huber"`, `"tukey"` or `"none"`.
     pub robust: String,
+    /// Lower bound (m) of the adaptive robust scale, which is otherwise the
+    /// median absolute residual of the iteration.
     pub robust_scale: f64,
+    /// Fraction (0-1) of the closest correspondences kept once trimming is
+    /// fully in; 1 disables trimming.
     pub trim_fraction: f64,
+    /// Iterations per level over which trimming is phased in from none to
+    /// `trim_fraction`; 0 applies it from the first iteration.
     pub trim_ramp: usize,
+    /// Planarity (0-1) a target point needs for point-to-plane; 0 disables the gate.
     pub min_planarity: f64,
+    /// Neighbours (the point included) in the PCA that gives each target point
+    /// its normal and planarity; a level with fewer points has no normals and
+    /// falls back to point-to-point.
     pub normal_neighbours: usize,
+    /// A step moving less than this (m) and turning less than
+    /// `rotation_tolerance` ends the level as converged.
     pub translation_tolerance: f64,
+    /// Rotation part (radians) of the convergence test; see `translation_tolerance`.
     pub rotation_tolerance: f64,
+    /// Distance (m) within which a source point counts as fitted in the final
+    /// `fitness` / `inlier_rmse` evaluation.
     pub fitness_threshold: f64,
+    /// Damping added to the diagonal of the point-to-plane normal equations, as
+    /// a fraction of their mean diagonal (dimensionless).
     pub damping: f64,
+    /// Cap on the points per level after voxel thinning, source and target
+    /// alike; beyond it a seeded random subset is used.
     pub max_points: usize,
+    /// A step (translation in m plus 10 x rotation in radians) smaller than this
+    /// fraction of the previous iteration's RMSE counts as stalled; 0 disables
+    /// the plateau stop.
     pub plateau_tolerance: f64,
+    /// Consecutive stalled iterations that end a level.
     pub plateau_patience: usize,
+    /// Seed of the random subsets drawn above `max_points`.
     pub seed: u64,
 }
 
@@ -85,6 +112,9 @@ impl Default for IcpConfig {
 }
 
 impl IcpConfig {
+    /// The correspondence cut-off (m) of every level: `max_distances`, or
+    /// `5 x voxel` when none were given; an error if `max_distances` does not
+    /// have one entry per voxel size.
     pub fn distances(&self) -> Result<Vec<f64>> {
         match &self.max_distances {
             Some(d) => {
@@ -115,12 +145,25 @@ impl IcpConfig {
 /// already includes the initial guess.
 #[derive(Debug, Clone)]
 pub struct IcpResult {
+    /// `target_from_source` as a 4x4 homogeneous matrix, the initial guess
+    /// already composed in.
     pub transform: Matrix4<f64>,
+    /// Fraction (0-1) of the voxel-thinned source points with a target point
+    /// within `fitness_threshold`; 0 when nothing matched.
     pub fitness: f64,
+    /// RMS distance (m) of those source points to their nearest target point;
+    /// infinite when nothing matched.
     pub inlier_rmse: f64,
+    /// Source points fitted in the final evaluation or, if none were, the
+    /// correspondences kept in the last iteration.
     pub n_correspondences: usize,
+    /// Iterations run, summed over all pyramid levels.
     pub iterations: usize,
+    /// True once a level stopped because a step fell below both tolerances; a
+    /// later level running to its cap does not reset it.
     pub converged: bool,
+    /// RMS distance (m) of the kept correspondences after each iteration, all
+    /// levels in order.
     pub history: Vec<f64>,
     /// Point-to-plane information of the final transform ([`plane_information`]);
     /// `None` for point-to-point or too little overlap.
@@ -136,8 +179,12 @@ pub struct IcpResult {
 /// weighted RMS residual and `n` the number of correspondences.
 #[derive(Debug, Clone)]
 pub struct PlaneInformation {
+    /// The 6x6 matrix `sum w a a^T` described above, rotation block first; its
+    /// small eigenvalues are the directions the surfaces leave free.
     pub hessian: Matrix6<f64>,
+    /// Weighted RMS point-to-plane residual (m) of the kept correspondences.
     pub sigma: f64,
+    /// Correspondences that survived the planarity gate and trimming.
     pub n: usize,
 }
 

@@ -299,6 +299,7 @@ fn leaf_projection<'py>(py: Python<'py>, theta: PyReadonlyArray1<f64>, lad: &str
     Ok(theta.as_array().iter().map(|&t| voxel::compute_g(t, &lad)).collect::<Vec<_>>().into_pyarray(py))
 }
 
+/// Adds this file's functions and classes to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRayVoxels>()?;
     for f in [wrap_pyfunction!(ray_voxelize, m)?, wrap_pyfunction!(ray_voxelize_file, m)?, wrap_pyfunction!(laser_spec, m)?, wrap_pyfunction!(leaf_projection, m)?] {

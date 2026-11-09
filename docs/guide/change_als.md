@@ -326,7 +326,8 @@ neither, in practice, does the chunk size: across tile-sized chunks and 17,
 classes and nearly every value were identical, and the few values that
 differed (a handful of cells) did so in the last bits. The buffer is raised
 automatically to hold whole cells and the ground planes of the DTM under
-them (up to 16 m); with `harmonise`, also a `density_cell`.
+them (to at least 16 m plus a cell and two DTM cells); with `harmonise`,
+also a `density_cell`.
 
 On 36 ha (the synthetic pair copied 5 by 5: 9.3 and 5.1 million returns in
 36 and 48 tiles of 100 m), on eight threads, the alignment took 7.5 s, the
@@ -425,7 +426,7 @@ sensor's footprint raised zmean by 0.7 m and cover by 3 %, a real
 difference in what the sensors measure, which harmonising the density does
 not remove.
 
-`tests/test_change_als.py` repeats these checks on a smaller pair and
+`tests/change/test_change_als.py` repeats these checks on a smaller pair and
 covers the rest: harmonisation in the pass equals harmonised tiles, results
 across chunks and workers, analytic gap outlines with holes, PAI change
 from counts and from two flights, and invalid input.

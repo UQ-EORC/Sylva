@@ -55,10 +55,12 @@ class Stem:
 
     @property
     def position(self) -> np.ndarray:
+        """``(3,)`` stem axis point at the reference height, m."""
         return np.array([self.x, self.y, self.z])
 
     @property
     def radius(self) -> float:
+        """Half the DBH, m."""
         return 0.5 * self.dbh
 
     @property
@@ -69,12 +71,26 @@ class Stem:
         return float(np.clip(residual_term * self.coverage * slice_term, 0.0, 1.0))
 
     def to_dict(self) -> dict:
+        """The stem as a plain dict (the axis as a list), for JSON output."""
         d = asdict(self)
         d["axis"] = [float(v) for v in self.axis]
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> Stem:
+        """A stem from the dict written by :meth:`to_dict`; unknown keys are
+        ignored and a missing axis defaults to vertical.
+
+        Parameters
+        ----------
+        d
+            Field names to values; ``x``, ``y``, ``z`` (m, scan frame) and ``dbh`` (m) are
+            required.
+
+        Returns
+        -------
+        Stem
+        """
         names = {f.name for f in fields(cls)}
         d = {k: v for k, v in d.items() if k in names}
         d["axis"] = np.asarray(d.get("axis", [0.0, 0.0, 1.0]), dtype=float)
@@ -108,18 +124,22 @@ class StemMap:
 
     @property
     def xy(self) -> np.ndarray:
+        """``(n, 2)`` horizontal stem positions, m (the 2-D map that is matched)."""
         return self.positions[:, :2]
 
     @property
     def diameters(self) -> np.ndarray:
+        """``(n,)`` DBH of every stem, m."""
         return np.array([s.dbh for s in self.stems]) if self.stems else np.zeros(0)
 
     @property
     def qualities(self) -> np.ndarray:
+        """``(n,)`` 0-1 fit quality of every stem (:attr:`Stem.quality`)."""
         return np.array([s.quality for s in self.stems]) if self.stems else np.zeros(0)
 
     @property
     def axes(self) -> np.ndarray:
+        """``(n, 3)`` unit axis direction of every stem."""
         return np.array([s.axis for s in self.stems]) if self.stems else np.zeros((0, 3))
 
     def sorted_by_quality(self) -> StemMap:
@@ -128,11 +148,34 @@ class StemMap:
         return StemMap([self.stems[i] for i in order], name=self.name, ground=self.ground)
 
     def top(self, n: int) -> StemMap:
-        """The ``n`` best stems; matching cost is quadratic in the count."""
+        """The ``n`` best stems; matching cost is quadratic in the count.
+
+        Parameters
+        ----------
+        n
+            Stems to keep, in descending :attr:`Stem.quality`; all if ``n`` exceeds the count.
+
+        Returns
+        -------
+        StemMap
+            A new map with this one's name and ground model.
+        """
         return StemMap(self.sorted_by_quality().stems[:n], name=self.name, ground=self.ground)
 
     def transformed(self, T: np.ndarray) -> StemMap:
-        """Every stem position and axis moved by a rigid transform."""
+        """Every stem position and axis moved by a rigid transform.
+
+        Parameters
+        ----------
+        T
+            ``(4, 4)`` transform from this map's frame into the new one.
+
+        Returns
+        -------
+        StemMap
+            A new map in the new frame with this one's name but no ground model (the
+            terrain is not transformed).
+        """
         if not self.stems:
             return StemMap([], name=self.name)
         pos = transform_points(T, self.positions)
@@ -145,7 +188,19 @@ class StemMap:
         return StemMap(out, name=self.name)
 
     def save(self, path: str | Path) -> Path:
-        """Write the stems as JSON."""
+        """Write the stems as JSON.
+
+        Parameters
+        ----------
+        path
+            Output file; missing parent directories are created. The ground model is not
+            written.
+
+        Returns
+        -------
+        pathlib.Path
+            The path written.
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -155,7 +210,18 @@ class StemMap:
 
     @classmethod
     def load(cls, path: str | Path) -> StemMap:
-        """Read stems written by :meth:`save`."""
+        """Read stems written by :meth:`save`.
+
+        Parameters
+        ----------
+        path
+            A JSON file from :meth:`save`.
+
+        Returns
+        -------
+        StemMap
+            With ``ground`` None.
+        """
         payload = json.loads(Path(path).read_text())
         return cls([Stem.from_dict(s) for s in payload["stems"]], name=payload.get("name", ""))
 

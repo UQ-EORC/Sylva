@@ -45,13 +45,18 @@ use crate::Point;
 /// Outcome of coregistering a survey (`SurveyResult`, without its scans).
 #[derive(Debug, Clone)]
 pub struct SurveyResult {
+    /// Every pair attempted, accepted or not, ordered by `(i, j)` with any
+    /// recovery placements after.
     pub pairs: Vec<PairResult>,
     /// `world_from_levelled_scan` per scan.
     pub poses: Vec<Mat4>,
+    /// Index of the scan whose levelled frame is the world frame.
     pub reference: usize,
+    /// Diagnostics of the pose-graph solve; `None` when it did not run.
     pub optimisation: Option<pg::Optimisation>,
     /// Per scan, connected to an anchor by accepted pairs.
     pub registered: Vec<bool>,
+    /// Wall-clock time (s) of the run, preparation included when done here.
     pub seconds: f64,
     /// Index into `pairs` of each pose-graph edge.
     pub edge_to_pair: Vec<usize>,
@@ -791,8 +796,12 @@ pub fn coregister_prepared(scans: &[ScanFeatures], cfg: &CoregConfig, opts: &Sur
 /// One scan to prepare within [`coregister`].
 #[derive(Debug, Clone)]
 pub struct ScanSpec {
+    /// The scan's points: a file to read, or points already in memory.
     pub input: ScanInput,
+    /// Retro-reflective targets seen from the scan, in its raw frame.
     pub reflectors: Vec<Reflector>,
+    /// `level_from_scan` applied to the raw points and targets first; `None`
+    /// for a scan taken as already level.
     pub levelling: Option<Mat4>,
 }
 
@@ -847,11 +856,17 @@ pub fn coregister(specs: &[ScanSpec], cfg: &CoregConfig, names: Option<&[String]
 /// What the report and the saved file need of a scan.
 #[derive(Debug, Clone)]
 pub struct ScanSummary {
+    /// Scan position name.
     pub name: String,
+    /// Points the scan was prepared from, after the reading filters.
     pub n_points: i64,
+    /// Stems detected in the scan.
     pub n_stems: i64,
+    /// Why the scan was set aside; empty if it was usable.
     pub error: String,
+    /// Path of the file the scan was read from; `None` for points given directly.
     pub source: Option<String>,
+    /// `level_from_scan` applied to the raw points before every pose.
     pub levelling: Mat4,
 }
 

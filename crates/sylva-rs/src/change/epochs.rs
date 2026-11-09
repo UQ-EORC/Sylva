@@ -48,10 +48,12 @@ pub struct AlignParams {
     /// terrain sample (m): no bark surface or terrain model is known better,
     /// whatever the residuals of an unusually clean plot suggest.
     pub stem_floor: f64,
+    /// Smallest error assumed for one terrain sample (m); the counterpart of `stem_floor`.
     pub ground_floor: f64,
     /// Residuals beyond this many robust standard deviations are
     /// down-weighted (Huber).
     pub huber: f64,
+    /// Most Gauss-Newton iterations; the refinement stops earlier once a step changes the transform by a negligible amount.
     pub iterations: usize,
 }
 
@@ -70,24 +72,32 @@ pub struct Alignment {
     /// about `centre` followed by a translation (m). Rows of a parameter
     /// the features do not constrain are NaN.
     pub covariance: Matrix6<f64>,
+    /// Point (m, reference frame) the rotation parameters turn about and at which `sigma_xyz` is given: the mean of the
+    /// reference stems, or of the transformed terrain samples when stems are not used.
     pub centre: Point,
     /// One-sigma uncertainty (m) of x, y, z at `centre`.
     pub sigma_xyz: [f64; 3],
     /// RMS over the evaluation points of the one-sigma 3-D displacement
     /// uncertainty (m), and of its horizontal and vertical parts.
     pub registration_sigma: f64,
+    /// RMS one-sigma horizontal (x, y) displacement uncertainty (m) over the evaluation points; NaN when x and y are not constrained.
     pub sigma_horizontal: f64,
+    /// RMS one-sigma vertical displacement uncertainty (m) over the evaluation points; NaN when the terrain is not used.
     pub sigma_vertical: f64,
     /// Matched stems `(reference, new)` and their horizontal residuals.
     pub stem_pairs: Vec<(usize, usize)>,
+    /// Horizontal residual `(dx, dy)` (m) of each matched stem, new minus reference, under the transform of the last iteration.
     pub stem_residuals: Vec<[f64; 2]>,
     /// Terrain samples used and their vertical residuals.
     pub n_ground: usize,
+    /// Height (m) of each terrain sample of the second epoch above the reference terrain, under the transform of the last iteration.
     pub ground_residuals: Vec<f64>,
     /// Robust spread of one stem residual component and one terrain
     /// residual, at least the floors.
     pub stem_sigma: f64,
+    /// Robust spread (m) of the terrain residuals, at least `ground_floor`; NaN when the terrain is not used.
     pub ground_sigma: f64,
+    /// Gauss-Newton iterations run.
     pub iterations: usize,
 }
 

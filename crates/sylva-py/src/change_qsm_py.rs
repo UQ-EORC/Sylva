@@ -292,6 +292,7 @@ fn change_plot_csv(path: PathBuf, rows: Vec<Bound<'_, PyDict>>) -> PyResult<()> 
     cq::write_plot_csv(&path, &rows).map_err(err)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(change_compare_qsms, m)?)?;
     m.add_function(wrap_pyfunction!(change_compare_plot, m)?)?;

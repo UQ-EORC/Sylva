@@ -342,6 +342,7 @@ fn write_tree_obj(path: PathBuf, cylinders: PyReadonlyArray2<f64>, vertices: PyR
     lm::write_tree_obj(path, &q, sides, contiguous, &xyz_from_py(vertices)?, &faces_from_py(faces)?).map_err(err)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(classify_leaf_wood, m)?,

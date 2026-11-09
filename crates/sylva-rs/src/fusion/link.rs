@@ -47,11 +47,17 @@ use crate::error::{Error, Result};
 /// unknown).
 #[derive(Debug, Clone, Copy)]
 pub struct TlsTree {
+    /// Easting of the stem (m, in the ALS frame).
     pub x: f64,
+    /// Northing of the stem (m, in the ALS frame).
     pub y: f64,
+    /// Diameter at breast height (m).
     pub dbh: f64,
+    /// Tree height from the TLS (m); NaN when unknown.
     pub height: f64,
+    /// Wood volume (m³); NaN when unknown.
     pub volume: f64,
+    /// Whether the TLS saw the top: 1 for yes, 0 for no, NaN for unknown.
     pub top_seen: f64,
 }
 
@@ -59,21 +65,31 @@ pub struct TlsTree {
 /// three vertices for none).
 #[derive(Debug, Clone)]
 pub struct AlsTree {
+    /// Easting of the top (m).
     pub x: f64,
+    /// Northing of the top (m).
     pub y: f64,
+    /// Tree height from the ALS (m).
     pub height: f64,
+    /// Crown outline as `(x, y)` vertices (m); fewer than three for no outline.
     pub crown: Vec<[f64; 2]>,
 }
 
 /// Settings of [`link_trees`].
 #[derive(Debug, Clone)]
 pub struct LinkParams {
+    /// Farthest a stem can be from an ALS top (m) to be its tree outside the
+    /// crown outline, and the scale `D` of the distance cost.
     pub max_distance: f64,
+    /// Distance (m) outside a crown outline that still counts as under it.
     pub crown_buffer: f64,
+    /// Weight of the squared relative height difference in the cost.
     pub height_weight: f64,
+    /// Weight of the squared DBH shortfall from the thickest candidate stem in the cost.
     pub dbh_weight: f64,
     /// Cost of leaving a stem without an ALS tree: no pair costing more is made.
     pub max_cost: f64,
+    /// Height difference (m) within which a TLS tree counts as reaching the ALS height.
     pub top_tolerance: f64,
 }
 
@@ -84,14 +100,20 @@ impl Default for LinkParams {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What the linking found for one TLS tree.
 pub enum TlsStatus {
+    /// It is the tree the ALS crown belongs to.
     Matched,
+    /// Under the crown of a taller ALS tree (shorter by more than `top_tolerance` and 10 %), which the ALS cannot see past.
     Suppressed,
+    /// Under an ALS crown whose tree is another stem of about the same height: the ALS merged two canopy trees.
     Codominant,
+    /// Under no ALS crown and near no top.
     Unlinked,
 }
 
 impl TlsStatus {
+    /// The status as the Python API spells it: `"matched"`, `"suppressed"`, `"codominant"` or `"unlinked"`.
     pub fn name(self) -> &'static str {
         match self {
             TlsStatus::Matched => "matched",
@@ -109,20 +131,28 @@ pub struct Links {
     /// the distance from its stem to that tree's top, whether the stem is
     /// inside that crown, and that tree's height.
     pub tls_status: Vec<TlsStatus>,
+    /// Index of the ALS tree each TLS tree is linked to or stands under; None for `Unlinked`.
     pub tls_als: Vec<Option<usize>>,
+    /// Horizontal distance (m) from the stem to that ALS tree's top; NaN for `Unlinked`.
     pub distance: Vec<f64>,
+    /// Whether the stem lies inside that ALS tree's crown outline.
     pub inside: Vec<bool>,
+    /// Height (m) of that ALS tree; NaN for `Unlinked`.
     pub als_height: Vec<f64>,
     /// Combined height, where it came from (`"als"`, `"tls"`, `"none"`),
     /// whether the TLS saw the top (1, 0, NaN) and a flag: `"top_seen"`,
     /// `"als_height"` (TLS top not seen, ALS height used), `"top_not_seen"`
     /// (TLS top not seen and no ALS height: a lower bound) or `"top_unknown"`.
     pub height: Vec<f64>,
+    /// Instrument the combined height came from: `"als"`, `"tls"` or `"none"`.
     pub height_source: Vec<&'static str>,
+    /// Whether the TLS saw the top (1, 0 or NaN), as given or inferred from the ALS height.
     pub top_seen: Vec<f64>,
+    /// How far to trust the combined height: `"top_seen"`, `"als_height"`, `"top_not_seen"` (a lower bound) or `"top_unknown"`.
     pub flag: Vec<&'static str>,
     /// Per ALS tree: its linked stem and every stem linked to it or under it.
     pub als_tls: Vec<Option<usize>>,
+    /// Indices of every TLS stem linked to or standing under each ALS tree.
     pub als_stems: Vec<Vec<usize>>,
     /// Assignment cost of each linked TLS tree (NaN otherwise).
     pub cost: Vec<f64>,

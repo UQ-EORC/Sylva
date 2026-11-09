@@ -51,15 +51,21 @@ const VERSION: i64 = 1;
 /// A voxel grid stored as blocks in a directory (see the module docs).
 #[derive(Debug, Clone)]
 pub struct BlockedGrid {
+    /// Directory holding `grid.json` and the block files.
     pub dir: PathBuf,
+    /// Minimum corner of the grid (m).
     pub origin: Point,
+    /// Voxel edge (m).
     pub voxel_size: f64,
     /// `[nx, ny, nz]`.
     pub shape: [usize; 3],
     /// Voxels per block along x, y and z.
     pub block: [usize; 3],
+    /// The options the grid was traced with.
     pub params: VoxelParams,
+    /// Whether any echo carried the leaf class.
     pub has_leaf: bool,
+    /// Whether any echo carried the wood class.
     pub has_wood: bool,
     /// Terrain height under each column (`i + nx j`).
     pub ground_height: Option<Vec<f64>>,
@@ -111,6 +117,7 @@ impl BlockedGrid {
         std::array::from_fn(|k| self.shape[k].div_ceil(self.block[k]))
     }
 
+    /// Voxels in the whole grid.
     pub fn n_voxels(&self) -> usize {
         self.shape[0] * self.shape[1] * self.shape[2]
     }

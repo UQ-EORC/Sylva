@@ -22,10 +22,12 @@ pub struct PruneParams {
     pub max_dbh: Option<f64>,
     /// Minimum quality of candidates with fewer than `short_slices` layers.
     pub min_quality_short: f64,
+    /// Layer count below which a candidate is short and must reach `min_quality_short` (count).
     pub short_slices: i64,
     /// Stems wider than `slender_min_dbh` with height / DBH below this are
     /// dropped (shrubs and stumps fitted as stems); 0 disables.
     pub min_slenderness: f64,
+    /// DBH (m) above which the slenderness test applies; thinner stems are exempt.
     pub slender_min_dbh: f64,
 }
 

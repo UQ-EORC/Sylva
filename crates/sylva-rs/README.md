@@ -12,8 +12,11 @@ core of [Sylva](https://github.com/UQ-EORC/Sylva), which also ships as the
 cargo add sylva-rs
 ```
 
-- `PointCloud` with typed attributes; LAS/LAZ, PLY, text and RIEGL `.rxp` I/O;
-  coordinate transforms and reprojection
+The `mta-model` feature (on by default) compiles in the trained model that
+resolves RIEGL multiple-time-around ambiguities when reading `.rxp`.
+
+- `PointCloud` with typed attributes; LAS/LAZ, PLY, text, mesh, GeoTIFF and
+  RIEGL `.rxp` / `.rdbx` I/O; coordinate transforms and reprojection
 - filters, k-d tree queries, clustering, PCA normals, interpolation, masks
 - ground classification (CSF, PMF), DTM, CHM
 - stem detection, DBH, tree segmentation, crown metrics

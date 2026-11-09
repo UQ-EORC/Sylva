@@ -131,6 +131,7 @@ fn change_occupancy<'py>(py: Python<'py>, a: PyRef<'py, PyRayVoxels>, b: PyRef<'
     Ok(d)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(change_c2c, m)?)?;
     m.add_function(wrap_pyfunction!(change_m3c2, m)?)?;

@@ -22,7 +22,9 @@ use crate::Point;
 /// most of the memory.
 #[derive(Debug, Clone, Default)]
 pub struct Graph<'a> {
+    /// CSR row starts: node `i`'s neighbours are entries `offsets[i]..offsets[i + 1]` of `neighbors` (length n + 1).
     pub offsets: Vec<usize>,
+    /// Neighbour node indices of every node, concatenated in node order.
     pub neighbors: Vec<u32>,
     /// One weight per neighbour; empty when `cost` computes them.
     pub weights: Vec<f64>,
@@ -65,6 +67,7 @@ impl EdgeCost<'_> {
 }
 
 impl<'a> Graph<'a> {
+    /// Number of nodes: one less than the length of `offsets`, 0 for an empty graph.
     pub fn n(&self) -> usize {
         self.offsets.len().saturating_sub(1)
     }
@@ -86,6 +89,8 @@ impl<'a> Graph<'a> {
         }
     }
 
+    /// The edges leaving node `i` as `(neighbour, weight)` pairs, the weight stored
+    /// or computed from the positions as the graph was built.
     pub fn edges(&self, i: usize) -> impl Iterator<Item = (usize, f64)> + '_ {
         let (a, b) = (self.offsets[i], self.offsets[i + 1]);
         (a..b).map(move |e| (self.neighbors[e] as usize, self.weight(i, e)))

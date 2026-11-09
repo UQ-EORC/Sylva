@@ -3,6 +3,12 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Bindings for shifting, rotating and reprojecting coordinates.
+//!
+//! Backs sylva.geo.coords (and the CRS lookups in sylva.io and the CLI) with
+//! sylva_rs::geo::coords and sylva_rs::geo::crs. Points come in as `(N, 3)`
+//! float64 arrays and transforms as 4x4 arrays, and come back as new arrays;
+//! a CRS description or reprojection plan is returned as a dict. Core errors
+//! reach Python as ValueError (OSError for file trouble) via `crate::err`.
 
 use std::path::PathBuf;
 
@@ -85,6 +91,7 @@ fn read_las_crs(py: Python<'_>, path: PathBuf) -> PyResult<Option<String>> {
     py.detach(|| crs::read_las_crs(&path)).map_err(err)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(coords_rotation_matrix, m)?)?;
     m.add_function(wrap_pyfunction!(coords_translation_matrix, m)?)?;

@@ -163,6 +163,7 @@ pub struct Harmonise {
 }
 
 impl Harmonise {
+    /// Checks that `cell` is a positive number of metres.
     pub fn check(&self) -> Result<()> {
         if !(self.cell.is_finite() && self.cell > 0.0) {
             return Err(Error::invalid(format!("density_cell must be a positive number of metres, got {}", self.cell)));

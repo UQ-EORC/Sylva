@@ -3,6 +3,11 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Bindings for sylva_rs::synthetic: the synthetic tree, forest and scan.
+//!
+//! Backs the simple generators in sylva.synthetic (and the scan used by
+//! sylva.fusion.synthetic). A cloud crosses the boundary as an `(N, 3)`
+//! float64 array plus a dict of per-point attribute arrays, shots as a dict
+//! of arrays via `crate::shots_to_py`; mismatched lengths are ValueError.
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
 
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
@@ -45,6 +50,7 @@ fn synthetic_scan<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: Optio
     shots_to_py(py, &s)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(synthetic_terrain_height, m)?,

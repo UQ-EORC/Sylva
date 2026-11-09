@@ -37,16 +37,19 @@ pub struct SimulateOptions {
     pub margin: f64,
     /// Fixed range (m) at which every record starts, instead of `margin`.
     pub start_range: Option<f64>,
+    /// Background level added to every sample (sample units).
     pub background: f64,
     /// Standard deviation of the noise (sample units).
     pub noise: f64,
     /// Round and clip the samples to `0 .. 2^bits - 1`.
     pub digitise: bool,
+    /// Bit depth of the digitised samples.
     pub bits: u8,
     /// Amplitude of echoes without an `amplitude` attribute.
     pub amplitude: f64,
     /// Range per ns of round-trip time (m/ns).
     pub metres_per_ns: f64,
+    /// Seed of the noise generator, so that a run repeats exactly.
     pub seed: u64,
 }
 

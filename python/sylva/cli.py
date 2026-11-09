@@ -438,6 +438,8 @@ def _als_common(s, buffer: float = 20.0):
 
 
 def main(argv=None):
+    """Entry point of the ``sylva`` command: builds the argument parser for every
+    subcommand and runs the one named. ``argv`` defaults to ``sys.argv[1:]``."""
     p = argparse.ArgumentParser(prog="sylva",
                                 description="LiDAR processing for forest ecology and remote sensing research.",
                                 epilog="Run `sylva <command> --help` for the options of a command.")

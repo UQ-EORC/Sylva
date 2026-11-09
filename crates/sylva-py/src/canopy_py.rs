@@ -231,6 +231,7 @@ fn canopy_grid_profile_above_ground<'py>(py: Python<'py>, origin: (f64, f64, f64
     Ok((vec1(py, b), vec1(py, p)))
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(canopy_pulses_per_line, m)?,

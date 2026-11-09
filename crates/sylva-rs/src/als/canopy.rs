@@ -61,6 +61,7 @@ pub struct PulseParams {
     /// Add the pulses that returned nothing where a line's firing shows a
     /// hole of at most `max_fill` pulses.
     pub fill_missing: bool,
+    /// Widest hole, as a count of consecutive missing pulses, that `fill_missing` fills.
     pub max_fill: usize,
     /// Leave out pulses with fewer returns than `number_of_returns` says.
     pub drop_incomplete: bool,
@@ -100,6 +101,7 @@ pub struct PulseReport {
     /// gives centimetres to decimetres; metres point to a time or height
     /// offset between the trajectory and the points.
     pub line_offset_median: f64,
+    /// 95th percentile of the same sensor-to-return-line distance (m).
     pub line_offset_p95: f64,
 }
 
@@ -343,6 +345,8 @@ pub enum ReturnWeight {
 }
 
 impl ReturnWeight {
+    /// The weighting named `"equal"`, `"first"` or `"all"` (the names the Python
+    /// API uses); any other string is an error.
     pub fn parse(s: &str) -> Result<Self> {
         Ok(match s {
             "equal" => ReturnWeight::Equal,
@@ -366,7 +370,16 @@ pub enum Projection {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Angles {
     /// From the sensor position interpolated at its time.
-    Trajectory { trajectory: Trajectory, max_gap: Option<f64>, time_offset: f64 },
+    Trajectory {
+        /// Flight trajectory the sensor position is interpolated from.
+        trajectory: Trajectory,
+        /// Longest gap between trajectory samples (s) to interpolate across;
+        /// None for ten median sample intervals.
+        max_gap: Option<f64>,
+        /// Seconds added to the returns' `gps_time` to put them on the
+        /// trajectory's clock.
+        time_offset: f64,
+    },
     /// The absolute LAS `scan_angle` (degrees from nadir; includes roll, not pitch).
     ScanAngle,
     /// Every beam vertical: no correction.
@@ -398,8 +411,12 @@ pub struct ProfileParams {
     pub top_quantile: f64,
     /// Leave out returns classified as noise (7 or 18).
     pub drop_noise: bool,
+    /// Share of its pulse each return counts for in the profile.
     pub weighting: ReturnWeight,
+    /// Projection of the foliage on the beam, the `G(θ)` of the extinction
+    /// `G(θ) / cos θ` applied to each return.
     pub projection: Projection,
+    /// Where each return's beam zenith angle comes from.
     pub angles: Angles,
     /// Returns whose beam is further than this from nadir (degrees) are left out.
     pub max_zenith: f64,
@@ -464,15 +481,29 @@ impl ProfileParams {
 /// row 0 at the south.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ProfileGrid {
+    /// West edge of the grid (m, in the points' CRS).
     pub xmin: f64,
+    /// South edge of the grid (m, in the points' CRS).
     pub ymin: f64,
+    /// Cell size (m).
     pub resolution: f64,
+    /// Columns, west to east.
     pub nx: usize,
+    /// Rows, south to north (row 0 at the south).
     pub ny: usize,
+    /// Height layers of `bin_size` above `min_height`; the arrays hold `nz + 2`
+    /// layers including the one below and the one above.
     pub nz: usize,
+    /// Height above ground (m) of the bottom of layer 1; returns below it fall
+    /// in layer 0 and count as pulses that got through.
     pub min_height: f64,
+    /// Layer thickness (m).
     pub bin_size: f64,
+    /// Sum of each return's share of its pulse, per layer and cell: `(nz + 2,
+    /// ny, nx)` flattened, layer fastest to vary last (`[l * ny * nx + row * nx + col]`).
     pub weight: Vec<f64>,
+    /// As `weight`, with each return's share multiplied by its extinction per
+    /// unit vertical plant area `G(θ) / cos θ`; same layout.
     pub weight_k: Vec<f64>,
     /// Returns left out: no position on the trajectory, or beyond `max_zenith`.
     pub n_skipped: usize,
@@ -973,7 +1004,10 @@ impl ProfileGrid {
 /// Voxel fields of a whole catalogue on one lattice.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CatalogVoxels {
+    /// `(x, y, z)` (m) of the lattice's lower south-west corner, snapped down to
+    /// multiples of `voxel_size`.
     pub origin: Point,
+    /// Voxel edge (m).
     pub voxel_size: f64,
     /// `[nx, ny, nz]`.
     pub shape: [usize; 3],
@@ -997,11 +1031,20 @@ const BYTES_PER_VOXEL: u64 = 400;
 /// Everything [`voxelize_chunk`] needs besides the points.
 #[derive(Debug, Clone)]
 pub struct TraceSettings<'a> {
+    /// Flight trajectory from which each pulse's origin is interpolated.
     pub trajectory: &'a Trajectory,
+    /// How the returns are grouped into pulses (see [`reconstruct`]).
     pub pulses: PulseParams,
+    /// Ray-tracer settings; the bounds are replaced per chunk by the part of
+    /// the lattice it owns.
     pub voxel: VoxelParams,
+    /// How ground, leaf, wood and tree labels are read from the returns' attributes.
     pub labels: EchoLabels,
+    /// Terrain surface for labelling echoes by height above ground and
+    /// stopping occlusion rays below ground; None without one.
     pub dtm: Option<&'a Raster>,
+    /// Names of the voxel fields and metrics to keep (as [`crate::voxel::RayVoxels::values`]
+    /// accepts them).
     pub fields: Vec<String>,
 }
 

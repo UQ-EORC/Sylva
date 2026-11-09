@@ -47,24 +47,28 @@ replaced, and the name is claimed for good. PyPI is the same in practice.
 ## Cutting a release
 
 1. Set the version in `Cargo.toml` (`[workspace.package]`), in `pyproject.toml`,
-   and in the `sylva-rs` dependency of `crates/sylva-cli/Cargo.toml`; run
-   `cargo check` so `Cargo.lock` follows.
+   in the `sylva-rs` dependency of `crates/sylva-cli/Cargo.toml`, in
+   `CITATION.cff` (version and date) and in the citation of `README.md` and
+   `docs/index.md`; run `cargo check` so `Cargo.lock` follows.
 2. Check locally:
 
     ```bash
     cargo test --release -p sylva-rs && pytest
     cargo publish --dry-run -p sylva-rs
-    maturin sdist -o dist && maturin build --release -o dist && twine check dist/*
+    maturin sdist -o dist && maturin build --release -o dist && twine check dist/*   # pip install twine
     ```
 
-3. Commit, tag and push: `git tag v0.2.0 && git push origin main v0.2.0`.
+3. Commit, tag and push: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
+4. Once Zenodo has archived the release, record its version DOI in
+   `CITATION.cff`, `README.md` and `docs/index.md`.
 
 The `release` workflow then tests, checks that the tag matches both version
 numbers, builds abi3 wheels (one per platform serves every Python ≥ 3.10) for
 Linux x86-64 / aarch64 (manylinux2014), macOS x86-64 / arm64 and Windows x86-64
 plus an sdist, and publishes to PyPI and crates.io. Running the workflow by
 hand (*Run workflow*) builds everything without publishing, which is the way
-to try a platform before tagging.
+to try a platform before tagging. The same tag also runs the `container`
+workflow, which pushes `ghcr.io/uq-eorc/sylva:X.Y.Z`.
 
 ## Notes
 

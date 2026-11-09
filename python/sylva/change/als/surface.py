@@ -265,8 +265,10 @@ def surface_change(catalog_a, catalog_b, surface: str = "chm", resolution: float
     horizontal_sigma, vertical_sigma
         Alignment uncertainty (m) when no ``alignment`` is given.
     chunk_size, buffer, workers
-        As for :func:`sylva.als.apply` (the buffer is raised to two cells,
-        and with ``harmonise`` to ``density_cell`` plus two cells).
+        As for :func:`sylva.als.apply`; the buffer is raised to hold whole
+        cells and the ground planes of the DTM under them (at least 16 m
+        plus a cell and two DTM cells), and with ``harmonise`` a
+        ``density_cell`` as well.
 
     Returns
     -------

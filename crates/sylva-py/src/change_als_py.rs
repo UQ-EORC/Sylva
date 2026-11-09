@@ -466,6 +466,7 @@ fn change_als_profile<'py>(py: Python<'py>, profile_a: &Bound<'_, PyDict>, profi
     Ok(d)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(change_als_align, m)?,

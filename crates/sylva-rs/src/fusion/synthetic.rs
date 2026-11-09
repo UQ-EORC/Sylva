@@ -26,9 +26,13 @@ use crate::{Point, PointCloud, Shots};
 /// Settings of [`scan_spheres`].
 #[derive(Debug, Clone)]
 pub struct SphereScan {
+    /// Angular spacing (degrees) of the pulses in zenith and azimuth.
     pub resolution_deg: f64,
+    /// Largest zenith angle fired (degrees from straight up; above 90 looks downward).
     pub max_zenith_deg: f64,
+    /// Radius (m) of the sphere each scene point stands for.
     pub target_radius: f64,
+    /// Slope of the analytic terrain along x (m per m), as [`terrain_height`] takes it.
     pub terrain_slope: f64,
     /// Echoes nearer than this (m) are ignored.
     pub min_range: f64,

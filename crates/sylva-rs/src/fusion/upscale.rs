@@ -32,11 +32,14 @@ use crate::error::{Error, Result};
 /// Model form of [`fit`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Form {
+    /// `y = b₀ + Σ bⱼ xⱼ` on the original scale.
     Linear,
+    /// `ln y = b₀ + Σ bⱼ ln xⱼ`: a power law fitted on logarithms.
     LogLog,
 }
 
 impl Form {
+    /// The form named `"linear"` or `"loglog"`; any other string is an error.
     pub fn parse(s: &str) -> Result<Form> {
         match s {
             "linear" => Ok(Form::Linear),
@@ -45,6 +48,7 @@ impl Form {
         }
     }
 
+    /// The form as the Python API spells it: `"linear"` or `"loglog"`.
     pub fn name(self) -> &'static str {
         match self {
             Form::Linear => "linear",
@@ -56,16 +60,21 @@ impl Form {
 /// A fitted model.
 #[derive(Debug, Clone)]
 pub struct Fit {
+    /// Model form the coefficients belong to.
     pub form: Form,
     /// Intercept first, then one per predictor (on the model's scale).
     pub coef: Vec<f64>,
+    /// Standard error of each coefficient, in the same order.
     pub se: Vec<f64>,
     /// Residual standard error and its degrees of freedom `n - k`.
     pub sigma: f64,
+    /// Residual degrees of freedom `n - k` (plots minus coefficients).
     pub df: usize,
+    /// Plots the model was fitted on.
     pub n: usize,
     /// On the model's scale (of `ln y` for `loglog`).
     pub r2: f64,
+    /// `r2` adjusted for the number of predictors, on the model's scale.
     pub adj_r2: f64,
     /// `(XᵀX)⁻¹`, `k x k` row-major.
     pub xtx_inv: Vec<f64>,
@@ -73,15 +82,20 @@ pub struct Fit {
     pub correction: f64,
     /// Fitted values and leave-one-out predictions, both on the scale of `y`.
     pub fitted: Vec<f64>,
+    /// Leave-one-out prediction for each plot, on the scale of `y`.
     pub loo: Vec<f64>,
     /// Leave-one-out root mean square error, mean error (prediction minus
     /// observation), `1 - PRESS / SS`, and RMSE relative to the mean of `y` (%).
     pub loo_rmse: f64,
+    /// Leave-one-out mean error (prediction minus observation), in the units of `y`.
     pub loo_bias: f64,
+    /// `1 - PRESS / SS`: the leave-one-out coefficient of determination.
     pub loo_r2: f64,
+    /// Leave-one-out RMSE as a percentage of the mean of `y`.
     pub loo_rrmse: f64,
     /// Range of each predictor over the plots.
     pub x_min: Vec<f64>,
+    /// Largest value of each predictor over the plots.
     pub x_max: Vec<f64>,
 }
 
@@ -193,10 +207,15 @@ pub fn fit(y: &[f64], x: &[Vec<f64>], form: Form) -> Result<Fit> {
 /// Predictions of [`predict`], one per row.
 #[derive(Debug, Clone, Default)]
 pub struct Prediction {
+    /// Predicted value for each row (bias-corrected to the mean for `loglog`); NaN for an unusable row.
     pub mean: Vec<f64>,
+    /// Standard error of a new observation at each row, in the units of `y`.
     pub se: Vec<f64>,
+    /// Lower bound of the prediction interval at `level`.
     pub lower: Vec<f64>,
+    /// Upper bound of the prediction interval at `level`.
     pub upper: Vec<f64>,
+    /// True where a predictor lies outside the range of the plots the model was fitted on.
     pub extrapolated: Vec<bool>,
 }
 
@@ -288,9 +307,13 @@ pub struct PlotSummary {
     /// Above-ground biomass (Mg/ha), wood volume (m³/ha), basal area
     /// (m²/ha) and stems per hectare, of the trees with `dbh >= min_dbh`.
     pub agb: f64,
+    /// Wood volume (m³/ha).
     pub volume: f64,
+    /// Basal area (m²/ha).
     pub basal_area: f64,
+    /// Stems per hectare.
     pub stems: f64,
+    /// Trees counted (those with `dbh >= min_dbh`).
     pub n_trees: usize,
     /// Trees counted without a volume (they add nothing to `agb`, `volume`).
     pub missing_volume: usize,

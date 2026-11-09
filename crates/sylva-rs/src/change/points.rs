@@ -127,6 +127,7 @@ pub struct M3c2Params {
     pub registration_sigma: f64,
     /// Fewest points of each cloud in the cylinder for a level of detection.
     pub min_points: usize,
+    /// How the fitted normals are signed.
     pub orientation: Orientation,
 }
 
@@ -171,9 +172,11 @@ pub struct M3c2 {
     pub normal: Vec<Point>,
     /// Points of each cloud in the cylinder.
     pub n_a: Vec<u32>,
+    /// Points of the compared cloud (b) in the cylinder at each core point.
     pub n_b: Vec<u32>,
     /// Standard deviation (n - 1) of each cloud's positions along the normal.
     pub spread_a: Vec<f64>,
+    /// Standard deviation (n - 1, m) of the compared cloud's positions along the normal.
     pub spread_b: Vec<f64>,
 }
 
@@ -387,7 +390,9 @@ pub fn m3c2(a: &[Point], b: &[Point], core: &[Point], normals: Option<&[Point]>,
 /// raster on the lattice of the surfaces.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CellValue {
+    /// One value (m) for every cell.
     Scalar(f64),
+    /// One value per cell, from a raster on the lattice of the surfaces; NaN outside it.
     Grid(Raster),
 }
 
@@ -450,11 +455,14 @@ pub struct Dod {
     /// Volumes (m³, cell area times difference) of the significant cells:
     /// raised, lowered (positive) and net (raised - lowered).
     pub volume_gained: f64,
+    /// Volume (m³) of the significant cells where the surface was lowered, as a positive number.
     pub volume_lost: f64,
+    /// `volume_gained - volume_lost` (m³).
     pub net_volume: f64,
     /// Area (m²) of significant change, and of cells with a finite
     /// difference and level of detection.
     pub area_changed: f64,
+    /// Area (m²) of the cells with a finite difference and level of detection.
     pub area_compared: f64,
 }
 

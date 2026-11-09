@@ -46,13 +46,16 @@ const CHUNK: usize = 1 << 16;
 /// One bracketed WKT node, `KEYWORD[item, item, ...]`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WktNode {
+    /// The node's keyword, e.g. `PROJCS`, `DATUM`, `AUTHORITY` (case kept as written).
     pub keyword: String,
+    /// The bracketed contents in order: child nodes, quoted strings and bare words or numbers.
     pub items: Vec<WktItem>,
 }
 
 /// An item inside a WKT node.
 #[derive(Debug, Clone, PartialEq)]
 pub enum WktItem {
+    /// A nested bracketed node.
     Node(WktNode),
     /// A quoted string.
     Text(String),
@@ -77,6 +80,7 @@ impl WktNode {
             .collect()
     }
 
+    /// The first direct child node whose keyword is one of `keywords` (case-insensitive), if any.
     pub fn child(&self, keywords: &[&str]) -> Option<&WktNode> {
         self.children(keywords).into_iter().next()
     }
@@ -578,6 +582,7 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// The kind as a lower-case label for reports (`identity`, `conversion`, `helmert`, `null datum`).
     pub fn as_str(&self) -> &'static str {
         match self {
             Kind::Identity => "identity",
@@ -591,6 +596,7 @@ impl Kind {
 /// The transformation [`reproject`] will apply.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plan {
+    /// Which of the four kinds of transformation applies between the two definitions.
     pub kind: Kind,
     /// Whether the result is exact (to float rounding and any published parameters).
     pub exact: bool,

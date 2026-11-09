@@ -361,6 +361,7 @@ fn als_week_seconds(t: f64) -> f64 {
     ac::week_seconds(t)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(als_trajectory_check, m)?,

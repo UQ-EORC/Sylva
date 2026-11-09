@@ -30,11 +30,17 @@ pub type Matrix4 = [f64; 16];
 /// from up) and azimuth `phi` start, increment and count.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScanPattern {
+    /// First zenith angle of the pattern (degrees from up).
     pub theta_start: f64,
+    /// Zenith angle increment (degrees).
     pub theta_delta: f64,
+    /// Number of zenith angles in the pattern.
     pub theta_count: i64,
+    /// First azimuth angle of the pattern (degrees).
     pub phi_start: f64,
+    /// Azimuth increment (degrees).
     pub phi_delta: f64,
+    /// Number of azimuth angles in the pattern.
     pub phi_count: i64,
 }
 
@@ -71,10 +77,13 @@ impl ScanPosition {
 /// A parsed project.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RiscanProject {
+    /// The project directory (`.RiSCAN` or scanner `.PROJ`) it was read from.
     pub path: PathBuf,
+    /// Every scan position, in project order.
     pub positions: Vec<ScanPosition>,
     /// Project -> global matrix (often geocentric).
     pub pop: Option<Matrix4>,
+    /// Project name: the directory's name without its extension.
     pub name: String,
 }
 
@@ -1059,10 +1068,15 @@ pub fn read_project(path: impl AsRef<Path>) -> Result<RiscanProject> {
 /// A target of a RIEGL `.tpl` tie-point list, in the scanner's frame.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TiePoint {
+    /// Centre of the target (m) in the scanner's frame.
     pub position: Point,
+    /// Reflectance of the target (dB); NaN when the entry records none.
     pub reflectance: f64,
+    /// Diameter of the target as the list records it; NaN when the entry records none.
     pub diameter: f64,
+    /// Number of returns the scanner measured on the target; 0 when the entry records none.
     pub point_count: i64,
+    /// Target name as recorded; empty when the entry has none.
     pub name: String,
 }
 
@@ -1324,9 +1338,13 @@ pub fn angular_steps(xyz: &[[f32; 3]], sample: usize) -> Result<(f64, f64)> {
 /// Settings of [`riscan_like_mask`]'s `"legacy"` mode.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LegacyFilter {
+    /// Half-width of the neighbourhood window in scan increments, in both zenith and azimuth.
     pub window_steps: f64,
+    /// Half-width of the neighbourhood window in range (m).
     pub window_range: f64,
+    /// A weak echo with fewer than this many other echoes in its window is dropped.
     pub min_neighbours: usize,
+    /// Amplitude (dB) below which an echo counts as weak and faces the neighbour test.
     pub weak_db: f64,
     /// `(theta_step, phi_step)` of the scan pattern (degrees); estimated by
     /// [`angular_steps`] if None.

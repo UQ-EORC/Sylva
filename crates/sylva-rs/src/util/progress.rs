@@ -22,8 +22,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 /// One running stage: what it is, how far it has got, and how far it goes.
 #[derive(Debug)]
 pub struct Frame {
+    /// What the stage is doing, for display.
     pub label: String,
+    /// Steps completed so far (count).
     pub done: AtomicU64,
+    /// Steps expected in all (count); 0 while the total is not known.
     pub total: AtomicU64,
 }
 

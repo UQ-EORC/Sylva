@@ -33,22 +33,35 @@ pub struct TreeIad {
     pub bin_centres: Vec<f64>,
     /// Normalised leaf / wood / plant inclination histograms.
     pub liad: Vec<f64>,
+    /// Normalised wood inclination histogram (sums to 1; all zero without wood echoes).
     pub wiad: Vec<f64>,
+    /// Normalised inclination histogram of every echo of the tree.
     pub piad: Vec<f64>,
     /// Triangle-facet histograms (Bailey only, otherwise empty).
     pub liad_bailey: Vec<f64>,
+    /// Area-weighted wood facet histogram (Bailey only, otherwise empty).
     pub wiad_bailey: Vec<f64>,
+    /// Area-weighted facet histogram of leaf and wood together (Bailey only, otherwise empty).
     pub piad_bailey: Vec<f64>,
+    /// Projection coefficient `G` of the leaf histogram, averaged over the tree's beam zeniths (Vicari et al. 2019); 0 without leaf echoes.
     pub g_leaf: f64,
+    /// `G` of the wood histogram over the tree's beam zeniths; 0 without wood echoes.
     pub g_wood: f64,
+    /// `G` of the all-echo histogram over the tree's beam zeniths.
     pub g_plant: f64,
+    /// Area-weighted mean `|n_z|` of the leaf facets (`G` for a vertical beam, Bailey & Mahaffee 2017); 0 without facets.
     pub bailey_g_leaf: f64,
+    /// Area-weighted mean `|n_z|` of the wood facets; 0 without facets.
     pub bailey_g_wood: f64,
+    /// Leaf echoes of the tree that received a normal.
     pub leaf_hits: u32,
+    /// Wood echoes of the tree that received a normal.
     pub wood_hits: u32,
     /// Closest de Wit type of each histogram.
     pub liad_de_wit: Option<&'static str>,
+    /// Closest de Wit type of the wood histogram; `None` when it is empty.
     pub wiad_de_wit: Option<&'static str>,
+    /// Closest de Wit type of the all-echo histogram; `None` when it is empty.
     pub piad_de_wit: Option<&'static str>,
 }
 

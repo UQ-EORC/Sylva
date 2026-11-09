@@ -60,9 +60,13 @@ pub fn volumes(rows: &[Row]) -> Vec<f64> {
 /// Totals of a model, as the `QSM` properties give them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Totals {
+    /// Sum of all cylinder volumes (m³).
     pub total_volume: f64,
+    /// Volume of the rows with branch order 0 (m³).
     pub stem_volume: f64,
+    /// Total minus stem volume (m³).
     pub branch_volume: f64,
+    /// Sum of all cylinder lengths (m).
     pub total_length: f64,
     /// Highest branch order (NaN if any order is NaN; 0 for no rows).
     pub max_branch_order: f64,
@@ -334,12 +338,17 @@ pub fn join_fit(base: &[Segment], wood: &[Segment], cell: f64) -> (f64, f64) {
 /// A buttress and a QSM as one mesh; see [`fuse`].
 #[derive(Debug, Clone, Default)]
 pub struct TreeMesh {
+    /// Mesh vertices (m), the buttress's then the cylinders', in the model's frame.
     pub vertices: Vec<Point>,
+    /// Triangles as indices into `vertices`.
     pub faces: Vec<[u32; 3]>,
     /// Per face: 0 for the buttress, 1 for the wood above it.
     pub part: Vec<u8>,
+    /// Volume of the buttress mesh below `top_z` (m³), as given to [`fuse`].
     pub buttress_volume: f64,
+    /// Cylinder volume above `top_z` (m³, [`volume_above`]).
     pub wood_volume: f64,
+    /// Absolute z of the join, the buttress top (m).
     pub top_z: f64,
     /// Distance (m) between the middles of base and wood at the join.
     pub offset: f64,

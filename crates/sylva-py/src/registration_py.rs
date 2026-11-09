@@ -3,6 +3,12 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Bindings for transform matrices and applying them to points.
+//!
+//! Backs sylva.registration and the callers that build rigid transforms
+//! (sylva.coreg, sylva.riscan, the CLI) with sylva_rs::Transform. Matrices
+//! are 4x4 float64 arrays and points `(N, 3)` arrays; each function returns
+//! a new array, and a wrong shape is a ValueError from the
+//! `crate::matrix_from_py` / `crate::xyz_from_py` helpers.
 
 use numpy::{PyArray2, PyReadonlyArray2};
 use pyo3::prelude::*;
@@ -29,6 +35,7 @@ fn transform_xyz<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, matrix: PyRea
     Ok(xyz_to_py(py, &out))
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(rotation_z, m)?)?;
     m.add_function(wrap_pyfunction!(translation, m)?)?;

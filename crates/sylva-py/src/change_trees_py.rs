@@ -347,6 +347,7 @@ fn change_provenance_differences(a: &str, b: &str, rtol: f64) -> PyResult<Vec<(S
     provenance::differences(a, b, rtol).map_err(err)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(change_forest_epochs, m)?,

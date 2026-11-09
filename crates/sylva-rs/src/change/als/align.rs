@@ -56,10 +56,14 @@ pub enum Model {
     /// A smooth field: at each block centre the blocks' information pooled
     /// with Gaussian weights of standard deviation `smoothing` (m),
     /// interpolated bilinearly between centres.
-    Field { smoothing: f64 },
+    Field {
+        /// Standard deviation of the Gaussian weights, m.
+        smoothing: f64,
+    },
 }
 
 impl Model {
+    /// The model's name: `constant`, `blocks` or `field`.
     pub fn name(&self) -> &'static str {
         match self {
             Model::Constant => "constant",
@@ -101,6 +105,7 @@ pub struct AlignParams {
     pub huber: f64,
     /// Largest number of refits.
     pub iterations: usize,
+    /// How the block estimates are combined into the offset at a point.
     pub model: Model,
 }
 
@@ -127,6 +132,7 @@ impl Default for AlignParams {
 }
 
 impl AlignParams {
+    /// Checks every setting, naming the first bad one: positive lengths, at least three neighbours and samples, at least one iteration.
     pub fn check(&self) -> Result<()> {
         let pos = |name: &str, v: f64| -> Result<()> {
             if v.is_finite() && v > 0.0 { Ok(()) } else { Err(Error::invalid(format!("{name} must be a positive number, got {v}"))) }
@@ -171,22 +177,27 @@ impl AlignParams {
 pub struct BlockFit {
     /// Samples of the second survey tried, and those with a usable plane.
     pub n_samples: usize,
+    /// Samples with a usable plane: enough neighbours, flat and smooth enough.
     pub n_used: usize,
     /// Independent samples they count as (occupied correlation cells).
     pub n_eff: usize,
     /// `(dx, dy, dz)` of the second survey relative to the first (m), and
     /// its covariance (with the horizontal prior).
     pub offset: [f64; 3],
+    /// Covariance (m²) of `offset`, the horizontal prior included.
     pub cov: [[f64; 3]; 3],
     /// The data's information matrix and `information * offset`, without
     /// the prior: what blocks pool.
     pub info: [[f64; 3]; 3],
+    /// `info * offset`, the right-hand side of the normal equations, without the prior.
     pub rhs: [f64; 3],
     /// Median height of the samples above the first survey's planes before
     /// any offset (a first look at the vertical offset), and the robust
     /// standard deviation of those heights before and after the offset.
     pub median_before: f64,
+    /// Robust standard deviation (m) of the samples' heights above the planes before the offset.
     pub spread_before: f64,
+    /// Robust standard deviation (m) of those heights after the offset.
     pub spread_after: f64,
     /// Whether the data, not the prior, fixed both horizontal offsets
     /// (standard deviations under half the prior's).
@@ -194,6 +205,7 @@ pub struct BlockFit {
     /// Median residual RMS of the planes fitted to each survey's stable
     /// returns: return noise plus roughness at the scale of `radius`.
     pub noise_a: f64,
+    /// Median residual RMS (m) of the planes fitted to the second survey's stable returns.
     pub noise_b: f64,
     /// Refits used.
     pub iterations: usize,
@@ -202,11 +214,17 @@ pub struct BlockFit {
 /// Offsets between two surveys over an area, on a grid of blocks.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Alignment {
+    /// x of the south-west corner of the block grid (m, first survey's frame), a multiple of `block_size`.
     pub xmin: f64,
+    /// y of the south-west corner of the block grid (m, first survey's frame), a multiple of `block_size`.
     pub ymin: f64,
+    /// Side of the blocks (m).
     pub block_size: f64,
+    /// Blocks from west to east.
     pub nx: usize,
+    /// Blocks from south to north.
     pub ny: usize,
+    /// How the blocks were combined into `values`.
     pub model: Model,
     /// Estimate of each block (row-major, row 0 at the south), None where
     /// there were too few samples; empty for an alignment rebuilt from its
@@ -214,9 +232,11 @@ pub struct Alignment {
     pub blocks: Vec<Option<BlockFit>>,
     /// Offset the model gives at each block centre, and its standard deviation.
     pub values: Vec<[f64; 3]>,
+    /// Standard deviation (m) of each component of `values`, per block centre.
     pub sigmas: Vec<[f64; 3]>,
     /// The constant offset over all blocks, and its standard deviation.
     pub global: [f64; 3],
+    /// Standard deviation (m) of each component of `global`.
     pub global_sigma: [f64; 3],
     /// Birge ratio of the blocks about the model, per component (1 when
     /// they agree within their uncertainties; the uncertainties were
@@ -224,6 +244,7 @@ pub struct Alignment {
     pub birge: [f64; 3],
     /// Medians over the blocks of the per-survey plane residuals (m).
     pub noise_a: f64,
+    /// Median over the blocks of the second survey's plane residuals (m).
     pub noise_b: f64,
 }
 

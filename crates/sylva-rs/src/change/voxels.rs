@@ -37,10 +37,15 @@ use rayon::prelude::*;
 use crate::error::{Error, Result};
 use crate::voxel::{RayVoxels, I};
 
+/// Class code: not observed in one or both epochs.
 pub const UNOBSERVED: u8 = 0;
+/// Class code: empty in both epochs.
 pub const STABLE_EMPTY: u8 = 1;
+/// Class code: occupied in both epochs.
 pub const STABLE_OCCUPIED: u8 = 2;
+/// Class code: empty in epoch a, occupied in epoch b.
 pub const GAINED: u8 = 3;
+/// Class code: occupied in epoch a, empty in epoch b.
 pub const LOST: u8 = 4;
 /// Class names by code.
 pub const CLASS_NAMES: [&str; 5] = ["unobserved", "stable_empty", "stable_occupied", "gained", "lost"];
@@ -87,7 +92,9 @@ pub struct LayerChange {
     /// Mean plant area density of the compared voxels in each epoch, and
     /// their difference b - a (m² m⁻³); NaN where none is compared.
     pub pad_a: Vec<f64>,
+    /// Mean plant area density (m² m⁻³) of the compared voxels of each layer in epoch b; NaN where none is compared.
     pub pad_b: Vec<f64>,
+    /// Layer mean plant area density of epoch b minus that of epoch a (m² m⁻³); NaN where none is compared.
     pub pad_change: Vec<f64>,
 }
 
@@ -98,9 +105,11 @@ pub struct Occupancy {
     pub class: Vec<u8>,
     /// Plant area density of each epoch per voxel.
     pub pad_a: Vec<f64>,
+    /// Plant area density (m² m⁻³) of epoch b per voxel, as given by the grid's metric.
     pub pad_b: Vec<f64>,
     /// Plant area density b - a per voxel; NaN outside the common support.
     pub pad_change: Vec<f64>,
+    /// Per-layer class counts and plant area density change.
     pub layers: LayerChange,
 }
 

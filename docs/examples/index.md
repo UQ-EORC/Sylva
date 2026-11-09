@@ -36,7 +36,7 @@ the destructive-harvest data of Burt et al. (2021), cut by
 
 What real data shows that a synthetic scene cannot is worth reading. Two
 examples the notebooks work through: the cloth simulation filter puts the
-terrain metres too high in 8 % of the tile's cells, all of them within about
+terrain metres too high in 8 % of the tile's cells, most of them within about
 2 m of the cut edge, because a cloth needs points on both sides to be pulled
 down -- so classify ground on the whole plot and crop afterwards; and the
 statistical outlier filter removes 4 % of the cloud, two thirds of it below
@@ -49,7 +49,7 @@ statistical outlier filter removes 4 % of the cloud, two thirds of it below
 | 3 | [Registration](03_registration.ipynb) | synthetic | two scans of a synthetic plot: Kabsch from targets, point-to-point and point-to-plane ICP, trimming on partial overlap, merging |
 | 4 | [Ground and height](04_ground.ipynb) | tile | CSF and PMF ground filters, DTM, height normalisation, CHM |
 | 5 | [Trees](05_trees.ipynb) | tile | stem detection and DBH, segmentation, heights, crowns, taper |
-| 6 | [QSMs](06_qsm.ipynb) | both | leaf / wood separation, cylinder models, volumes, mesh export |
+| 6 | [Quantitative structure models](06_qsm.ipynb) | both | leaf / wood separation, cylinder models, volumes, mesh export |
 | 7 | [Canopy structure](07_canopy.ipynb) | both | voxel occupancy, contact-frequency PAD, gap fraction and effective PAI |
 | 8 | [Pulses and shots files](08_shots.ipynb) | tile | `Shots`, misses, conversions, the Parquet shots format |
 | 9 | [Ray-traced voxels](09_voxels.ipynb) | both | attenuation, PAD / LAD / WAD, leaf angles, wood volume, `.vox`, streaming |
@@ -60,7 +60,7 @@ statistical outlier filter removes 4 % of the cloud, two thirds of it below
 | 14 | [Change detection](14_change.ipynb) | synthetic | two epochs with known changes: alignment on stems and ground, tree matching, DBH increments and their detection limits, plot summary, C2C and M3C2, CHM differences, voxel occupancy, QSM change |
 | 15 | [Airborne lidar](15_als.ipynb) | synthetic | a simulated flight written as tiles: catalogue, ground, DTM, CHM, area-based metrics, individual trees against the known stand, pulses from the trajectory, gap profiles and ray-traced PAI against a known layer |
 | 16 | [Full waveforms](16_waveform.ipynb) | synthetic | waveforms of known targets, LAS wave packets written and read, Gaussian decomposition against the truth, echoes as pulses for ray-traced voxels |
-| 17 | [Synthetic data](17_synthetic.ipynb) | synthetic | tree archetypes and their truth (cylinders, leaves, leaf angles), a mixed stand with understorey and dead wood, a finite-beam scan and where its mixed pixels fall |
+| 17 | [Synthetic trees, plots and scans](17_synthetic.ipynb) | synthetic | tree archetypes and their truth (cylinders, leaves, leaf angles), a mixed stand with understorey and dead wood, a finite-beam scan and where its mixed pixels fall |
 | 18 | [Buttresses](18_buttress.ipynb) | two real trees | 3D views of the points, detecting a flanged base, rebuilding it as a closed mesh, the cylinder model it replaces, one fused mesh of the whole tree |
 
 The numbers the notebooks print describe this one tile and are not validation.
@@ -74,12 +74,13 @@ pip install -e '.[examples]'          # matplotlib and jupyter
 jupyter lab docs/examples
 ```
 
-They are generated from `docs/examples/build_notebooks.py`; edit that file and
+They are generated from `docs/examples/build_notebooks.py` (which needs
+`nbformat` and `nbclient`, installed with JupyterLab); edit that file and
 run it to regenerate and re-execute them (`python docs/examples/build_notebooks.py
 05_trees` for one).
 
 The figures share one style, `sylva.mplstyle` in the same folder, which the
-first cell of each notebook loads: fixed figure widths and font sizes, the
+setup cell of each notebook loads: fixed figure widths and font sizes, the
 colour-blind-safe Okabe-Ito palette for categories, viridis for magnitudes,
 and a diverging map centred on zero for signed differences. Ground, wood,
 leaves and grass keep the same colours in every notebook. Copy the file

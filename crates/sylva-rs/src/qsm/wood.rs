@@ -30,6 +30,7 @@ use crate::util::spatial::KdTree;
 use crate::Point;
 
 #[derive(Debug, Clone)]
+/// Settings of [`wood_mask`] and [`wood_scores`].
 pub struct WoodParams {
     /// Neighbourhood for the anisotropy likelihood.
     pub k: usize,
@@ -47,6 +48,7 @@ pub struct WoodParams {
     pub scale_radius: f64,
     /// kNN graph for the passage paths.
     pub graph_k: usize,
+    /// Longest graph edge (m).
     pub max_edge: f64,
     /// Points within this height of the lowest point seed the paths.
     pub base_height: f64,
@@ -62,11 +64,13 @@ pub struct WoodParams {
     /// Connectivity resolution and minimum size of a free-standing
     /// high-likelihood component.
     pub component_res: f64,
+    /// Fewest points of a high-likelihood component kept when it touches no passage wood.
     pub component_min: usize,
     /// Statistical outlier removal on the medium-likelihood set before its
     /// components are formed: scattered foliage goes, bark
     /// patches stay.
     pub sor_k: usize,
+    /// Standard-deviation multiplier of the outlier removal (a point is dropped past `mean + sor_std * std` of the neighbour distance).
     pub sor_std: f64,
     /// Final dilation radius.
     pub dilate_dist: f64,
@@ -280,8 +284,11 @@ fn keep_components(points: &[Point], subset: &[usize], wood: &[bool], res: f64, 
 /// CC BY 4.0), rewritten in Rust with union-find in place of networkx.
 #[derive(Debug, Clone)]
 pub struct GbsParams {
+    /// Neighbours per point in the kNN graph the paths run on.
     pub graph_k: usize,
+    /// Longest graph edge (m).
     pub max_edge: f64,
+    /// Points within this height (m) of the lowest point of the main component seed the paths.
     pub base_height: f64,
     /// Shell thicknesses in path length (m). Larger trees want larger ones
     /// (the authors use 0.5-3 m).

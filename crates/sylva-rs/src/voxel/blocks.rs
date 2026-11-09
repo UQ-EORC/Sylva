@@ -43,7 +43,12 @@ pub enum Pulses<'a> {
     Memory(VoxelInputs<'a>),
     /// A shots file, streamed a few row groups at a time on every pass, with
     /// the echo labels taken from its attributes.
-    File { file: &'a ShotsFile, labels: &'a EchoLabels },
+    File {
+        /// The file whose row groups are streamed on every pass.
+        file: &'a ShotsFile,
+        /// How ground, foliage class, tree id and intensity are read from its echo attributes.
+        labels: &'a EchoLabels,
+    },
 }
 
 /// How a grid is cut into blocks and how many are traced at once.

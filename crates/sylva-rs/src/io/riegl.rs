@@ -55,10 +55,13 @@ type ReadFn = unsafe extern "C" fn(Handle, u32, *mut Xyz32, *mut Attributes, *mu
 type CloseFn = unsafe extern "C" fn(Handle) -> i32;
 type LastErrorFn = unsafe extern "C" fn(*mut c_char, u32, *mut u32) -> i32;
 
-/// Echo type stored in the low two bits of `flags`.
+/// Echo type stored in the low two bits of `flags`: the pulse's only echo.
 pub const ECHO_SINGLE: u16 = 0;
+/// First of several echoes of a pulse.
 pub const ECHO_FIRST: u16 = 1;
+/// An echo between the first and last of a pulse.
 pub const ECHO_INTERIOR: u16 = 2;
+/// Last of several echoes of a pulse.
 pub const ECHO_LAST: u16 = 3;
 pub(crate) const FLAG_PSEUDO_ECHO: u16 = 1 << 4;
 
@@ -175,6 +178,7 @@ pub struct RxpOptions {
     pub drop_pseudo_echoes: bool,
     /// Minimum range (m); RiSCAN's default export drops `< 0.5`.
     pub min_range: f64,
+    /// Maximum range (m); points farther than this are dropped. Infinite by default.
     pub max_range: f64,
     /// Keep every `stride`-th point (1 = all). Splits multi-echo pulses;
     /// prefer `shot_stride` for pulse data.

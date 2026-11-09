@@ -152,6 +152,7 @@ fn mask_near<'py>(py: Python<'py>, xyz: PyReadonlyArray2<'py, f64>, other: PyRea
     Ok(py.detach(|| masks::near_mask(p, o, distance, horizontal)).map_err(err)?.into_pyarray(py))
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mask_polygon_index, m)?)?;
     m.add_function(wrap_pyfunction!(read_polygons, m)?)?;

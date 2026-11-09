@@ -78,6 +78,7 @@ pub fn de_wit(name: &str, n_bins: usize) -> Option<LeafAngles> {
 pub struct LeafAreaGrid {
     /// Minimum corner.
     pub origin: Point,
+    /// Voxel edge (m).
     pub voxel_size: f64,
     /// `[nz, ny, nx]`.
     pub shape: [usize; 3],
@@ -99,6 +100,7 @@ fn nan_to_num(v: f64) -> f64 {
 }
 
 impl LeafAreaGrid {
+    /// A grid from its arrays; `density` must hold one value per voxel.
     pub fn new(origin: Point, voxel_size: f64, shape: [usize; 3], density: Vec<f64>) -> Result<Self> {
         if density.len() != shape[0] * shape[1] * shape[2] {
             return Err(Error::invalid(format!("density has {} values for a {}x{}x{} grid", density.len(), shape[0], shape[1], shape[2])));
@@ -206,10 +208,13 @@ pub fn leaf_area_density(points: &[Point], voxel_size: f64, res: f64, k: usize) 
 /// and its size.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LeafShape {
+    /// Vertices as `(along, across, up)` in unit leaf space.
     pub vertices: Vec<Point>,
+    /// Triangles as indices into `vertices`.
     pub faces: Vec<[u32; 3]>,
     /// Blade length and greatest width (m).
     pub length: f64,
+    /// Greatest blade width (m).
     pub width: f64,
 }
 
@@ -311,7 +316,9 @@ pub fn single_leaf_area(length: f64, width: f64, shape: Option<&LeafShape>) -> R
 /// Where leaf area goes: a grid, or a total to spread over the leaf points.
 #[derive(Debug, Clone, Copy)]
 pub enum LeafArea<'a> {
+    /// One-sided leaf area per voxel, as given.
     Grid(&'a LeafAreaGrid),
+    /// A total one-sided leaf area (m²), spread over the leaf points at 0.25 m.
     Total(f64),
 }
 
@@ -320,8 +327,11 @@ pub enum LeafArea<'a> {
 pub struct AddLeaves {
     /// Blade and size of every leaf.
     pub shape: LeafShape,
+    /// Leaves within this distance (m) of a QSM axis point away from it; farther ones take a random in-plane direction.
     pub max_branch_distance: f64,
+    /// Random displacement of a leaf centre from its seed point (m).
     pub jitter: f64,
+    /// Seed of the random draws.
     pub seed: u64,
 }
 

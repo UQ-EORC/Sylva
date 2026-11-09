@@ -23,19 +23,25 @@ pub const INSERTION_REACH: f64 = 0.5;
 /// One branch (one `branch_id` chain); the stem is the order-0 chain.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Branch {
+    /// The `branch_id` shared by the chain's cylinders.
     pub id: u32,
+    /// Branch order: 0 for the stem, 1 for branches off it, and so on.
     pub order: u32,
     /// Branch the first cylinder hangs from (-1 for the stem).
     pub parent: i64,
+    /// Cylinders in the chain (count).
     pub n_cylinders: usize,
     /// Sum of cylinder lengths (m) and volume (m3).
     pub length: f64,
+    /// Sum of cylinder volumes (m3).
     pub volume: f64,
     /// Radius of the first cylinder and length-weighted mean radius (m).
     pub base_radius: f64,
+    /// Length-weighted mean radius of the chain's cylinders (m).
     pub mean_radius: f64,
     /// Heights of the branch base and tip above the tree base (m).
     pub base_height: f64,
+    /// Height of the tip (end of the last cylinder) above the tree base (m).
     pub tip_height: f64,
     /// Angle (deg) between the branch's direction over 0.5 m after its first
     /// cylinder (which only joins it to the parent's axis) and the parent's
@@ -44,6 +50,7 @@ pub struct Branch {
     /// Chord from base to tip: angle from the vertical (deg, 0 = straight up)
     /// and direction (deg, counter-clockwise from +x).
     pub zenith: f64,
+    /// Direction of the base-to-tip chord (deg counter-clockwise from +x, -180 to 180).
     pub azimuth: f64,
     /// Length over chord length (1 = straight).
     pub tortuosity: f64,
@@ -56,18 +63,29 @@ pub struct Branch {
 /// Whole-tree metrics of a QSM.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TreeMetrics {
+    /// Highest cylinder end above the lowest root start (m).
     pub height: f64,
+    /// Diameter at 1.3 m above the base along the stem (m); NaN for an empty model ([`Qsm::dbh`]).
     pub dbh: f64,
+    /// Sum of all cylinder volumes (m3).
     pub total_volume: f64,
+    /// Volume of the order-0 (stem) cylinders (m3).
     pub stem_volume: f64,
+    /// Volume of every cylinder of order 1 and above (m3).
     pub branch_volume: f64,
+    /// Sum of all cylinder lengths (m).
     pub total_length: f64,
+    /// Length of the order-0 chain (m); 0 without one.
     pub stem_length: f64,
+    /// Highest branch order in the model (0 for a bare stem or an empty model).
     pub max_order: u32,
     /// Per branch order 0, 1, 2, ...: number of branches, length (m), volume (m3).
     pub n_branches_by_order: Vec<usize>,
+    /// Summed branch length per order (m), indexed by order.
     pub length_by_order: Vec<f64>,
+    /// Summed branch volume per order (m3), indexed by order.
     pub volume_by_order: Vec<f64>,
+    /// Cylinders with no child (count).
     pub n_tips: usize,
     /// Mean over tips of the path length from the base, over the longest
     /// such path (Smith et al. 2014); 1 for a single stem.
@@ -77,21 +95,25 @@ pub struct TreeMetrics {
     /// Stem lean (deg from vertical, chord from the base to the stem at
     /// `min(5 m, height / 2)`) and its direction (deg).
     pub lean: f64,
+    /// Direction the stem leans towards (deg counter-clockwise from +x); NaN with `lean`.
     pub lean_direction: f64,
     /// Greatest distance of the stem axis from the chord between the base
     /// and the crown base (or the stem tip), over the chord length.
     pub sweep: f64,
     /// Stem radius profile: heights above the base (m) and radii (m).
     pub taper_heights: Vec<f64>,
+    /// Radius of each stem cylinder (m), base to tip, at the heights in `taper_heights`.
     pub taper_radii: Vec<f64>,
     /// Crown outlined by the branches (points along every cylinder above the crown base).
     pub crown: CrownShape,
     /// Share of the volume and of the length in cylinders fitted to points
     /// (the rest came from taper and pipe-model priors).
     pub measured_volume_fraction: f64,
+    /// Share (0-1) of the total length in cylinders with fitted radii; 0 for an empty model.
     pub measured_length_fraction: f64,
     /// Length-weighted medians over first-order branches (deg).
     pub median_insertion_angle: f64,
+    /// Length-weighted median chord zenith of first-order branches (deg from vertical); NaN without any.
     pub median_branch_zenith: f64,
 }
 

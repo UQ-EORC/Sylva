@@ -16,7 +16,7 @@ MARKER = "<!-- function-index -->"
 PAGES = {
     "pointcloud": "pointcloud.md", "raster": "pointcloud.md", "io": "io.md", "shots": "shots.md",
     "riscan": "shots.md", "filters": "filters.md", "ground": "ground.md", "registration": "registration.md",
-    "coreg": "coreg.md", "trees": "trees.md", "qsm": "qsm.md", "leaves": "leaves.md",
+    "registration_report": "registration_report.md", "coreg": "coreg.md", "trees": "trees.md", "qsm": "qsm.md", "leaves": "leaves.md",
     "canopy": "canopy.md", "voxels": "voxels.md", "voxels.blocks": "voxel_blocks.md",
     "quality": "quality.md", "waveform": "waveform.md",
     "als": "als.md", "als.tiles": "tiles.md", "als.metrics": "als_metrics.md",
@@ -24,7 +24,7 @@ PAGES = {
     "change": "change.md", "change.als": "change_als.md", "fusion": "fusion.md",
     "geo.coords": "coords.md", "geo.interpolate": "interpolate.md", "geo.masks": "masks.md",
     "synthetic": "synthetic.md", "synthetic.model": "synthetic.md",
-    "util.progress": "progress.md", "util.limits": "limits.md",
+    "util.progress": "progress.md", "util.limits": "limits.md", "util.image": "image.md",
 }
 
 

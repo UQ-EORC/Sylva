@@ -288,6 +288,13 @@ sylva tiles-plot scans/*.laz run --transforms corr.npy --use use.npy \
     --bounds -10 -10 110 110 --plot 0 0 100 100 --min-slenderness 10 --workers 4
 ```
 
+The command's other options follow the stages below, with the defaults of
+the plot protocol rather than the Python defaults: `--riscan` and
+`--shot-stride` for the `scans/` stage, `--tile-size` 10, `--voxel` 0.02,
+`--sor-k` 6 and `--sor-std-ratio` 1.0, `--ground csf|pmf`, `--min-arc` 130,
+`--min-height` 2, `--buffer` 20 and `--stem-radius-cap` 1.5;
+`sylva tiles-plot --help` lists them all.
+
 The stages, each in its own directory of `out` with a `.done` marker
 written when it is complete:
 

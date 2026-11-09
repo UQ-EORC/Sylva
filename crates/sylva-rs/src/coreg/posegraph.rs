@@ -24,9 +24,14 @@ use crate::util::numeric::median;
 /// A measured relative transform: `transform` maps scan `i` into scan `j`.
 #[derive(Debug, Clone)]
 pub struct Edge {
+    /// Index of the scan whose frame `transform` maps from.
     pub i: usize,
+    /// Index of the scan whose frame `transform` maps into.
     pub j: usize,
+    /// `j_from_i`, the measured relative pose as a 4x4 homogeneous matrix.
     pub transform: Mat4,
+    /// 6x6 information matrix (inverse covariance) of the measurement, rotation
+    /// block (rad^-2) first, then translation (m^-2).
     pub information: Matrix6<f64>,
     /// Scalar trust for the spanning-tree initialisation.
     pub weight: f64,
@@ -223,9 +228,12 @@ pub struct OptimiseParams {
     pub tolerance: f64,
     /// Mahalanobis distance beyond which an edge is down-weighted.
     pub huber_delta: f64,
+    /// Whether to run the solve-and-reject passes at all.
     pub reject_outliers: bool,
     /// Robust standard deviations above the median that make an outlier.
     pub outlier_sigma: f64,
+    /// Most rounds of rejecting outlier edges and re-solving after the first
+    /// solve; a round that finds none ends early.
     pub max_rejection_passes: i64,
 }
 
@@ -238,10 +246,16 @@ impl Default for OptimiseParams {
 /// Diagnostics of [`optimise`].
 #[derive(Debug, Clone)]
 pub struct Optimisation {
+    /// `world_from_scan` of every node after the solve.
     pub poses: Vec<Mat4>,
+    /// Levenberg-Marquardt iterations, summed over the rejection passes.
     pub iterations: usize,
+    /// Whether the last pass stopped on `tolerance` rather than on its
+    /// iteration cap or a step it could not accept.
     pub converged: bool,
+    /// Sum of squared Mahalanobis edge errors over all edges at the starting poses.
     pub initial_error: f64,
+    /// The same at the solution, over the edges that were not rejected.
     pub final_error: f64,
     /// Indices of the rejected edges, ascending.
     pub rejected_edges: Vec<usize>,

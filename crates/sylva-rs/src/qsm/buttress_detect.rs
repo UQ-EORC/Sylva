@@ -48,6 +48,7 @@ impl Default for ButtressParams {
 /// Result of [`detect_buttress`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Buttress {
+    /// Whether the stem is buttressed: a poor circle fit below `low` and at least `min_ridges` ridges.
     pub buttressed: bool,
     /// Median share of bark points a circle explains below `low`.
     pub base_circle_fit: f64,
@@ -55,6 +56,7 @@ pub struct Buttress {
     pub stem_circle_fit: f64,
     /// Stem radius (m) from the round slices above 2 m.
     pub stem_radius: f64,
+    /// Flanges counted from the persistent protrusions (count, [`count_ridges`]).
     pub ridges: usize,
     /// Share of the angle with persistent protrusions.
     pub ridge_share: f64,
@@ -62,6 +64,7 @@ pub struct Buttress {
     pub spread: f64,
     /// Height (m) where a circle explains the stem again; NaN if not buttressed.
     pub top: f64,
+    /// Stem centre `[x, y]` the slices were measured around (m): `base_xy` if given, else the median of the points 2.5-3.5 m up.
     pub centre: [f64; 2],
 }
 

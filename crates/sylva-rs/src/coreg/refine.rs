@@ -30,24 +30,56 @@ use crate::Point;
 /// Settings of [`refine_joint`] (the Python defaults in [`Default`]).
 #[derive(Debug, Clone)]
 pub struct RefineParams {
+    /// Voxel size (m) of each level, coarse to fine; each scan is thinned to
+    /// voxel centroids at each.
     pub voxel_sizes: Vec<f64>,
+    /// Nearest-neighbour cut-off (m) for correspondences at each level, one per
+    /// voxel size.
     pub max_distances: Vec<f64>,
+    /// Associations per level: correspondences are paired afresh under the
+    /// current poses this many times.
     pub rounds: usize,
+    /// Gauss-Newton steps after each association.
     pub iterations: usize,
+    /// Cap on the thinned points of a scan per level; a seeded random subset
+    /// beyond it.
     pub points_per_scan: usize,
+    /// Cap on the source points queried per pair and direction at each
+    /// association; a seeded random subset beyond it.
     pub correspondences_per_pair: usize,
+    /// Planarity (0-1) a point needs to take part in correspondences.
     pub min_planarity: f64,
+    /// Neighbours in the PCA that gives each point its normal and planarity; a
+    /// scan with fewer points at a level has no usable points there.
     pub normal_neighbours: usize,
+    /// Two points correspond only if their normals agree within this angle
+    /// (degrees), either way round.
     pub max_normal_angle_deg: f64,
+    /// Share (0-1) of each pair's total correspondence weight given to its
+    /// matched stems.
     pub stem_weight: f64,
+    /// Horizontal radius (m) within which mutually nearest stems of a pair are
+    /// tied together.
     pub stem_radius: f64,
+    /// Fixed Huber scale (m) of the horizontal stem residuals.
     pub stem_scale: f64,
+    /// A voxel needs at least this many points for its centroid to take part;
+    /// 1 keeps all.
     pub min_voxel_points: usize,
+    /// Lower bound (m) of each block's Huber scale, which is otherwise its
+    /// median absolute point-to-plane residual.
     pub robust_scale: f64,
+    /// Standard deviation (m) of the weak prior tying each pose's translation
+    /// to its starting value.
     pub prior_translation: f64,
+    /// Standard deviation (degrees) of the prior on each pose's rotation.
     pub prior_rotation_deg: f64,
+    /// Largest translation (m) any scan may move in one step; a larger step is
+    /// scaled down.
     pub max_step_translation: f64,
+    /// Largest rotation (degrees) any scan may turn in one step.
     pub max_step_rotation_deg: f64,
+    /// Seed of the random subsets.
     pub seed: u64,
 }
 
@@ -88,6 +120,7 @@ pub struct JointRefinement {
     pub rotations: Vec<f64>,
     /// Median absolute point-to-plane residual (m) before and after.
     pub residual_before: f64,
+    /// The same after the last accepted step.
     pub residual_after: f64,
     /// Largest number of correspondences in one association.
     pub correspondences: usize,

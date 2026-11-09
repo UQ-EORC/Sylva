@@ -79,6 +79,7 @@ fn stem_noise_summary<'py>(py: Python<'py>, slice_count: usize, slices: &Bound<'
     Ok(d)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [wrap_pyfunction!(scan_ids_from_origins, m)?, wrap_pyfunction!(weighted_median, m)?, wrap_pyfunction!(stem_noise_summary, m)?] {
         m.add_function(f)?;

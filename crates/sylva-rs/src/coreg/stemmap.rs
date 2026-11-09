@@ -13,16 +13,31 @@ use crate::util::json::{self, Json};
 /// One stem of a stem map (the Python package's `Stem`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct StemRecord {
+    /// x of the stem axis at `reference_height` above ground (m), in the scan's
+    /// own frame.
     pub x: f64,
+    /// y of the axis there (m).
     pub y: f64,
+    /// Elevation of that point in the scan's frame (m): the terrain under the
+    /// stem plus `reference_height`, not a height.
     pub z: f64,
+    /// Diameter at `reference_height` (m).
     pub dbh: f64,
+    /// Unit direction of the stem axis, pointing up.
     pub axis: [f64; 3],
+    /// Height above ground (m) at which position and diameter are given; 1.3
+    /// by default.
     pub reference_height: f64,
+    /// Horizontal slices whose circles were linked into the stem; 0 if unknown.
     pub n_slices: i64,
+    /// Points on the fitted circles of those slices (inliers); 0 if unknown.
     pub n_points: i64,
+    /// Inlier-weighted mean radial RMS residual (m) of the circle fits; 0 if unknown.
     pub rmse: f64,
+    /// Inlier-weighted mean angular coverage (0-1) of the circles: the share of
+    /// the circumference the scan saw.
     pub coverage: f64,
+    /// Lean of the axis from vertical (degrees).
     pub lean_deg: f64,
 }
 

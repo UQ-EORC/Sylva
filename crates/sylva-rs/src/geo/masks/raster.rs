@@ -22,7 +22,12 @@ pub enum RasterTest {
     /// Any value that is not NaN.
     Valid,
     /// `min <= value <= max`, each bound optional.
-    Range { min: Option<f64>, max: Option<f64> },
+    Range {
+        /// Lower bound (inclusive), in the raster's units; `None` for no lower limit.
+        min: Option<f64>,
+        /// Upper bound (inclusive), in the raster's units; `None` for no upper limit.
+        max: Option<f64>,
+    },
     /// The value equals one of these.
     Values(Vec<f64>),
 }

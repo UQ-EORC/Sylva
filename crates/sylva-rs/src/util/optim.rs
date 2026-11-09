@@ -10,9 +10,13 @@ use nalgebra::{DMatrix, DVector};
 /// Result of a least-squares fit.
 #[derive(Debug, Clone)]
 pub struct LmResult {
+    /// Fitted parameter vector, in the units of `x0`.
     pub x: Vec<f64>,
+    /// Residual vector `r(x)` at the solution.
     pub residuals: Vec<f64>,
+    /// Root mean square of the residuals at the solution, in their units.
     pub rmse: f64,
+    /// Levenberg-Marquardt iterations taken (count).
     pub iterations: usize,
 }
 

@@ -474,7 +474,8 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
     bin_length
         Geodesic shell width (m); sets the cylinder length.
     min_points
-        Smallest segment kept.
+        Fewest circle inliers for a section's fit to count as a measurement;
+        segments are not dropped by it.
     ransac_threshold
         Circle inlier distance (m).
     max_radius

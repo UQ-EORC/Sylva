@@ -16,29 +16,44 @@ use crate::transform::{add, dot, scale, sub};
 use crate::Point;
 
 #[derive(Debug, Clone, PartialEq)]
+/// One cylinder of a QSM: a straight tube from `start` along `axis`,
+/// linked to its parent by index.
 pub struct Cylinder {
+    /// Start point (m), in the point cloud's frame.
     pub start: Point,
+    /// Unit direction from start to end.
     pub axis: Point,
+    /// Length along the axis (m).
     pub length: f64,
+    /// Radius (m).
     pub radius: f64,
+    /// Index of the parent cylinder in the model; negative (-1) for a root.
     pub parent: i64,
+    /// Branch order: 0 for the stem, 1 for branches off it, and so on.
     pub branch_order: u32,
+    /// Id of the branch (chain of cylinders) this one belongs to.
     pub branch_id: u32,
+    /// Points the radius measurement rests on (circle inliers for a circle fit); 0 when the radius came from the taper prior.
     pub n_points: usize,
 }
 
 impl Cylinder {
+    /// The far end of the cylinder, `start + axis * length`.
     pub fn end(&self) -> Point {
         add(&self.start, &scale(&self.axis, self.length))
     }
 
+    /// Volume `pi r^2 length` (m3).
     pub fn volume(&self) -> f64 {
         std::f64::consts::PI * self.radius * self.radius * self.length
     }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
+/// A quantitative structure model of one tree: its cylinders, each linked to
+/// its parent, as built by [`build_qsm`] or read from a cylinder table.
 pub struct Qsm {
+    /// The cylinders, in the order `parent` indexes them.
     pub cylinders: Vec<Cylinder>,
 }
 
@@ -54,30 +69,37 @@ impl Qsm {
         }
     }
 
+    /// Number of cylinders.
     pub fn len(&self) -> usize {
         self.cylinders.len()
     }
 
+    /// Whether the model has no cylinders.
     pub fn is_empty(&self) -> bool {
         self.cylinders.is_empty()
     }
 
+    /// Sum of all cylinder volumes (m3).
     pub fn total_volume(&self) -> f64 {
         self.cylinders.iter().map(Cylinder::volume).sum()
     }
 
+    /// Volume of the order-0 (stem) cylinders (m3).
     pub fn stem_volume(&self) -> f64 {
         self.cylinders.iter().filter(|c| c.branch_order == 0).map(Cylinder::volume).sum()
     }
 
+    /// Volume of every cylinder of order 1 and above (m3): total minus stem.
     pub fn branch_volume(&self) -> f64 {
         self.total_volume() - self.stem_volume()
     }
 
+    /// Sum of all cylinder lengths (m).
     pub fn total_length(&self) -> f64 {
         self.cylinders.iter().map(|c| c.length).sum()
     }
 
+    /// Highest branch order of any cylinder; 0 for an empty model.
     pub fn max_branch_order(&self) -> u32 {
         self.cylinders.iter().map(|c| c.branch_order).max().unwrap_or(0)
     }
@@ -273,6 +295,7 @@ impl Qsm {
             .collect()
     }
 
+    /// Write the cylinder table as CSV with a header, one row per cylinder, values to 6 decimals.
     pub fn write_csv(&self, path: impl AsRef<Path>) -> Result<()> {
         let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
         writeln!(w, "sx,sy,sz,ax,ay,az,length,radius,parent,branch_order,branch_id,n_points")?;
@@ -306,11 +329,17 @@ impl Qsm {
 }
 
 #[derive(Debug, Clone)]
+/// Settings of [`build_qsm`] and [`skeletonize`].
 pub struct QsmParams {
+    /// Neighbours per point in the kNN graph the skeleton is built on.
     pub k: usize,
+    /// Longest graph edge (m); raise it where occlusion leaves gaps along branches.
     pub max_edge: f64,
+    /// Geodesic shell width (m); sets the cylinder length.
     pub bin_length: f64,
+    /// Fewest circle inliers (or inlier weight) for a section fit to count as a measurement.
     pub min_points: usize,
+    /// Circle RANSAC inlier distance (m); the refit band is at least this wide.
     pub ransac_threshold: f64,
     /// No cylinder may be wider than this (set from the measured DBH).
     pub max_radius: f64,
@@ -355,6 +384,7 @@ pub struct QsmParams {
     /// fewer than `buttress_max_inlier_fraction` of a section's points
     /// (buttressed or fluted stems).
     pub buttress_equivalent_area: bool,
+    /// Inlier share below which a section counts as buttressed or fluted (see `buttress_equivalent_area`).
     pub buttress_max_inlier_fraction: f64,
     /// Children's summed cross-section area may exceed the parent's by this
     /// factor at a fork (Leonardo's rule); 0 disables.
@@ -417,6 +447,8 @@ impl Default for QsmParams {
 }
 
 #[derive(Debug, Clone)]
+/// Graph skeleton of one tree from [`skeletonize`]: connected pieces of
+/// geodesic shells as segments, their centres and the parent links.
 pub struct Skeleton {
     /// Per-point segment id (-1 if disconnected from the base).
     pub segment_id: Vec<i64>,

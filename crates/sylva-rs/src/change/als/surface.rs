@@ -66,6 +66,7 @@ pub enum Surface {
 }
 
 impl Surface {
+    /// Parses `chm`, `dsm` or `dtm`.
     pub fn parse(s: &str) -> Result<Surface> {
         match s {
             "chm" => Ok(Surface::Chm),
@@ -97,9 +98,13 @@ pub enum DtmKind {
 /// Settings of [`surface_change`].
 #[derive(Debug, Clone)]
 pub struct SurfaceParams {
+    /// Which surface is compared.
     pub surface: Surface,
+    /// Cell size (m) of the surfaces, on the first survey's catalogue grid.
     pub resolution: f64,
+    /// Cell size (m) of each survey's DTM.
     pub dtm_resolution: f64,
+    /// How each survey's DTM is made from its ground returns.
     pub dtm: DtmKind,
     /// Grid first returns only (both surveys).
     pub first_returns: bool,
@@ -110,14 +115,18 @@ pub struct SurfaceParams {
     pub min_returns: usize,
     /// Return noise of each survey (m, one standard deviation).
     pub noise_a: f64,
+    /// Return noise of the second survey (m, one standard deviation).
     pub noise_b: f64,
     /// Growth of the DTM's error with distance to the nearest ground
     /// return (m per m).
     pub interpolation_error: f64,
+    /// Two-sided confidence of the interval and level of detection (0–1), e.g. 0.95.
     pub confidence: f64,
+    /// Thin the denser survey towards the other's pulse density before gridding; None compares the surveys as they are.
     pub harmonise: Option<Harmonise>,
     /// Alignment uncertainty (m) used when no alignment is given.
     pub horizontal_sigma: f64,
+    /// Vertical alignment uncertainty (m) used when no alignment is given.
     pub vertical_sigma: f64,
 }
 
@@ -143,6 +152,7 @@ impl Default for SurfaceParams {
 }
 
 impl SurfaceParams {
+    /// Checks every setting, naming the first bad one.
     pub fn check(&self) -> Result<()> {
         for (name, v) in [("resolution", self.resolution), ("dtm_resolution", self.dtm_resolution)] {
             if !(v.is_finite() && v > 0.0) {
@@ -170,6 +180,7 @@ impl SurfaceParams {
 pub struct EpochStats {
     /// Returns and first returns (pulses) in the area compared.
     pub n_returns: u64,
+    /// First returns (pulses) in the area compared.
     pub n_first: u64,
     /// First returns that were a pulse's only return.
     pub n_single: u64,
@@ -177,6 +188,7 @@ pub struct EpochStats {
     pub sum_returns_per_pulse: f64,
     /// Sum of `|scan_angle|` (degrees) over first returns that have one.
     pub sum_abs_scan_angle: f64,
+    /// First returns that have a scan angle.
     pub n_scan_angle: u64,
     /// Largest `number_of_returns`.
     pub max_returns: u32,
@@ -227,14 +239,17 @@ impl EpochStats {
         if self.area > 0.0 { self.n_first as f64 / self.area } else { f64::NAN }
     }
 
+    /// Mean `number_of_returns` over the pulses; NaN without pulses.
     pub fn returns_per_pulse(&self) -> f64 {
         if self.n_first > 0 { self.sum_returns_per_pulse / self.n_first as f64 } else { f64::NAN }
     }
 
+    /// Mean `|scan_angle|` (degrees) over the pulses that have one; NaN without any.
     pub fn mean_abs_scan_angle(&self) -> f64 {
         if self.n_scan_angle > 0 { self.sum_abs_scan_angle / self.n_scan_angle as f64 } else { f64::NAN }
     }
 
+    /// Share (0–1) of the pulses with a single return; NaN without pulses.
     pub fn single_share(&self) -> f64 {
         if self.n_first > 0 { self.n_single as f64 / self.n_first as f64 } else { f64::NAN }
     }
@@ -248,6 +263,7 @@ pub const CLASSES: [&str; 4] = ["no_data", "below_detection", "gain", "loss"];
 pub struct SurfaceChange {
     /// The two surfaces on the first survey's catalogue grid.
     pub a: Raster,
+    /// The second survey's surface, in the first survey's frame.
     pub b: Raster,
     /// `b - a` where the cell could be assessed (NaN elsewhere).
     pub difference: Raster,
@@ -255,8 +271,11 @@ pub struct SurfaceChange {
     /// distribution), and the interval `[lower, upper]` a change must leave
     /// to be significant; `lod` is its half-width.
     pub bias: Raster,
+    /// Lower end (m) of the interval of change expected without any.
     pub lower: Raster,
+    /// Upper end (m) of the interval of change expected without any.
     pub upper: Raster,
+    /// Half-width (m) of the interval: the level of detection.
     pub lod: Raster,
     /// Standard deviation of the change without any: sampling, DTM and
     /// alignment.
@@ -266,22 +285,32 @@ pub struct SurfaceChange {
     /// Standard deviation of each survey's value: the spread of its highest
     /// pulse under the permutation, and its DTM's error.
     pub sigma_a: Raster,
+    /// Standard deviation (m) of the second survey's value.
     pub sigma_b: Raster,
-    /// Pulses with a return in the cell, and first returns per m².
+    /// Pulses of the first survey with a return in the cell, per m².
     pub pulses_a: Raster,
+    /// Pulses of the second survey with a return in the cell, per m².
     pub pulses_b: Raster,
+    /// First returns of the first survey per m² in each cell, after harmonisation.
     pub density_a: Raster,
+    /// First returns of the second survey per m² in each cell, after harmonisation.
     pub density_b: Raster,
     /// Volumes (m³) raised and lowered over the significant cells, their
     /// area (m²) and the area assessed.
     pub volume_gained: f64,
+    /// Volume (m³) lowered over the significant cells, as a positive number.
     pub volume_lost: f64,
+    /// Area (m²) of the significant cells (gain or loss).
     pub area_changed: f64,
+    /// Area (m²) of the cells that could be assessed.
     pub area_compared: f64,
     /// The sensors as they were, and as compared (after harmonisation).
     pub raw_a: EpochStats,
+    /// The second survey's returns as they were.
     pub raw_b: EpochStats,
+    /// The first survey's returns as compared, after harmonisation.
     pub stats_a: EpochStats,
+    /// The second survey's returns as compared, after harmonisation.
     pub stats_b: EpochStats,
     /// Median of `bias` over cells that are canopy (above 2 m) in both.
     pub median_bias: f64,
@@ -299,6 +328,7 @@ impl Default for LnFactorial {
 }
 
 impl LnFactorial {
+    /// A table holding only `ln 0! = 0`, grown on demand.
     pub fn new() -> Self {
         LnFactorial(vec![0.0])
     }
@@ -322,12 +352,15 @@ impl LnFactorial {
 pub struct Null {
     /// Mean and standard deviation of `max(b) - max(a)`.
     pub mean: f64,
+    /// Standard deviation of `max(b) - max(a)` under the permutation.
     pub sd: f64,
     /// Its `alpha / 2` and `1 - alpha / 2` quantiles.
     pub lower: f64,
+    /// `1 - alpha / 2` quantile of `max(b) - max(a)`.
     pub upper: f64,
     /// Standard deviations of `max(a)` and `max(b)` alone.
     pub sd_a: f64,
+    /// Standard deviation of `max(b)` alone.
     pub sd_b: f64,
 }
 

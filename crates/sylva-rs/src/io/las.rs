@@ -328,8 +328,12 @@ impl Columns {
 }
 
 #[derive(Debug, Clone)]
+/// How a point cloud is written to LAS/LAZ.
 pub struct LasWriteOptions {
+    /// LAS point data record format; 6 (LAS 1.4, with GPS time) by default, 7 or 8 to keep RGB.
     pub point_format: u8,
+    /// Coordinate quantisation step in the units of the coordinates (0.001 = millimetres);
+    /// the offset is the floor of the minimum coordinate.
     pub scale: f64,
     /// CRS to store as an OGC WKT VLR (see [`crate::geo::crs::Crs::to_wkt`]).
     pub crs_wkt: Option<String>,

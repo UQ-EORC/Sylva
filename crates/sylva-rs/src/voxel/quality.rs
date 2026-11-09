@@ -22,24 +22,33 @@ use crate::Point;
 
 /// Voxel states, as in the grid's `state` field.
 pub const UNOBSERVED: u8 = 0;
+/// Reached only by pulses already stopped by an echo before it.
 pub const OCCLUDED: u8 = 1;
+/// Crossed by a pulse, holds no echo.
 pub const EMPTY: u8 = 2;
+/// Holds at least one echo.
 pub const FILLED: u8 = 3;
 
 #[derive(Debug, Clone, PartialEq)]
+/// How well the pulses sampled one tree's crown envelope (see [`tree_sampling`]).
 pub struct TreeSampling {
+    /// The tree's label.
     pub tree_id: i64,
     /// Voxels in the crown envelope and their volume (m3).
     pub n_voxels: usize,
+    /// Volume of the envelope voxels (m³).
     pub volume: f64,
     /// Shares of the envelope voxels that were observed (empty or filled),
     /// occluded, and never reached.
     pub observed_fraction: f64,
+    /// Share (0–1) of the envelope voxels that were occluded; NaN for an empty envelope.
     pub occluded_fraction: f64,
+    /// Share (0–1) of the envelope voxels nothing came near; NaN for an empty envelope.
     pub unobserved_fraction: f64,
     /// Median and 10th percentile of pulses entering an envelope voxel
     /// (unobserved and occluded voxels count 0).
     pub median_beams: f64,
+    /// 10th percentile of pulses entering an envelope voxel.
     pub p10_beams: f64,
     /// Share of observed envelope voxels crossed by at least `min_beams` pulses.
     pub well_sampled_fraction: f64,

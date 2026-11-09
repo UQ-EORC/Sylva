@@ -71,10 +71,24 @@ pub enum Window {
     /// The same everywhere.
     Fixed(f64),
     /// `clamp(intercept + slope * h, min, max)` for a site of height `h`.
-    Linear { intercept: f64, slope: f64, min: f64, max: f64 },
+    Linear {
+        /// Window size (m) at height zero.
+        intercept: f64,
+        /// Growth of the window (m) per metre of site height.
+        slope: f64,
+        /// Smallest window size (m).
+        min: f64,
+        /// Largest window size (m).
+        max: f64,
+    },
     /// `values[k]` at height `k * step`, linear in between, the end values
     /// beyond: a sampled user function.
-    Table { step: f64, values: Vec<f64> },
+    Table {
+        /// Height spacing (m) of the samples.
+        step: f64,
+        /// Window sizes (m) at heights `0, step, 2 step, ...`.
+        values: Vec<f64>,
+    },
     /// One value per site (per cell, row-major, for a raster; per point
     /// for points).
     PerSite(Vec<f64>),
@@ -142,6 +156,7 @@ pub enum Shape {
 }
 
 impl Shape {
+    /// The shape named `"circular"` or `"square"`; any other string is an error.
     pub fn parse(s: &str) -> Result<Shape> {
         match s {
             "circular" => Ok(Shape::Circular),
@@ -967,7 +982,10 @@ pub enum Method {
     /// Tree tops only.
     Tops,
     /// [`watershed`] of the CHM with `th_tree`.
-    Watershed { th_tree: f64 },
+    Watershed {
+        /// Lowest CHM height (m) a crown cell may have; lower cells are left out.
+        th_tree: f64,
+    },
     /// [`dalponte2016`] on the CHM.
     Dalponte(Dalponte),
     /// [`li2012`] on the points.
@@ -986,14 +1004,19 @@ pub enum TopsFrom {
 /// Settings of a segmentation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TreeParams {
+    /// How crowns are delineated around the tops (or tops only).
     pub method: Method,
     /// CHM cell size (m).
     pub resolution: f64,
+    /// Size of the local maximum window at each site, fixed or varying with height.
     pub window: Window,
     /// Lowest tree top (m).
     pub hmin: f64,
+    /// Disc or square window.
     pub shape: Shape,
+    /// Whether the tops that seed CHM crowns are found on the CHM or on the points.
     pub tops_from: TopsFrom,
+    /// Outline drawn around each crown's points for `crown_area`.
     pub hull: Hull,
     /// Points lower than this (m) are not labelled and not part of any crown.
     pub min_point_height: f64,
@@ -1042,7 +1065,9 @@ pub struct Tree {
     pub id: u32,
     /// Top: a CHM cell centre and its value, or a point and its height.
     pub x: f64,
+    /// Northing of the top (m, in the points' CRS).
     pub y: f64,
+    /// Height of the top (m above ground).
     pub height: f64,
     /// Area (m²) of the crown outline; NaN without a crown (tops only, or
     /// fewer than 3 points).
@@ -1252,6 +1277,7 @@ pub fn segment_cloud(xyz: &[Point], h: &[f64], p: &TreeParams) -> Result<(Vec<Tr
 /// The result of [`catalog_trees`].
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CatalogTrees {
+    /// Every tree found, ids 1, 2, ... in order of x, then y, of the tops over the whole catalogue.
     pub trees: Vec<Tree>,
     /// Tiles written with the tree ids, in chunk order.
     pub written: Vec<PathBuf>,

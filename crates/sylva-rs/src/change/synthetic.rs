@@ -59,6 +59,7 @@ pub struct EpochParams {
     /// of the leaf discs disappear; `None` puts it on the crown of one
     /// survivor.
     pub foliage_box: Option<[f64; 6]>,
+    /// Share (0–1) of the leaf discs inside `foliage_box` that disappear in the second epoch.
     pub foliage_fraction: f64,
     /// Horizontal displacement (m, random direction) of each survivor's
     /// stem between the epochs; 0 keeps stems in place.
@@ -84,6 +85,7 @@ pub struct EpochParams {
     pub max_echoes: usize,
     /// Terrain points per m², before scanning.
     pub ground_density: f64,
+    /// Seed of the random layout, structure, sampling and noise.
     pub seed: u64,
 }
 
@@ -121,7 +123,9 @@ impl Default for EpochParams {
 pub struct TrueTree {
     /// Identity of the tree, the same in both epochs.
     pub tree_id: i64,
+    /// x of the stem centre (m, true frame).
     pub x: f64,
+    /// y of the stem centre (m, true frame).
     pub y: f64,
     /// Terrain elevation at the stem centre.
     pub z0: f64,
@@ -135,6 +139,7 @@ pub struct TrueTree {
     pub wood_volume: f64,
     /// One-sided leaf area (m²).
     pub leaf_area: f64,
+    /// Limbs still on the stem in this epoch.
     pub n_limbs: usize,
 }
 
@@ -158,6 +163,7 @@ pub struct ForestEpochs {
     pub shots: Vec<Shots>,
     /// The trees standing in each epoch, in the true frame.
     pub trees: Vec<Vec<TrueTree>>,
+    /// The known changes between the epochs, one record each.
     pub changes: Vec<TrueChange>,
     /// Transform taking epoch 2 back onto epoch 1 (the inverse of the offset).
     pub transform: Transform,

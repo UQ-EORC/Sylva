@@ -3,6 +3,10 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Bindings for the crop and range masks of sylva_rs::filters.
+//!
+//! Backs sylva.filters. Points arrive as an `(N, 3)` float64 array and each
+//! function returns a new boolean array with one entry per point. The only
+//! errors are shape errors, raised as ValueError by `crate::xyz_from_py`.
 
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
@@ -28,6 +32,7 @@ fn range_mask<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, origin: [f64; 3]
     Ok(filters::range_mask(&p, origin, min_range, max_range).into_pyarray(py))
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(crop_box_mask, m)?)?;
     m.add_function(wrap_pyfunction!(crop_cylinder_mask, m)?)?;

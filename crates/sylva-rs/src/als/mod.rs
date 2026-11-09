@@ -56,9 +56,11 @@ use crate::{Point, PointCloud};
 /// One LAS/LAZ file of a catalogue, as its header describes it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tile {
+    /// Path of the LAS/LAZ file.
     pub path: PathBuf,
     /// `[xmin, ymin, zmin, xmax, ymax, zmax]` from the header.
     pub bounds: [f64; 6],
+    /// Point records in the file, from the header.
     pub n_points: u64,
     /// LAS point data record format (0-10).
     pub point_format: u8,
@@ -68,10 +70,12 @@ pub struct Tile {
     pub crs: Option<String>,
     /// Coordinate quantisation per axis.
     pub scale: [f64; 3],
+    /// Coordinate offset per axis (m): a stored integer `i` is `i * scale + offset`.
     pub offset: [f64; 3],
     /// A LAStools `.lax` index beside the file, or a COPC file (which is
     /// organised as an octree).
     pub spatial_index: bool,
+    /// Size of the file on disk (bytes); 0 when it could not be read.
     pub file_size: u64,
 }
 
@@ -164,12 +168,14 @@ pub struct Issue {
     /// `mixed_point_format`, `mixed_scale`, `overlap`, `unindexed_overlap`
     /// or `gap`.
     pub kind: String,
+    /// A sentence describing the problem, naming the files concerned.
     pub message: String,
 }
 
 /// Tiles of an airborne survey, known from their headers alone.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Catalog {
+    /// The readable tiles, in the order their paths were given.
     pub tiles: Vec<Tile>,
     /// Paths that were asked for but do not exist.
     pub missing: Vec<PathBuf>,
@@ -237,6 +243,7 @@ impl Catalog {
         self.tiles.len()
     }
 
+    /// True when no tile could be read.
     pub fn is_empty(&self) -> bool {
         self.tiles.is_empty()
     }
@@ -550,12 +557,19 @@ pub enum Layout {
     /// A regular grid of `size` m squares anchored at `origin` (by default
     /// the catalogue's minimum snapped down to a multiple of `size`). A
     /// point is core in the chunk whose half-open square holds it.
-    Grid { size: f64, origin: Option<(f64, f64)> },
+    Grid {
+        /// Side of the squares (m).
+        size: f64,
+        /// `(x, y)` of the grid's south-west corner; None snaps the
+        /// catalogue's minimum down to a multiple of `size`.
+        origin: Option<(f64, f64)>,
+    },
 }
 
 /// A piece of the catalogue to process.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Chunk {
+    /// Position of the chunk in the plan (0-based), which is also the order results are returned in.
     pub index: usize,
     /// `[xmin, ymin, xmax, ymax]` of the area the chunk is responsible for.
     pub core: [f64; 4],
@@ -659,7 +673,9 @@ pub fn plan(cat: &Catalog, layout: Layout, buffer: f64) -> Result<Vec<Chunk>> {
 /// `buffer[i]` is true for the points outside the core.
 #[derive(Debug, Clone, Default)]
 pub struct ChunkData {
+    /// Every point read for the chunk: core and buffer together.
     pub cloud: PointCloud,
+    /// One flag per point of `cloud`: true for a buffer point (outside the core).
     pub buffer: Vec<bool>,
 }
 

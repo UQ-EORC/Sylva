@@ -168,6 +168,7 @@ fn als_metrics_csv(path: std::path::PathBuf, names: Vec<String>, ids: Option<Vec
     metrics::write_metrics_csv(&path, &names, ids.as_deref(), &rows).map_err(err)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(als_cloud_metrics, m)?,

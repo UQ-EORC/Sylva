@@ -71,40 +71,61 @@ fn average(a: &[f64], w: &[f64]) -> Result<f64> {
 pub struct NoiseTables<'a> {
     /// Per stem slice.
     pub slice_count: usize,
+    /// Stem index of each slice.
     pub slice_stem: &'a [i64],
+    /// Points of each slice.
     pub slice_n_points: &'a [f64],
+    /// Spread (m) of each slice after the scans were moved back.
     pub slice_sigma: &'a [f64],
+    /// Spread (m) of each slice as the cloud stands.
     pub slice_sigma_first: &'a [f64],
+    /// Share of each slice's points more than 4 sigma off the circle.
     pub slice_tail_fraction: &'a [f64],
     /// Per scan and slice.
     pub scan_slice_n_points: &'a [f64],
+    /// `sigma_within` (m) of each scan-slice row.
     pub scan_slice_sigma_within: &'a [f64],
+    /// `sigma_local` (m) of each scan-slice row.
     pub scan_slice_sigma_local: &'a [f64],
     /// Per scan.
     pub scan: &'a [i64],
+    /// Points of each scan.
     pub scan_n_points: &'a [f64],
+    /// Slices each scan was measured in.
     pub scan_n_slices: &'a [f64],
+    /// Horizontal offset of each scan along x (m).
     pub scan_tx: &'a [f64],
+    /// Horizontal offset of each scan along y (m).
     pub scan_ty: &'a [f64],
 }
 
 /// Plot-level figures of a stem-noise result (m).
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoiseSummary {
+    /// Stems with at least one accepted slice.
     pub n_stems: usize,
+    /// Accepted stem slices.
     pub n_slices: usize,
+    /// Scan positions.
     pub n_scans: usize,
     /// Present when a slice qualified.
     pub measured: Option<NoiseMeasured>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// The figures of [`NoiseSummary`] that need at least one slice (m).
 pub struct NoiseMeasured {
+    /// Point-weighted median of the slice spreads as the cloud stands.
     pub sigma_total: f64,
+    /// Point-weighted median of the slice spreads after the scans were moved back.
     pub sigma_corrected: f64,
+    /// Point-weighted median of the scan-slice `sigma_within`.
     pub sigma_within: f64,
+    /// Point-weighted median of the scan-slice `sigma_local`.
     pub sigma_local: f64,
+    /// Point-weighted mean share of slice points more than 4 sigma off their circle.
     pub tail_fraction: f64,
+    /// Scans measured in at least `min_scan_slices` slices.
     pub n_scans_registered: usize,
     /// With more than one registered scan: `(rms, max, worst scan)` of the
     /// horizontal offsets.

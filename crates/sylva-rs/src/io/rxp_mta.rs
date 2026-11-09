@@ -76,6 +76,7 @@ pub enum MtaDecision {
 /// Options of the MTA path beyond [`MtaParams`].
 #[derive(Clone, Debug)]
 pub struct MtaOptions {
+    /// Whether MTA resolution through the shim is attempted, required or skipped.
     pub mode: MtaMode,
     /// How the zone and keep/drop are decided from the evidence.
     pub decision: MtaDecision,
@@ -93,6 +94,7 @@ pub struct MtaOptions {
     pub notch: bool,
     /// Stop after this many scan lines (tests, quick looks).
     pub max_lines: Option<usize>,
+    /// Thresholds and window sizes of the three decision passes.
     pub params: MtaParams,
 }
 
@@ -116,12 +118,20 @@ impl Default for MtaOptions {
 /// What happened to the echoes of the last [`read_rxp_mta`] call (for logs and tests).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct MtaStats {
+    /// Echoes seen (count), before any filter.
     pub echoes: u64,
+    /// Echoes dropped for an amplitude of 0 dB or less (count).
     pub amplitude_zero: u64,
+    /// Echoes dropped by the dynamic-trigger rule, weak amplitude at short zone-1 range (count).
     pub weak: u64,
+    /// Echoes dropped as MTA-uncertain: no zone, no finite range in the chosen zone, no pulse to
+    /// attach to, or undecided and `keep_uncertain` off (count).
     pub uncertain: u64,
+    /// Echoes dropped for a resolved range outside `min_range..=max_range` (count).
     pub range_gate: u64,
+    /// Zone-1 echoes dropped by the RXP's notch window (count).
     pub notch: u64,
+    /// Echoes written to the point cloud (count).
     pub kept: u64,
 }
 

@@ -23,18 +23,37 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
+    /// A bad argument or inconsistent input (lengths that disagree, an unknown mode,
+    /// too few points); the message is the whole text.
     Invalid(String),
     #[error("unsupported format: {0:?}")]
+    /// A file extension or format name no reader or writer handles, e.g. a point
+    /// file that is not LAS/LAZ or a polygon file that is not .shp/.geojson.
     UnsupportedFormat(String),
     #[error("{path}: {msg}")]
-    File { path: PathBuf, msg: String },
+    /// Something wrong with one file, named by `path`, with `msg` saying what
+    /// (cannot be read, too few values, not a project directory).
+    File {
+        /// The file (or directory) the error is about.
+        path: PathBuf,
+        /// What was wrong with it, in plain words.
+        msg: String,
+    },
     #[error(transparent)]
+    /// An operating-system I/O failure such as a missing file or denied permission,
+    /// converted from `std::io::Error`.
     Io(#[from] std::io::Error),
     #[error("LAS: {0}")]
+    /// A LAS/LAZ read or write failure reported by the `las` crate (bad header,
+    /// unsupported point format, truncated file).
     Las(#[from] las::Error),
     #[error("RIEGL RiVLib: {0}")]
+    /// A RIEGL RiVLib failure: the RXP library could not be loaded or reported an
+    /// error while reading a scan, or an MTA model file is malformed.
     Riegl(String),
     #[error("RIEGL RDB: {0}")]
+    /// A RIEGL RDB failure: librdb could not be loaded, or an .rdbx file could not
+    /// be read or lacks a needed point attribute.
     Rdb(String),
 }
 
@@ -42,10 +61,12 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
+    /// An [`Error::Invalid`] carrying `msg`: the usual way to reject a bad argument.
     pub fn invalid(msg: impl Into<String>) -> Self {
         Error::Invalid(msg.into())
     }
 
+    /// An [`Error::File`] naming `path` and saying what was wrong with it.
     pub fn file(path: impl Into<PathBuf>, msg: impl Into<String>) -> Self {
         Error::File { path: path.into(), msg: msg.into() }
     }

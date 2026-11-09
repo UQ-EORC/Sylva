@@ -28,11 +28,17 @@ use crate::error::{Error, Result};
 /// code here tests `is_finite()` rather than `!= nodata`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Raster {
+    /// Cell values in row-major order, `data[row * ncols + col]`; NaN is a cell with no value.
     pub data: Vec<f64>,
+    /// Number of rows: cells along y, counted northwards from row 0 at the southern edge.
     pub nrows: usize,
+    /// Number of columns: cells along x, counted eastwards from column 0 at the western edge.
     pub ncols: usize,
+    /// x of the grid's south-west corner (m), the western edge of column 0, not a cell centre.
     pub xmin: f64,
+    /// y of the grid's south-west corner (m), the southern edge of row 0.
     pub ymin: f64,
+    /// Cell size (m), the same along x and y.
     pub resolution: f64,
 }
 
@@ -74,31 +80,40 @@ pub fn cell_centers(nrows: usize, ncols: usize, xmin: f64, ymin: f64, resolution
 /// How to reduce many point values into one cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reducer {
+    /// The lowest value that fell in the cell (a DTM from the lowest returns).
     Min,
+    /// The highest value that fell in the cell (a CHM from the tallest returns).
     Max,
+    /// The arithmetic mean of the values in the cell.
     Mean,
+    /// The number of points in the cell (count), whatever their values.
     Count,
 }
 
 impl Raster {
+    /// A grid of `nrows x ncols` cells with corner `(xmin, ymin)` and this `resolution`, every cell holding `value`.
     pub fn filled(nrows: usize, ncols: usize, xmin: f64, ymin: f64, resolution: f64, value: f64) -> Self {
         Raster { data: vec![value; nrows * ncols], nrows, ncols, xmin, ymin, resolution }
     }
 
+    /// x of the eastern edge (m): `xmin` plus `ncols` cells.
     pub fn xmax(&self) -> f64 {
         self.xmin + self.ncols as f64 * self.resolution
     }
 
+    /// y of the northern edge (m): `ymin` plus `nrows` cells.
     pub fn ymax(&self) -> f64 {
         self.ymin + self.nrows as f64 * self.resolution
     }
 
     #[inline]
+    /// Value of the cell at `(row, col)`; panics when either is out of range.
     pub fn get(&self, row: usize, col: usize) -> f64 {
         self.data[row * self.ncols + col]
     }
 
     #[inline]
+    /// Overwrite the cell at `(row, col)` with `v`; panics when either is out of range.
     pub fn set(&mut self, row: usize, col: usize, v: f64) {
         self.data[row * self.ncols + col] = v;
     }
@@ -110,6 +125,7 @@ impl Raster {
     }
 
     #[inline]
+    /// Whether `(row, col)`, as [`Raster::cell_index`] gives them, lies inside the grid.
     pub fn in_bounds(&self, row: i64, col: i64) -> bool {
         row >= 0 && col >= 0 && (row as usize) < self.nrows && (col as usize) < self.ncols
     }

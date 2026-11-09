@@ -105,8 +105,8 @@ TLS to ALS registration
 
 Everything is computed about a pivot near the plot (the centre of its
 ground), so map coordinates of any size lose no precision; the shifts and
-uncertainties refer to that pivot. The TLS is thinned to a tenth of a
-fine cell first, so plots of tens of millions of points take seconds: a
+uncertainties refer to that pivot. The TLS is thinned to a fifth of a
+fine cell (at most 10 cm) first, so plots of tens of millions of points take seconds: a
 plot of 20.6 million points was registered onto 9.6 million ALS returns
 in 8 s on eight cores.
 
@@ -462,7 +462,13 @@ text file of the 4 x 4 matrix. `fusion-trees` links a CSV of TLS trees
 and GeoJSON written by `als-trees`. `fusion-upscale` reads a CSV of plots
 (the value and the metrics, e.g. the output of `als-plot-metrics` with a
 column added) and the rasters of `als-metrics`, and writes the prediction
-rasters. See [Command line](cli.md).
+rasters. The remaining options are the Python parameters above under the
+same names with the same defaults: `fusion-register` takes
+`--heading-range`, `--heading-step`, `--resolution`, `--coarse-resolution`,
+`--dtm-weight`, `--refine` and `--no-jackknife`; `fusion-trees` takes
+`--max-distance`, `--crown-buffer`, `--height-weight`, `--dbh-weight`,
+`--max-cost` and `--top-tolerance`; `fusion-upscale` takes `--model` and
+`--level`. See [Command line](cli.md).
 
 ## Limitations
 

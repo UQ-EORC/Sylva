@@ -38,22 +38,29 @@ use crate::trees::stems::{angular_coverage, fit_circle_refined, ransac_circle, S
 use crate::Point;
 
 #[derive(Debug, Clone)]
+/// Slice, circle-fit and acceptance settings of [`stem_noise`].
 pub struct NoiseParams {
     /// Slice heights (m above ground): from, to, step, and slice thickness.
     pub height_min: f64,
+    /// Highest slice height (m above ground).
     pub height_max: f64,
+    /// Height between slices (m).
     pub step: f64,
+    /// Thickness of each slice (m).
     pub thickness: f64,
     /// Accepted slice radii (m).
     pub min_radius: f64,
+    /// Largest accepted slice radius (m).
     pub max_radius: f64,
     /// A slice's circle must see at least this arc (deg) and explain this
     /// share of the points near it.
     pub min_arc: f64,
+    /// Smallest share (0–1) of the points near the circle that must lie on it.
     pub min_inlier_fraction: f64,
     /// Points further than `max(cut_min, cut_fraction * r)` from the circle
     /// are not stem.
     pub cut_min: f64,
+    /// The radial cut as a fraction of the slice radius.
     pub cut_fraction: f64,
     /// Fewest points of one scan in a slice for its per-scan statistics.
     pub min_scan_points: usize,
@@ -66,51 +73,76 @@ impl Default for NoiseParams {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// One horizontal slice of a stem with the circle fitted to it from all scans together.
 pub struct StemSlice {
+    /// Index of the stem in the `stems` given.
     pub stem: usize,
+    /// Slice height (m above ground).
     pub height: f64,
+    /// Circle centre x (m).
     pub cx: f64,
+    /// Circle centre y (m).
     pub cy: f64,
+    /// Circle radius (m).
     pub radius: f64,
+    /// Stem points of the slice (within the radial cut).
     pub n_points: usize,
     /// Robust spread (1.4826 MAD) of all points' residuals about the circle,
     /// after the scans were moved by their estimated offsets, and before
     /// (the cloud as it stands).
     pub sigma: f64,
+    /// The spread before any scan was moved (m).
     pub sigma_first: f64,
+    /// Arc of the circle covered by the points (degrees).
     pub arc: f64,
     /// Share of stem points more than 4 sigma off the circle.
     pub tail_fraction: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// One scan position's points in one stem slice.
 pub struct ScanSlice {
+    /// Scan id (0 for a single scan).
     pub scan: i64,
+    /// Index into [`StemNoise::slices`].
     pub slice: usize,
+    /// The scan's stem points in the slice.
     pub n_points: usize,
     /// Median residual of the scan's points in the slice (m).
     pub median_residual: f64,
+    /// Robust spread (m) of the scan's residuals about their median in the slice.
     pub sigma_within: f64,
+    /// Robust spread (m) left after removing a smooth curve along the arc; NaN if the fit failed.
     pub sigma_local: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// One scan position's misregistration and noise over every stem slice.
 pub struct ScanOffset {
+    /// Scan id.
     pub scan: i64,
+    /// The scan's stem points over all slices.
     pub n_points: usize,
+    /// Slices in which the scan had enough points for statistics.
     pub n_slices: usize,
     /// Horizontal misregistration (m).
     pub tx: f64,
+    /// Horizontal misregistration along y (m); see `tx`.
     pub ty: f64,
     /// Median over its slices, weighted by points.
     pub sigma_within: f64,
+    /// Point-weighted median of the scan's `sigma_local` over its slices (m).
     pub sigma_local: f64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
+/// Result of [`stem_noise`]: the slice, scan-slice and scan tables and the per-point residuals.
 pub struct StemNoise {
+    /// One row per accepted stem slice.
     pub slices: Vec<StemSlice>,
+    /// One row per scan with enough points in a slice.
     pub scan_slices: Vec<ScanSlice>,
+    /// One row per scan position.
     pub scans: Vec<ScanOffset>,
     /// Residual per input point (NaN where it was not used).
     pub residual: Vec<f64>,

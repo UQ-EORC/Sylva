@@ -39,6 +39,8 @@ pub struct CoregTree {
 }
 
 impl CoregTree {
+    /// Build the tree over `points`; the indices queries report are positions
+    /// in this slice. An empty slice gives a tree every query misses.
     pub fn new(points: &[Point]) -> Self {
         let tree = if points.is_empty() {
             None
@@ -48,10 +50,12 @@ impl CoregTree {
         CoregTree { tree, n: points.len() }
     }
 
+    /// Number of points the tree was built over.
     pub fn len(&self) -> usize {
         self.n
     }
 
+    /// Whether the tree holds no points (every query then misses).
     pub fn is_empty(&self) -> bool {
         self.n == 0
     }
@@ -161,8 +165,13 @@ pub fn voxel_downsample(points: &[Point], voxel: f64) -> Vec<Point> {
 /// Local PCA of every point: ascending eigenvalues, eigenvectors (`evecs[i][j]`
 /// is the unit eigenvector of `evals[i][j]`) and a validity mask.
 pub struct LocalPca {
+    /// Eigenvalues of the local covariance at each point, ascending (m^2);
+    /// NaN where the covariance was not finite.
     pub evals: Vec<[f64; 3]>,
+    /// Unit eigenvectors, `evecs[i][j]` belonging to `evals[i][j]`: the first is
+    /// the surface normal, the last the direction of greatest spread.
     pub evecs: Vec<[[f64; 3]; 3]>,
+    /// Whether at least 3 neighbours lay within `radius` (always true without one).
     pub valid: Vec<bool>,
 }
 

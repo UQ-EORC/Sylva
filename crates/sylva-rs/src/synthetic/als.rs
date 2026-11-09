@@ -75,6 +75,7 @@ pub enum ScanPattern {
 }
 
 impl ScanPattern {
+    /// Parse "oscillating" or "rotating"; any other name is an error.
     pub fn parse(name: &str) -> Result<Self> {
         match name {
             "oscillating" => Ok(ScanPattern::Oscillating),
@@ -96,6 +97,7 @@ pub struct FlightParams {
     pub line_spacing: f64,
     /// Direction of the first line, clockwise from north; lines alternate.
     pub heading: f64,
+    /// How the mirror sweeps the beam across the track.
     pub pattern: ScanPattern,
     /// Largest mirror angle either side of nadir.
     pub scan_angle: f64,
@@ -133,6 +135,7 @@ pub struct FlightParams {
     pub start_time: f64,
     /// Trajectory samples per second.
     pub trajectory_rate: f64,
+    /// Random seed of the attitude phases and the range noise; the same seed gives the same flight on any number of threads.
     pub seed: u64,
 }
 
@@ -170,9 +173,13 @@ impl Default for FlightParams {
 /// The platform's path, sampled while the laser is on.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Trajectory {
+    /// GPS time of each sample (s), the time base of the returns' `gps_time`.
     pub time: Vec<f64>,
+    /// Easting of the sensor at each sample (m, map frame).
     pub x: Vec<f64>,
+    /// Northing of the sensor at each sample (m, map frame).
     pub y: Vec<f64>,
+    /// Height of the sensor at each sample above the scene's datum z = 0 (m).
     pub z: Vec<f64>,
     /// Degrees, right wing down positive.
     pub roll: Vec<f64>,
@@ -220,6 +227,7 @@ pub struct Flight {
     /// was hit: 2 ground, else the scene point's class) and, if the scene
     /// has it, `tree_id`.
     pub points: PointCloud,
+    /// The sensor's path while the laser was on, one sample per `1 / trajectory_rate` s plus the end of each line.
     pub trajectory: Trajectory,
     /// Pulses fired.
     pub n_pulses: u64,
@@ -859,6 +867,7 @@ pub enum CrownForm {
 }
 
 impl CrownForm {
+    /// Parse "ellipsoid" or "cone"; any other name is an error.
     pub fn parse(s: &str) -> Result<CrownForm> {
         match s {
             "ellipsoid" => Ok(CrownForm::Ellipsoid),

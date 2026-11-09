@@ -27,12 +27,17 @@ pub struct MatchParams {
     pub pair_distance_tolerance: f64,
     /// Horizontal stem-to-stem distance that counts as a match (m).
     pub inlier_tolerance: f64,
+    /// Two stems' diameters may differ by this fraction of the larger ...
     pub diameter_rel_tolerance: f64,
+    /// ... or by this much (m), whichever is larger, and still match.
     pub diameter_abs_tolerance: f64,
+    /// Whether diameters take part at all; off, stems match on position alone.
     pub use_diameters: bool,
     /// Only the best stems of each scan take part (cost is quadratic).
     pub max_stems: usize,
+    /// Budget of two-stem correspondences tried (each is one yaw + translation hypothesis).
     pub max_hypotheses: usize,
+    /// Fewest matched stems for `success`; below it the result is empty.
     pub min_inliers: usize,
     /// Stop once a hypothesis has this many inliers.
     pub early_exit_inliers: usize,
@@ -40,6 +45,8 @@ pub struct MatchParams {
     pub distinct_translation: f64,
     /// ... or this much yaw (degrees) to count as a different solution.
     pub distinct_yaw_deg: f64,
+    /// Rounds of re-estimating the transform from the current inliers and
+    /// re-matching after the search; stops early when a round is no better.
     pub refine_iterations: usize,
 }
 
@@ -69,15 +76,20 @@ impl Default for MatchParams {
 pub struct StemMap {
     /// Axis position at breast height, as an absolute elevation.
     pub positions: Vec<Point>,
+    /// Diameter at breast height of each stem (m).
     pub diameters: Vec<f64>,
+    /// 0-1 confidence of each stem ([`crate::coreg::stemmap::stem_quality`]);
+    /// only the `max_stems` best take part.
     pub qualities: Vec<f64>,
 }
 
 impl StemMap {
+    /// Number of stems.
     pub fn len(&self) -> usize {
         self.positions.len()
     }
 
+    /// Whether the map holds no stems.
     pub fn is_empty(&self) -> bool {
         self.positions.is_empty()
     }
@@ -94,14 +106,25 @@ impl StemMap {
 /// Outcome of matching two stem maps; `transform` maps source into target.
 #[derive(Debug, Clone)]
 pub struct StemMatch {
+    /// Rigid transform mapping source stems onto target stems: a yaw about z
+    /// plus a 3-D translation, no tilt.
     pub transform: Transform,
+    /// Stems matched one-to-one within `inlier_tolerance` horizontally.
     pub n_inliers: usize,
+    /// RMS horizontal distance (m) between matched stems under `transform`;
+    /// infinite when nothing matched.
     pub inlier_rmse: f64,
+    /// Ranking value of the hypothesis: the inlier count, discounted by up to
+    /// half for a loose fit (`n * (1 - 0.5 * min(rmse / inlier_tolerance, 1))`).
     pub score: f64,
     /// `(source index, target index)` into the stem maps passed in.
     pub correspondences: Vec<(usize, usize)>,
+    /// Source stems that took part (at most `max_stems`).
     pub n_source: usize,
+    /// Target stems that took part (at most `max_stems`).
     pub n_target: usize,
+    /// At least `min_inliers` stems matched consistently; check it before
+    /// using `transform`.
     pub success: bool,
     /// Inliers of the best distinctly different hypothesis over the best's:
     /// near 1 means the pattern matches itself elsewhere (a planted lattice).

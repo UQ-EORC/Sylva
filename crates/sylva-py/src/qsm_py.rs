@@ -350,6 +350,7 @@ fn plot_write_cylinders(py: Python<'_>, directory: PathBuf, entries: Vec<EntryAr
     py.detach(|| plot::write_cylinders(&directory, &views(&owned), prefix)).map_err(err)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(qsm_totals, m)?,

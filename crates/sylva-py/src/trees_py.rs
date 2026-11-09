@@ -3,6 +3,12 @@
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Bindings for pruning tree lists, basal area and buttress detection.
+//!
+//! Backs sylva.trees (also used by sylva.qsm.plot, sylva.als.tiles_trees and
+//! the CLI) with sylva_rs::trees::prune and sylva_rs::qsm::buttress_detect.
+//! Tree lists cross as lists of dicts via `crate::trees_from_py` and
+//! `crate::tree_to_py`, points as `(N, 3)` arrays, results as new arrays or
+//! dicts; core errors become ValueError via `crate::err`.
 #![allow(clippy::too_many_arguments)]
 
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1, PyReadonlyArray2};
@@ -60,6 +66,7 @@ fn detect_buttress<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: Py
     Ok(d)
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [wrap_pyfunction!(prune_trees, m)?, wrap_pyfunction!(basal_area, m)?, wrap_pyfunction!(count_ridges, m)?, wrap_pyfunction!(detect_buttress, m)?] {
         m.add_function(f)?;

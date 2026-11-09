@@ -77,31 +77,50 @@ impl Default for Reflectance {
 /// Settings of [`scan_beam`]; angles in degrees, lengths in metres.
 #[derive(Debug, Clone)]
 pub struct BeamScan {
+    /// Scanner position (m, scene frame).
     pub origin: Point,
+    /// Angular step between pulses in zenith and in azimuth (degrees).
     pub resolution_deg: f64,
+    /// Zenith at which the pulses start (degrees from straight up, 0 to 180).
     pub min_zenith_deg: f64,
+    /// Zenith at which the pulses stop (degrees; 180 is straight down).
     pub max_zenith_deg: f64,
+    /// Echoes kept per pulse at most, nearest first (at least 1).
     pub max_echoes: usize,
+    /// Range resolution of the receiver (m): hits closer than this in range form one echo.
     pub echo_separation: f64,
+    /// Standard deviation of the Gaussian range noise at zero range (m).
     pub range_noise: f64,
+    /// Growth of the range noise's standard deviation per metre of range; the noise at range `R` is `range_noise + range_noise_slope R`.
     pub range_noise_slope: f64,
     /// Full beam divergence (mrad).
     pub divergence_mrad: f64,
+    /// Beam diameter at the scanner's aperture (m); the footprint at range `R` has diameter `exit_diameter + R divergence`.
     pub exit_diameter: f64,
+    /// Sub-beams sampling the footprint disc on a sunflower pattern (1 to 1000); 1 casts a single ray.
     pub footprint_samples: usize,
+    /// Place an echo at the energy-weighted mean range of its hits (true) or at the range of its strongest hit (false).
     pub mixed_pixels: bool,
     /// Radius of the surface patch a point stands for; `None` takes 1.75 times
     /// the median spacing of the scene.
     pub target_radius: Option<f64>,
     /// Orient the patches (discs) where a normal is known; spheres otherwise.
     pub oriented: bool,
+    /// Least echo energy recorded, as the reflectance of a target filling the footprint (0 to 1; 0 keeps every echo).
     pub detection_threshold: f64,
+    /// Reflectance of the scene points, which weights the energy of each hit.
     pub reflectance: Reflectance,
+    /// Longest range cast (m); hits beyond it are not seen. Infinity for no limit.
     pub max_range: f64,
+    /// Random seed of the range noise.
     pub seed: u64,
 }
 
 impl BeamScan {
+    /// Defaults for a scanner at `origin`: 0.25 degree steps from zenith 0 to 130
+    /// degrees, two echoes 0.5 m apart, no range noise, a single zero-width ray,
+    /// mixed pixels, oriented patches of the default radius, every echo kept, the
+    /// default reflectance and no range limit.
     pub fn new(origin: Point) -> BeamScan {
         BeamScan { origin, resolution_deg: 0.25, min_zenith_deg: 0.0, max_zenith_deg: 130.0, max_echoes: 2, echo_separation: 0.5, range_noise: 0.0, range_noise_slope: 0.0, divergence_mrad: 0.0, exit_diameter: 0.0, footprint_samples: 1, mixed_pixels: true, target_radius: None, oriented: true, detection_threshold: 0.0, reflectance: Reflectance::default(), max_range: f64::INFINITY, seed: 0 }
     }
@@ -110,10 +129,15 @@ impl BeamScan {
 /// Field of view and beam of a scanner model.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScannerPreset {
+    /// Zenith at which the field of view starts (degrees from straight up).
     pub min_zenith_deg: f64,
+    /// Zenith at which the field of view ends (degrees).
     pub max_zenith_deg: f64,
+    /// Full beam divergence (mrad).
     pub divergence_mrad: f64,
+    /// Beam diameter at the aperture (m).
     pub exit_diameter: f64,
+    /// Ranging precision: standard deviation of the range noise (m).
     pub range_noise: f64,
 }
 

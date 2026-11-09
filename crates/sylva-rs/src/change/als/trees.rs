@@ -48,10 +48,15 @@ use super::{z_of, Alignment};
 /// A tree of one survey.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AlsTree {
+    /// Tree id in its survey; 0 is reserved for "no tree" in [`TreeChangeRow`].
     pub id: i64,
+    /// x of the tree top (m, its own survey's frame).
     pub x: f64,
+    /// y of the tree top (m, its own survey's frame).
     pub y: f64,
+    /// Tree height (m).
     pub height: f64,
+    /// Crown area (m²); without an outline it sets the radius of a disc around the top, and NaN or 0 falls back to one cell.
     pub crown_area: f64,
     /// Crown outline (may be empty).
     pub crown: Vec<[f64; 2]>,
@@ -60,15 +65,22 @@ pub struct AlsTree {
 /// Settings of [`tree_change`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TreeChangeParams {
+    /// Farthest the tops of one tree can be apart in the two surveys (m).
     pub max_distance: f64,
+    /// Largest relative height increase `(b - a) / max(a, b)` of one tree; a recruit's top must have risen from below `1 - max_growth` of its height.
     pub max_growth: f64,
+    /// Largest relative height decrease `(a - b) / max(a, b)` of one tree.
     pub max_drop: f64,
     /// Weight of the squared relative height difference in the matching
     /// cost, next to the squared distance over `max_distance`.
     pub height_weight: f64,
+    /// Two-sided confidence of the height change's level of detection (0–1), e.g. 0.95.
     pub confidence: f64,
+    /// Share (0–1) of an unmatched first-survey tree's crown with significant loss for it to be dead.
     pub dead_fraction: f64,
+    /// Share (0–1) of a matched tree's crown with significant loss for it to be damaged.
     pub damage_fraction: f64,
+    /// Smallest share (0–1) of a tree's crown cells with data in both surveys for any status other than unobserved.
     pub min_observed: f64,
 }
 
@@ -79,6 +91,7 @@ impl Default for TreeChangeParams {
 }
 
 impl TreeChangeParams {
+    /// Checks every setting, naming the first bad one.
     pub fn check(&self) -> Result<()> {
         for (name, v) in [("max_distance", self.max_distance), ("max_growth", self.max_growth)] {
             if !(v.is_finite() && v > 0.0) {
@@ -103,9 +116,13 @@ impl TreeChangeParams {
 
 /// The canopy change the trees are read against, on one grid.
 pub struct CanopyChange<'a> {
+    /// CHM of the first survey; every other raster must share its grid.
     pub chm_a: &'a Raster,
+    /// CHM of the second survey, in the first survey's frame.
     pub chm_b: &'a Raster,
+    /// Standard deviation (m) of `chm_a` per cell.
     pub sigma_a: &'a Raster,
+    /// Standard deviation (m) of `chm_b` per cell.
     pub sigma_b: &'a Raster,
     /// Codes of [`super::surface::CLASSES`].
     pub classes: &'a [u8],
@@ -117,29 +134,40 @@ pub struct CanopyChange<'a> {
 pub struct TreeChangeRow {
     /// Ids in each survey (0 for none).
     pub id_a: i64,
+    /// Id in the second survey (0 for none).
     pub id_b: i64,
     /// Top in the first survey's frame (the second survey's for its own trees).
     pub x: f64,
+    /// y of the top (m), in the same frame as `x`.
     pub y: f64,
     /// Horizontal distance between the partners' tops (m).
     pub distance: f64,
+    /// Height in the first survey (m); NaN for a tree of the second survey only.
     pub height_a: f64,
+    /// Height in the second survey (m); NaN without a partner.
     pub height_b: f64,
     /// `height_b - height_a`, its standard deviation and level of detection.
     pub dh: f64,
+    /// Standard deviation (m) of `dh`, from the CHM uncertainties at the two tops; NaN when either is unknown.
     pub sigma: f64,
+    /// Level of detection (m) of `dh`: `sigma` times the normal quantile of `confidence`.
     pub lod: f64,
     /// "growth", "decrease", "below_detection" or "unmeasured"; empty
     /// without a partner.
     pub dh_change: &'static str,
+    /// `survivor`, `damaged`, `dead`, `unobserved` or `undetected` for a first-survey tree; `recruit`, `released`, `unobserved` or `undetected` for one of the second survey only.
     pub status: &'static str,
+    /// Crown area in the first survey (m²); NaN for a tree of the second survey only.
     pub crown_area_a: f64,
+    /// Crown area in the second survey (m²); NaN without a partner.
     pub crown_area_b: f64,
     /// Shares of the crown (the first survey's, else the second's) with
     /// significant loss and gain, among its cells with data; and the share
     /// of its cells with data in both surveys.
     pub crown_loss: f64,
+    /// Share (0–1) of the crown's observed cells with significant gain; NaN when none is observed.
     pub crown_gain: f64,
+    /// Share (0–1) of the crown's cells with data in both surveys.
     pub observed: f64,
 }
 
@@ -336,31 +364,45 @@ pub fn tree_change(a: &[AlsTree], b: &[AlsTree], canopy: &CanopyChange, alignmen
 /// Totals of a tree comparison.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct TreeSummary {
+    /// Matched trees with status `survivor`.
     pub survivors: usize,
+    /// Trees with status `damaged`, matched or not.
     pub damaged: usize,
+    /// First-survey trees with status `dead`.
     pub dead: usize,
+    /// Second-survey trees with status `recruit`.
     pub recruits: usize,
+    /// Second-survey trees with status `released`.
     pub released: usize,
+    /// First-survey trees with status `undetected`.
     pub undetected_a: usize,
+    /// Second-survey trees with status `undetected`.
     pub undetected_b: usize,
+    /// First-survey trees with status `unobserved`.
     pub unobserved_a: usize,
+    /// Second-survey trees with status `unobserved`.
     pub unobserved_b: usize,
     /// Mean height change of the survivors with a measured change, its
     /// standard error from their scatter and from their measurement
     /// uncertainties alone, and their number.
     pub mean_growth: f64,
+    /// Standard error (m) of `mean_growth` from the scatter of the survivors' height changes; NaN with fewer than two.
     pub growth_se: f64,
+    /// Standard error (m) of `mean_growth` from the survivors' height uncertainties alone.
     pub growth_measurement_se: f64,
+    /// Survivors with a measured height change.
     pub n_growth: usize,
     /// Survivors whose growth exceeds its level of detection.
     pub n_growth_detected: usize,
     /// Crown area (m²) of the dead trees, and the lost part of the damaged
     /// trees' crowns.
     pub crown_area_dead: f64,
+    /// Lost part (m²) of the damaged trees' crowns: first-survey crown area times `crown_loss`.
     pub crown_area_damaged: f64,
     /// Annual mortality and recruitment rates (Sheil, Burslem and Alder
     /// 1995), NaN without `years`.
     pub mortality_rate: f64,
+    /// Annual recruitment rate (fraction per year) over the trees present at the end; NaN without `years`.
     pub recruitment_rate: f64,
 }
 

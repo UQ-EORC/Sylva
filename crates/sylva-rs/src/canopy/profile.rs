@@ -198,12 +198,19 @@ fn weighted_plane(low: &[Point], w: &[f64]) -> Result<[f64; 3]> {
 /// `scan_hits`, `scan_shots` and `scan_low` are `(rings, sectors)`.
 #[derive(Debug, Clone, Copy)]
 pub struct GapArrays<'a> {
+    /// Zenith ring edges (degrees), one more than the rings.
     pub zenith_edges: &'a [f64],
+    /// Azimuth sectors.
     pub n_azimuth: usize,
+    /// Height bin size (m).
     pub height_bin: f64,
+    /// Height bins from the ground up.
     pub n_heights: usize,
+    /// Weighted returns by ring, sector and height bin.
     pub hits: &'a [f64],
+    /// Pulses fired by ring and sector.
     pub shots: &'a [f64],
+    /// Returns below this height (m) are not counted as canopy.
     pub min_height: f64,
 }
 
@@ -369,24 +376,43 @@ pub fn clumping(zenith_edges: &[f64], n_azimuth: usize, scan_hits: &[&[f64]], sc
 /// A gap profile's plot summary (see the Python `GapProfile.report`).
 #[derive(Debug, Clone)]
 pub struct GapReport {
+    /// Less than `saturation_gap` of the hinge ring's pulses got through: the PAI is a bound, not a measurement.
     pub saturated: bool,
+    /// Gap probability (0–1) through the whole canopy in the ring holding 57.5 degrees.
     pub gap_57: f64,
+    /// Effective PAI from the hinge ring (Jupp et al. 2009), `1.1 · −ln P(57.5°)` at the top bin.
     pub pai_hinge: f64,
+    /// Effective PAI from the Jupp et al. (2009) linear fit over all complete rings, at the top bin.
     pub pai_linear: f64,
+    /// Effective PAI from Miller's integral over the complete rings, at the top bin.
     pub pai_weighted: f64,
+    /// Mean leaf angle (degrees) from the linear fit at the top bin; NaN when both PAI terms are 0.
     pub mla_linear: f64,
+    /// Clumping index at 57.5 degrees (Lang & Xiang 1986); NaN without scan-sector counts.
     pub clumping: f64,
+    /// `pai_hinge / clumping`; NaN when the clumping index is unavailable.
     pub pai_hinge_corrected: f64,
+    /// Height (m) where the hinge PAI profile reaches `top_fraction` of its total; 0 with no PAI.
     pub canopy_height: f64,
+    /// Canopy closure (0–1) at 57.5 degrees: `1 − gap_57`.
     pub closure_57: f64,
+    /// Cover (0–1) at the steepest ring with pulses in every height bin: 1 minus its gap at the top bin.
     pub cover: f64,
+    /// Centre (degrees) of the ring `cover` was read from.
     pub cover_zenith: f64,
+    /// Scan positions pooled.
     pub n_scans: usize,
+    /// Pulses fired in all rings and sectors.
     pub pulses: f64,
+    /// Top of each height bin (m).
     pub height: Vec<f64>,
+    /// Cumulative hinge PAI below each height.
     pub pai_hinge_profile: Vec<f64>,
+    /// Plant area volume density (m² m⁻³) from the hinge profile: its height derivative.
     pub pavd_hinge: Vec<f64>,
+    /// Cumulative PAI below each height from the linear fit.
     pub pai_linear_profile: Vec<f64>,
+    /// Plant area volume density (m² m⁻³) from the linear profile.
     pub pavd_linear: Vec<f64>,
 }
 
@@ -447,12 +473,19 @@ pub fn vertical_profile(heights: &[f64], bin_size: f64, max_height: Option<f64>)
 /// A density grid's voxel arrays, `[k, j, i]` (z, y, x) row-major.
 #[derive(Debug, Clone, Copy)]
 pub struct GridArrays<'a> {
+    /// `[nz, ny, nx]`.
     pub shape: [usize; 3],
+    /// Minimum corner of the grid (m).
     pub origin: [f64; 3],
+    /// Voxel edge (m).
     pub voxel_size: f64,
+    /// Pulses entering each voxel.
     pub n_rays: &'a [f64],
+    /// Echoes inside each voxel.
     pub n_hits: &'a [f64],
+    /// Summed beam path through each voxel (m).
     pub path_length: &'a [f64],
+    /// Plant area density per voxel (m² m⁻³), NaN where undefined.
     pub density: &'a [f64],
 }
 

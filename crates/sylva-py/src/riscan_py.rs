@@ -134,6 +134,7 @@ fn riscan_like_mask<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f32>, amplitude:
     Ok(keep.into_pyarray(py))
 }
 
+/// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     for f in [
         wrap_pyfunction!(riscan_read_project, m)?,

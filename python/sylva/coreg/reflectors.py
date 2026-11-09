@@ -48,6 +48,7 @@ class Reflector:
 
     @property
     def position(self) -> np.ndarray:
+        """``(3,)`` centre of the reflector, m, in the scan's frame."""
         return np.array([self.x, self.y, self.z])
 
 

@@ -11,12 +11,16 @@ use crate::transform::{cross, dot, norm, normalize, scale, sub};
 use crate::Point;
 
 #[derive(Debug, Clone, PartialEq)]
+/// A cylinder fitted to points by [`fit_cylinder`]: a point on its axis,
+/// the axis direction, the radius and the fit's residual error.
 pub struct CylinderFit {
     /// A point on the axis (centroid projected onto it).
     pub point: Point,
     /// Unit axis direction (z >= 0).
     pub axis: Point,
+    /// Radius (m), always positive.
     pub radius: f64,
+    /// Root mean square of the signed radial distances of the fitted points from the surface (m).
     pub rmse: f64,
 }
 

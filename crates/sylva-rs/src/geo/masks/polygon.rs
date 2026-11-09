@@ -32,7 +32,9 @@ pub type Xy = [f64; 2];
 /// in either orientation.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Polygon {
+    /// Vertices of the outer ring, `[x, y]` in the layer's coordinates.
     pub exterior: Vec<Xy>,
+    /// Vertices of each hole ring; only the open interior of a hole is removed.
     pub holes: Vec<Vec<Xy>>,
 }
 
@@ -40,6 +42,7 @@ pub struct Polygon {
 /// any part). A multipolygon with no parts contains nothing.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MultiPolygon {
+    /// The polygons making up the shape; a point inside any of them is inside the shape.
     pub parts: Vec<Polygon>,
 }
 
@@ -291,6 +294,7 @@ impl PolygonIndex {
         self.features.len()
     }
 
+    /// Whether no features were indexed (every lookup then returns `None`).
     pub fn is_empty(&self) -> bool {
         self.features.is_empty()
     }

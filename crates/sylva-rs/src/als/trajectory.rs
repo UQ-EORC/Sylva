@@ -32,10 +32,15 @@ use crate::{Point, PointCloud};
 /// attitude (degrees; heading clockwise from north).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Trajectory {
+    /// Sample times (s), strictly increasing, on the clock the returns' `gps_time` is matched to.
     pub time: Vec<f64>,
+    /// Sensor position (m) at each sample, in the points' CRS.
     pub xyz: Vec<Point>,
+    /// Roll (degrees) at each sample; None when the source has none.
     pub roll: Option<Vec<f64>>,
+    /// Pitch (degrees) at each sample; None when the source has none.
     pub pitch: Option<Vec<f64>>,
+    /// Heading (degrees, clockwise from north) at each sample; None when the source has none.
     pub heading: Option<Vec<f64>>,
 }
 
@@ -77,10 +82,12 @@ impl Trajectory {
         })
     }
 
+    /// Number of samples.
     pub fn len(&self) -> usize {
         self.time.len()
     }
 
+    /// True when there are no samples (never for a trajectory from [`Trajectory::new`]).
     pub fn is_empty(&self) -> bool {
         self.time.is_empty()
     }
@@ -168,11 +175,15 @@ pub const SBET_RECORD: usize = 136;
 pub struct Sbet {
     /// GPS seconds of the week.
     pub time: Vec<f64>,
+    /// Geodetic latitude (degrees).
     pub latitude: Vec<f64>,
+    /// Geodetic longitude (degrees).
     pub longitude: Vec<f64>,
     /// Ellipsoidal height (m).
     pub height: Vec<f64>,
+    /// Roll (degrees).
     pub roll: Vec<f64>,
+    /// Pitch (degrees).
     pub pitch: Vec<f64>,
     /// True heading, clockwise from north in `[0, 360)`: the platform
     /// heading minus the wander angle.
@@ -257,7 +268,9 @@ pub fn column_role(name: &str) -> Option<&'static str> {
 /// ...) and the columns.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Table {
+    /// Column names, as read from the header line or `col0`, `col1`, ...
     pub names: Vec<String>,
+    /// One vector of values per column, all of the same length.
     pub columns: Vec<Vec<f64>>,
 }
 
@@ -369,10 +382,15 @@ pub fn merge_extents(parts: impl IntoIterator<Item = (i64, f64, f64)>) -> Vec<(i
 /// the unit direction towards the sensor, and the first-to-last distance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PulseLine {
+    /// GPS time of the pulse (s), the returns' `gps_time`.
     pub time: f64,
+    /// Flight line the pulse belongs to.
     pub line: i64,
+    /// A point on the line: the pulse's last return (m).
     pub point: Point,
+    /// Unit vector along the line from the last return towards the sensor.
     pub dir: Point,
+    /// Distance (m) between the first and last return; weights the pulse in a fit.
     pub separation: f64,
 }
 
@@ -442,6 +460,8 @@ pub fn thin(mut lines: Vec<PulseLine>, interval: f64, max: usize) -> Vec<PulseLi
 /// A trajectory estimated from the returns.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Estimated {
+    /// The fitted sensor positions: one sample per time window and flight
+    /// line, plus the extrapolated samples at each line's first and last return.
     pub trajectory: Trajectory,
     /// Flight line of each sample.
     pub line: Vec<i64>,

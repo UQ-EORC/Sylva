@@ -85,6 +85,8 @@ pub struct Generator {
 }
 
 impl Generator {
+    /// A generator seeded as `np.random.default_rng(seed)` is, so it draws the same
+    /// sequence as NumPy for the same integer seed.
     pub fn new(seed: u64) -> Self {
         let w = seed_sequence_state(seed, 8);
         let u: Vec<u64> = (0..4).map(|i| w[2 * i] as u64 | (w[2 * i + 1] as u64) << 32).collect();

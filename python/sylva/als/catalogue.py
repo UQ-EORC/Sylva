@@ -217,8 +217,11 @@ class Catalog:
             with none), ``no_crs``, ``mixed_point_format`` (attributes not
             in every format are dropped where tiles meet), ``mixed_scale``,
             ``overlap`` (tile extents overlapping by more than
-            :attr:`tolerance`; their points are counted twice) and ``gap``
-            (holes enclosed by tiles).
+            :attr:`tolerance`; their points are counted twice),
+            ``unindexed_overlap`` (files without a spatial index that overlap
+            others over most of their extent, such as flight lines; a chunk
+            reads each in full, so retile them first) and ``gap`` (holes
+            enclosed by tiles).
         """
         return [tuple(i) for i in _core.als_issues(self._core(), float(self.tolerance))]
 
