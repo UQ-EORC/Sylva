@@ -470,7 +470,9 @@ Culvenor, D., Avitabile, V., Disney, M., Armston, J., & Kaasalainen, M. (2015).
 Nondestructive estimates of above-ground biomass using terrestrial laser
 scanning. *Methods in Ecology and Evolution*, *6*(2), 198–208.
 <https://doi.org/10.1111/2041-210X.12301>
-In Sylva: destructively harvested trees in the QSM benchmark.
+In Sylva: part of the destructive-harvest reference set; its trees are not
+in the scored cohort of the QSM benchmark, which uses Momo Takoudjou,
+Gonzalez de Tanago and Burt.
 
 Calders, K., Verbeeck, H., Burt, A., Origo, N., Nightingale, J., Malhi, Y.,
 Wilkes, P., Raumonen, P., Bunce, R., & Disney, M. (2022). *Terrestrial

@@ -221,8 +221,9 @@ little towards a circle but are never confident wood; for the graph-based
 labeller it is half the label plus half the share of the shell scales at
 which the point's piece was wood.
 
-On the destructive-harvest trees (73 of the benchmark's trees with a cloud
-at hand, the same slice DBH and settings for every input; volume bias and
+On the destructive-harvest trees (the 73 with a cloud at hand; the
+[benchmark](../benchmarks/qsm.md) scores the 72 that every compared method
+reconstructed; the same slice DBH and settings for every input; volume bias and
 rRMSE, and per study bias / rRMSE):
 
 | QSM input | bias | rRMSE | CCC | Momo (40) | GdtM (29) | Burt (4) |
