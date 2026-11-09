@@ -25,7 +25,11 @@ def test_the_budget_can_be_set_and_put_back():
     limits.set_budget(2.0)
     assert limits.budget() == 2_000_000_000
     limits.set_budget(None)
-    assert limits.budget() == was
+    # Back to 80 % of free memory, which moves a little between two readings.
+    back = limits.budget()
+    assert (back is None) == (was is None)
+    if was is not None:
+        assert back != 2_000_000_000 and abs(back - was) < 0.05 * was
     assert limits.available() is None or limits.available() > 0
 
 
