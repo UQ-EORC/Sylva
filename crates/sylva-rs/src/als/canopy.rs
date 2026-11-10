@@ -175,22 +175,44 @@ pub fn reconstruct(cloud: &PointCloud, traj: &Trajectory, p: &PulseParams) -> Re
     let mut order: Vec<usize> = (0..n).collect();
     order.par_sort_by(|&a, &b| lid(a).cmp(&lid(b)).then(time[a].total_cmp(&time[b])).then(rank(a).total_cmp(&rank(b))).then(a.cmp(&b)));
 
-    // Pulses as ranges of `order`: equal (line, time), split where a return number repeats.
+    // Pulses as ranges of `order`: equal (line, time). A group in which a
+    // return number repeats holds several pulses fired at one recorded time
+    // (the channels of a multi-beam scanner, or a coarse clock): as many as
+    // the most repeated number, the j-th return of each number going to the
+    // j-th pulse, so that two pulses of returns 1 and 2 come out as (1, 2)
+    // and (1, 2). Which first return belongs with which second cannot be
+    // told from the records; they are paired in the order stored.
     let mut pulses: Vec<(usize, usize)> = Vec::new();
     let mut s = 0;
     while s < n {
         let mut e = s + 1;
-        let mut split = false;
         while e < n && lid(order[e]) == lid(order[s]) && time[order[e]] == time[order[s]] {
-            if rn.is_some() && rank(order[e]) <= rank(order[e - 1]) {
-                pulses.push((s, e));
-                s = e;
-                split = true;
-            }
             e += 1;
         }
-        report.n_split += split as usize;
-        pulses.push((s, e));
+        // Position of each return among those of its number (the group is sorted by number).
+        let mut nth = vec![0usize; e - s];
+        for k in 1..e - s {
+            if rn.is_some() && rank(order[s + k]).total_cmp(&rank(order[s + k - 1])).is_eq() {
+                nth[k] = nth[k - 1] + 1;
+            }
+        }
+        if nth.iter().any(|&j| j > 0) {
+            report.n_split += 1;
+            let mut group: Vec<(usize, usize)> = nth.iter().copied().zip(order[s..e].iter().copied()).collect();
+            // Stable: within a pulse the returns stay in order of number.
+            group.sort_by_key(|g| g.0);
+            let mut a = 0;
+            for k in 0..group.len() {
+                order[s + k] = group[k].1;
+                if k > 0 && group[k].0 != group[k - 1].0 {
+                    pulses.push((s + a, s + k));
+                    a = k;
+                }
+            }
+            pulses.push((s + a, e));
+        } else {
+            pulses.push((s, e));
+        }
         s = e;
     }
     let ptime: Vec<f64> = pulses.iter().map(|&(s, _)| time[order[s]] + p.time_offset).collect();
@@ -271,7 +293,7 @@ pub fn reconstruct(cloud: &PointCloud, traj: &Trajectory, p: &PulseParams) -> Re
             }
             // The mirror must have swept steadily across the hole: no turn and no jump.
             let turn = angle(&w[0].dir, &w[1].dir);
-            if turn.is_nan() || turn > 1.5 * k * step + 1e-6 {
+            if turn.is_nan() || step.is_nan() || turn > 1.5 * k * step + 1e-6 {
                 continue;
             }
             for j in 1..k as usize {
@@ -517,23 +539,6 @@ impl ProfileGrid {
         Ok(ProfileGrid { xmin, ymin, resolution: p.resolution, nx, ny, nz, min_height: p.min_height, bin_size: p.bin_size, weight: vec![0.0; n], weight_k: vec![0.0; n], n_skipped: 0 })
     }
 
-    /// Grow to `nz` layers (only when no `max_height` fixes them).
-    fn with_layers(mut self, nz: usize) -> ProfileGrid {
-        if nz <= self.nz {
-            return self;
-        }
-        let per = self.nx * self.ny;
-        let grow = |v: &mut Vec<f64>, old: usize| {
-            // The "above" layer of the smaller grid is empty without max_height.
-            v.truncate((old + 1) * per);
-            v.resize((nz + 2) * per, 0.0);
-        };
-        grow(&mut self.weight, self.nz);
-        grow(&mut self.weight_k, self.nz);
-        self.nz = nz;
-        self
-    }
-
     /// Drop the top layers that together hold no more than `1 - quantile`
     /// of the weight above `min_height`, folding their returns into the
     /// layer above the top (intercepted above every layer). The layers kept
@@ -543,14 +548,7 @@ impl ProfileGrid {
         let per = self.nx * self.ny;
         let layer_sum = |l: usize| self.weight[l * per..(l + 1) * per].iter().sum::<f64>();
         let sums: Vec<f64> = (1..=self.nz + 1).map(layer_sum).collect();
-        let allowed = (1.0 - quantile) * sums.iter().sum::<f64>();
-        // Layers 1..=nz are sums[0..nz]; sums[nz] is the layer above.
-        let mut keep = self.nz;
-        let mut above = sums[self.nz];
-        while keep > 1 && above + sums[keep - 1] <= allowed {
-            above += sums[keep - 1];
-            keep -= 1;
-        }
+        let keep = kept_layers(&sums, quantile);
         if keep == self.nz {
             return;
         }
@@ -567,6 +565,22 @@ impl ProfileGrid {
         }
         self.nz = keep;
     }
+}
+
+/// How many of `nz` layers [`ProfileGrid::trim_top`] keeps, from the weight
+/// in each: `sums` holds layers `1..=nz` and then the layer above them. The
+/// top layers go while they and the layer above together hold no more than
+/// `1 - quantile` of the whole; at least one layer stays.
+fn kept_layers(sums: &[f64], quantile: f64) -> usize {
+    let nz = sums.len() - 1;
+    let allowed = (1.0 - quantile) * sums.iter().sum::<f64>();
+    let mut keep = nz;
+    let mut above = sums[nz];
+    while keep > 1 && above + sums[keep - 1] <= allowed {
+        above += sums[keep - 1];
+        keep -= 1;
+    }
+    keep
 }
 
 /// The weight each return carries.
@@ -602,6 +616,57 @@ fn beam_geometry(cloud: &PointCloud, angles: &Angles) -> Result<(Vec<f64>, Vec<[
     })
 }
 
+/// The projection `G(θ)` of the returns `idx`, one value for all or one each.
+enum Projections {
+    Same(f64),
+    Each(Vec<f64>),
+}
+
+impl Projections {
+    #[inline]
+    fn at(&self, k: usize) -> f64 {
+        match self {
+            Projections::Same(v) => *v,
+            Projections::Each(v) => v[k],
+        }
+    }
+}
+
+/// `G(θ)` for the beam zenith `theta[i]` (rad) of each return `i` of `idx`,
+/// exactly as [`compute_g`] gives it for each on its own.
+///
+/// `G` of a leaf angle distribution other than the spherical is a
+/// quadrature of 180 steps, which over the hundred million returns of a
+/// chunk is most of the work of a profile. So each distinct angle is
+/// computed once (vertical beams have one, LAS scan angles a few hundred),
+/// and when the angles are all different (from a trajectory) they are
+/// computed on every core.
+fn projections(theta: &[f64], idx: &[usize], projection: &Projection) -> Projections {
+    let lad = match projection {
+        Projection::Constant(v) => return Projections::Same(*v),
+        Projection::Lad(Lad::Spherical) => return Projections::Same(compute_g(0.0, &Lad::Spherical)),
+        Projection::Lad(l) => l,
+    };
+    // NaN angles are skipped by the caller; their G is never read.
+    let g = |th: f64| if th.is_nan() { f64::NAN } else { compute_g(th, lad) };
+    const DISTINCT: usize = 4096;
+    let mut seen: std::collections::HashMap<u64, f64> = std::collections::HashMap::new();
+    for &i in idx {
+        if seen.len() > DISTINCT {
+            break;
+        }
+        seen.entry(theta[i].to_bits()).or_insert(f64::NAN);
+    }
+    if seen.len() <= DISTINCT {
+        let mut keys: Vec<u64> = seen.keys().copied().collect();
+        keys.sort_unstable();
+        let values: Vec<f64> = keys.par_iter().map(|&b| g(f64::from_bits(b))).collect();
+        let table: std::collections::HashMap<u64, f64> = keys.into_iter().zip(values).collect();
+        return Projections::Each(idx.iter().map(|&i| table[&theta[i].to_bits()]).collect());
+    }
+    Projections::Each(idx.par_iter().map(|&i| g(theta[i])).collect())
+}
+
 /// Add the returns `idx` of a cloud (with their heights) to `g`, which
 /// holds the cells from `offset` (column, row) of a grid anchored at
 /// `anchor`; returns outside it are ignored. Cells are found from the
@@ -612,7 +677,8 @@ fn accumulate(g: &mut ProfileGrid, cloud: &PointCloud, heights: &[f64], idx: &[u
     let (theta, drift) = beam_geometry(cloud, &p.angles)?;
     let max_z = p.max_zenith.to_radians();
     let per = g.nx * g.ny;
-    for &i in idx {
+    let gs = projections(&theta, idx, &p.projection);
+    for (k, &i) in idx.iter().enumerate() {
         let (h, th) = (heights[i], theta[i]);
         if !h.is_finite() || th.is_nan() || th > max_z || th >= std::f64::consts::FRAC_PI_2 {
             g.n_skipped += 1;
@@ -634,10 +700,7 @@ fn accumulate(g: &mut ProfileGrid, cloud: &PointCloud, heights: &[f64], idx: &[u
             let l = ((h - g.min_height) / g.bin_size).floor() as usize + 1;
             if l > g.nz { g.nz + 1 } else { l }
         };
-        let gv = match &p.projection {
-            Projection::Constant(v) => *v,
-            Projection::Lad(l) => compute_g(th, l),
-        };
+        let gv = gs.at(k);
         let k = layer * per + r as usize * g.nx + c as usize;
         g.weight[k] += w[i];
         g.weight_k[k] += w[i] * gv / th.cos();
@@ -721,24 +784,42 @@ pub fn profile_catalog(cat: &Catalog, heights: &Heights, p: &ProfileParams, opts
     if parts.is_empty() && matches!(heights, Heights::Auto { .. }) {
         return Err(Error::invalid("no chunk has enough ground points (classification 2) for a DTM; classify the ground first or give a DTM"));
     }
-    let nz = parts.iter().map(|x| x.2.nz).max().unwrap_or_else(|| p.n_layers(p.min_height));
+    // The layers of the result are settled before it is made. Each chunk
+    // has as many as its own highest return needs, and one stray return far
+    // above the canopy (a bird, a cloud) in one chunk must not size a grid
+    // of that many layers over the whole catalogue only for `trim_top` to
+    // cut it down again: the weight per layer is summed over the chunks
+    // first, the top found from it as `trim_top` finds it, and what lies
+    // higher goes straight to the layer above the top.
+    let tallest = parts.iter().map(|x| x.2.nz).max().unwrap_or_else(|| p.n_layers(p.min_height));
+    let nz = if p.max_height.is_some() {
+        tallest
+    } else {
+        let mut sums = vec![0.0; tallest + 1];
+        for (_, _, g) in &parts {
+            let per = g.nx * g.ny;
+            for l in 1..=g.nz + 1 {
+                // A chunk's own layer above is empty without max_height.
+                let dst = if l <= g.nz { l - 1 } else { tallest };
+                sums[dst] += g.weight[l * per..(l + 1) * per].iter().sum::<f64>();
+            }
+        }
+        kept_layers(&sums, p.top_quantile)
+    };
     let mut out = ProfileGrid::empty(grid.xmin, grid.ymin, grid.ncols, grid.nrows, nz, p)?;
     let per = out.nx * out.ny;
     for (c0, r0, g) in parts {
-        let g = g.with_layers(nz);
         out.n_skipped += g.n_skipped;
-        for l in 0..nz + 2 {
+        for l in 0..g.nz + 2 {
+            let to = if l <= g.nz.min(nz) { l } else { nz + 1 };
             for r in 0..g.ny {
                 for c in 0..g.nx {
-                    let (src, dst) = (l * g.nx * g.ny + r * g.nx + c, l * per + (r0 + r) * out.nx + c0 + c);
+                    let (src, dst) = (l * g.nx * g.ny + r * g.nx + c, to * per + (r0 + r) * out.nx + c0 + c);
                     out.weight[dst] += g.weight[src];
                     out.weight_k[dst] += g.weight_k[src];
                 }
             }
         }
-    }
-    if p.max_height.is_none() {
-        out.trim_top(p.top_quantile);
     }
     Ok(out)
 }
@@ -1552,5 +1633,98 @@ mod tests {
         let kept = profile_cloud(&c, &h, &ProfileParams { top_quantile: 1.0, drop_noise: false, ..p.clone() }, None).unwrap();
         assert_eq!(kept.nz, 80);
         assert!(profile_cloud(&c, &h, &ProfileParams { top_quantile: 0.0, ..p }, None).is_err());
+    }
+
+    #[test]
+    fn pulses_sharing_a_time_are_dealt_out_whole() {
+        // Two pulses of two returns each recorded at one time (two channels
+        // of one scanner), and a third pulse on its own.
+        let mut c = PointCloud::new(vec![[10.0, 0.0, 20.0], [10.0, 0.0, 0.0], [15.0, 0.0, 18.0], [15.0, 0.0, 0.0], [12.0, 0.0, 0.0]]);
+        c.attrs.insert("gps_time".into(), Attr::F64(vec![1.0, 1.0, 1.0, 1.0, 1.5]));
+        c.attrs.insert("return_number".into(), Attr::U8(vec![1, 2, 1, 2, 1]));
+        c.attrs.insert("number_of_returns".into(), Attr::U8(vec![2, 2, 2, 2, 1]));
+        let (s, r) = reconstruct(&c, &traj(), &PulseParams::default()).unwrap();
+        assert_eq!(s.echo_count, vec![2, 2, 1]);
+        assert_eq!((r.n_pulses, r.n_split, r.n_incomplete, r.n_missing_returns), (3, 1, 0, 0));
+        // Each pulse holds a first and a second return, nearest first.
+        let rn = s.echo_attrs["return_number"].to_f64();
+        assert_eq!(rn, [1.0, 2.0, 1.0, 2.0, 1.0]);
+        let kept = reconstruct(&c, &traj(), &PulseParams { drop_incomplete: true, ..Default::default() }).unwrap();
+        assert_eq!((kept.1.n_dropped, kept.1.n_pulses), (0, 3));
+        // Three returns numbered 1 at one time are three pulses; a lone second return is incomplete.
+        let mut c = PointCloud::new(vec![[10.0, 0.0, 5.0], [10.5, 0.0, 5.0], [11.0, 0.0, 5.0], [10.0, 0.0, 0.0]]);
+        c.attrs.insert("gps_time".into(), Attr::F64(vec![1.0; 4]));
+        c.attrs.insert("return_number".into(), Attr::U8(vec![1, 1, 1, 2]));
+        c.attrs.insert("number_of_returns".into(), Attr::U8(vec![2, 1, 1, 2]));
+        let (s, r) = reconstruct(&c, &traj(), &PulseParams::default()).unwrap();
+        assert_eq!(s.echo_count, vec![2, 1, 1]);
+        assert_eq!((r.n_split, r.n_incomplete), (1, 0));
+    }
+
+    #[test]
+    fn projections_are_those_of_each_return() {
+        let lad = Lad::Planophile;
+        // A few angles repeated (scan angles), and every angle different (a trajectory).
+        let few: Vec<f64> = (0..20_000).map(|i| ((i % 31) as f64).to_radians()).collect();
+        let many: Vec<f64> = (0..6000).map(|i| (i as f64 * 0.011).to_radians()).collect();
+        for mut theta in [few, many] {
+            theta[7] = f64::NAN;
+            let idx: Vec<usize> = (0..theta.len()).step_by(3).collect();
+            let got = projections(&theta, &idx, &Projection::Lad(lad.clone()));
+            for (k, &i) in idx.iter().enumerate() {
+                let want = compute_g(theta[i], &lad);
+                assert!(got.at(k).to_bits() == want.to_bits() || (theta[i].is_nan() && got.at(k).is_nan()), "angle {}", theta[i]);
+            }
+            assert_eq!(projections(&theta, &idx, &Projection::Lad(Lad::Spherical)).at(3), 0.5);
+            assert_eq!(projections(&theta, &idx, &Projection::Constant(0.4)).at(3), 0.4);
+        }
+    }
+
+    #[test]
+    fn a_stray_return_does_not_size_the_catalogue_profile() {
+        use crate::als::ops::write_tiles;
+        use crate::io::las::LasWriteOptions;
+        // Two 10 m tiles 20 km apart in UTM coordinates, with one return
+        // 30 km up in the first. Laid over the whole catalogue with a layer
+        // for every metre up to it, the grid would be some 100 GB; with
+        // the top found first it is a few megabytes, and the result is the
+        // profile of the merged cloud.
+        let (ox, oy) = (512_000.0, 6_234_000.0);
+        let mut xyz = Vec::new();
+        for i in 0..4000 {
+            let (u, v) = ((i % 63) as f64 / 63.0, (i % 59) as f64 / 59.0);
+            let x = if i % 2 == 0 { ox + 10.0 * u } else { ox + 20_000.0 + 10.0 * u };
+            xyz.push([x, oy + 10.0 * v, if i % 3 == 0 { 2.0 + (i % 17) as f64 } else { 0.0 }]);
+        }
+        xyz.push([ox + 5.0, oy + 5.0, 30_000.0]);
+        let dir = std::env::temp_dir().join(format!("sylva-als-profile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        #[allow(clippy::needless_update)]
+        let wo = LasWriteOptions { point_format: 6, scale: 0.001, ..Default::default() };
+        let tiles = write_tiles(&PointCloud::new(xyz), &dir, 10.0, None, "las", &wo, None).unwrap();
+        let cat = Catalog::open(&tiles.iter().map(|t| t.0.clone()).collect::<Vec<_>>());
+        let p = ProfileParams { resolution: 1.0, weighting: ReturnWeight::All, top_quantile: 0.999, ..Default::default() };
+        let opts = RunOptions { layout: crate::als::Layout::Tiles, buffer: 0.0, workers: 2 };
+        let got = profile_catalog(&cat, &Heights::Z, &p, &opts).unwrap();
+        assert_eq!(got.nz, 18);
+        let merged = crate::als::read_region(&cat, [ox - 1.0, oy - 1.0, ox + 30_000.0, oy + 100.0]).unwrap();
+        let h: Vec<f64> = merged.xyz.iter().map(|q| q[2]).collect();
+        // The merged cloud over the two tiles, one at a time (the whole extent at once is what would not fit).
+        for b in tiles.iter().map(|t| crate::als::read_tile(&t.0).unwrap().xy()) {
+            let one = profile_cloud(&merged, &h, &ProfileParams { max_height: Some(19.0), ..p.clone() }, Some(b)).unwrap();
+            let (c0, r0) = (((one.xmin - got.xmin) / 1.0).round() as usize, ((one.ymin - got.ymin) / 1.0).round() as usize);
+            for l in 0..got.nz + 2 {
+                for r in 0..one.ny {
+                    for c in 0..one.nx {
+                        assert_eq!(got.weight[l * got.nx * got.ny + (r0 + r) * got.nx + c0 + c], one.weight[l * one.nx * one.ny + r * one.nx + c], "layer {l} cell {r} {c}");
+                    }
+                }
+            }
+        }
+        // With the top fixed nothing is trimmed and the layers are those asked for.
+        let fixed = profile_catalog(&cat, &Heights::Z, &ProfileParams { max_height: Some(11.0), ..p }, &opts).unwrap();
+        assert_eq!(fixed.nz, 10);
+        assert_eq!(fixed.weight.iter().sum::<f64>(), 4001.0);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

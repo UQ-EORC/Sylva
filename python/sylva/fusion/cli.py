@@ -66,6 +66,15 @@ def _add_commands(sub, fmt: dict) -> None:
     s.set_defaults(func=_cmd_upscale)
 
 
+#: Columns of a trees CSV that name trees rather than measure them.
+_ID_COLUMNS = ("id", "tree_id", "als_id", "tls_id")
+
+
+def _item(v):
+    """A table value as the plain Python value a CSV cell takes."""
+    return v.item() if hasattr(v, "item") else v
+
+
 def _read_csv(path: str) -> dict:
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
@@ -74,6 +83,14 @@ def _read_csv(path: str) -> dict:
     out = {}
     for k in rows[0]:
         vals = [r[k] for r in rows]
+        if k in _ID_COLUMNS:
+            # An id is a label: whole numbers stay integers (1, not 1.0, in
+            # what is written back) and anything else stays text.
+            try:
+                out[k] = np.array([int(v) for v in vals], dtype=np.int64)
+            except ValueError:
+                out[k] = np.array(vals)
+            continue
         try:
             out[k] = np.array([float(v) if v != "" else np.nan for v in vals])
         except ValueError:
@@ -107,9 +124,9 @@ def _cmd_trees(args) -> None:
             geom = feat.get("geometry") or {}
             if geom.get("type") == "Polygon":
                 ring = np.asarray(geom["coordinates"][0], dtype=float)
-                by_id[int(feat["properties"]["id"])] = ring[:-1] if len(ring) > 1 and np.allclose(ring[0], ring[-1]) else ring
-        ids = als["id"].astype(int) if "id" in als else np.arange(1, len(als["x"]) + 1)
-        als["crowns"] = [by_id.get(int(i), np.zeros((0, 2))) for i in ids]
+                by_id[str(feat["properties"]["id"])] = ring[:-1] if len(ring) > 1 and np.allclose(ring[0], ring[-1]) else ring
+        ids = als["id"] if "id" in als else np.arange(1, len(als["x"]) + 1)
+        als["crowns"] = [by_id.get(str(_item(i)), np.zeros((0, 2))) for i in ids]
     reg = None if args.registration is None else Registration.load(args.registration)
     links = link_trees(tls, als, reg, max_distance=args.max_distance, crown_buffer=args.crown_buffer,
                        height_weight=args.height_weight, dbh_weight=args.dbh_weight,
@@ -121,9 +138,9 @@ def _cmd_trees(args) -> None:
             w = csv.writer(f)
             w.writerow(["id", "x", "y", "height", "tls_id", "n_stems", "stems"])
             for k in range(len(t["id"])):
-                w.writerow([t["id"][k].item() if hasattr(t["id"][k], "item") else t["id"][k], float(t["x"][k]),
-                            float(t["y"][k]), float(t["height"][k]), int(t["tls_id"][k]), int(t["n_stems"][k]),
-                            " ".join(str(int(v)) for v in t["stems"][k])])
+                w.writerow([_item(t["id"][k]), float(t["x"][k]), float(t["y"][k]), float(t["height"][k]),
+                            _item(t["tls_id"][k]), int(t["n_stems"][k]),
+                            " ".join(str(_item(v)) for v in t["stems"][k])])
     print(links)
 
 

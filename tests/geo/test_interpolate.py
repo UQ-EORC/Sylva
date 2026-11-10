@@ -348,3 +348,22 @@ def test_public_api_is_documented():
         obj = getattr(interpolate, name)
         doc = inspect.getdoc(obj)
         assert doc and "Parameters" in doc and "Returns" in doc, name
+
+
+def test_transfer_fill_suits_text_and_large_unsigned_attributes():
+    src = PointCloud(np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+                     {"species": np.array(["E", "A"]), "uid": np.array([2**60 + 1, 5], dtype=np.uint64),
+                      "big": np.array([2**63 + 5, 1], dtype=np.uint64)})
+    tgt = PointCloud(np.array([[0.1, 0.0, 0.0], [50.0, 0.0, 0.0]]))                  # the second matches nothing
+    for method in ("nearest", "majority"):
+        out = interpolate.transfer_attributes(src, tgt, ["species", "uid"], method=method, max_distance=1.0)
+        # The unmatched point used to read '-': "-1" cut to the labels' width.
+        assert list(out.attrs["species"]) == ["E", ""]
+        # uint64 used to become float64, rounding the matched id as well.
+        assert out.attrs["uid"].dtype == np.int64 and list(out.attrs["uid"]) == [2**60 + 1, -1]
+    out = interpolate.transfer_attributes(src, tgt, "species", max_distance=1.0, fill="none")
+    assert list(out.attrs["species"]) == ["E", "none"]
+    with pytest.raises(ValueError, match="fill"):
+        interpolate.transfer_attributes(src, tgt, "big", max_distance=1.0)
+    kept = interpolate.transfer_attributes(src, tgt, "big", max_distance=1.0, fill=0)
+    assert kept.attrs["big"].dtype == np.uint64 and list(kept.attrs["big"]) == [2**63 + 5, 0]

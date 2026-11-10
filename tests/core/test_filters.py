@@ -95,3 +95,15 @@ def test_knn(rng):
     assert d.shape == (10, 3) and i.shape == (10, 3)
     assert np.all(i[:, 0] == np.arange(10))
     assert np.all(d[:, 0] == 0)
+
+
+def test_voxel_downsample_refuses_a_voxel_size_that_is_not_a_length(forest):
+    import pytest
+
+    # These used to reach the core and thin the cloud to a handful of points.
+    for bad in (0.0, -1.0, float("nan"), float("inf")):
+        for kwargs in ({}, {"method": "centroid"}, {"origin": (0, 0, 0)}):
+            with pytest.raises(ValueError, match="voxel_size"):
+                filters.voxel_downsample(forest, bad, **kwargs)
+    with pytest.raises(ValueError, match="unknown method"):
+        filters.voxel_downsample(forest, 0.5, method="mean")

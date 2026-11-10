@@ -141,7 +141,8 @@ one voxel are less than a voxel apart, so a buffer of one voxel suffices.
 **Ground.** The progressive morphological filter grids the points on
 cells at multiples of `cell_size` in every tile, as the whole cloud does,
 and each of its openings looks `2 w` cells away (half-width `w` = 1, 2, 4,
-... up to `max_window / cell_size`). A buffer of `2 * cell_size * (1 + 2 +
+... while the full window `(2 w + 1) * cell_size` is at most `max_window`).
+A buffer of `2 * cell_size * (1 + 2 +
 4 + ... + W)` plus the widest gap in the ground therefore gives the
 whole-cloud classes everywhere; in practice much less does (5 m on the
 synthetic plots of the tests, 10 m on Tumbarumba with the default 10 m
@@ -262,7 +263,12 @@ Each gives exactly the whole-plot values (the tests compare the leaf / wood
 labels, the cylinders of every model and the crown metrics bit for bit),
 since each tree's points, in the same order, are all these functions see.
 `resume=True` keeps what the store already holds, so an interrupted run
-picks up at the next tree.
+picks up at the next tree. What is kept is what was made with the same
+settings: each tree's leaf / wood values and QSM are stored with a digest
+of the settings they were made with (voxel size, method, the QSM
+parameters, the tree's stem), and a tree made with other settings is done
+again rather than mixed in. If a tree fails, the trees not yet started are
+dropped and the error is raised once those already running have ended.
 
 ## The plot workflow
 
@@ -305,9 +311,9 @@ written when it is complete:
 | `sor/` | `statistical_outlier_removal` (`sor`; False skips it) |
 | `ground_thin/`, `ground/`, `dtm.npz`, `dtm.asc` | ground classified (`ground`) on a `ground_voxel` (5 cm) thinning, and the DTM (`dtm_resolution`): at full precision in `dtm.npz`, which the heights are taken from, and as an ASCII grid for other software |
 | `heights/` | `normalize` with that DTM |
-| `stems.pkl` | `detect_stems` on the tiles inside `plot` (`stems`) |
-| `segmented/`, `trees.pkl` | `segment_trees` (`merge`, `segment`, `prune`, `percentile`, `buffer`) |
-| `trees/` | `split_trees`, with each tree's leaf / wood and QSM as they are made |
+| `stems.pkl` | `detect_stems` on every tile, the margin included (`stems`) |
+| `segmented/`, `trees.pkl` | `segment_trees` on every tile (`merge`, `segment`, `prune`, `percentile`, `buffer`); `trees.pkl` lists the trees of the margin too |
+| `trees/` | `split_trees`, with each tree's leaf / wood and QSM as they are made (the trees of `plot` only) |
 | `wood/` | `classify_leaf_wood` (`leaf_wood`; False skips it) |
 | `qsm_table.csv`, `qsm_models.pkl` | `build_qsms` (`qsm_options`; `qsm_files` also writes cylinders and meshes) |
 | `trees.csv` | each tree with its crown metrics and QSM volume |
@@ -319,7 +325,19 @@ while it fits QSMs and check that the rerun does nothing twice and ends
 with the tables of an uninterrupted run. A stage's directory is emptied
 when it starts, so a stage cut short is done again from its beginning.
 Delete a stage's directory (and those after it) to redo it with other
-settings. The returned `PlotRun` holds the trees, the table, the models,
+settings. The leaf / wood values and QSMs kept in `trees/`, and the scans
+of a RiSCAN project in `scans/`, are reused only if they were made with the
+settings of the current call, so redoing the QSM stage with another
+`stem_radius_cap` fits every tree again.
+
+With `plot`, stems are detected and trees segmented over everything inside
+`bounds`, and the trees whose stem stands inside `plot` are then kept
+(`run.trees`, `trees.csv`, the leaf / wood labels and the QSMs). A tree at
+the plot's edge therefore keeps the part of its crown that hangs over the
+edge, and the trees just outside take their own crowns rather than leaving
+them to the plot's trees; give `bounds` a margin as wide as the largest
+crown. Tree ids are those of the segmentation of the whole area, so the
+plot's trees are not numbered consecutively. The returned `PlotRun` holds the trees, the table, the models,
 the catalogue of every stage, the DTM, the store, and each stage's time and
 largest `max_points`.
 

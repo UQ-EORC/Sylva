@@ -13,7 +13,9 @@
 //! not taken for one tree. Stems left over are then
 //! checked for a merge (two stems of the first epoch found as one in the
 //! second) or a split (the reverse) before they are called deaths or
-//! recruits.
+//! recruits: the wide stem must exceed its own partner by the basal area of
+//! the stems it would stand for, so a small tree that died beside a large
+//! survivor is a death and not a merge.
 //!
 //! The DBH increment of a survivor is measured on the stem profile: circles
 //! are fitted to thin slices between 1 and 3 m in each epoch, and the
@@ -62,9 +64,14 @@ pub struct MatchParams {
     pub dbh_weight: f64,
     /// Weight of the squared relative height difference in the cost.
     pub height_weight: f64,
-    /// A stem explains a neighbour that lost its match (a merge or a split)
-    /// when its DBH is at least this fraction of the quadratic sum of the
-    /// DBHs it would stand for.
+    /// A stem explains neighbours that lost their match (a merge or a split)
+    /// when the basal area it has beyond its own partner's is at least this
+    /// fraction, squared, of theirs: `dbh² - partner² >= merge_factor² *
+    /// sum(neighbour dbh²)`, with `partner = 0` for a stem that has no match
+    /// (which must then stand for at least two neighbours). A stem no wider
+    /// than its partner absorbed nothing, so a small tree that died beside a
+    /// large survivor stays a death. Dimensionless; infinity switches merges
+    /// and splits off.
     pub merge_factor: f64,
 }
 
@@ -252,6 +259,24 @@ fn find(parent: &mut [usize], i: usize) -> usize {
     r
 }
 
+/// Whether a stem of diameter `dbh` (m) stands for the unmatched stems
+/// `others` (m) of the other epoch besides its own `partner`: the basal area
+/// it has beyond the partner's must be at least `factor²` of theirs. Without
+/// a partner it must stand for at least two stems. False when any diameter
+/// is unknown.
+fn explains(dbh: f64, partner: Option<f64>, others: impl Iterator<Item = f64>, factor: f64) -> bool {
+    let (mut sum, mut n) = (0.0, 0usize);
+    for d in others {
+        sum += d * d;
+        n += 1;
+    }
+    let own = partner.unwrap_or(0.0);
+    if !(dbh.is_finite() && own.is_finite() && sum.is_finite()) || n + usize::from(partner.is_some()) < 2 {
+        return false;
+    }
+    dbh * dbh - own * own >= factor * factor * sum
+}
+
 /// Match the trees of two epochs given in one frame; see the module
 /// documentation.
 pub fn match_trees(a: &[TreeRow], b: &[TreeRow], p: &MatchParams) -> Result<TreeMatch> {
@@ -347,48 +372,67 @@ pub fn match_trees(a: &[TreeRow], b: &[TreeRow], p: &MatchParams) -> Result<Tree
         distance.push(d);
         cost.push(c);
     }
-    // Merges: a stem of epoch 2 wide enough to stand for its partner (if
-    // any) and every unmatched stem of epoch 1 within reach.
-    let near = |t: &TreeRow, u: &TreeRow| (t.x - u.x).hypot(t.y - u.y) <= p.max_distance;
-    let quad = |v: &[f64]| v.iter().map(|d| d * d).sum::<f64>().sqrt();
-    for j in 0..nb {
-        let lost: Vec<usize> = (0..na).filter(|&i| status_a[i] == StatusA::Dead && near(&a[i], &b[j])).collect();
-        if lost.is_empty() || !b[j].dbh.is_finite() {
-            continue;
-        }
-        let mut members: Vec<f64> = lost.iter().map(|&i| a[i].dbh).collect();
-        if let Some(i) = related_b[j] {
-            members.push(a[i].dbh);
-        }
-        if members.len() >= 2 && members.iter().all(|d| d.is_finite()) && b[j].dbh >= p.merge_factor * quad(&members) {
-            for &i in &lost {
-                status_a[i] = StatusA::Merged;
-                related_a[i] = Some(j);
+    // Merges: a stem of epoch 2 wider than its partner (if any) by enough to
+    // stand for every unmatched stem of epoch 1 within reach. Neighbours come
+    // from the grids of `max_distance` cells, in index order.
+    if p.merge_factor.is_finite() {
+        let near = |t: &TreeRow, u: &TreeRow| (t.x - u.x).hypot(t.y - u.y) <= p.max_distance;
+        let around = |g: &HashMap<(i64, i64), Vec<usize>>, t: &TreeRow| -> Vec<usize> {
+            let (kx, ky) = key(t);
+            let mut out: Vec<usize> = Vec::new();
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    if let Some(v) = g.get(&(kx + dx, ky + dy)) {
+                        out.extend_from_slice(v);
+                    }
+                }
             }
-            if status_b[j] == StatusB::Recruit {
-                status_b[j] = StatusB::Merged;
-                related_b[j] = Some(lost[0]);
+            out.sort_unstable();
+            out
+        };
+        let mut grid_a: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+        for (i, t) in a.iter().enumerate() {
+            grid_a.entry(key(t)).or_default().push(i);
+        }
+        for j in 0..nb {
+            if !b[j].dbh.is_finite() {
+                continue;
+            }
+            let lost: Vec<usize> = around(&grid_a, &b[j]).into_iter().filter(|&i| status_a[i] == StatusA::Dead && near(&a[i], &b[j])).collect();
+            if lost.is_empty() {
+                continue;
+            }
+            let partner = related_b[j].map(|i| a[i].dbh);
+            if explains(b[j].dbh, partner, lost.iter().map(|&i| a[i].dbh), p.merge_factor) {
+                for &i in &lost {
+                    status_a[i] = StatusA::Merged;
+                    related_a[i] = Some(j);
+                }
+                if status_b[j] == StatusB::Recruit {
+                    status_b[j] = StatusB::Merged;
+                    related_b[j] = Some(lost[0]);
+                }
             }
         }
-    }
-    // Splits, the mirror image.
-    for i in 0..na {
-        let new: Vec<usize> = (0..nb).filter(|&j| status_b[j] == StatusB::Recruit && near(&a[i], &b[j])).collect();
-        if new.is_empty() || !a[i].dbh.is_finite() {
-            continue;
-        }
-        let mut members: Vec<f64> = new.iter().map(|&j| b[j].dbh).collect();
-        if let Some(j) = related_a[i].filter(|_| status_a[i] == StatusA::Survivor) {
-            members.push(b[j].dbh);
-        }
-        if members.len() >= 2 && members.iter().all(|d| d.is_finite()) && a[i].dbh >= p.merge_factor * quad(&members) {
-            for &j in &new {
-                status_b[j] = StatusB::Split;
-                related_b[j] = Some(i);
+        // Splits, the mirror image.
+        for i in 0..na {
+            if !a[i].dbh.is_finite() {
+                continue;
             }
-            if status_a[i] == StatusA::Dead {
-                status_a[i] = StatusA::Split;
-                related_a[i] = Some(new[0]);
+            let new: Vec<usize> = around(&grid, &a[i]).into_iter().filter(|&j| status_b[j] == StatusB::Recruit && near(&a[i], &b[j])).collect();
+            if new.is_empty() {
+                continue;
+            }
+            let partner = related_a[i].filter(|_| status_a[i] == StatusA::Survivor).map(|j| b[j].dbh);
+            if explains(a[i].dbh, partner, new.iter().map(|&j| b[j].dbh), p.merge_factor) {
+                for &j in &new {
+                    status_b[j] = StatusB::Split;
+                    related_b[j] = Some(i);
+                }
+                if status_a[i] == StatusA::Dead {
+                    status_a[i] = StatusA::Split;
+                    related_a[i] = Some(new[0]);
+                }
             }
         }
     }
@@ -404,7 +448,11 @@ pub struct IncrementParams {
     pub slice_heights: Vec<f64>,
     /// Vertical extent (m) of each slice, centred on its height.
     pub slice_thickness: f64,
-    /// Only points this close to the stem centre (m) enter a slice.
+    /// Only points this close to the stem centre (m) enter a slice. It is a
+    /// lower bound: for a wide stem the radius grows to [`slice_radius`]
+    /// (1.5 times the median distance of the tree's points at the slice
+    /// heights from the stem centre, plus 0.1 m), so that a stem wider than
+    /// twice this value is still measured.
     pub search_radius: f64,
     /// Fewest slices measured in both epochs for a DBH increment.
     pub min_slices: usize,
@@ -593,8 +641,24 @@ fn reject_off_line(h: &[f64], d: &mut [f64], se: &mut [f64]) {
     }
 }
 
+/// Radius (m) around a stem centre within which points enter its slices:
+/// `search_radius`, or `1.5 * median + 0.1` if that is larger, with `median`
+/// the median horizontal distance (m) of `dist` (the tree's points between
+/// the lowest and highest slice) from the stem centre. Points on a stem lie
+/// one stem radius from its centre, so a fixed radius smaller than that
+/// would leave a large stem without a single point.
+pub fn slice_radius(dist: &mut [f64], search_radius: f64) -> f64 {
+    if dist.is_empty() {
+        return search_radius;
+    }
+    let mid = dist.len() / 2;
+    let (_, median, _) = dist.select_nth_unstable_by(mid, f64::total_cmp);
+    if median.is_finite() { search_radius.max(1.5 * *median + 0.1) } else { search_radius }
+}
+
 /// Measure every tree of one epoch: stem profile, DBH, top height and
-/// crown. `trees` are `(tree_id, x, y)`; `labels` give each point's tree.
+/// crown. Each tree's slices take the points within [`slice_radius`] of its
+/// position. `trees` are `(tree_id, x, y)`; `labels` give each point's tree.
 /// `sigma` is the epoch's range noise (m), a floor on the circle-fit
 /// residual.
 pub fn measure_trees(points: &[Point], heights: &[f64], labels: &[i64], trees: &[(i64, f64, f64)], sigma: f64, p: &IncrementParams) -> Result<Vec<TreeMeasure>> {
@@ -628,10 +692,15 @@ pub fn measure_trees(points: &[Point], heights: &[f64], labels: &[i64], trees: &
         .map(|&(id, cx, cy)| {
             let idx = groups.get(&id).unwrap_or(&empty);
             let half = p.slice_thickness / 2.0;
+            // The search radius of this tree, widened for a stem that the
+            // fixed one would not hold.
+            let (h_lo, h_hi) = p.slice_heights.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, &h| (a.0.min(h - half), a.1.max(h + half)));
+            let mut dist: Vec<f64> = idx.iter().filter(|&&i| heights[i] >= h_lo && heights[i] <= h_hi).map(|&i| (points[i][0] - cx).hypot(points[i][1] - cy)).collect();
+            let radius = slice_radius(&mut dist, p.search_radius);
             let (mut diameter, mut diameter_se) = (Vec::with_capacity(p.slice_heights.len()), Vec::with_capacity(p.slice_heights.len()));
             for &hh in &p.slice_heights {
-                let xy: Vec<[f64; 2]> = idx.iter().filter(|&&i| (heights[i] - hh).abs() <= half && (points[i][0] - cx).hypot(points[i][1] - cy) <= p.search_radius).map(|&i| [points[i][0], points[i][1]]).collect();
-                let (d, se) = slice_diameter(&xy, sigma, threshold, p.search_radius);
+                let xy: Vec<[f64; 2]> = idx.iter().filter(|&&i| (heights[i] - hh).abs() <= half && (points[i][0] - cx).hypot(points[i][1] - cy) <= radius).map(|&i| [points[i][0], points[i][1]]).collect();
+                let (d, se) = slice_diameter(&xy, sigma, threshold, radius);
                 diameter.push(d);
                 diameter_se.push(se);
             }
@@ -880,6 +949,43 @@ mod tests {
     }
 
     #[test]
+    fn a_small_death_beside_a_large_survivor_is_not_a_merge() {
+        // A 10 cm tree 0.8 m from a 50 cm one; only the large tree is found
+        // again, 5 mm wider: it did not absorb the small one.
+        let a = [row(0.0, 0.0, 0.50), row(0.8, 0.0, 0.10)];
+        let b = [row(0.01, 0.0, 0.505)];
+        let m = match_trees(&a, &b, &MatchParams::default()).unwrap();
+        assert_eq!(m.status_a, vec![StatusA::Survivor, StatusA::Dead]);
+        assert_eq!(m.status_b, vec![StatusB::Survivor]);
+        // The mirror image: a small recruit beside a large survivor.
+        let m = match_trees(&b, &a, &MatchParams::default()).unwrap();
+        assert_eq!(m.status_a, vec![StatusA::Survivor]);
+        assert_eq!(m.status_b, vec![StatusB::Survivor, StatusB::Recruit]);
+        // A partner wide enough to hold both is still a merge.
+        let b = [row(0.01, 0.0, 0.52)];
+        let m = match_trees(&a, &b, &MatchParams::default()).unwrap();
+        assert_eq!(m.status_a, vec![StatusA::Survivor, StatusA::Merged]);
+    }
+
+    #[test]
+    fn merges_and_splits_do_not_scan_every_pair() {
+        // 60 000 trees a side: the passes over neighbours must stay near
+        // linear (all pairs would be 3.6e9 distance tests per pass).
+        let n = 60_000usize;
+        let side = 1400.0;
+        let mut rng = crate::util::nprandom::Generator::new(5);
+        let a: Vec<TreeRow> = (0..n).map(|_| row(rng.uniform(0.0, side), rng.uniform(0.0, side), rng.uniform(0.1, 0.5))).collect();
+        let b: Vec<TreeRow> = (0..n).map(|_| row(rng.uniform(0.0, side), rng.uniform(0.0, side), rng.uniform(0.1, 0.5))).collect();
+        let t = std::time::Instant::now();
+        let m = match_trees(&a, &b, &MatchParams::default()).unwrap();
+        assert!(t.elapsed().as_secs_f64() < 20.0, "{:?}", t.elapsed());
+        assert!(m.status_a.contains(&StatusA::Dead));
+        // Infinity switches merges and splits off.
+        let off = match_trees(&a, &b, &MatchParams { merge_factor: f64::INFINITY, ..Default::default() }).unwrap();
+        assert!(!off.status_a.contains(&StatusA::Merged) && !off.status_b.contains(&StatusB::Split));
+    }
+
+    #[test]
     fn rejects_bad_input() {
         assert!(match_trees(&[row(f64::NAN, 0.0, 0.2)], &[], &MatchParams::default()).is_err());
         assert!(match_trees(&[], &[], &MatchParams { max_distance: 0.0, ..Default::default() }).is_err());
@@ -906,6 +1012,23 @@ mod tests {
         }
         let h = pts.iter().map(|p| p[2]).collect();
         (pts, h)
+    }
+
+    #[test]
+    fn a_stem_wider_than_the_search_radius_is_measured() {
+        // DBH 1.8 m: every surface point lies 0.9 m from the centre, beyond
+        // the default search radius of 0.75 m.
+        let p = IncrementParams::default();
+        let (pts, h) = stem(1.8, 0.003, 4);
+        let m = measure_trees(&pts, &h, &vec![1; pts.len()], &[(1, 5.0, 5.0)], 0.003, &p).unwrap();
+        assert!((m[0].dbh - 1.8).abs() < 0.01, "{}", m[0].dbh);
+        assert!(m[0].diameter.iter().all(|d| d.is_finite()));
+        // An ordinary stem keeps the radius asked for.
+        let mut d = vec![0.15; 100];
+        assert_eq!(slice_radius(&mut d, 0.75), 0.75);
+        assert_eq!(slice_radius(&mut [], 0.75), 0.75);
+        let mut d = vec![0.9; 100];
+        assert!((slice_radius(&mut d, 0.75) - 1.45).abs() < 1e-12);
     }
 
     #[test]

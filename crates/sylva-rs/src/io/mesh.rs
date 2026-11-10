@@ -8,8 +8,9 @@
 //! Several meshes go to one file as named objects (`o wood`, `o leaves`,
 //! `tree_1`, ...), vertices with four decimals (a tenth of a millimetre)
 //! and 1-based face indices running on across the objects. A PLY mesh is
-//! little-endian binary: float32 vertices, int32 triangles and, if given,
-//! one colour per face.
+//! little-endian binary: float64 vertices (a mesh at map coordinates, where
+//! a float32 resolves only half a metre, keeps its shape), int32 triangles
+//! and, if given, one colour per face.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -120,7 +121,8 @@ pub fn read_obj(path: impl AsRef<Path>) -> Result<(Vec<Point>, Vec<[u32; 3]>)> {
 }
 
 /// The bytes of a binary little-endian PLY triangle mesh: vertices stored
-/// as float32, faces as int32 lists, `face_rgb` one colour per face.
+/// as float64 (`property double`, in the units of the coordinates, exact),
+/// faces as int32 lists, `face_rgb` one colour per face.
 pub fn ply_bytes(vertices: &[Point], faces: &[[i32; 3]], face_rgb: Option<&[[u8; 3]]>) -> Result<Vec<u8>> {
     if face_rgb.is_some_and(|c| c.len() != faces.len()) {
         return Err(Error::invalid("face_rgb must have one colour per face"));
@@ -130,9 +132,9 @@ pub fn ply_bytes(vertices: &[Point], faces: &[[i32; 3]], face_rgb: Option<&[[u8;
         "format binary_little_endian 1.0".into(),
         "comment sylva QSM mesh".into(),
         format!("element vertex {}", vertices.len()),
-        "property float x".into(),
-        "property float y".into(),
-        "property float z".into(),
+        "property double x".into(),
+        "property double y".into(),
+        "property double z".into(),
         format!("element face {}", faces.len()),
         "property list uchar int vertex_indices".into(),
     ];
@@ -141,10 +143,10 @@ pub fn ply_bytes(vertices: &[Point], faces: &[[i32; 3]], face_rgb: Option<&[[u8;
     }
     header.push("end_header".into());
     let mut out = (header.join("\n") + "\n").into_bytes();
-    out.reserve(vertices.len() * 12 + faces.len() * 16);
+    out.reserve(vertices.len() * 24 + faces.len() * 16);
     for v in vertices {
         for c in v {
-            out.extend_from_slice(&(*c as f32).to_le_bytes());
+            out.extend_from_slice(&c.to_le_bytes());
         }
     }
     for (i, f) in faces.iter().enumerate() {
@@ -191,11 +193,14 @@ mod tests {
 
     #[test]
     fn ply_records_are_packed() {
-        let v = [[0.0, 1.0, 2.0]];
+        // A vertex at map coordinates: float32 would move it by up to 0.25 m.
+        let v = [[500_000.123, 6_960_000.456, 2.0]];
         let b = ply_bytes(&v, &[[0, 0, 0]], Some(&[[1, 2, 3]])).unwrap();
-        let head = "ply\nformat binary_little_endian 1.0\ncomment sylva QSM mesh\nelement vertex 1\nproperty float x\nproperty float y\nproperty float z\nelement face 1\nproperty list uchar int vertex_indices\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n";
+        let head = "ply\nformat binary_little_endian 1.0\ncomment sylva QSM mesh\nelement vertex 1\nproperty double x\nproperty double y\nproperty double z\nelement face 1\nproperty list uchar int vertex_indices\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n";
         assert!(b.starts_with(head.as_bytes()));
-        assert_eq!(b.len(), head.len() + 12 + 16);
+        assert_eq!(b.len(), head.len() + 24 + 16);
+        let at = |k: usize| f64::from_le_bytes(b[head.len() + 8 * k..head.len() + 8 * k + 8].try_into().unwrap());
+        assert_eq!([at(0), at(1), at(2)], v[0]);
         assert_eq!(&b[b.len() - 4..], &[0, 1, 2, 3]);
         assert!(ply_bytes(&v, &[[0, 0, 0]], Some(&[])).is_err());
     }

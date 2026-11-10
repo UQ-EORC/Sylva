@@ -74,7 +74,7 @@ profiles and a plot summary:
 ```python
 from sylva import canopy, io
 
-prof = canopy.GapProfile.empty()                    # 5-70 deg rings, 36 sectors, 0.5 m bins
+prof = canopy.GapProfile.empty()                    # 5-75 deg rings, 36 sectors, 0.5 m bins
 for pos in project.positions:                      # upright scans
     s = io.read_rxp_shots(pos.rxp, shot_stride=4)  # every 4th pulse, all its echoes
     fired = canopy.fired_pulses_per_ring(s, pos.pattern, prof.zenith_edges, shot_stride=4)

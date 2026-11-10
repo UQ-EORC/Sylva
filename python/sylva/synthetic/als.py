@@ -111,8 +111,10 @@ def als_epochs(n_trees: int = 100, size: float = 100.0, removed: int = 4,
                flight_b: dict | None = None, seed: int = 0) -> ALSEpochs:
     """Two airborne surveys of a synthetic forest with known changes.
 
-    A stand of ``n_trees`` (:func:`~sylva.synthetic.stand`, 12 to 25 m,
-    stems at least 4 m apart) in the west ``size`` m of a square of ``size +
+    A stand of up to ``n_trees`` (:func:`~sylva.synthetic.stand`, 12 to 25 m,
+    stems at least 4 m apart; the trees drawn within 2 m of the stand's
+    east edge are left out, to keep their crowns off the buildings, so the
+    truth table can hold a few rows fewer than ``n_trees``) in the west ``size`` m of a square of ``size +
     20`` m, with two gabled buildings east of it (one ridge running north,
     one east, so that their roofs have slopes of four aspects), is flown
     twice with :func:`~sylva.synthetic.als_flight`. Between the surveys
@@ -130,7 +132,8 @@ def als_epochs(n_trees: int = 100, size: float = 100.0, removed: int = 4,
     Parameters
     ----------
     n_trees, size
-        Trees and side (m) of the forest.
+        Trees drawn and side (m) of the forest. ``len(result.trees["tree_id"])``
+        is the number kept.
     removed
         Trees felled singly.
     gap

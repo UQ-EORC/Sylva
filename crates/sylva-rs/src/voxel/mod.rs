@@ -85,7 +85,9 @@ pub enum Attenuation {
     /// Potential path length: the exact maximum-likelihood solve over the full voxel chords
     /// (mean-chord form of Pimont et al. 2018 where the exact solve is unavailable).
     Ppl,
-    /// `−ln` of the beam-section transmittance, `1 − intercepted / entering`.
+    /// `−ln(1 − intercepted / entering) / mean chord` (m⁻¹): the Beer–Lambert attenuation that
+    /// gives the voxel's beam-section transmittance over the mean length of the pulses' paths
+    /// across it (`path_length / num_beams`, m).
     Transmittance,
     /// Bailey & Mahaffee (2017) eq. 10 per class, from the mean gap probability over the mean
     /// path; needs leaf and wood echoes and the inclination distributions.
@@ -232,7 +234,9 @@ impl<'a> VoxelInputs<'a> {
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum F {
-    /// Σ beam fraction entering the voxel (observed traversals).
+    /// Σ beam fraction entering the voxel (observed traversals, count). A pulse enters a voxel
+    /// once, with the fraction it still carries on the way in: one that leaves an echo in the
+    /// voxel and travels on is not counted again for the part that goes on.
     NumBeamsWeighted,
     /// Potential path length: Σ full voxel chord.
     PathLength,
@@ -251,7 +255,9 @@ pub enum F {
     EffectiveFreePathLength,
     /// Σ path (m) of the rays traced beyond a pulse's last echo (occlusion rays, unit weight).
     PathLengthOccluded,
-    /// Σ fraction × beam zenith angle (rad, 0 = up); over `NumBeamsWeighted` the mean zenith.
+    /// Σ fraction × angle of the beam from the vertical (rad, 0 to π/2: 0 for a beam travelling
+    /// straight up or straight down, π/2 for a horizontal one); over `NumBeamsWeighted` the
+    /// mean zenith at which `G` is evaluated.
     SumOfAngles,
     /// Σ fraction × sin of the beam azimuth (clockwise from +y), for the circular mean.
     SumSinAzimuth,
@@ -261,12 +267,16 @@ pub enum F {
     SumOfLaserDistances,
     /// Σ full chord (m) of the voxel for every echo in it: the hit term of the mean-chord PPL estimator.
     SumHitDelta,
-    /// Σ full chord (m) of the pulses that passed through the voxel without ending in it:
-    /// the miss term of the mean-chord PPL estimator.
+    /// Σ full chord (m) of every pulse that passed through the voxel without ending in it,
+    /// whatever it ends in further on (an echo, the ground, or nothing): the miss term of
+    /// the mean-chord PPL estimator. This is a larger set of pulses than `NumMissRays`
+    /// counts, which leaves out those that end in a ground echo or in no echo at all, so
+    /// `SumMissDelta / NumMissRays` is not a mean chord.
     SumMissDelta,
     /// Σ fraction × free path (m) of pulses with no echo, or whose segment ends in a ground echo.
     PathLengthUnbound,
-    /// Σ fraction × beam cross-section (m²) at the voxel centre, for beams entering it.
+    /// Σ fraction × beam cross-section (m²) at the voxel centre, for beams entering it
+    /// (each pulse once, as for `NumBeamsWeighted`).
     BsEntering,
     /// Σ echo share × beam cross-section (m²) of the echoes in the voxel.
     BsIntercepted,
@@ -347,7 +357,10 @@ pub enum I {
     NumRaysOccluded,
     /// Pulse segments crossing the voxel that end in a ground echo or in no echo at all (rayvoxel's unbounded rays).
     NumUnboundRays,
-    /// Pulses that crossed the voxel without ending in it, on their way to a non-ground echo beyond.
+    /// Pulses (count) that crossed the voxel without ending in it, on their way to a non-ground
+    /// echo beyond. Pulses that cross it on their way to a ground echo or to no echo at all are
+    /// not counted here (they are rayvoxel's unbounded rays, see `NumUnboundRays`), although
+    /// their chords are in `SumMissDelta`.
     NumMissRays,
     /// Echoes in the voxel with the leaf class.
     NumHitLeaf,
@@ -499,6 +512,19 @@ fn check_len<T>(name: &str, v: Option<&[T]>, n: usize) -> Result<()> {
     }
 }
 
+/// Refuse pulses with an echo whose range is NaN or infinite. Such an echo
+/// has no position: it cannot be placed in a voxel, and the pulse cannot be
+/// traced to it.
+pub(crate) fn check_ranges(shots: &Shots) -> Result<()> {
+    match shots.echo_range.iter().position(|r| !r.is_finite()) {
+        Some(e) => Err(Error::invalid(format!(
+            "echo {e} has a range of {} m; echo ranges must be finite (drop these echoes, or their pulses, before voxelising)",
+            shots.echo_range[e]
+        ))),
+        None => Ok(()),
+    }
+}
+
 /// Incremental voxelisation: pulses can be added in any number of batches
 /// (e.g. the row groups of a [`crate::io::shots::ShotsFile`]), so only one
 /// batch has to be in memory next to the grid.
@@ -559,13 +585,15 @@ impl Voxelizer {
     }
 
     /// Trace one batch of pulses into the grid. The annotations must have one value per
-    /// echo, and `Relative` / `Strongest` weighting needs intensities.
+    /// echo, every echo range (m) must be finite, and `Relative` / `Strongest` weighting
+    /// needs intensities.
     pub fn add(&mut self, inputs: &VoxelInputs) -> Result<()> {
         let ne = inputs.shots.n_echoes();
         check_len("ground", inputs.ground, ne)?;
         check_len("foliage", inputs.foliage, ne)?;
         check_len("intensity", inputs.intensity, ne)?;
         check_len("tree_id", inputs.tree_id, ne)?;
+        check_ranges(inputs.shots)?;
         if matches!(self.engine.params.weighting, WeightMethod::Relative | WeightMethod::Strongest) && inputs.intensity.is_none() {
             return Err(Error::invalid("relative / strongest weighting needs echo intensities"));
         }

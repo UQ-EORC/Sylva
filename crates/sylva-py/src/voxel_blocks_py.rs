@@ -182,17 +182,17 @@ fn ray_voxelize_blocks<'py>(py: Python<'py>, shots: Option<&Bound<'py, PyDict>>,
             let s = shots_from_py(d)?;
             let ground = ground.map(|a| a.as_array().to_vec());
             let foliage = foliage.map(|a| a.as_array().to_vec());
-            py.detach(|| {
+            crate::detach_interruptible(py, || {
                 let notes = sylva_rs::voxel::grid::annotate(&s, &labels, ground, foliage, dtm.as_ref(), params.weighting)?;
                 voxel::voxelize_blocks(&Pulses::Memory(notes.inputs(&s, dtm.as_ref())), &params, dtm.as_ref(), &opts, out.as_deref())
             })
         }
-        (None, Some(p)) => py.detach(|| {
+        (None, Some(p)) => crate::detach_interruptible(py, || {
             let file = sylva_rs::io::shots::ShotsFile::open(&p)?;
             voxel::voxelize_blocks(&Pulses::File { file: &file, labels: &labels }, &params, dtm.as_ref(), &opts, out.as_deref())
         }),
         _ => return Err(PyValueError::new_err("give shots or a path, not both")),
-    }
+    }?
     .map_err(err)?;
     let stats = stats_dict(py, stats)?;
     let grid: Py<PyAny> = match (grid, out) {

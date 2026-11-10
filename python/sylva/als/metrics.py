@@ -629,7 +629,9 @@ def _cmd_metrics(args, write_raster) -> None:
 def _read_plot_csv(path: str, radius, id_field):
     import csv
 
-    with open(path, newline="") as f:
+    # utf-8-sig drops the byte order mark that spreadsheets put before the
+    # first column name ("CSV UTF-8"), which would otherwise hide that column.
+    with open(path, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
     if not rows:
         raise ValueError(f"{path} has no plots")

@@ -78,7 +78,8 @@ pub struct IcpConfig {
     pub max_points: usize,
     /// A step (translation in m plus 10 x rotation in radians) smaller than this
     /// fraction of the previous iteration's RMSE counts as stalled; 0 disables
-    /// the plateau stop.
+    /// the plateau stop. The first iteration of a level, which has no
+    /// previous RMSE, never counts.
     pub plateau_tolerance: f64,
     /// Consecutive stalled iterations that end a level.
     pub plateau_patience: usize,
@@ -159,8 +160,10 @@ pub struct IcpResult {
     pub n_correspondences: usize,
     /// Iterations run, summed over all pyramid levels.
     pub iterations: usize,
-    /// True once a level stopped because a step fell below both tolerances; a
-    /// later level running to its cap does not reset it.
+    /// Whether the last pyramid level that ran stopped because a step fell
+    /// below both `translation_tolerance` (m) and `rotation_tolerance`
+    /// (radians). False if that level ran to `max_iterations`, stalled on a
+    /// plateau or ran out of correspondences, whatever the coarser levels did.
     pub converged: bool,
     /// RMS distance (m) of the kept correspondences after each iteration, all
     /// levels in order.
@@ -602,6 +605,9 @@ pub fn icp_prepared(source: &[Point], target: &IcpTarget, initial: Option<Matrix
             continue;
         }
 
+        // The flag is the finest level's: a coarse level that converged says
+        // nothing about a finer one that then ran to its cap.
+        converged = false;
         let mut level_rmse = f64::INFINITY;
         let mut stalled = 0usize;
         for level_iteration in 0..cfg.max_iterations {
@@ -655,7 +661,9 @@ pub fn icp_prepared(source: &[Point], target: &IcpTarget, initial: Option<Matrix
                 break;
             }
             let step = step_translation + 10.0 * step_rotation;
-            stalled = if step < level_rmse * cfg.plateau_tolerance { stalled + 1 } else { 0 };
+            // The first iteration of a level has no previous RMSE to be small
+            // against (it is infinite), so it never counts as stalled.
+            stalled = if level_rmse.is_finite() && step < level_rmse * cfg.plateau_tolerance { stalled + 1 } else { 0 };
             level_rmse = last_rmse;
             if stalled >= cfg.plateau_patience {
                 break;
@@ -829,6 +837,52 @@ mod tests {
             assert!(tr < 1e-9 && rot < 1e-10, "{method} exact: {tr} m {rot} rad");
             assert!(r.converged && r.fitness > 0.99, "{r:?}");
         }
+    }
+
+    /// A small scene for the stopping rules: relief and two stems.
+    fn small_scene() -> Vec<Point> {
+        let mut s = 9u64;
+        let mut pts = Vec::new();
+        for _ in 0..12_000 {
+            let (x, y) = (lcg(&mut s) * 12.0 - 6.0, lcg(&mut s) * 12.0 - 6.0);
+            pts.push([x, y, 0.3 * (0.6 * x).sin() + 0.2 * (0.5 * y).cos()]);
+        }
+        for &(cx, cy, r) in &[(-3.0, -2.0, 0.25), (2.0, 3.0, 0.35)] {
+            for _ in 0..3_000 {
+                let (a, z) = (lcg(&mut s) * std::f64::consts::TAU, lcg(&mut s) * 5.0);
+                pts.push([cx + r * a.cos(), cy + r * a.sin(), z]);
+            }
+        }
+        pts
+    }
+
+    #[test]
+    fn coreg_icp_plateau_ignores_the_first_iteration() {
+        // No step is ever as small as 1e-12 of the RMSE, so this plateau stop
+        // must change nothing; it used to end every level after one iteration,
+        // the first being compared with an infinite "previous" RMSE.
+        let target = small_scene();
+        let source = transform_points(&truth().try_inverse().unwrap(), &target);
+        let base = IcpConfig { voxel_sizes: vec![0.30, 0.15], max_distances: Some(vec![0.80, 0.40]), ..Default::default() };
+        let plain = icp(&source, &target, None, &base).unwrap();
+        let guarded = icp(&source, &target, None, &IcpConfig { plateau_tolerance: 1e-12, plateau_patience: 1, ..base.clone() }).unwrap();
+        assert!(plain.iterations > 2, "{}", plain.iterations);
+        assert_eq!(guarded.iterations, plain.iterations);
+        assert_eq!(guarded.transform, plain.transform);
+    }
+
+    #[test]
+    fn coreg_icp_converged_is_the_last_levels() {
+        // Identical clouds: the coarse level converges on its first step. At
+        // the second level no neighbourhood passes the 3 x voxel radius, so
+        // the planarity gate leaves nothing and the level ends without a step:
+        // that is not convergence, though the flag used to stay set.
+        let pts = small_scene();
+        let one = IcpConfig { voxel_sizes: vec![0.30], max_distances: Some(vec![0.80]), ..Default::default() };
+        assert!(icp(&pts, &pts, None, &one).unwrap().converged);
+        let two = IcpConfig { voxel_sizes: vec![0.30, 1e-5], max_distances: Some(vec![0.80, 0.05]), ..Default::default() };
+        let r = icp(&pts, &pts, None, &two).unwrap();
+        assert!(!r.converged, "{} iterations", r.iterations);
     }
 
     #[test]

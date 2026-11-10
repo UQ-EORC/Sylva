@@ -110,6 +110,9 @@ better than `stem_floor` (2 mm) nor a terrain sample as better than
 these, the synthetic alignment errors exceeded their sigma by factors of two
 to eight. `stable="stems"` or `"ground"` uses one kind alone; the other
 parameters then stay at the coarse transform and their sigma is NaN.
+`tree_increments` needs the vertical sigma (it enters the DBH error through
+the stem taper) and does not take an unknown one for zero: after
+`stable="stems"`, pass `registration_sigma=` yourself, in metres.
 
 A project of several scans per epoch is aligned through its registered,
 merged cloud (`sylva.coreg.merge_clouds`), or through scans already prepared
@@ -119,7 +122,10 @@ epoch into the reference frame.
 ### Matching trees
 
 `match_trees` moves the second epoch's stems into the first epoch's frame
-and pairs them by an optimal assignment (Kuhn 1955; Munkres 1957) that first
+(each at its own elevation `z` where the trees carry one, else at the height
+of the alignment's centre: a tilt of the transform shifts a stem sideways in
+proportion to its elevation, which matters in frames with heights above sea
+level) and pairs them by an optimal assignment (Kuhn 1955; Munkres 1957) that first
 matches as many trees as it can and then minimises the summed cost of
 distance and relative DBH and height differences. Unlike nearest-neighbour
 matching, a stem cannot take its neighbour's partner when that would leave
@@ -130,11 +136,12 @@ beside it are a death and a recruit, not one tree that lost half its
 diameter.
 
 Stems left over are checked for merges and splits before they are called
-deaths or recruits. When a stem of the second epoch is wide enough to stand
-for an unmatched neighbour as well as its own partner (its DBH at least
-`merge_factor` times the quadratic sum of theirs), the neighbour is `merged`
-into it: the detector saw two touching stems as one. Splits are the mirror
-image. `TreeMatch.ambiguous_pairs()` marks survivor pairs involved in either,
+deaths or recruits. When a stem of the second epoch is wider than its own
+partner by enough to hold an unmatched neighbour as well (`dbh² - partner² >=
+merge_factor² * sum(neighbour dbh²)`), the neighbour is `merged` into it: the
+detector saw two touching stems as one. A stem no wider than its partner
+absorbed nothing, so a small tree that died beside a large survivor is a
+death. Splits are the mirror image. `TreeMatch.ambiguous_pairs()` marks survivor pairs involved in either,
 whose increments compare a stem with more or less than itself; the plot
 summary leaves them out and counts them.
 
@@ -440,8 +447,12 @@ unobserved branch also leaves the crown change untrusted, since the crown
 is outlined by the branches.
 
 For a plot, `compare_plot_qsms` pairs the models of matched trees and
-tabulates the changes. The tree match is plain data: survivor pairs of tree
-ids, and lists of dead and recruited trees.
+tabulates the changes. It takes the `TreeMatch` of `match_trees` as it is
+(`change.compare_plot_qsms(qsms_2020, qsms_2025, m)`), or plain data:
+survivor pairs of tree ids, and lists of dead and recruited trees. The
+pairs are tree ids, the keys of the models: `m.id_pairs()`,
+`m.death_ids()` and `m.recruit_ids()` give them, whereas `m.pairs` holds
+positions in the tree lists and must not be passed here.
 
 ```python
 plot = change.compare_plot_qsms(

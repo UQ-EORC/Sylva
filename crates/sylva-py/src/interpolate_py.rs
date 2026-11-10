@@ -27,7 +27,8 @@ fn points<'a>(xyz: &'a PyReadonlyArray2<'_, f64>) -> PyResult<Cow<'a, [Point]>> 
     if xyz.shape()[1] != 3 {
         return Err(PyValueError::new_err(format!("xyz must have shape (N, 3), got (N, {})", xyz.shape()[1])));
     }
-    if let Ok(flat) = xyz.as_slice() {
+    // Not for a Fortran-ordered array, which `as_slice` would also hand over.
+    if let (true, Ok(flat)) = (xyz.is_c_contiguous(), xyz.as_slice()) {
         // SAFETY: `[f64; 3]` has the size of three f64 and the alignment of
         // one, and the slice holds whole rows of three.
         let rows = unsafe { std::slice::from_raw_parts(flat.as_ptr() as *const Point, flat.len() / 3) };

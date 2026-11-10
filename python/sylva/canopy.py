@@ -156,11 +156,17 @@ def vertical_profile(cloud: PointCloud, bin_size: float = 0.5, height_attr: str 
 
 def pad_profile_voxel(cloud: PointCloud, voxel_size: float = 0.5, height_attr: str = "height",
                       max_height: float | None = None,
-                      clumping: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
+                      clumping: float = 1.0,
+                      min_height: float | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Plant area density profile by the vertical contact-frequency method
     (simplified Hosoi & Omasa 2006, vertical beams, G = 0.5):
     ``PAD_i = -ln(1 - N_i) / (G dz)``, where ``N_i`` is the fraction of voxel
     columns not yet intercepted above layer ``i`` that are occupied in it.
+
+    Only points higher than ``min_height`` take part. The ground and what
+    lies on it are returns too: with them nearly every column is intercepted
+    in the bottom layer, which then reads as several units of plant area on
+    bare ground.
 
     Quick and needs only points, but it ignores beam direction and
     occlusion. For a path-length estimate use
@@ -179,14 +185,21 @@ def pad_profile_voxel(cloud: PointCloud, voxel_size: float = 0.5, height_attr: s
         Top of the profile; the highest point if None.
     clumping
         Factor the PAD is multiplied by (1 = none).
+    min_height
+        Points at or below this height above ground (m) are left out as
+        ground; one voxel (``voxel_size``) if None. Layers wholly below it
+        are 0. Pass 0 to count every point above the ground surface.
 
     Returns
     -------
     layer_bottoms, pad : numpy.ndarray
-        Heights (m) and plant area density (m² m⁻³).
+        Heights (m) and plant area density (m² m⁻³); both empty when no
+        point is above ``min_height``.
     """
     h = np.ascontiguousarray(cloud.heights(height_attr))
-    return _core.pad_profile_voxel(cloud.xyz, h, voxel_size, max_height, clumping)
+    if min_height is None:
+        min_height = voxel_size
+    return _core.pad_profile_voxel(cloud.xyz, h, voxel_size, max_height, clumping, float(min_height))
 
 
 def gap_fraction_zenith(shots: Shots, echo_heights: np.ndarray, min_height: float = 0.0,
@@ -264,7 +277,10 @@ def lai_from_gap_fraction(zenith_deg, gap_fraction, method: str = "hinge") -> fl
     """Effective PAI from directional gap fraction.
 
     ``"hinge"``: ``-ln P(57.5°) cos(57.5°) / 0.5`` (Wilson 1963).
-    ``"miller"``: ``2 ∫ -ln P(θ) cos θ sin θ dθ`` (Miller 1967).
+    ``"miller"``: ``2 ∫ -ln P(θ) cos θ sin θ dθ`` (Miller 1967), summed ring
+    by ring as ``Σ -ln P_r (sin² θ_hi - sin² θ_lo)``. Each ring's edges are
+    taken halfway to its neighbours' centres, the first and last ring
+    reaching as far out as in (within 0-90 degrees).
 
     NaN rings are skipped; a gap fraction of 0 (saturated ring, common in
     dense forest) is floored at 1e-5, so the result is large but finite.
@@ -278,7 +294,8 @@ def lai_from_gap_fraction(zenith_deg, gap_fraction, method: str = "hinge") -> fl
     method : {"hinge", "miller"}
         ``"hinge"`` uses the ring nearest 57.5 degrees, where the result is
         almost independent of leaf angle; ``"miller"`` needs rings covering
-        0-90 degrees.
+        0-90 degrees: what the rings do not cover is left out of the
+        integral, so the result is then an underestimate.
 
     Returns
     -------
@@ -662,15 +679,16 @@ class GapProfile:
     min_height: float = 0.5
 
     @classmethod
-    def empty(cls, zenith_edges=np.arange(5.0, 75.0, 5.0), n_azimuth: int = 36,
+    def empty(cls, zenith_edges=None, n_azimuth: int = 36,
               height_bin: float = 0.5, max_height: float = 80.0) -> "GapProfile":
         """Start an empty profile.
 
         Parameters
         ----------
         zenith_edges
-            Ring edges (degrees from up). The default, 5-75 degrees in 5 degree
-            rings, avoids the near-horizontal rings that see mostly stems.
+            Ring edges (degrees from up), copied. The default (None), 5-75
+            degrees in 5 degree rings (edges 5, 10, ..., 75), avoids the
+            near-horizontal rings that see mostly stems.
         n_azimuth
             Azimuth sectors per ring, used for the clumping index.
         height_bin
@@ -682,7 +700,9 @@ class GapProfile:
         -------
         GapProfile
         """
-        edges = np.asarray(zenith_edges, dtype=float)
+        if zenith_edges is None:
+            zenith_edges = np.linspace(5.0, 75.0, 15)
+        edges = np.array(zenith_edges, dtype=float)  # a copy: profiles do not share edges
         nh = int(np.ceil(max_height / height_bin))
         return cls(edges, int(n_azimuth), float(height_bin), np.zeros((len(edges) - 1, n_azimuth, nh)),
                    np.zeros((len(edges) - 1, n_azimuth)))

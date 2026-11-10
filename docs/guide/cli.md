@@ -115,7 +115,9 @@ To put a whole survey in one frame with a `transforms.json` or a folder of
 
 Classifies ground (`classification` 2), builds a DTM at `--resolution` (m),
 and writes the cloud with a `height` attribute. `--dtm` also writes the
-terrain (`.tif`, otherwise `.asc`).
+terrain (`.tif`, otherwise `.asc`). Write `.asc` when the DTM goes back
+into a `--dtm` option (`voxel`, `als-chm`, `als-normalize`, `als-trees`):
+those read ESRI ASCII grids only.
 
 ### `trees`
 
@@ -125,8 +127,8 @@ Runs detection, segmentation, heights, pruning and crown metrics on a
 height-normalised cloud and writes one CSV row per tree: `tree_id`, `x`,
 `y`, `dbh`, `height`, quality columns and the crown metrics. Without `-o` the
 CSV is written beside the input as `<input>_trees.csv`; `-o -` prints it to
-stdout. `--segment` writes the cloud with a `tree_id`
-attribute. `--voxel` is the thinning of the segmentation graph: the
+stdout. The header is written even when no tree is found. `--segment`
+writes the cloud with a `tree_id` attribute and every attribute of the input. `--voxel` is the thinning of the segmentation graph: the
 benchmarks run at 0.05 m, which halves the graph of a 2 cm plot and is
 what a plot of a few hundred million points needs to fit in memory.
 `--min-slenderness 10` drops stems wider than 0.2 m that are less than ten
@@ -144,14 +146,19 @@ of a height-normalised cloud and prints the canopy cover above 2 m.
 
 ### `pad`
 
-`sylva pad INPUT [--voxel 0.5]`: prints a `height,pad` CSV of the
-contact-frequency profile on stdout, and the PAI on stderr.
+`sylva pad INPUT [--voxel 0.5] [--min-height M]`: prints a `height,pad` CSV
+of the contact-frequency profile on stdout, and the PAI on stderr. Points at
+or below `--min-height` (m above ground; one voxel by default) are left out
+as ground, so the bottom layer and the PAI hold canopy only: with the ground
+returns in, nearly every column is "intercepted" in the lowest layer and
+bare ground alone reads as a PAI of several units. `--min-height 0` counts
+every point above the ground surface.
 
 ### `qsm`
 
-`sylva qsm INPUT OUTPUT [--bin-length 0.3]`: builds a cylinder model of one
+`sylva qsm INPUT OUTPUT [--bin-length 0.1]`: builds a cylinder model of one
 tree (ideally its wood points), writes the cylinders as CSV and prints the
-summary.
+summary. The shell width is that of `qsm.build_qsm` and `qsm-plot`.
 
 ### `qsm-plot`
 
@@ -191,7 +198,7 @@ memory stays small) or a ray cloud.
 |---|---|---|
 | `--voxel` | 0.1 | voxel size (m) |
 | `--bounds X0 Y0 Z0 X1 Y1 Z1` | echo extent | grid corners |
-| `--dtm` | none | ESRI ASCII terrain grid; gives ground echoes and `distance_from_ground` |
+| `--dtm` | none | ESRI ASCII terrain grid (`.asc`; a `.tif` is refused, since Sylva writes GeoTIFF but does not read it); gives ground echoes and `distance_from_ground` |
 | `--ground-class` | none | class code of ground echoes |
 | `--ground-distance` | 0.2 | echoes this close above the DTM are ground (m) |
 | `--leaf-classes`, `--wood-classes` | none | class codes for leaf and wood echoes |

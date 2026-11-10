@@ -31,6 +31,7 @@ import numpy as np
 
 from .. import _core
 from ..qsm import QSM, PlotQSMs
+from .trees import TreeMatch
 
 __all__ = ["QSMChange", "PlotQSMChange", "compare_qsms", "compare_plot_qsms"]
 
@@ -430,8 +431,9 @@ def _ids(values, name: str, width: int) -> list:
     return out
 
 
-def compare_plot_qsms(qsms_a, qsms_b, pairs: Iterable, deaths: Iterable = (), recruits: Iterable = (),
-                      grid_a=None, grid_b=None, **settings) -> PlotQSMChange:
+def compare_plot_qsms(qsms_a, qsms_b, pairs: Iterable | TreeMatch, deaths: Iterable | None = None,
+                      recruits: Iterable | None = None, grid_a=None, grid_b=None,
+                      **settings) -> PlotQSMChange:
     """Compare the QSMs of every tree of a plot between two epochs.
 
     Survivors are compared with :func:`compare_qsms`; a dead tree counts
@@ -446,12 +448,17 @@ def compare_plot_qsms(qsms_a, qsms_b, pairs: Iterable, deaths: Iterable = (), re
         ``{tree_id: QSM}``. A tree without a model gives a row with a note
         and no change.
     pairs
-        Survivors as ``(tree_id_a, tree_id_b)`` pairs, e.g. from a tree
-        match between the epochs.
+        The survivors: a :class:`TreeMatch` from :func:`match_trees`, or
+        ``(tree_id_a, tree_id_b)`` pairs of tree ids (the keys of the
+        models), as :meth:`TreeMatch.id_pairs` gives them. Not
+        :attr:`TreeMatch.pairs`, which holds positions in the tree lists,
+        not ids, and would pair each tree with another tree's model.
     deaths
-        Tree ids of epoch ``a`` that died.
+        Tree ids of epoch ``a`` that died; with a :class:`TreeMatch` and
+        None, its deaths (:meth:`TreeMatch.death_ids`), else none.
     recruits
-        Tree ids of epoch ``b`` that are new.
+        Tree ids of epoch ``b`` that are new; with a :class:`TreeMatch` and
+        None, its recruits (:meth:`TreeMatch.recruit_ids`), else none.
     grid_a, grid_b
         Optional ray-traced grids of the whole plot in each epoch, as for
         :func:`compare_qsms`.
@@ -473,12 +480,22 @@ def compare_plot_qsms(qsms_a, qsms_b, pairs: Iterable, deaths: Iterable = (), re
     >>> plot = change.compare_plot_qsms(qsms_2020, qsms_2025, pairs=[(1, 4), (2, 5)],
     ...                                 deaths=[3], recruits=[9], grid_b=grid_2025)
     >>> plot.totals["net_trusted_m3"]; plot.to_csv("qsm_change.csv")
+
+    From a tree match:
+
+    >>> m = change.match_trees(trees_2020, trees_2025, transform=alignment)
+    >>> plot = change.compare_plot_qsms(qsms_2020, qsms_2025, m, grid_b=grid_2025)
     """
     a_models = _models(qsms_a, "qsms_a")
     b_models = _models(qsms_b, "qsms_b")
+    if isinstance(pairs, TreeMatch):
+        match = pairs
+        pairs = match.id_pairs().tolist()
+        deaths = match.death_ids() if deaths is None else deaths
+        recruits = match.recruit_ids() if recruits is None else recruits
     pairs = _ids(pairs, "pairs", 2)
-    deaths = _ids(deaths, "deaths", 1)
-    recruits = _ids(recruits, "recruits", 1)
+    deaths = _ids(() if deaths is None else deaths, "deaths", 1)
+    recruits = _ids(() if recruits is None else recruits, "recruits", 1)
     used_a = [p[0] for p in pairs] + deaths
     used_b = [p[1] for p in pairs] + recruits
     for used, which in ((used_a, "a"), (used_b, "b")):

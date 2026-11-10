@@ -423,13 +423,39 @@ fn cloud_from_raw(raw: RawRxp) -> PointCloud {
     cloud
 }
 
+/// The MTA-resolved cloud with the echoes of each pulse next to each other,
+/// pulses in the order they were fired.
+///
+/// The MTA reader writes echoes in the order the scanner recorded them, and
+/// an echo resolved to zone 2 or beyond was recorded after a later pulse was
+/// fired: it carries its own pulse's time and indices but sits among the
+/// echoes of that later pulse. [`Shots::from_pointcloud`] joins only adjacent
+/// points of equal time, so left as it is such a pulse would come out as two
+/// shots, its far echo a first return of a pulse that was never fired. The
+/// sort is stable on (`scan_line_index`, `shot_index_line`), the pulse's own
+/// line and its position in it; lines are numbered -1, -2, ... in the order
+/// scanned. A cloud without those attributes is returned as it is.
+pub(crate) fn pulse_contiguous(cloud: PointCloud) -> PointCloud {
+    let (Some(line), Some(shot)) = (cloud.attr_f64("scan_line_index"), cloud.attr_f64("shot_index_line")) else {
+        return cloud;
+    };
+    // Line -1 is the first scanned, so the negated index grows with time.
+    let key = |i: usize| (-(line[i] as i64), shot[i] as i64);
+    if (1..cloud.len()).all(|i| key(i - 1) <= key(i)) {
+        return cloud;
+    }
+    let mut idx: Vec<usize> = (0..cloud.len()).collect();
+    idx.sort_by_key(|&i| key(i));
+    cloud.take(&idx)
+}
+
 /// Read an `.rxp` file as pulses. Echoes sharing a timestamp form one shot.
 /// With `fill_missing` the pulses that returned nothing follow the recorded
 /// ones as echo-less shots, and the report says what was recovered.
 pub fn read_rxp_shots_with_report(path: impl AsRef<Path>, opts: &RxpOptions) -> Result<(Shots, Option<MissReport>)> {
     if mta_active(opts) {
         if !opts.fill_missing {
-            let cloud = read_rxp(path, opts)?;
+            let cloud = pulse_contiguous(read_rxp(path, opts)?);
             return Ok((Shots::from_pointcloud(&cloud, [0.0, 0.0, 0.0]), None));
         }
         // The echoes assigned to their pulses by the MTA resolution first:
@@ -442,7 +468,7 @@ pub fn read_rxp_shots_with_report(path: impl AsRef<Path>, opts: &RxpOptions) -> 
         all.stride = 1;
         all.max_points = None;
         all.echoes = "all".into();
-        let cloud = super::rxp_mta::read_rxp_mta(path.as_ref(), &all, &all.mta)?;
+        let cloud = pulse_contiguous(super::rxp_mta::read_rxp_mta(path.as_ref(), &all, &all.mta)?);
         let shots = Shots::from_pointcloud(&cloud, [0.0, 0.0, 0.0]);
         let times = shots.echo_attrs.get("gps_time").map(|a| a.to_f64()).ok_or_else(|| Error::invalid("the MTA stream carries no gps_time"))?;
         let time_ns: Vec<u64> = shots.echo_start.iter().map(|&s| (times[s] * 1e9).round().max(0.0) as u64).collect();
@@ -478,4 +504,42 @@ fn with_misses(shots: Shots, misses: Vec<Point>) -> Result<Shots> {
 /// Read an `.rxp` file as pulses (see [`read_rxp_shots_with_report`]).
 pub fn read_rxp_shots(path: impl AsRef<Path>, opts: &RxpOptions) -> Result<Shots> {
     read_rxp_shots_with_report(path, opts).map(|(s, _)| s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mta_echoes_are_gathered_into_their_pulses() {
+        // Two lines. Pulse (line -1, shot 7) has a near echo recorded on it
+        // and a far one (zone 2) recorded on shot 8, after shot 8's own near
+        // echo; the last pulse of line -1 has a far echo recorded on the
+        // first shot of line -2. As the MTA reader writes them:
+        let rows: [(i32, i32, f64, f64); 7] = [
+            (-1, 7, 1.0, 10.0),
+            (-1, 8, 2.0, 5.0),
+            (-1, 7, 1.0, 90.0), // late echo of shot 7
+            (-1, 8, 2.0, 30.0),
+            (-2, 0, 3.0, 4.0),
+            (-1, 8, 2.0, 95.0), // late echo of the previous line's last pulse
+            (-2, 1, 4.0, 6.0),
+        ];
+        let mut cloud = PointCloud::new(rows.iter().map(|r| [0.0, 0.0, r.3]).collect());
+        cloud.attrs.insert("scan_line_index".into(), Attr::I32(rows.iter().map(|r| r.0).collect()));
+        cloud.attrs.insert("shot_index_line".into(), Attr::I32(rows.iter().map(|r| r.1).collect()));
+        cloud.attrs.insert("gps_time".into(), Attr::F64(rows.iter().map(|r| r.2).collect()));
+        // Joined as recorded, the four pulses fall apart into seven shots.
+        assert_eq!(Shots::from_pointcloud(&cloud, [0.0; 3]).n_shots(), 7);
+        let sorted = pulse_contiguous(cloud.clone());
+        assert_eq!(sorted.attr_f64("gps_time").unwrap(), vec![1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 4.0]);
+        let s = Shots::from_pointcloud(&sorted, [0.0; 3]);
+        assert_eq!(s.echo_count, vec![2, 3, 1, 1]);
+        assert_eq!(s.echo_range, vec![10.0, 90.0, 5.0, 30.0, 95.0, 4.0, 6.0]);
+        // Already in order, or without the indices: untouched.
+        assert_eq!(pulse_contiguous(sorted.clone()), sorted);
+        let mut plain = cloud.clone();
+        plain.attrs.remove("scan_line_index");
+        assert_eq!(pulse_contiguous(plain.clone()), plain);
+    }
 }

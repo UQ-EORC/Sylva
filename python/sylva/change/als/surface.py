@@ -65,8 +65,9 @@ class SurfaceChange:
         outside ``[lower, upper]`` and its ``lod`` is ``lod``).
     sensors
         Per survey (``"a"``, ``"b"``) and as compared after harmonisation
-        (``"a_compared"``, ``"b_compared"``): returns, pulses, area, pulse
-        density, returns per pulse, share of single-return pulses, mean
+        (``"a_compared"``, ``"b_compared"``): returns, pulses, area (m², the
+        10 m blocks holding first returns of that survey), pulse density
+        (pulses over that area), returns per pulse, share of single-return pulses, mean
         absolute scan angle and most returns per pulse.
     median_bias
         Median of ``bias`` over cells that are canopy (above 2 m) in both.
@@ -196,7 +197,11 @@ def surface_change(catalog_a, catalog_b, surface: str = "chm", resolution: float
     detection per cell.
 
     Both surveys are gridded in one pass with one algorithm (the highest
-    return per cell), each normalised by a DTM of its own ground returns.
+    return per cell), each normalised by a DTM of its own ground returns
+    (``surface="dsm"`` compares elevations and needs no ground returns).
+    Pulses are told apart by GPS time and flight line; where the GPS times
+    cannot do that (absent, all zero, or shared by many first returns) every
+    return counts as its own pulse.
 
     The highest of a cell's returns is a sample of its canopy: it falls
     short of the top by an amount that depends on the number of pulses and
@@ -266,8 +271,9 @@ def surface_change(catalog_a, catalog_b, surface: str = "chm", resolution: float
         Alignment uncertainty (m) when no ``alignment`` is given.
     chunk_size, buffer, workers
         As for :func:`sylva.als.apply`; the buffer is raised to hold whole
-        cells and the ground planes of the DTM under them (at least 16 m
-        plus a cell and two DTM cells), and with ``harmonise`` a
+        cells and the ground planes of the DTM under them (at least 16 m,
+        or 1.5 DTM cells if that is more, plus a cell and two DTM cells), and
+        with ``harmonise`` a
         ``density_cell`` as well.
 
     Returns
@@ -277,7 +283,8 @@ def surface_change(catalog_a, catalog_b, surface: str = "chm", resolution: float
     Raises
     ------
     ValueError
-        For bad settings, or if no chunk has ground returns in both surveys.
+        For bad settings, or (except for ``surface="dsm"``) if no chunk has
+        ground returns in both surveys.
     """
     a, b = _as_catalog(catalog_a), _as_catalog(catalog_b)
     if surface not in ("chm", "dsm", "dtm"):
@@ -377,7 +384,8 @@ def harmonise(catalog_a, catalog_b, out_a, out_b, density_cell: float = 10.0, se
     In each ``density_cell`` square (on a grid through the origin), the
     survey with more first returns keeps each of its pulses with probability
     ``n_other / n_own``, all returns of a pulse together, chosen by a hash of
-    the pulse (its GPS time and flight line) and ``seed``: the same pulses
+    the pulse (its GPS time and flight line; the return's own coordinates
+    where the GPS times do not tell pulses apart) and ``seed``: the same pulses
     whatever the tiling, and the same that :func:`surface_change` keeps with
     ``harmonise=True``. Tree detection and metrics on the thinned tiles then
     compare like with like.

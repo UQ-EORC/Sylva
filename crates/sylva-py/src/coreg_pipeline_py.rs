@@ -27,7 +27,7 @@ use sylva_rs::coreg::posegraph as pg;
 use sylva_rs::coreg::reflectors::{Reflector, ReflectorMatch};
 use sylva_rs::coreg::stemmap::StemRecord;
 use sylva_rs::coreg::survey as cs;
-use sylva_rs::util::relay::{quiet, relay, Log};
+use sylva_rs::util::relay::Log;
 use sylva_rs::trees::stems::StemParams;
 use sylva_rs::{Point, Transform};
 
@@ -101,24 +101,10 @@ fn f32_points_to_py<'py>(py: Python<'py>, p: &[Point]) -> Bound<'py, PyArray2<f3
 }
 
 /// Run `work` with a [`Log`] that calls `log` (a Python callable, or None
-/// for silence) on this thread; the first exception the callable raises is
-/// raised once the work is done.
+/// for silence) on this thread. An exception the callable raises, or Ctrl-C,
+/// stops the work at its next message and is raised ([`crate::interruptible`]).
 fn with_log<T: Send>(py: Python<'_>, log: Option<Py<PyAny>>, work: impl FnOnce(Log) -> T + Send) -> PyResult<T> {
-    let Some(log) = log else { return Ok(py.detach(|| work(&quiet))) };
-    let mut failed: Option<PyErr> = None;
-    let out = py.detach(|| {
-        relay(work, |msg| {
-            if failed.is_none() {
-                if let Err(e) = Python::attach(|py| log.call1(py, (msg,))) {
-                    failed = Some(e);
-                }
-            }
-        })
-    });
-    match failed {
-        Some(e) => Err(e),
-        None => Ok(out),
-    }
+    crate::interruptible(py, log, work)
 }
 
 // ------------------------------------------------------------------ config

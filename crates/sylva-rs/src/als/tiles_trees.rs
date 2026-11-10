@@ -525,6 +525,10 @@ pub fn segment_trees(cat: &Catalog, stems: &[Tree], out_dir: &Path, format: Opti
         if t.tree_id < 0 || !ids.insert(t.tree_id) {
             return Err(Error::invalid(format!("stem ids must be unique and non-negative; {} is not", t.tree_id)));
         }
+        // The tiles carry the id as a 32-bit integer; a larger one would wrap to another tree's.
+        if t.tree_id > i32::MAX as i64 {
+            return Err(Error::invalid(format!("stem id {} does not fit the 32-bit label written to the tiles (at most {}); renumber the stems", t.tree_id, i32::MAX)));
+        }
         if !(t.x.is_finite() && t.y.is_finite()) {
             return Err(Error::invalid(format!("stem {} has no position", t.tree_id)));
         }
@@ -644,14 +648,16 @@ pub fn segment_trees(cat: &Catalog, stems: &[Tree], out_dir: &Path, format: Opti
     }
 
     // Pruning over the tree list: the ids each old id becomes.
-    let max_id = trees_out.iter().map(|t| t.tree_id).max().unwrap_or(0).max(0);
-    let (final_trees, lut): (Vec<(usize, Tree)>, Vec<i64>) = match &s.prune {
+    // Old id to final id, held per tree and not per possible id, so that
+    // sparse ids (a plot numbered from a million) cost nothing.
+    let (final_trees, lut): (Vec<(usize, Tree)>, HashMap<i64, i64>) = match &s.prune {
         Some(p) if !trees_out.is_empty() => {
-            let all: Vec<i64> = (0..=max_id).collect();
-            let (kept, lut) = prune_trees(&trees_out, &all, p)?;
+            let old: Vec<i64> = trees_out.iter().map(|t| t.tree_id).collect();
+            let (kept, new) = prune_trees(&trees_out, &old, p)?;
+            let lut: HashMap<i64, i64> = old.iter().copied().zip(new).collect();
             let mut n_new: HashMap<i64, usize> = HashMap::new();
             for t in &trees_out {
-                let new = lut[t.tree_id as usize];
+                let new = lut[&t.tree_id];
                 if new >= 0 {
                     *n_new.entry(new).or_default() += t.n_points;
                 }
@@ -662,15 +668,9 @@ pub fn segment_trees(cat: &Catalog, stems: &[Tree], out_dir: &Path, format: Opti
             }).collect();
             (kept, lut)
         }
-        _ => {
-            let mut lut = vec![-1i64; max_id as usize + 1];
-            for t in &trees_out {
-                lut[t.tree_id as usize] = t.tree_id;
-            }
-            (trees_out.iter().enumerate().map(|(i, t)| (input_index[i], t.clone())).collect(), lut)
-        }
+        _ => (trees_out.iter().enumerate().map(|(i, t)| (input_index[i], t.clone())).collect(), trees_out.iter().map(|t| (t.tree_id, t.tree_id)).collect()),
     };
-    let map = |l: i64| if l >= 0 && (l as usize) < lut.len() { lut[l as usize] } else { -1 };
+    let map = |l: i64| lut.get(&l).copied().unwrap_or(-1);
 
     // The tiles, with the final ids.
     let (chunks_w, ww) = tiles::prepare(cat, Some(out_dir), format, 0.0, workers)?;
@@ -1055,6 +1055,34 @@ mod tests {
                 assert_eq!(t.len(), e.n_points);
             }
         }
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn sparse_ids_are_kept_and_ids_too_large_for_the_tiles_refused() {
+        let d = tmp("ids");
+        let (cloud, stems) = forest();
+        let (cat, _) = tiled(&cloud, &d.join("in"), 15.0);
+        let seg = SegmentParams { voxel_size: 0.1, voxel_origin: Some([0.0; 3]), understorey_height: 0.0, ..Default::default() };
+        let s = TreeTiling { segment: seg, percentile: 99.0, buffer: 20.0, max_buffer: 40.0, ..Default::default() };
+        let dense = segment_trees(&cat, &stems, &d.join("dense"), None, &s, 2).unwrap();
+        // The same stems numbered from seven million in steps of a thousand.
+        let renumber = |id: i64| 7_000_000 + 1000 * id;
+        let sparse_stems: Vec<Tree> = stems.iter().map(|t| Tree { tree_id: renumber(t.tree_id), ..t.clone() }).collect();
+        let sparse = segment_trees(&cat, &sparse_stems, &d.join("sparse"), None, &s, 2).unwrap();
+        let labels = |paths: &[PathBuf]| by_pid(&merge_clouds(paths.iter().map(|p| crate::io::read(p).unwrap()).collect()), "tree_id");
+        let (a, b) = (labels(&dense.paths), labels(&sparse.paths));
+        assert!(a.values().any(|&l| l >= 0.0));
+        assert_eq!(a.len(), b.len());
+        for (pid, &l) in &a {
+            assert_eq!(b[pid], if l >= 0.0 { renumber(l as i64) as f64 } else { -1.0 }, "point {pid}");
+        }
+        assert_eq!(sparse.trees.iter().map(|(_, t)| t.tree_id).collect::<Vec<_>>(), dense.trees.iter().map(|(_, t)| renumber(t.tree_id)).collect::<Vec<_>>());
+        // An id the 32-bit label cannot hold would be written as another number.
+        let mut big = stems.clone();
+        big[0].tree_id = i32::MAX as i64 + 5;
+        let e = segment_trees(&cat, &big, &d.join("big"), None, &s, 2).unwrap_err().to_string();
+        assert!(e.contains("32-bit"), "{e}");
         let _ = fs::remove_dir_all(&d);
     }
 

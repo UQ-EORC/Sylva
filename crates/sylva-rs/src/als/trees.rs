@@ -422,13 +422,17 @@ pub fn local_maxima_points(xy: &[[f64; 2]], h: &[f64], window: &Window, hmin: f6
 /// tops in one cell the highest (then the first) is kept. `tops` are
 /// `(x, y, height)`; seed `k` is `tops[k]`, id `k + 1`.
 pub fn seed_raster(chm: &Raster, tops: &[[f64; 3]]) -> Vec<u32> {
+    seed_raster_by(chm, tops, |x, y| {
+        let (r, c) = chm.cell_index(x, y);
+        chm.in_bounds(r, c).then(|| r as usize * chm.ncols + c as usize)
+    })
+}
+
+/// [`seed_raster`] with the cell of a position found by `cell`.
+fn seed_raster_by(chm: &Raster, tops: &[[f64; 3]], cell: impl Fn(f64, f64) -> Option<usize>) -> Vec<u32> {
     let mut seeds = vec![0u32; chm.data.len()];
     for (k, t) in tops.iter().enumerate() {
-        let (r, c) = chm.cell_index(t[0], t[1]);
-        if !chm.in_bounds(r, c) {
-            continue;
-        }
-        let i = r as usize * chm.ncols + c as usize;
+        let Some(i) = cell(t[0], t[1]) else { continue };
         if seeds[i] == 0 || t[2] > tops[seeds[i] as usize - 1][2] {
             seeds[i] = k as u32 + 1;
         }
@@ -1078,11 +1082,74 @@ pub struct Tree {
     pub crown: Vec<[f64; 2]>,
 }
 
-/// A tree top as a key: its exact coordinates.
-type TopKey = [u64; 3];
+/// A tree top as a key that every chunk seeing the top agrees on.
+///
+/// A top on a CHM cell is known by the cell, counted in whole cells from
+/// the origin of the coordinates (every chunk's CHM lies on multiples of
+/// the resolution). Its centre's coordinates will not do: each chunk works
+/// them out from its own raster's corner, and for a resolution that is not
+/// a power of two (0.1, 0.2, 0.3 m) the last bit differs between chunks.
+/// A point top is the same stored point in every chunk, so its exact
+/// coordinates and height identify it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum TopKey {
+    /// `(column, row)` of the CHM cell, in cells from the coordinate origin.
+    Cell(i64, i64),
+    /// Bit patterns of a point top's x, y and height.
+    Point([u64; 3]),
+}
 
 fn top_key(x: f64, y: f64, h: f64) -> TopKey {
-    [x.to_bits(), y.to_bits(), h.to_bits()]
+    TopKey::Point([x.to_bits(), y.to_bits(), h.to_bits()])
+}
+
+/// Row-major index of the cell of `chm` holding `(x, y)` (m), None outside
+/// it or for a coordinate that is not finite.
+///
+/// The cell is counted from the origin of the coordinates, `floor(x /
+/// resolution)`, less the raster's own first cell, and not from the raster's
+/// corner as [`Raster::cell_index`] counts it. The two agree except for a
+/// point on a cell edge, which the corner-relative count can put on either
+/// side depending on the corner: with coordinates stored to the millimetre
+/// and a 0.1 m grid that is one point in a hundred, and two chunks would
+/// build different canopy models from the same points. `chm` must lie on
+/// multiples of its resolution, as every CHM here does.
+fn cell_of(chm: &Raster, x: f64, y: f64) -> Option<usize> {
+    let res = chm.resolution;
+    let (fc, fr) = ((x / res).floor(), (y / res).floor());
+    if !(fc.abs() < 9.0e15 && fr.abs() < 9.0e15) {
+        return None;
+    }
+    let col = fc as i64 - (chm.xmin / res).round() as i64;
+    let row = fr as i64 - (chm.ymin / res).round() as i64;
+    chm.in_bounds(row, col).then(|| row as usize * chm.ncols + col as usize)
+}
+
+/// The canopy height model of [`ground::make_chm`] over `bounds` (highest
+/// height per cell, 0 where nothing is at or above 0 m), with every point
+/// binned by [`cell_of`] so that chunks sharing a cell give it one value.
+fn chm_on_grid(xyz: &[Point], h: &[f64], resolution: f64, bounds: (f64, f64, f64, f64)) -> Result<Raster> {
+    let mut chm = Raster::from_points(std::iter::empty(), std::iter::empty(), resolution, crate::raster::Reducer::Max, Some(bounds), 0.0)?;
+    for (q, &v) in xyz.iter().zip(h) {
+        if v >= 0.0 {
+            if let Some(c) = cell_of(&chm, q[0], q[1]) {
+                if v > chm.data[c] {
+                    chm.data[c] = v;
+                }
+            }
+        }
+    }
+    Ok(chm)
+}
+
+/// `(column, row)` of cell `c` (row-major) of `chm` counted from the
+/// coordinate origin, and its centre (m) worked out from those counts, so
+/// that both are the same to the bit from any raster on the same grid.
+fn global_cell(chm: &Raster, c: usize) -> ((i64, i64), (f64, f64)) {
+    let res = chm.resolution;
+    let col = (chm.xmin / res).round() as i64 + (c % chm.ncols) as i64;
+    let row = (chm.ymin / res).round() as i64 + (c / chm.ncols) as i64;
+    ((col, row), ((col as f64 + 0.5) * res, (row as f64 + 0.5) * res))
 }
 
 /// What a segmentation of one chunk gives.
@@ -1141,15 +1208,15 @@ fn segment_points(xyz: &[Point], h: &[f64], is_core: &[bool], chm_bounds: (f64, 
         }
         _ => {
             // The raw CHM gives the heights of CHM tops; the smoothed one the tops and crowns.
-            let raw = if p.uses_chm() { Some(ground::make_chm(xyz, h, p.resolution, Some(chm_bounds), 0.0)?) } else { None };
+            let raw = if p.uses_chm() { Some(chm_on_grid(xyz, h, p.resolution, chm_bounds)?) } else { None };
             let chm = raw.as_ref().map(|r| if p.smooth > 0 { r.smooth(p.smooth) } else { r.clone() });
             match p.tops_from {
                 TopsFrom::Chm => {
                     let (chm, raw) = (chm.as_ref().expect("a CHM for CHM tops"), raw.as_ref().expect("a CHM"));
                     for c in local_maxima_raster(chm, &p.window, p.hmin, p.shape)? {
-                        let (x, y) = chm.cell_center(c / chm.ncols, c % chm.ncols);
+                        let ((col, row), (x, y)) = global_cell(chm, c);
                         let z = raw.data[c];
-                        keys.push(top_key(x, y, z));
+                        keys.push(TopKey::Cell(col, row));
                         tops.push([x, y, z]);
                         owned.push(owns_cell(x, y));
                     }
@@ -1163,7 +1230,7 @@ fn segment_points(xyz: &[Point], h: &[f64], is_core: &[bool], chm_bounds: (f64, 
                 }
             }
             if let Some(chm) = chm {
-                let seeds = seed_raster(&chm, &tops);
+                let seeds = seed_raster_by(&chm, &tops, |x, y| cell_of(&chm, x, y));
                 let crowns = match p.method {
                     Method::Watershed { th_tree } => Some(watershed(&chm, &seeds, th_tree)?),
                     Method::Dalponte(d) => Some(dalponte2016(&chm, &seeds, &d)?),
@@ -1172,9 +1239,8 @@ fn segment_points(xyz: &[Point], h: &[f64], is_core: &[bool], chm_bounds: (f64, 
                 if let Some(crowns) = crowns {
                     for i in 0..n {
                         if labelled(i) {
-                            let (r, c) = chm.cell_index(xy[i][0], xy[i][1]);
-                            if chm.in_bounds(r, c) {
-                                labels[i] = crowns[r as usize * chm.ncols + c as usize];
+                            if let Some(c) = cell_of(&chm, xy[i][0], xy[i][1]) {
+                                labels[i] = crowns[c];
                             }
                         }
                     }
@@ -1682,6 +1748,49 @@ mod tests {
                 assert_eq!(got.unmatched_points, 0);
                 let back: usize = got.written.iter().map(|p| crate::io::read(p).unwrap().len()).sum();
                 assert_eq!(back, merged.len());
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_catalogue_keeps_whole_crowns_at_any_resolution() {
+        use crate::als::{read_region, Layout};
+        use crate::als::ops::write_tiles;
+        use crate::io::las::LasWriteOptions;
+        // Cones on a 6 m lattice over 2 x 2 tiles in UTM coordinates, so
+        // that many crowns cross a tile edge. Resolutions that are not a
+        // power of two must label them as whole as 0.5 m does.
+        let (ox, oy) = (512_345.67, 6_234_567.89);
+        let mut s = 12345u64;
+        let mut u = move || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            (s >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut xyz = Vec::new();
+        for _ in 0..250_000 {
+            let (x, y) = (ox + 60.0 * u(), oy + 60.0 * u());
+            let (cx, cy) = (((x - ox) / 6.0).round() * 6.0 + ox + 0.13, ((y - oy) / 6.0).round() * 6.0 + oy + 0.07);
+            xyz.push([x, y, (12.0 - 3.0 * (x - cx).hypot(y - cy)).max(0.0)]);
+        }
+        let dir = std::env::temp_dir().join(format!("sylva-als-trees-res-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        #[allow(clippy::needless_update)]
+        let wo = LasWriteOptions { point_format: 6, scale: 0.001, ..Default::default() };
+        let tiles = write_tiles(&crate::PointCloud::new(xyz), &dir.join("in"), 30.0, None, "las", &wo, None).unwrap();
+        let cat = Catalog::open(&tiles.iter().map(|t| t.0.clone()).collect::<Vec<_>>());
+        let merged = read_region(&cat, [ox - 1.0, oy - 1.0, ox + 61.0, oy + 61.0]).unwrap();
+        let h: Vec<f64> = merged.xyz.iter().map(|q| q[2]).collect();
+        for res in [0.5, 0.1, 0.2, 0.3] {
+            let p = TreeParams { method: Method::Watershed { th_tree: 1.0 }, resolution: res, window: Window::Fixed(4.0), ..Default::default() };
+            let (whole, _) = segment_cloud(&merged.xyz, &h, &p).unwrap();
+            for layout in [Layout::Tiles, Layout::Grid { size: 17.0, origin: None }] {
+                let got = catalog_trees(&cat, &p, &Heights::Z, Some(&dir.join(format!("out{res}"))), "tree", Some("las"), &RunOptions { layout, buffer: 20.0, workers: 2 }).unwrap();
+                assert_eq!(got.unmatched_points, 0, "resolution {res} {layout:?}");
+                assert_eq!(got.trees.len(), whole.len(), "resolution {res} {layout:?}");
+                assert_eq!(got.trees.iter().map(|t| t.n_points).sum::<usize>(), whole.iter().map(|t| t.n_points).sum::<usize>(), "resolution {res} {layout:?}");
             }
         }
         let _ = std::fs::remove_dir_all(&dir);

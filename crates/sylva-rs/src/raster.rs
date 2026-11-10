@@ -118,10 +118,23 @@ impl Raster {
         self.data[row * self.ncols + col] = v;
     }
 
-    /// `(row, col)` of the cell containing `(x, y)`, possibly out of range.
+    /// `(row, col)` of the cell containing `(x, y)` (m), possibly out of range.
+    ///
+    /// A coordinate that is NaN or infinite gives `i64::MIN` for its index,
+    /// which [`Raster::in_bounds`] rejects, so that a point without a
+    /// position is never binned into row or column 0 (a bare float-to-integer
+    /// cast turns NaN into 0).
     #[inline]
     pub fn cell_index(&self, x: f64, y: f64) -> (i64, i64) {
-        (((y - self.ymin) / self.resolution).floor() as i64, ((x - self.xmin) / self.resolution).floor() as i64)
+        let cast = |v: f64| -> i64 {
+            let f = v.floor();
+            if (-9.223_372_036_854_776e18..9.223_372_036_854_776e18).contains(&f) {
+                f as i64
+            } else {
+                i64::MIN
+            }
+        };
+        (cast((y - self.ymin) / self.resolution), cast((x - self.xmin) / self.resolution))
     }
 
     #[inline]
@@ -159,7 +172,28 @@ impl Raster {
         xy.map(|(x, y)| self.sample(x, y)).collect()
     }
 
-    /// Rasterise point values. `bounds` is `(xmin, ymin, xmax, ymax)`.
+    /// Rasterise point values on a grid of `resolution` m cells.
+    ///
+    /// `bounds` is `(xmin, ymin, xmax, ymax)` in metres. The grid's corner is
+    /// exactly `(xmin, ymin)` and it has `floor((xmax - xmin) / resolution) + 1`
+    /// columns (rows likewise), so that a point lying exactly at `xmax` has a
+    /// cell. The consequence to know about: when the extent is a whole number
+    /// of cells, the grid is one column and one row larger than
+    /// `extent / resolution` - bounds `(0, 0, 20, 20)` at 0.5 m give 41 x 41
+    /// cells reaching to 20.5 m. For exactly `n` columns from `xmin`, pass
+    /// `xmax = xmin + (n - 0.5) * resolution`, as the catalogue engine does.
+    /// Points outside the grid are left out.
+    ///
+    /// Without `bounds` the grid covers the points with finite coordinates:
+    /// its corner is their minimum snapped down to a multiple of
+    /// `resolution`, and the same `floor + 1` rule holds their maximum.
+    ///
+    /// A point with a NaN or infinite coordinate is ignored.
+    ///
+    /// # Errors
+    /// A `resolution` that is not a positive, finite number; non-finite or
+    /// reversed `bounds`; or, without `bounds`, no point with finite
+    /// coordinates.
     pub fn from_points(
         xy: impl Iterator<Item = (f64, f64)> + Clone,
         values: impl Iterator<Item = f64>,
@@ -168,12 +202,23 @@ impl Raster {
         bounds: Option<(f64, f64, f64, f64)>,
         fill: f64,
     ) -> Result<Raster> {
+        if !(resolution.is_finite() && resolution > 0.0) {
+            return Err(Error::invalid(format!("resolution must be a positive number of metres, got {resolution}")));
+        }
         let (xmin, ymin, xmax, ymax) = match bounds {
-            Some(b) => b,
+            Some(b) => {
+                if !(b.0.is_finite() && b.1.is_finite() && b.2.is_finite() && b.3.is_finite()) || b.2 < b.0 || b.3 < b.1 {
+                    return Err(Error::invalid(format!("bounds must be finite (xmin, ymin, xmax, ymax), got {b:?}")));
+                }
+                b
+            }
             None => {
                 let mut lo = (f64::INFINITY, f64::INFINITY);
                 let mut hi = (f64::NEG_INFINITY, f64::NEG_INFINITY);
                 for (x, y) in xy.clone() {
+                    if !(x.is_finite() && y.is_finite()) {
+                        continue;
+                    }
                     lo.0 = lo.0.min(x);
                     lo.1 = lo.1.min(y);
                     hi.0 = hi.0.max(x);
@@ -352,20 +397,34 @@ impl Raster {
         out
     }
 
+    /// `f` (a minimum or a maximum) over the finite cells of the square
+    /// window of `half` cells around each cell; NaN where the window holds
+    /// none. Minimum and maximum over a square are those over its rows and
+    /// then over the columns of the result, exactly, so the work is two
+    /// passes of `2 half + 1` cells and not one of `(2 half + 1)^2`.
     fn window_reduce(&self, half: usize, f: fn(f64, f64) -> f64, init: f64) -> Raster {
-        let mut out = self.clone();
-        for r in 0..self.nrows {
-            for c in 0..self.ncols {
+        let (nr, nc) = (self.nrows, self.ncols);
+        let mut rows = vec![init; self.data.len()];
+        for r in 0..nr {
+            for c in 0..nc {
                 let mut v = init;
-                for rr in r.saturating_sub(half)..=(r + half).min(self.nrows - 1) {
-                    for cc in c.saturating_sub(half)..=(c + half).min(self.ncols - 1) {
-                        let x = self.get(rr, cc);
-                        if x.is_finite() {
-                            v = f(v, x);
-                        }
+                for cc in c.saturating_sub(half)..=(c + half).min(nc - 1) {
+                    let x = self.data[r * nc + cc];
+                    if x.is_finite() {
+                        v = f(v, x);
                     }
                 }
-                out.set(r, c, if v.is_finite() { v } else { f64::NAN });
+                rows[r * nc + c] = v;
+            }
+        }
+        let mut out = self.clone();
+        for r in 0..nr {
+            for c in 0..nc {
+                let mut v = init;
+                for rr in r.saturating_sub(half)..=(r + half).min(nr - 1) {
+                    v = f(v, rows[rr * nc + c]);
+                }
+                out.data[r * nc + c] = if v.is_finite() { v } else { f64::NAN };
             }
         }
         out
@@ -491,6 +550,80 @@ mod tests {
         let flat = Raster::filled(3, 3, 0.0, 0.0, 1.0, 7.0).hillshade(315.0, 30.0, 1.0);
         for v in flat.data {
             assert!((v - 255.0 * 0.5).abs() < 1e-9, "{v}");
+        }
+    }
+
+    #[test]
+    fn a_point_without_a_position_is_not_binned() {
+        // UTM-scale coordinates; the second point has no easting.
+        let xy = [(512_010.0, 6_234_010.0), (f64::NAN, 6_234_010.2), (512_012.0, 6_234_012.0), (512_011.0, f64::INFINITY)];
+        let b = Some((512_000.0, 6_234_000.0, 512_020.0, 6_234_020.0));
+        let r = Raster::from_points(xy.iter().copied(), [1.0, 30.0, 2.0, 40.0].into_iter(), 1.0, Reducer::Max, b, 0.0).unwrap();
+        assert_eq!(r.data.iter().cloned().fold(0.0, f64::max), 2.0);
+        assert_eq!(r.get(10, 0), 0.0);
+        assert_eq!(r.cell_index(f64::NAN, 6_234_010.2), (10, i64::MIN));
+        assert!(!r.in_bounds(10, i64::MIN));
+        // Without bounds the extent is that of the points that have one.
+        let free = Raster::from_points(xy.iter().copied(), [1.0, 30.0, 2.0, 40.0].into_iter(), 1.0, Reducer::Max, None, 0.0).unwrap();
+        assert_eq!((free.nrows, free.ncols, free.xmin, free.ymin), (3, 3, 512_010.0, 6_234_010.0));
+    }
+
+    #[test]
+    fn bad_resolutions_and_bounds_are_refused() {
+        let xy = [(512_010.0, 6_234_010.0)];
+        for res in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(Raster::from_points(xy.iter().copied(), [1.0].into_iter(), res, Reducer::Max, None, 0.0).is_err(), "{res}");
+        }
+        for b in [(0.0, 0.0, f64::NAN, 1.0), (5.0, 0.0, 1.0, 1.0), (0.0, 0.0, f64::INFINITY, 1.0)] {
+            assert!(Raster::from_points(xy.iter().copied(), [1.0].into_iter(), 1.0, Reducer::Max, Some(b), 0.0).is_err(), "{b:?}");
+        }
+        // The documented size: a whole number of cells gets one more each way.
+        let r = Raster::from_points(xy.iter().copied(), [1.0].into_iter(), 0.5, Reducer::Max, Some((0.0, 0.0, 20.0, 20.0)), 0.0).unwrap();
+        assert_eq!((r.nrows, r.ncols, r.xmax()), (41, 41, 20.5));
+        let r = Raster::from_points(xy.iter().copied(), [1.0].into_iter(), 0.5, Reducer::Max, Some((0.0, 0.0, 19.75, 19.75)), 0.0).unwrap();
+        assert_eq!((r.nrows, r.ncols, r.xmax()), (40, 40, 20.0));
+    }
+
+    #[test]
+    fn opening_is_that_of_the_whole_window() {
+        // The two-pass minimum and maximum against the window taken whole.
+        let mut s = 7u64;
+        let mut unit = || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            (s >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut r = Raster::filled(23, 31, 512_000.0, 6_234_000.0, 0.5, 0.0);
+        for v in r.data.iter_mut() {
+            let u = unit();
+            *v = if u < 0.15 { f64::NAN } else { 100.0 * u };
+        }
+        for v in r.data[..31 * 4].iter_mut() {
+            *v = f64::NAN;
+        }
+        let whole = |src: &Raster, half: usize, f: fn(f64, f64) -> f64, init: f64| {
+            let mut out = src.clone();
+            for row in 0..src.nrows {
+                for col in 0..src.ncols {
+                    let mut v = init;
+                    for rr in row.saturating_sub(half)..=(row + half).min(src.nrows - 1) {
+                        for cc in col.saturating_sub(half)..=(col + half).min(src.ncols - 1) {
+                            let x = src.get(rr, cc);
+                            if x.is_finite() {
+                                v = f(v, x);
+                            }
+                        }
+                    }
+                    out.set(row, col, if v.is_finite() { v } else { f64::NAN });
+                }
+            }
+            out
+        };
+        for half in [0, 1, 3, 40] {
+            let expect = whole(&whole(&r, half, f64::min, f64::INFINITY), half, f64::max, f64::NEG_INFINITY);
+            let got = r.grey_opening(half);
+            assert!(got.data.iter().zip(&expect.data).all(|(a, b)| a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan())), "half {half}");
         }
     }
 

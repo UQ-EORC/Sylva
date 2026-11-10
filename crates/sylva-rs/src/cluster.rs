@@ -609,9 +609,26 @@ pub fn knn_graph(points: &[Point], k: usize, max_distance: f64) -> Graph<'static
     Graph::from_adjacency(adj)
 }
 
-/// Graph linking all point pairs closer than `radius`.
+/// Graph linking all point pairs closer than `radius` (m), each edge stored
+/// with its length.
+///
+/// The number of edges is not known from the point count - it grows with
+/// the cube of `radius` in a dense cloud - so the neighbours are counted
+/// first and the graph refused when it would not fit in memory (about 40
+/// bytes an edge while it is built). To label connected pieces only,
+/// [`euclidean_clusters`] stores no edges at all.
+///
+/// # Panics
+/// When the graph would exceed the memory budget of [`crate::util::limits`],
+/// with a message saying what it needs.
 pub fn radius_graph(points: &[Point], radius: f64) -> Graph<'static> {
     let tree = KdTree::new(points);
+    let edges: u128 = points.par_iter().map(|p| tree.count_within(p, radius).saturating_sub(1) as u128).sum();
+    if let Err(e) = crate::util::limits::check_cells(edges, 40, &format!("a graph of {edges} edges within {radius} m over {} points", points.len()), "a smaller radius or a thinned cloud (filters.voxel_downsample)") {
+        // As for the k-neighbour graphs: refusing loudly is better than the
+        // machine going down.
+        panic!("{e}");
+    }
     let adj: Vec<Vec<(u32, f64)>> = points
         .par_iter()
         .enumerate()
@@ -651,15 +668,63 @@ pub fn connected_components(graph: &Graph) -> (usize, Vec<usize>) {
     (count, label)
 }
 
-/// Euclidean clustering: connected components of the radius graph.
+/// Connected pieces of the points joined wherever two are within `radius`
+/// (m): the number of pieces and the piece of each point, numbered in the
+/// order their first points come.
+///
+/// The pieces are those of [`connected_components`] on [`radius_graph`],
+/// found without the graph: the neighbours of a batch of points are
+/// searched, merged into a union-find forest and dropped, so memory stays
+/// at a few words a point however many neighbours each has.
+pub fn radius_components(points: &[Point], radius: f64) -> (usize, Vec<usize>) {
+    let n = points.len();
+    assert!(n <= u32::MAX as usize, "clustering is limited to {} points, got {n}", u32::MAX);
+    let tree = KdTree::new(points);
+    let mut parent: Vec<u32> = (0..n as u32).collect();
+    // Batches small enough that their neighbour lists are a modest block
+    // even at a thousand neighbours a point.
+    const BATCH: usize = 1 << 14;
+    let mut start = 0;
+    while start < n {
+        let end = (start + BATCH).min(n);
+        let found: Vec<Vec<u32>> = (start..end).into_par_iter().map(|i| tree.within(&points[i], radius).into_iter().filter(|&(j, _)| j > i).map(|(j, _)| j as u32).collect()).collect();
+        for (k, list) in found.into_iter().enumerate() {
+            let a = find(&mut parent, (start + k) as u32);
+            for j in list {
+                let b = find(&mut parent, j);
+                if a != b {
+                    parent[b as usize] = a;
+                }
+            }
+        }
+        start = end;
+    }
+    let mut id = vec![usize::MAX; n];
+    let mut label = vec![0usize; n];
+    let mut count = 0;
+    for i in 0..n {
+        let r = find(&mut parent, i as u32) as usize;
+        if id[r] == usize::MAX {
+            id[r] = count;
+            count += 1;
+        }
+        label[i] = id[r];
+    }
+    (count, label)
+}
+
+/// Euclidean clustering: the points joined wherever two are within `radius`
+/// (m), as connected components of the radius graph.
 ///
 /// Returns a label per point; clusters smaller than `min_points` get `-1`.
-/// Labels are ordered by decreasing cluster size.
+/// Labels are ordered by decreasing cluster size, equal sizes in the order
+/// of their first points. No graph is stored ([`radius_components`]), so a
+/// dense cloud with thousands of neighbours a point costs time, not memory.
 pub fn euclidean_clusters(points: &[Point], radius: f64, min_points: usize) -> Vec<i64> {
     if points.is_empty() {
         return Vec::new();
     }
-    let (count, labels) = connected_components(&radius_graph(points, radius));
+    let (count, labels) = radius_components(points, radius);
     let mut sizes = vec![0usize; count];
     for &l in &labels {
         sizes[l] += 1;
@@ -875,6 +940,42 @@ mod tests {
         let base = directed_knn_graph(&dense, 6, 1.0, 6.0, true);
         assert_eq!(connected_components(&base).0, 1);
         assert_eq!(same.neighbors, base.neighbors);
+    }
+
+    #[test]
+    fn clusters_without_a_graph_are_those_of_the_graph() {
+        // Clumps of very different sizes at UTM-scale coordinates, with coincident points.
+        let mut rng = Rng::new(21);
+        let mut unit = || (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
+        let mut pts: Vec<Point> = Vec::new();
+        for c in 0..40 {
+            let centre = [512_000.0 + 30.0 * unit(), 6_234_000.0 + 30.0 * unit(), 300.0 + 5.0 * unit()];
+            for _ in 0..(5 + 37 * c % 211) {
+                pts.push([centre[0] + 0.6 * unit(), centre[1] + 0.6 * unit(), centre[2] + 0.6 * unit()]);
+            }
+        }
+        for i in 0..50 {
+            pts.push(pts[i * 3]);
+        }
+        for radius in [0.05, 0.2, 0.7] {
+            let (count, labels) = radius_components(&pts, radius);
+            assert_eq!((count, labels.clone()), connected_components(&radius_graph(&pts, radius)), "radius {radius}");
+            // The labels of the clustering, as it gave them from the graph.
+            let mut sizes = vec![0usize; count];
+            labels.iter().for_each(|&l| sizes[l] += 1);
+            let mut order: Vec<usize> = (0..count).collect();
+            order.sort_by_key(|&c| std::cmp::Reverse(sizes[c]));
+            let mut remap = vec![-1i64; count];
+            let mut next = 0;
+            for c in order {
+                if sizes[c] >= 10 {
+                    remap[c] = next;
+                    next += 1;
+                }
+            }
+            assert_eq!(euclidean_clusters(&pts, radius, 10), labels.iter().map(|&l| remap[l]).collect::<Vec<_>>());
+        }
+        assert_eq!(radius_components(&[], 1.0), (0, Vec::new()));
     }
 
     #[test]

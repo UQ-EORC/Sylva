@@ -45,8 +45,8 @@ def icp(source: PointCloud, target: PointCloud, init: np.ndarray | None = None,
 
     ``method`` is ``"point"`` (point-to-point, Besl & McKay 1992) or
     ``"plane"`` (point-to-plane, Chen & Medioni 1992, linearised as in Low
-    2004; normals from ``target.attrs['nx','ny','nz']`` if present, else
-    PCA). ``trim`` keeps that fraction of closest correspondences per
+    2004; normals from ``target.attrs['nx','ny','nz']`` if all three are
+    present, else PCA). ``trim`` keeps that fraction of closest correspondences per
     iteration (trimmed ICP for partial overlap, Chetverikov et al. 2002).
 
     Parameters
@@ -67,6 +67,7 @@ def icp(source: PointCloud, target: PointCloud, init: np.ndarray | None = None,
         Stop when the RMSE changes less than this.
     method : {"point", "plane"}
         Error metric; point-to-plane converges faster on stems and ground.
+        Any other name raises ``ValueError``.
     trim
         Fraction of pairs kept (0-1).
     normal_k
@@ -85,8 +86,12 @@ def icp(source: PointCloud, target: PointCloud, init: np.ndarray | None = None,
     no more accurate. Check the result with :func:`sylva.quality.stem_noise`.
     """
     init = None if init is None else np.ascontiguousarray(init, dtype=float)
+    normals = None
+    if method == "plane" and all(k in target.attrs for k in ("nx", "ny", "nz")):
+        normals = np.ascontiguousarray(
+            np.column_stack([target.attrs["nx"], target.attrs["ny"], target.attrs["nz"]]), dtype=float)
     return _core.icp(source.xyz, target.xyz, init, max_correspondence_distance, max_iterations,
-                     tolerance, method, trim, normal_k)
+                     tolerance, method, trim, normal_k, normals)
 
 
 def estimate_normals(cloud: PointCloud, k: int = 12) -> np.ndarray:

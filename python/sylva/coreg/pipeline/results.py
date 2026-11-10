@@ -145,7 +145,8 @@ class CoregConfig:
     refine_multiview: bool = False
     """Refine every registered pose in one joint Gauss-Newton over the
     point-to-plane correspondences of every accepted pair plus the matched
-    stems (:func:`sylva.coreg.refine_joint`)."""
+    stems (:func:`sylva.coreg.refine_joint`). The reference scan and every
+    scan given a fixed pose are held where they are."""
     refinement_rounds: int = 3
     refinement_voxel_sizes: tuple[float, ...] = (0.10, 0.05, 0.03)
     refinement_max_distances: tuple[float, ...] = (0.30, 0.15, 0.08)
@@ -157,6 +158,9 @@ class CoregConfig:
     """A refinement moving any scan further (m) is discarded."""
 
     optimise_globally: bool = True
+    """Solve all poses together over the pose graph of accepted pairs. Off,
+    every scan keeps the pose its chain of accepted pairs gave it, and a scan
+    tied in by the recovery keeps the pose it was placed at."""
     reference_scan: int = 0
     reject_outlier_edges: bool = True
     information_patch_points: float = 100.0
@@ -191,6 +195,13 @@ class CoregConfig:
     min_points_per_scan: int = 1000
     """Scans with fewer points are set aside rather than processed."""
     max_points_per_scan: int | None = None
+    """Most points a scan is prepared from (terrain, stems, ICP subsample),
+    after the reading filters. A larger scan is thinned by an even stride
+    through its recording order, the same every run, so the whole rotation
+    stays covered at a lower density (not its first ``N`` points, which in a
+    scan file are one wedge of the rotation). ``None`` or 0 uses every point.
+    :func:`merge_clouds` is not capped: it merges every point that passes
+    the reading filters."""
     verbose: bool = True
 
     def to_dict(self) -> dict:

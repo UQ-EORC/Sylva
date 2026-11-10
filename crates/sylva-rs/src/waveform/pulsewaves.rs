@@ -213,7 +213,9 @@ fn waves_path(path: &Path) -> Option<PathBuf> {
 /// Read the header, descriptors and lookup tables of a `.pls` file.
 pub fn read_info(path: impl AsRef<Path>) -> Result<PlsInfo> {
     let path = path.as_ref();
-    let mut f = BufReader::new(File::open(path).map_err(|e| file_err(path, e.to_string()))?);
+    let file = File::open(path).map_err(|e| file_err(path, e.to_string()))?;
+    let file_len = file.metadata()?.len();
+    let mut f = BufReader::new(file);
     let mut h = [0u8; HEADER];
     f.read_exact(&mut h).map_err(|_| file_err(path, "not a PulseWaves file (header too short)"))?;
     if &h[0..15] != b"PulseWavesPulse" {
@@ -252,7 +254,13 @@ pub fn read_info(path: impl AsRef<Path>) -> Result<PlsInfo> {
         f.read_exact(&mut vh).map_err(|e| file_err(path, format!("truncated VLR: {e}")))?;
         let user = text(&vh[0..16]);
         let id = LE::read_u32(&vh[16..]);
-        let len = LE::read_i64(&vh[24..]).max(0) as usize;
+        let len = LE::read_i64(&vh[24..]).max(0) as u64;
+        // The length is the file's word: check it against the bytes that
+        // are there before allocating for it.
+        if len > file_len.saturating_sub(pos + VLR_HEADER as u64) {
+            return Err(file_err(path, format!("truncated VLR: record {id} declares {len} bytes and the file ends before that")));
+        }
+        let len = len as usize;
         let mut data = vec![0u8; len];
         f.read_exact(&mut data).map_err(|e| file_err(path, format!("truncated VLR: {e}")))?;
         pos += (VLR_HEADER + len) as u64;
@@ -404,8 +412,16 @@ pub fn read_waveforms(path: impl AsRef<Path>, opts: &PlsReadOptions) -> Result<(
     let count = opts.count.unwrap_or(info.n_pulses - start).min(info.n_pulses - start);
     let ps = info.pulse_size as usize;
     let mut f = File::open(path).map_err(|e| file_err(path, e.to_string()))?;
-    f.seek(SeekFrom::Start(info.offset_to_pulses + start * ps as u64))?;
-    let mut buf = vec![0u8; count as usize * ps];
+    // The pulse count is the header's word: check it against the file's
+    // length before allocating for it.
+    let at = info.offset_to_pulses.checked_add(start.saturating_mul(ps as u64));
+    let bytes = count.checked_mul(ps as u64);
+    let file_len = f.metadata()?.len();
+    let (Some(at), Some(bytes)) = (at, bytes.filter(|&b| at.is_some_and(|a| a.saturating_add(b) <= file_len))) else {
+        return Err(file_err(path, format!("truncated pulse records: the header declares {} pulses of {ps} bytes and the file has {file_len} bytes", info.n_pulses)));
+    };
+    f.seek(SeekFrom::Start(at))?;
+    let mut buf = vec![0u8; bytes as usize];
     f.read_exact(&mut buf).map_err(|e| file_err(path, format!("truncated pulse records: {e}")))?;
     let pulses: Vec<PulseRec> = buf
         .chunks_exact(ps)
@@ -846,5 +862,25 @@ mod tests {
         let mut w = sample();
         w.samples[0] = -3.0;
         assert!(write_waveforms(&w, tmp("bad"), &PlsWriteOptions::default()).is_err());
+    }
+
+    #[test]
+    fn counts_beyond_the_file_are_errors() {
+        let p = tmp("counts");
+        write_waveforms(&sample(), &p, &PlsWriteOptions::default()).unwrap();
+        let good = std::fs::read(&p).unwrap();
+        // The first VLR's length, then the header's pulse count.
+        let mut b = good.clone();
+        LE::write_i64(&mut b[HEADER + 24..], 1 << 50);
+        std::fs::write(&p, &b).unwrap();
+        let e = read_waveforms(&p, &PlsReadOptions::default()).unwrap_err().to_string();
+        assert!(e.contains("truncated VLR"), "{e}");
+        let mut b = good.clone();
+        LE::write_i64(&mut b[184..], 1 << 50);
+        std::fs::write(&p, &b).unwrap();
+        let e = read_waveforms(&p, &PlsReadOptions::default()).unwrap_err().to_string();
+        assert!(e.contains("truncated pulse records"), "{e}");
+        std::fs::write(&p, &good).unwrap();
+        assert_eq!(read_waveforms(&p, &PlsReadOptions::default()).unwrap().0.len(), 3);
     }
 }

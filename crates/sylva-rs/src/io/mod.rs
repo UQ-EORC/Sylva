@@ -8,7 +8,7 @@
 //! |---------------------------|------|-------|
 //! | `.las` / `.laz`           | yes  | yes   |
 //! | `.ply` (ascii/binary)     | yes  | yes   |
-//! | `.xyz` `.txt` `.csv` `.pts` | yes | yes  |
+//! | `.xyz` `.txt` `.csv` `.asc` `.pts` | yes | yes |
 //! | `.rxp` (RIEGL, RiVLib)    | yes  | no    |
 //! | `.rdbx` (RIEGL, librdb)   | yes  | no    |
 //!
@@ -78,9 +78,13 @@ pub fn write_annotated(src: impl AsRef<Path>, path: impl AsRef<Path>, opts: &Wri
 /// Options for [`write_with`]; each applies to one family of formats.
 #[derive(Debug, Clone)]
 pub struct WriteOptions {
-    /// LAS point data record format (LAS/LAZ only).
+    /// LAS point data record format (LAS/LAZ only); a cloud with colour or GPS
+    /// time is written in the nearest format that holds them ([`las::format_for`]).
     pub point_format: u8,
-    /// LAS coordinate quantisation in metres (LAS/LAZ only).
+    /// Coordinate resolution in the units of the coordinates: the LAS/LAZ
+    /// quantisation step, and for text files the decimals written, one more
+    /// than the scale has ([`text_decimals`]: 0.001 m gives 4 decimals,
+    /// 1e-7 degrees gives 8).
     pub scale: f64,
     /// Binary little-endian PLY rather than ASCII (PLY only).
     pub binary: bool,
@@ -95,6 +99,18 @@ impl Default for WriteOptions {
     }
 }
 
+/// Decimals a text file's coordinates are written with for a coordinate
+/// resolution of `scale` (in the units of the coordinates): one more than the
+/// scale's own, so 0.001 (millimetres) gives 4, a tenth of a millimetre, and
+/// 1e-7 (degrees of a geographic CRS, about a centimetre) gives 8. Between 0
+/// and 17; 4 for a scale that is not a positive number.
+pub fn text_decimals(scale: f64) -> usize {
+    if !(scale > 0.0) || !scale.is_finite() {
+        return 4;
+    }
+    ((-scale.log10() - 1e-9).ceil() + 1.0).clamp(0.0, 17.0) as usize
+}
+
 /// Write a point cloud, choosing the writer from the extension.
 pub fn write(cloud: &PointCloud, path: impl AsRef<Path>) -> Result<()> {
     write_with(cloud, path, &WriteOptions::default())
@@ -106,8 +122,29 @@ pub fn write_with(cloud: &PointCloud, path: impl AsRef<Path>, opts: &WriteOption
     match ext(path).as_str() {
         "las" | "laz" => las::write_las(cloud, path, &las::LasWriteOptions { point_format: opts.point_format, scale: opts.scale, crs_wkt: opts.crs_wkt.clone() }),
         "ply" => ply::write_ply(cloud, path, opts.binary),
-        "xyz" | "txt" | "asc" | "pts" => ascii::write_ascii(cloud, path, " ", true, 4),
-        "csv" => ascii::write_ascii(cloud, path, ",", true, 4),
+        "xyz" | "txt" | "asc" | "pts" => ascii::write_ascii(cloud, path, " ", true, text_decimals(opts.scale)),
+        "csv" => ascii::write_ascii(cloud, path, ",", true, text_decimals(opts.scale)),
         other => Err(Error::UnsupportedFormat(other.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_coordinates_follow_the_scale() {
+        assert_eq!([0.001, 0.0001, 1e-7, 0.01, 1.0, 0.005].map(text_decimals), [4, 5, 8, 3, 1, 4]);
+        assert_eq!([0.0, -1.0, f64::NAN, 1e-30].map(text_decimals), [4, 4, 4, 17]);
+        // Longitude and latitude at four decimals are good to eleven metres;
+        // at the 1e-7 degrees the Python package asks for, to a centimetre.
+        let cloud = PointCloud::new(vec![[153.0123456789, -27.4987654321, 12.0]]);
+        let path = std::env::temp_dir().join(format!("sylva-io-text-{}.csv", std::process::id()));
+        write_with(&cloud, &path, &WriteOptions { scale: 1e-7, ..Default::default() }).unwrap();
+        let back = read(&path).unwrap();
+        assert!((back.xyz[0][0] - cloud.xyz[0][0]).abs() < 1e-8 && (back.xyz[0][1] - cloud.xyz[0][1]).abs() < 1e-8);
+        write(&cloud, &path).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap().lines().nth(1), Some("153.0123,-27.4988,12.0000"), "metres stay at 0.1 mm");
+        let _ = std::fs::remove_file(&path);
     }
 }

@@ -22,7 +22,7 @@ use sylva_rs::synthetic::tree::{self, Archetype, Leaf, TreeSpec};
 use sylva_rs::voxel::Lad;
 use sylva_rs::Point;
 
-use crate::{cloud_from_py, cloud_to_py, err, shots_to_py};
+use crate::{cloud_from_py, cloud_to_py, err};
 
 fn rows<'py, const N: usize>(py: Python<'py>, r: &[[f64; N]]) -> Bound<'py, PyArray2<f64>> {
     let flat: Vec<f64> = r.iter().flat_map(|v| v.iter().copied()).collect();
@@ -233,7 +233,7 @@ fn synthetic_scan_beam<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: 
     p.max_range = max_range;
     p.seed = seed;
     let s = py.detach(|| scan::scan_beam(&cloud, &p)).map_err(err)?;
-    shots_to_py(py, &s)
+    crate::shots_into_py(py, s)
 }
 
 #[pyfunction]

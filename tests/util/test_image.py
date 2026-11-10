@@ -51,3 +51,16 @@ def test_write_png_round_trip(tmp_path):
     image.write_png(tmp_path / "f.png", np.array([[300.0, -1.0]]))
     with pytest.raises(ValueError, match="image must be"):
         image.write_png(tmp_path / "bad.png", np.zeros((2, 2, 4)))
+
+
+def test_log_colouring_refuses_limits_that_have_no_logarithm():
+    import pytest
+
+    from sylva.util import image
+
+    data = np.array([[1.0, 10.0], [100.0, 0.0]])
+    for kwargs in ({"vmin": 0.0, "vmax": 100.0}, {"vmin": -1.0}, {"vmax": 0.0}):
+        with pytest.raises(ValueError, match="positive with log"):
+            image.to_rgb(data, log=True, **kwargs)
+    rgb = image.to_rgb(data, log=True, vmin=1.0, vmax=100.0)
+    assert rgb.shape == (2, 2, 3) and tuple(rgb[1, 1]) == (0, 0, 0)     # log of 0 is drawn as NaN

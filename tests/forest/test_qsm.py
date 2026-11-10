@@ -63,7 +63,7 @@ def test_mesh_export(single_tree, tmp_path):
     raw = (tmp_path / "t.ply").read_bytes()
     head, body = raw.split(b"end_header\n", 1)
     assert f"element face {len(f)}".encode() in head
-    assert len(body) == len(v) * 12 + len(f) * (1 + 12 + 3)
+    assert len(body) == len(v) * 24 + len(f) * (1 + 12 + 3)      # float64 vertices
 
 
 def test_taper_clamp(rng):

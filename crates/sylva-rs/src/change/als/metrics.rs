@@ -44,7 +44,7 @@ use crate::pointcloud::Attr;
 use crate::raster::Raster;
 use crate::PointCloud;
 
-use super::surface::{chunk_dtm, ground_of, shift_crop, DtmKind, PLANE_RADIUS};
+use super::surface::{chunk_dtm, ground_of, plane_reach, shift_crop, DtmKind};
 use super::{est_other, harmonise_pair, mix, pulse_keys, unit, z_of, Alignment, Harmonise};
 
 const HEIGHT: &str = "__sylva_height";
@@ -269,7 +269,7 @@ pub fn metric_change(cat_a: &Catalog, cat_b: &Catalog, alignment: Option<&Alignm
     let pick = select(&all, p.names.as_deref())?;
     let k = pick.len();
     // Whole cells, and the ground planes of the DTM cells under them.
-    let mut buffer = metrics_buffer(buffer, p.resolution).max(0.5 * p.resolution + 2.0 * p.dtm_resolution + PLANE_RADIUS);
+    let mut buffer = metrics_buffer(buffer, p.resolution).max(0.5 * p.resolution + 2.0 * p.dtm_resolution + plane_reach(p.dtm_resolution));
     if let Some(h) = &p.harmonise {
         buffer = buffer.max(h.cell + 2.0 * p.resolution);
     }
@@ -285,7 +285,7 @@ pub fn metric_change(cat_a: &Catalog, cat_b: &Catalog, alignment: Option<&Alignm
             None => ((data.cloud, data.buffer), (braw, bbuf)),
         };
         let b = shift_crop(b.0, chunk, alignment);
-        let reach = PLANE_RADIUS;
+        let reach = plane_reach(p.dtm_resolution);
         let (Some(ca), Some(cb)) = (with_heights(a.0, &dgrid, &chunk.outer, p.dtm, reach)?, with_heights(b.0, &dgrid, &chunk.outer, p.dtm, reach)?) else { return Ok(None) };
         let (xa, xb) = (per_cell(cat_a, chunk, &ca, &grid, &p.metrics)?, per_cell(cat_a, chunk, &cb, &grid, &p.metrics)?);
         // Merge the two sorted cell lists.

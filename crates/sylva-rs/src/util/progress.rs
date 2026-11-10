@@ -15,8 +15,17 @@
 //! Tasks nest: a stage that runs inside another appears after it in `state`,
 //! innermost last. Nothing is reported unless someone asks, and a task that
 //! is dropped without finishing simply disappears.
+//!
+//! The same counting calls are where long work can be stopped. A caller that
+//! wants the work to end (a binding whose user pressed Ctrl-C) calls
+//! [`cancel`]; the next [`Task::inc`] or [`Task::set`] on any thread then
+//! unwinds out of the computation with a [`Cancelled`] payload, which the
+//! caller catches (`std::panic::catch_unwind`) before calling
+//! [`clear_cancel`]. Nothing is unwound unless someone asked, so a program
+//! that never calls [`cancel`] is unaffected. Work is only as interruptible
+//! as it counts: a stage that reports three steps can stop at three places.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// One running stage: what it is, how far it has got, and how far it goes.
@@ -28,6 +37,41 @@ pub struct Frame {
     pub done: AtomicU64,
     /// Steps expected in all (count); 0 while the total is not known.
     pub total: AtomicU64,
+}
+
+/// Set by [`cancel`], read by every checked count.
+static CANCEL: AtomicBool = AtomicBool::new(false);
+
+/// What a cancelled computation unwinds with: the payload of the unwinding
+/// started by [`check`], for the caller to recognise after catching it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cancelled;
+
+/// Ask the running work to stop at its next checked count.
+///
+/// The flag is process-wide and stays set until [`clear_cancel`]: whoever
+/// sets it must catch the unwinding and clear it.
+pub fn cancel() {
+    CANCEL.store(true, Ordering::SeqCst);
+}
+
+/// Whether [`cancel`] has been called and not yet cleared.
+pub fn cancelled() -> bool {
+    CANCEL.load(Ordering::Relaxed)
+}
+
+/// Withdraw a [`cancel`], once the work it stopped has unwound.
+pub fn clear_cancel() {
+    CANCEL.store(false, Ordering::SeqCst);
+}
+
+/// Unwind with [`Cancelled`] if [`cancel`] was called; otherwise do nothing.
+///
+/// The unwinding does not go through the panic hook, so nothing is printed.
+pub fn check() {
+    if cancelled() {
+        std::panic::resume_unwind(Box::new(Cancelled));
+    }
 }
 
 fn stack() -> &'static Mutex<Vec<Arc<Frame>>> {
@@ -51,13 +95,26 @@ pub fn start(label: impl Into<String>, total: u64) -> Task {
 }
 
 impl Task {
-    /// Count `n` more steps done.
+    /// Count `n` more steps done; unwinds with [`Cancelled`] after a [`cancel`].
     pub fn inc(&self, n: u64) {
+        check();
+        self.inc_unchecked(n);
+    }
+
+    /// Set how many steps are done; unwinds with [`Cancelled`] after a [`cancel`].
+    pub fn set(&self, done: u64) {
+        check();
+        self.set_unchecked(done);
+    }
+
+    /// [`Task::inc`] without the cancellation check, for a caller that
+    /// cannot be unwound through (a stage opened by an interpreter).
+    pub fn inc_unchecked(&self, n: u64) {
         self.frame.done.fetch_add(n, Ordering::Relaxed);
     }
 
-    /// Set how many steps are done.
-    pub fn set(&self, done: u64) {
+    /// [`Task::set`] without the cancellation check.
+    pub fn set_unchecked(&self, done: u64) {
         self.frame.done.store(done, Ordering::Relaxed);
     }
 
@@ -116,6 +173,20 @@ mod tests {
         assert_eq!(mine("test-nest")[0], ("test-nest outer".to_string(), 10, 12));
         drop(outer);
         assert!(mine("test-nest").is_empty());
+    }
+
+    /// The flag itself is not set here: it is process-wide, and the other
+    /// tests of the crate count on their own tasks at the same time.
+    #[test]
+    fn an_uncancelled_check_does_nothing_and_the_payload_is_recognisable() {
+        assert!(!cancelled());
+        check();
+        let caught = std::panic::catch_unwind(|| std::panic::resume_unwind(Box::new(Cancelled))).unwrap_err();
+        assert!(caught.is::<Cancelled>());
+        let t = start("test-unchecked", 5);
+        t.inc_unchecked(2);
+        t.set_unchecked(4);
+        assert_eq!(mine("test-unchecked")[0].1, 4);
     }
 
     #[test]

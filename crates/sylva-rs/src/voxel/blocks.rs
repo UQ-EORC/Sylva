@@ -32,7 +32,7 @@ use rayon::prelude::*;
 
 use super::blocked::{BlockWriter, BlockedGrid};
 use super::traverse::{pulse_extent, Engine, Geom, Scratch, Window};
-use super::{check_len, column_ground, for_each_file_batch, foliage, grid_shape, iad, pad_bounds, refine, Attenuation, EchoLabels, RayVoxels, VoxelInputs, VoxelParams, WeightMethod};
+use super::{check_len, check_ranges, column_ground, for_each_file_batch, foliage, grid_shape, iad, pad_bounds, refine, Attenuation, EchoLabels, RayVoxels, VoxelInputs, VoxelParams, WeightMethod};
 use crate::error::{Error, Result};
 use crate::io::shots::ShotsFile;
 use crate::{Raster, Shots};
@@ -122,6 +122,7 @@ fn check_inputs(inputs: &VoxelInputs, params: &VoxelParams) -> Result<()> {
     check_len("foliage", inputs.foliage, ne)?;
     check_len("intensity", inputs.intensity, ne)?;
     check_len("tree_id", inputs.tree_id, ne)?;
+    check_ranges(inputs.shots)?;
     if matches!(params.weighting, WeightMethod::Relative | WeightMethod::Strongest) && inputs.intensity.is_none() {
         return Err(Error::invalid("relative / strongest weighting needs echo intensities"));
     }

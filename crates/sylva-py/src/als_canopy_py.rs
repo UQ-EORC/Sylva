@@ -23,7 +23,7 @@ use sylva_rs::Point;
 
 use crate::als_py::{catalog_from_py, heights, run_options};
 use crate::voxels_py::params as voxel_params;
-use crate::{cloud_from_py, err, raster_from_py, shots_to_py, xyz_to_py};
+use crate::{cloud_from_py, err, raster_from_py, xyz_to_py};
 
 fn arr(d: &Bound<'_, PyDict>, k: &str) -> PyResult<Option<Vec<f64>>> {
     match d.get_item(k)? {
@@ -173,7 +173,7 @@ fn als_pulses<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: Option<&B
     let t = traj_from_py(trajectory)?;
     let p = pulse_params(max_gap, time_offset, fill_missing, max_fill, drop_incomplete);
     let (s, r) = py.detach(|| ac::reconstruct(&c, &t, &p)).map_err(err)?;
-    Ok((shots_to_py(py, &s)?, report_to_py(py, &r)?))
+    Ok((crate::shots_into_py(py, s)?, report_to_py(py, &r)?))
 }
 
 // ---------------------------------------------------------------- profiles

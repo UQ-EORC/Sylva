@@ -24,6 +24,11 @@ pub struct LmResult {
 ///
 /// `f(x, r)` must fill `r` with the residual vector; its length is fixed on
 /// the first call. Intended for tiny parameter vectors (circles, cylinders).
+///
+/// The Jacobian is by forward differences with a step of `1e-6 max(|x_j|, 1)`,
+/// so the parameters must be of the order of the problem's own size: give
+/// positions relative to the data (its centroid), not in projected
+/// coordinates, where the step would be metres on a decimetre circle.
 pub fn levenberg_marquardt<F>(mut f: F, x0: &[f64], max_iter: usize, tol: f64) -> LmResult
 where
     F: FnMut(&[f64], &mut Vec<f64>),

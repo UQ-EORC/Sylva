@@ -206,7 +206,15 @@ def test_scan_location_moves_the_origin_by_the_pose():
 
 
 def test_gap_profile_zenith_is_the_ring_centres():
-    np.testing.assert_allclose(canopy.GapProfile.empty().zenith, np.arange(7.5, 70.1, 5.0))
+    # The default rings run from 5 to 75 degrees, as documented.
+    np.testing.assert_allclose(canopy.GapProfile.empty().zenith_edges, np.arange(5.0, 75.1, 5.0))
+    np.testing.assert_allclose(canopy.GapProfile.empty().zenith, np.arange(7.5, 72.6, 5.0))
+    # Edges are copied: neither the caller's array nor another profile's is shared.
+    given = np.array([0.0, 30.0, 60.0])
+    a, b = canopy.GapProfile.empty(given), canopy.GapProfile.empty()
+    a.zenith_edges[0] = 1.0
+    b.zenith_edges[0] = 99.0
+    assert given[0] == 0.0 and canopy.GapProfile.empty().zenith_edges[0] == 5.0
     prof = canopy.GapProfile.empty(zenith_edges=[0.0, 10.0, 40.0, 90.0])
     np.testing.assert_allclose(prof.zenith, [5.0, 25.0, 65.0])
     assert prof.zenith.shape == (prof.hits.shape[0],)

@@ -102,3 +102,18 @@ def test_the_report_checks_its_inputs(survey, tmp_path):
         write_report(tmp_path / "x.html", clouds[:1], true[:1])
     with pytest.raises(ValueError, match="one label"):
         write_report(tmp_path / "x.html", clouds, true, names=["a"])
+
+
+@pytest.mark.parametrize("n", [2, 3, 4])
+def test_few_scans_are_never_paired_with_themselves(survey, n):
+    # More neighbours asked for than there are other scans: a scan against
+    # itself agrees perfectly and used to pad the report with pairs of 0 cm.
+    from sylva.registration_report import _neighbour_pairs
+
+    clouds, true = survey
+    origins = np.array([t[:3, 3] for t in true[:n]])
+    pairs = _neighbour_pairs(origins, 4)
+    assert pairs == [(i, j) for i in range(n) for j in range(i + 1, n)]
+    results = pair_residuals(clouds[:n], true[:n])              # the default, 4 neighbours
+    assert len(results) == n * (n - 1) // 2
+    assert all(r.i != r.j for r in results)

@@ -50,22 +50,23 @@ def voxel_downsample(cloud: PointCloud, voxel_size: float, method: str = "first"
     Raises
     ------
     ValueError
-        For an unknown ``method``, or an ``origin`` with ``"centroid"``.
+        For an unknown ``method``, an ``origin`` with ``"centroid"``, or a
+        ``voxel_size`` that is not a positive, finite number.
     """
+    if method not in ("first", "centroid"):
+        raise ValueError(f"unknown method {method!r}")
+    if not (np.isfinite(voxel_size) and voxel_size > 0):
+        raise ValueError(f"voxel_size must be a positive number, got {voxel_size}")
     if origin is not None:
         if method != "first":
             raise ValueError("origin is only supported with method='first'")
         o = tuple(float(v) for v in origin)
         if len(o) != 3 or not np.all(np.isfinite(o)):
             raise ValueError(f"origin must be three finite numbers, got {origin!r}")
-        if not (np.isfinite(voxel_size) and voxel_size > 0):
-            raise ValueError(f"voxel_size must be a positive number, got {voxel_size}")
         return cloud[_core.voxel_downsample_indices_at(cloud.xyz, float(voxel_size), o)]
     if method == "first":
-        return cloud[_core.voxel_downsample_indices(cloud.xyz, voxel_size)]
-    if method == "centroid":
-        return PointCloud(_core.voxel_centroids(cloud.xyz, voxel_size), crs=cloud.crs)
-    raise ValueError(f"unknown method {method!r}")
+        return cloud[_core.voxel_downsample_indices(cloud.xyz, float(voxel_size))]
+    return PointCloud(_core.voxel_centroids(cloud.xyz, float(voxel_size)), crs=cloud.crs)
 
 
 def random_subsample(cloud: PointCloud, n: int | None = None, fraction: float | None = None,

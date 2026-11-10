@@ -17,6 +17,40 @@ def test_icp_recovers_transform(forest, method):
     assert info["rmse"] < 0.05
 
 
+@pytest.mark.parametrize("method", ["point_to_plane", "point_to_point", "Plane", ""])
+def test_icp_refuses_an_unknown_method(forest, method):
+    # These used to run point-to-point without a word.
+    from sylva.filters import voxel_downsample
+
+    cloud = voxel_downsample(forest, 0.5)
+    with pytest.raises(ValueError, match="unknown ICP method"):
+        registration.icp(cloud, cloud, method=method)
+
+
+def test_icp_plane_uses_the_targets_normals():
+    # Three faces of a corner. With PCA normals a 2 cm offset is recovered;
+    # normals of NaN in the target's nx, ny, nz cannot give a transform at
+    # all, which shows they were the ones used. They used to be dropped on
+    # the way in, and PCA normals used whatever the cloud carried.
+    from sylva.pointcloud import PointCloud
+
+    u, v = (0.1 * a.ravel() for a in np.meshgrid(np.arange(20.0), np.arange(20.0), indexing="ij"))
+    zero = np.zeros_like(u)
+    xyz = np.vstack([np.column_stack(f) for f in ((u, v, zero), (u, zero, v + 0.1), (zero, u + 0.1, v + 0.1))])
+    kwargs = dict(init=registration.translation(0.02, -0.02, 0.02), method="plane",
+                  max_correspondence_distance=0.2)
+    pca, _ = registration.icp(PointCloud(xyz), PointCloud(xyz), **kwargs)
+    assert np.linalg.norm(pca[:3, 3]) < 5e-3
+    nan = np.full(len(xyz), np.nan)
+    target = PointCloud(xyz, attrs={"nx": nan, "ny": nan, "nz": nan})
+    try:
+        given, _ = registration.icp(PointCloud(xyz), target, **kwargs)
+    except ValueError:
+        pass
+    else:
+        assert not np.isfinite(given).all()
+
+
 def test_merge_scans(forest):
     transforms = [np.eye(4), registration.translation(1, 0, 0)]
     merged = registration.merge_scans([forest, forest], transforms)

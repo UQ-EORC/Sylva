@@ -185,3 +185,51 @@ def test_las_write_spans_batches(tmp_path):
     again = io.read(tmp_path / "big2.las")
     np.testing.assert_array_equal(again.attrs["flag"], np.arange(n) % 2)
     np.testing.assert_array_equal(again.attrs["tree_id"], c.attrs["tree_id"])
+
+
+def test_las_keeps_colour_flags_and_class_twelve(tmp_path):
+    xyz = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [2.0, 2.0, 2.0]])
+    c = PointCloud(xyz, {"red": np.array([1, 2, 3], np.uint16), "green": np.array([4, 5, 6], np.uint16),
+                         "blue": np.array([7, 8, 9], np.uint16),
+                         "classification": np.array([12, 2, 5], np.uint8),
+                         "withheld": np.array([0, 0, 1], np.uint8),
+                         "id": np.array([2**53 + 1, 5, -2**60 - 3], np.int64)})
+    io.write(c, tmp_path / "c.laz")                     # default format 6 is promoted to 7
+    back = io.read(tmp_path / "c.laz")
+    for k in ("red", "green", "blue", "withheld", "id"):
+        np.testing.assert_array_equal(back.attrs[k], c.attrs[k], err_msg=k)
+    np.testing.assert_array_equal(back.attrs["classification"], [1, 2, 5])
+    np.testing.assert_array_equal(back.attrs["overlap"], [1, 0, 0])
+    io.write(c, tmp_path / "old.las", point_format=1)   # formats 0-5 store class 12 itself
+    np.testing.assert_array_equal(io.read(tmp_path / "old.las").attrs["classification"], [12, 2, 5])
+
+
+def test_unwritable_las_coordinates_raise(tmp_path):
+    far = PointCloud(np.array([[0.0, 0.0, 0.0], [3.0e6, 0.0, 0.0]]))
+    with pytest.raises(ValueError, match="larger scale"):
+        io.write(far, tmp_path / "far.las")
+    with pytest.raises(ValueError):
+        io.write(far, tmp_path / "zero.las", scale=0.0)
+
+
+def test_text_precision_follows_the_crs(tmp_path):
+    c = PointCloud(np.array([[153.0123456789, -27.4987654321, 12.0]]))
+    c.crs = "EPSG:4326"
+    io.write(c, tmp_path / "geo.csv")
+    np.testing.assert_allclose(io.read(tmp_path / "geo.csv").xyz, c.xyz, atol=1e-8)
+    (tmp_path / "gap.csv").write_text("x,y,z,intensity,label\n1,2,3,,5\n4,5,6,9,7\n")
+    gap = io.read(tmp_path / "gap.csv")
+    assert np.isnan(gap.attrs["intensity"][0]) and list(gap.attrs["label"]) == [5.0, 7.0]
+
+
+def test_malformed_ply_raises(tmp_path):
+    head = "ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\nproperty float z\nend_header\n"
+    (tmp_path / "short.ply").write_text(head + "0 0 0\n1 1 1\n")
+    (tmp_path / "prop.ply").write_text(head.replace("property float z\n", "property float\n") + "0 0 0\n")
+    (tmp_path / "huge.ply").write_text(head.replace("ascii", "binary_little_endian").replace("vertex 3", "vertex 4000000000000000"))
+    for name in ("short.ply", "prop.ply", "huge.ply"):
+        with pytest.raises((OSError, ValueError)):
+            io.read(tmp_path / name)
+    big = PointCloud(np.zeros((1, 3)), {"tree_id": np.array([5_000_000_000], np.int64)})
+    io.write(big, tmp_path / "big.ply")
+    assert io.read(tmp_path / "big.ply").attrs["tree_id"][0] == 5_000_000_000

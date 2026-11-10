@@ -40,9 +40,9 @@ are already flattened with `ground.flatten`.
 
 | Extension | Read | Write | Notes |
 |---|---|---|---|
-| `.las` `.laz` | yes | yes | ASPRS LAS 1.4; LAZ is LASzip (Isenburg 2013). Every standard dimension. Extra bytes read and written with their types, so `height` and `tree_id` round-trip. `point_format` (default 6) and `scale` (default 1 mm) on write. |
+| `.las` `.laz` | yes | yes | ASPRS LAS 1.4; LAZ is LASzip (Isenburg 2013). Every standard dimension, and the classification flags as `withheld`, `overlap`, `synthetic` and `key_point` where a file sets them. Extra bytes read and written with their types, so `height` and `tree_id` round-trip; a dimension stored with a scale or offset reads as the float64 values it stands for. `point_format` (default 6; a cloud with colour is written as 7 so that `red`, `green`, `blue` are kept) and `scale` (default 1 mm) on write. |
 | `.ply` | yes | yes | ASCII or binary; every vertex property becomes an attribute. raycloudtools ray clouds (Lowe & Stepanas 2021) read as ordinary clouds with `nx ny nz`. |
-| `.xyz` `.txt` `.asc` `.pts` `.csv` | yes | yes | Delimiter detected; header line gives names; PTS count line skipped. Written with a header, 0.1 mm precision. |
+| `.xyz` `.txt` `.asc` `.pts` `.csv` | yes | yes | Delimiter detected; header line gives names; PTS count line skipped; an empty field of a delimited file is NaN. Written with a header, one decimal more than `scale` has: 0.1 mm by default, eight decimals for longitude and latitude. |
 | `.rxp` | yes | no | RIEGL, needs RiVLib (below). Points in the scanner frame. |
 | `.rdbx` | yes | no | RIEGL RDB 2, the database RiSCAN PRO makes of an imported scan; needs librdb (below). Every attribute as a column; the processing settings as metadata. |
 | `.parquet` | `Shots.load` | `Shots.save` | Pulse data, see [Pulse data](pulses.md). |

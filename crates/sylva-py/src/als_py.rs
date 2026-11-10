@@ -226,7 +226,7 @@ fn als_classify_ground(py: Python<'_>, catalog: &Bound<'_, PyDict>, out_dir: Pat
         other => return Err(PyValueError::new_err(format!("unknown method {other:?}; expected 'csf' or 'pmf'"))),
     };
     let opts = run_options(chunk_size, buffer, workers);
-    Ok(paths_to_py(py.detach(|| ops::classify_ground(&c, &out_dir, &m, last_returns, format.as_deref(), &opts)).map_err(err)?))
+    Ok(paths_to_py(crate::detach_interruptible(py, || ops::classify_ground(&c, &out_dir, &m, last_returns, format.as_deref(), &opts))?.map_err(err)?))
 }
 
 fn dtm_method(method: &str, power: f64, k: usize, max_distance: Option<f64>) -> PyResult<DtmMethod> {
@@ -242,7 +242,7 @@ fn als_dtm<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolution: f64, m
     let c = catalog_from_py(catalog)?;
     let m = dtm_method(method, power, k, max_distance)?;
     let opts = run_options(chunk_size, buffer, workers);
-    raster_to_py(py, &py.detach(|| ops::dtm(&c, resolution, &m, &opts)).map_err(err)?)
+    raster_to_py(py, &crate::detach_interruptible(py, || ops::dtm(&c, resolution, &m, &opts))?.map_err(err)?)
 }
 
 pub(crate) fn heights(mode: &str, dtm: Option<(PyReadonlyArray2<f64>, f64, f64, f64)>, dtm_resolution: f64) -> PyResult<Heights> {
@@ -260,7 +260,7 @@ fn als_chm<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, resolution: f64, m
     let c = catalog_from_py(catalog)?;
     let h = heights(mode, dtm, dtm_resolution)?;
     let opts = run_options(chunk_size, buffer, workers);
-    raster_to_py(py, &py.detach(|| ops::chm(&c, resolution, &h, min_height, drop_noise, &opts)).map_err(err)?)
+    raster_to_py(py, &crate::detach_interruptible(py, || ops::chm(&c, resolution, &h, min_height, drop_noise, &opts))?.map_err(err)?)
 }
 
 #[pyfunction]
@@ -269,7 +269,7 @@ fn als_normalize(py: Python<'_>, catalog: &Bound<'_, PyDict>, out_dir: PathBuf, 
     let c = catalog_from_py(catalog)?;
     let h = heights(mode, dtm, dtm_resolution)?;
     let opts = run_options(chunk_size, buffer, workers);
-    Ok(paths_to_py(py.detach(|| ops::normalize(&c, &out_dir, &h, replace_z, format.as_deref(), &opts)).map_err(err)?))
+    Ok(paths_to_py(crate::detach_interruptible(py, || ops::normalize(&c, &out_dir, &h, replace_z, format.as_deref(), &opts))?.map_err(err)?))
 }
 
 #[pyfunction]
@@ -282,14 +282,14 @@ fn als_filter(py: Python<'_>, catalog: &Bound<'_, PyDict>, out_dir: PathBuf, met
         other => return Err(PyValueError::new_err(format!("unknown method {other:?}; expected 'sor' or 'ror'"))),
     };
     let opts = run_options(chunk_size, buffer, workers);
-    Ok(paths_to_py(py.detach(|| ops::filter_noise(&c, &out_dir, &m, classify, format.as_deref(), &opts)).map_err(err)?))
+    Ok(paths_to_py(crate::detach_interruptible(py, || ops::filter_noise(&c, &out_dir, &m, classify, format.as_deref(), &opts))?.map_err(err)?))
 }
 
 #[pyfunction]
 #[pyo3(signature = (catalog, out_dir, size, buffer, origin, format, workers))]
 fn als_retile(py: Python<'_>, catalog: &Bound<'_, PyDict>, out_dir: PathBuf, size: f64, buffer: f64, origin: Option<(f64, f64)>, format: Option<String>, workers: usize) -> PyResult<Vec<String>> {
     let c = catalog_from_py(catalog)?;
-    Ok(paths_to_py(py.detach(|| ops::retile(&c, &out_dir, size, buffer, origin, format.as_deref(), workers)).map_err(err)?))
+    Ok(paths_to_py(crate::detach_interruptible(py, || ops::retile(&c, &out_dir, size, buffer, origin, format.as_deref(), workers))?.map_err(err)?))
 }
 
 #[pyfunction]
@@ -303,7 +303,7 @@ fn als_decimate(py: Python<'_>, catalog: &Bound<'_, PyDict>, out_dir: PathBuf, m
         other => return Err(PyValueError::new_err(format!("unknown method {other:?}; expected 'random', 'voxel' or 'highest'"))),
     };
     let opts = run_options(chunk_size, 0.0, workers);
-    Ok(paths_to_py(py.detach(|| ops::decimate(&c, &out_dir, &m, format.as_deref(), &opts)).map_err(err)?))
+    Ok(paths_to_py(crate::detach_interruptible(py, || ops::decimate(&c, &out_dir, &m, format.as_deref(), &opts))?.map_err(err)?))
 }
 
 #[pyfunction]
@@ -359,7 +359,7 @@ fn synthetic_als_flight<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs:
         trajectory_rate,
         seed,
     };
-    let f = py.detach(|| synthetic_als::fly(&scene, &p)).map_err(err)?;
+    let f = crate::detach_interruptible(py, || synthetic_als::fly(&scene, &p))?.map_err(err)?;
     let (xyz, attrs) = cloud_to_py(py, &f.points)?;
     Ok((xyz, attrs, trajectory_to_py(py, &f.trajectory)?, f.n_pulses))
 }

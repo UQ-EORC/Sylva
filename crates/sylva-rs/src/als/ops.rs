@@ -154,7 +154,7 @@ pub fn classify_ground(cat: &Catalog, out_dir: &Path, method: &GroundMethod, las
         let used: Vec<usize> = (0..cloud.len()).filter(|&i| !noise(i) && (!last_returns || last(i))).collect();
         let xyz: Vec<Point> = if used.len() == cloud.len() { cloud.xyz.clone() } else { used.iter().map(|&i| cloud.xyz[i]).collect() };
         let mask = match method {
-            GroundMethod::Csf(p) => ground::csf_ground_mask(&xyz, p),
+            GroundMethod::Csf(p) => ground::csf_ground_mask(&xyz, p)?,
             GroundMethod::Pmf(p) => ground::pmf_ground_mask(&xyz, p)?,
         };
         let mut is_ground = vec![false; cloud.len()];

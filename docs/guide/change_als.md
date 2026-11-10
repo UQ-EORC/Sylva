@@ -136,7 +136,8 @@ block whatever `chunk_size` and `workers` are.
 `surface="dsm"`) grids both surveys in one pass with one algorithm, the
 highest return per cell, each normalised by a DTM of its own ground returns
 (`dtm_method="plane"`: at each DTM cell a plane fitted to the ground
-returns around it, with its standard error). `subcircle` replaces each
+returns around it, with its standard error). A DSM compares elevations and
+needs no ground returns. `subcircle` replaces each
 return by eight points on a circle, and
 `first_returns=True` grids first returns only.
 
@@ -207,7 +208,11 @@ pulse density in each `density_cell` square: in a square where it has more
 first returns, each of its pulses is kept with probability
 `n_other / n_own`, chosen by a hash of the pulse (GPS time and flight line)
 and `seed`, so every return of a pulse shares its fate and the choice does
-not depend on the chunks. `change.harmonise(a, b, out_a, out_b)` writes the
+not depend on the chunks. Where the GPS times cannot tell pulses apart
+(absent, all zero, or shared by many first returns), each return is taken as
+its own pulse, here and in the sampling tests. The pulse densities reported
+are pulses over the area a survey covers (the 10 m blocks holding its first
+returns), so a sparse survey's density is not inflated by its empty cells. `change.harmonise(a, b, out_a, out_b)` writes the
 same thinning as tiles, for tree detection or anything else run on both
 surveys. On the synthetic surveys the median CHM difference over unchanged
 canopy was -0.07 m without harmonisation (the density effect) and +0.04 m
@@ -326,7 +331,8 @@ neither, in practice, does the chunk size: across tile-sized chunks and 17,
 classes and nearly every value were identical, and the few values that
 differed (a handful of cells) did so in the last bits. The buffer is raised
 automatically to hold whole cells and the ground planes of the DTM under
-them (to at least 16 m plus a cell and two DTM cells); with `harmonise`,
+them (to at least 16 m, or 1.5 DTM cells if more, plus a cell and two DTM
+cells); with `harmonise`,
 also a `density_cell`.
 
 On 36 ha (the synthetic pair copied 5 by 5: 9.3 and 5.1 million returns in

@@ -71,7 +71,13 @@ def _predictor_matrix(predictors, names) -> tuple[np.ndarray, list[str], tuple |
     if isinstance(predictors, Mapping) or hasattr(predictors, "columns"):
         src = predictors.columns if hasattr(predictors, "columns") and not isinstance(predictors, Mapping) \
             else predictors
-        names = list(src) if names is None else list(names)
+        if names is None:
+            # A PlotMetrics names its metrics; its other columns (the plot
+            # index, ids, centres) are bookkeeping, not predictors.
+            own = getattr(predictors, "names", None)
+            names = list(own) if own and not isinstance(predictors, Mapping) else list(src)
+        else:
+            names = list(names)
         missing = [n for n in names if n not in src]
         if missing:
             raise ValueError(f"no predictor {missing[0]!r}; have {sorted(src)}")

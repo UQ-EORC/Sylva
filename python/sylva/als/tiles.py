@@ -530,8 +530,8 @@ def classify_ground(catalog: Catalog, out: str | Path, method: str = "csf",
     buffer covers how far the filter looks: its grid is anchored at
     multiples of ``cell_size`` in every tile, and each opening of half-width
     ``w`` cells reaches ``2 w`` cells, so ``buffer >= 2 * cell_size * (1 + 2
-    + 4 + ... + W)`` (``W`` the largest half-width, ``max_window /
-    cell_size`` or less) plus the widest gap in the ground is sufficient;
+    + 4 + ... + W)`` (``W`` the largest half-width: the full window ``(2 W +
+    1) * cell_size`` is at most ``max_window``) plus the widest gap in the ground is sufficient;
     narrower buffers agree everywhere but near the tile edges in practice.
     ``method="csf"`` is not exact: the cloth is one sheet whose settling
     depends on the whole of it, so points near a tile edge can differ from
@@ -808,11 +808,14 @@ def _add_commands(sub, fmt: dict) -> None:
         found = detect_stems(cat, height_attr=a.height_attribute, buffer=a.buffer,
                              workers=a.workers, min_arc_deg=a.min_arc)
         rows = [t.as_dict() for t in found]
+        # The header is written even without stems, so that the table can be read.
+        names = list(Tree(0, 0.0, 0.0).as_dict())
+        for r in rows:
+            names += [k for k in r if k not in names]
         with open(a.output, "w", newline="") as f:
-            if rows:
-                writer = csv.DictWriter(f, fieldnames=list(rows[0]))
-                writer.writeheader()
-                writer.writerows(rows)
+            writer = csv.DictWriter(f, fieldnames=names)
+            writer.writeheader()
+            writer.writerows(rows)
         print(f"{len(found):,} stems from {len(cat)} tiles -> {a.output}")
 
     s = sub.add_parser("tiles-stems", help="stems and DBH over height-normalised tiles", **fmt)
@@ -856,7 +859,8 @@ def _add_commands(sub, fmt: dict) -> None:
     s.add_argument("--bounds", type=float, nargs=4, metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
                    help="keep only the points inside this box (the plot and a margin)")
     s.add_argument("--plot", type=float, nargs=4, metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
-                   help="the plot whose trees are wanted, on the tile grid")
+                   help="the plot: trees whose stem stands inside it are kept, with their whole "
+                        "crowns (trees are found over everything inside --bounds)")
     s.add_argument("--tile-size", type=float, default=10.0, help="tile side (m)")
     s.add_argument("--voxel", type=float, default=0.02, help="point spacing of the tiles (m)")
     s.add_argument("--sor-k", type=int, default=6, help="SOR neighbours")

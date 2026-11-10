@@ -349,14 +349,32 @@ struct Level {
 ///
 /// `points[k]` are scan `k`'s planar ICP points and `stems[k]` its stem
 /// positions, both in its own frame; `poses` the current `world_from_scan`;
-/// `edges` the accepted pairs; `reference` the scan held fixed. Levels run
+/// `edges` the accepted pairs; `reference` the scan held fixed (to hold
+/// several, use [`refine_joint_held`]). Levels run
 /// coarse to fine; at each, correspondences are associated `rounds` times
 /// under the current poses, each association followed by `iterations`
 /// Gauss-Newton steps. Stems are paired afresh at every association,
 /// mutually nearest within `stem_radius` horizontally, and carry
 /// `stem_weight` of each pair's weight. `log` receives progress messages.
 pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usize)], stems: &[Vec<Point>], reference: usize, p: &RefineParams, log: &mut dyn FnMut(&str)) -> Result<JointRefinement> {
+    refine_joint_held(points, poses, edges, stems, &[reference], p, log)
+}
+
+/// [`refine_joint`] with any number of scans held fixed.
+///
+/// `held` are the indices of the scans whose poses must not change: the
+/// reference and any scan whose pose was given as known. A held scan still
+/// supplies correspondences, so the others are solved against it where it
+/// stands; its pose is returned as given, with a shift of 0 m and a rotation
+/// of 0 degrees. With `held` empty every scan is free and only the priors
+/// (`prior_translation`, `prior_rotation_deg`) tie the survey down.
+///
+/// # Errors
+/// As [`refine_joint`]; also if there are no poses, or `held` names a scan
+/// that does not exist.
+pub fn refine_joint_held(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usize)], stems: &[Vec<Point>], held: &[usize], p: &RefineParams, log: &mut dyn FnMut(&str)) -> Result<JointRefinement> {
     let n = poses.len();
+    let is_held = |k: usize| held.contains(&k);
     if points.len() < n {
         return Err(Error::invalid("refine_joint needs the points of every scan"));
     }
@@ -366,7 +384,7 @@ pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usiz
     if p.voxel_sizes.iter().any(|v| v.is_nan() || *v <= 0.0) {
         return Err(Error::invalid("voxel size must be positive"));
     }
-    if reference >= n || edges.iter().any(|&(i, j)| i >= n || j >= n) {
+    if n == 0 || held.iter().any(|&k| k >= n) || edges.iter().any(|&(i, j)| i >= n || j >= n) {
         return Err(Error::invalid("scan index out of range"));
     }
     let mut poses = poses.to_vec();
@@ -487,7 +505,7 @@ pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usiz
             let prior_w = [pr, pr, pr, pt, pt, pt];
             for _ in 0..p.iterations {
                 let Assembled { mut h, mut g, mut cost, median: med, scales } = assemble(&poses, &corr, &stems_by_pair, n, p.robust_scale, p.stem_weight, true, None, p.stem_scale);
-                for k in (0..n).filter(|&k| k != reference) {
+                for k in (0..n).filter(|&k| !is_held(k)) {
                     let xi = twist_between(&start[k], &poses[k]);
                     let mut sq = [0.0; 6];
                     for q in 0..6 {
@@ -502,10 +520,10 @@ pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usiz
                 }
                 last_residual = med;
                 // Each scan has six unknowns (three of rotation, three of
-                // translation). The reference scan is held fixed and a scan
+                // translation). The held scans stay fixed and a scan
                 // with no points cannot be solved for, so their rows and
                 // columns are struck out and the smaller system is solved.
-                let free: Vec<usize> = (0..6 * n).filter(|&c| c / 6 != reference && !levels[c / 6].pts.is_empty()).collect();
+                let free: Vec<usize> = (0..6 * n).filter(|&c| !is_held(c / 6) && !levels[c / 6].pts.is_empty()).collect();
                 let hf = DMatrix::from_fn(free.len(), free.len(), |r, c| h[(free[r], free[c])]);
                 let gf = DVector::from_iterator(free.len(), free.iter().map(|&r| -g[r]));
                 let mut accepted = false;
@@ -555,7 +573,7 @@ pub fn refine_joint(points: &[Vec<Point>], poses: &[Mat4], edges: &[(usize, usiz
                     // and another, shorter attempt.
                     let t = assemble(&trial, &corr, &stems_by_pair, n, p.robust_scale, p.stem_weight, false, Some(&scales), p.stem_scale);
                     let mut trial_cost = t.cost;
-                    for k in (0..n).filter(|&k| k != reference) {
+                    for k in (0..n).filter(|&k| !is_held(k)) {
                         let xi = twist_between(&start[k], &trial[k]);
                         let sq: [f64; 6] = std::array::from_fn(|q| prior_w[q] * (xi[q] * xi[q]));
                         trial_cost += 0.5 * numpy_sum(&sq);
@@ -621,6 +639,26 @@ mod tests {
         assert_eq!(r.poses[0], poses[0]);
         assert_eq!(messages.len(), 6);
         assert!(r.residual_after < r.residual_before);
+    }
+
+    #[test]
+    fn every_held_scan_stays_where_it_was() {
+        // Three views of the scene; the third is held although it starts 3 cm
+        // off, as a scan with a known pose would be. Holding only the
+        // reference used to let it move in the solve.
+        let (mut points, mut poses, truth) = scene();
+        points.push(points[1].clone());
+        poses.push(se3_exp(&Vector6::new(0.0, 0.0, 0.0, -0.03, 0.0, 0.0)) * truth);
+        let p = RefineParams { voxel_sizes: vec![0.2, 0.1], max_distances: vec![0.3, 0.15], prior_translation: 1.0, prior_rotation_deg: 10.0, ..Default::default() };
+        let edges = [(0, 1), (0, 2), (1, 2)];
+        let free = refine_joint(&points, &poses, &edges, &[], 0, &p, &mut |_| {}).unwrap();
+        assert!(free.shifts[2] > 1e-3, "an unheld scan is pulled in: {}", free.shifts[2]);
+        let held = refine_joint_held(&points, &poses, &edges, &[], &[0, 2], &p, &mut |_| {}).unwrap();
+        assert_eq!(held.poses[0], poses[0]);
+        assert_eq!(held.poses[2], poses[2]);
+        assert_eq!((held.shifts[2], held.rotations[2]), (0.0, 0.0));
+        assert!(held.shifts[1] > 1e-3);
+        assert!(refine_joint_held(&points, &poses, &edges, &[], &[3], &p, &mut |_| {}).is_err());
     }
 
     #[test]

@@ -48,7 +48,8 @@ fn single_pulse_accumulates_chords_and_free_path() {
     assert!((v.get_f(F::PathLength, 1) - 1.0).abs() < 1e-5, "potential path is the full chord");
     assert!((v.get_f(F::FreePathLength, 1) - 0.75).abs() < 1e-5);
     assert!((v.get_f(F::SumHitDelta, 1) - 1.0).abs() < 1e-5);
-    assert!((v.mean_zenith(1).to_degrees() - 180.0).abs() < 1e-3);
+    // A beam straight down is vertical: zenith is the angle from the vertical, 0 to 90.
+    assert!(v.mean_zenith(1).to_degrees().abs() < 1e-3);
     // Beyond the echo: the rest of k = 1 and all of k = 0.
     assert_eq!(v.state(0), VoxelState::Occluded);
     assert!((v.get_f(F::PathLengthOccluded, 0) - 1.0).abs() < 1e-5);
@@ -59,9 +60,10 @@ fn single_pulse_accumulates_chords_and_free_path() {
 fn echo_weights_share_the_pulse() {
     let shots = down_shots(&[(0.5, 0.5, vec![6.5, 8.5])]); // echoes in k = 3 and k = 1
     let v = voxel::voxelize(&VoxelInputs::new(&shots), &params(([0.0; 3], [1.0, 1.0, 4.0]))).unwrap();
-    // The second segment starts at the first echo, carrying half the pulse; as in
-    // rayvoxel it counts again in the voxel it starts in.
-    assert!((v.get_f(F::NumBeamsWeighted, 3) - 1.5).abs() < 1e-6);
+    // The second segment starts at the first echo, carrying half the pulse. The pulse
+    // entered that voxel once, whole: unlike rayvoxel, the half that travels on is not
+    // counted as entering it again.
+    assert!((v.get_f(F::NumBeamsWeighted, 3) - 1.0).abs() < 1e-6);
     assert!((v.get_f(F::NumBeamsWeighted, 2) - 0.5).abs() < 1e-6);
     assert!((v.get_f(F::FreePathLength, 3) - (0.5 + 0.5 * 0.5)).abs() < 1e-5);
     assert_eq!(v.get_i(I::NumBeams, 3), 1, "one pulse, however many echoes");

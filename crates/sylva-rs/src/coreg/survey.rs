@@ -311,7 +311,10 @@ pub fn combined_stem_map(scans: &[ScanFeatures], registered: &[bool], poses: &[M
     }
     let q: Vec<f64> = stems.iter().map(|s| -s.quality()).collect();
     let mut order: Vec<usize> = (0..stems.len()).collect();
-    order.sort_by(|&a, &b| q[a].partial_cmp(&q[b]).unwrap_or(std::cmp::Ordering::Equal));
+    // A stem of unknown quality (NaN) goes last; left in, NaN breaks the order
+    // the sort relies on, which the standard library answers with a panic.
+    let q: Vec<f64> = q.into_iter().map(|v| if v.is_nan() { f64::INFINITY } else { v }).collect();
+    order.sort_by(|&a, &b| q[a].partial_cmp(&q[b]).expect("no NaN left"));
     let mut keep: Vec<StemRecord> = Vec::new();
     for k in order {
         let s = &stems[k];
@@ -566,7 +569,14 @@ impl Survey<'_> {
             points_per_scan: cfg.refinement_points_per_scan,
             ..crate::coreg::refine::RefineParams::default()
         };
-        let outcome = crate::coreg::refine::refine_joint(&points, &self.graph.poses, &edges, &stems, reference, &params, &mut |m: &str| log(m))?;
+        // Every scan with a given pose is held, not only the reference: left
+        // free it would move in the solve, and the others would be fitted to
+        // where it went rather than to where it is.
+        let mut held: Vec<usize> = self.graph.fixed.iter().map(|(k, _)| *k).collect();
+        if !held.contains(&reference) {
+            held.push(reference);
+        }
+        let outcome = crate::coreg::refine::refine_joint_held(&points, &self.graph.poses, &edges, &stems, &held, &params, &mut |m: &str| log(m))?;
         let moved: Vec<f64> = (0..scans.len()).filter(|&k| registered[k]).map(|k| outcome.shifts[k]).collect();
         let worst = argmax(&outcome.shifts);
         let max_shift = outcome.shifts[worst];
@@ -771,10 +781,16 @@ pub fn coregister_prepared(scans: &[ScanFeatures], cfg: &CoregConfig, opts: &Sur
     if cfg.recover_unregistered && !registered.iter().all(|&r| r) {
         let recovered = survey.recover(&mut registered, priors, log)?;
         if recovered > 0 {
-            log(&format!("Recovered {recovered} scan(s); re-optimising ..."));
-            let o = survey.graph.optimise(cfg.reject_outlier_edges);
-            log(&format!("  {}", optimisation_repr(&o)));
-            optimisation = Some(o);
+            // Without the global solve a recovered scan keeps the pose it was
+            // placed at, as every other scan keeps its spanning-tree pose.
+            if cfg.optimise_globally {
+                log(&format!("Recovered {recovered} scan(s); re-optimising ..."));
+                let o = survey.graph.optimise(cfg.reject_outlier_edges);
+                log(&format!("  {}", optimisation_repr(&o)));
+                optimisation = Some(o);
+            } else {
+                log(&format!("Recovered {recovered} scan(s)"));
+            }
             registered = survey.graph.registered();
         }
     }
@@ -1086,7 +1102,9 @@ pub fn load_transforms(path: &Path) -> Result<Vec<(String, Vec<Vec<f64>>)>> {
 ///
 /// A scan is moved by `poses[k] @ levellings[k]`; unregistered scans are
 /// left out if `only_registered`. With `voxel`, each scan and then the
-/// merged cloud are thinned to one point per voxel (the first).
+/// merged cloud are thinned to one point per voxel (the first). The reading
+/// filters of `cfg` apply, but not `max_points_per_scan`: that cap is for
+/// preparing a scan, and the merged cloud holds every point that passes.
 pub fn merge_clouds(inputs: &[ScanInput], poses: &[Mat4], levellings: &[Mat4], registered: &[bool], only_registered: bool, voxel: Option<f64>, cfg: &CoregConfig) -> std::result::Result<PointCloud, PrepareError> {
     let voxel = voxel.filter(|&v| v != 0.0);
     if let Some(v) = voxel {
@@ -1094,6 +1112,8 @@ pub fn merge_clouds(inputs: &[ScanInput], poses: &[Mat4], levellings: &[Mat4], r
             return Err(Error::invalid("voxel size must be positive").into());
         }
     }
+    let uncapped = CoregConfig { max_points_per_scan: 0, ..cfg.clone() };
+    let cfg = &uncapped;
     let mut xyz: Vec<Point> = Vec::new();
     let mut ids: Vec<i32> = Vec::new();
     for (k, input) in inputs.iter().enumerate() {
@@ -1152,6 +1172,85 @@ mod tests {
     fn optimisation_reads_as_python() {
         let o = pg::Optimisation { poses: Vec::new(), iterations: 30, converged: true, initial_error: 2537.0, final_error: 4.613e-12, rejected_edges: vec![1], edge_errors: Vec::new() };
         assert_eq!(optimisation_repr(&o), "OptimisationResult(iterations=30, converged=True, error 2537 -> 4.613e-12, rejected=1)");
+    }
+
+    /// Ground with eight stems, as one scan sees it in its own frame.
+    fn stand() -> Vec<Point> {
+        let mut rng = crate::util::nprandom::Generator::new(3);
+        let mut pts = Vec::new();
+        for _ in 0..30000 {
+            let (x, y) = (rng.random() * 30.0 - 15.0, rng.random() * 30.0 - 15.0);
+            pts.push([x, y, 0.02 * x + 0.01 * rng.random()]);
+        }
+        for (cx, cy, r) in [(3.0, 2.0, 0.2), (-4.0, 5.0, 0.3), (6.0, -5.0, 0.25), (-6.0, -3.0, 0.15), (0.5, 8.0, 0.22), (9.0, 4.0, 0.35), (-9.0, 7.0, 0.18), (1.0, -8.0, 0.28)] {
+            for _ in 0..3000 {
+                let (a, h) = (rng.random() * std::f64::consts::TAU, rng.random() * 6.0);
+                pts.push([cx + r * a.cos(), cy + r * a.sin(), 0.02 * cx + h]);
+            }
+        }
+        pts
+    }
+
+    #[test]
+    fn recovery_leaves_the_poses_alone_without_the_global_solve() {
+        // Three views of one stand; only the pair (0, 1) is tried, so the
+        // third is tied in by the recovery. With `optimise_globally` off that
+        // used to run the pose-graph solve all the same.
+        let cfg = CoregConfig { optimise_globally: false, ..CoregConfig::default() };
+        let pts = stand();
+        let scans: Vec<ScanFeatures> = [(0.0, 0.0, 0.0), (0.4, 2.0, -1.0), (-0.7, -1.5, 2.5)]
+            .iter()
+            .enumerate()
+            .map(|(k, &(yaw, x, y))| {
+                let world_from_scan = crate::coreg::transforms::yaw_transform(yaw, x, y, 0.1 * k as f64);
+                prepare_scan(&ScanInput::Points(transform_points(&invert(&world_from_scan), &pts)), &cfg, &format!("s{k}"), &[], None, None).unwrap()
+            })
+            .collect();
+        let seen = std::sync::Mutex::new(Vec::new());
+        let log = |m: &str| seen.lock().unwrap().push(m.to_string());
+        let opts = SurveyOptions { pairs: Some(vec![(0, 1)]), ..SurveyOptions::default() };
+        let r = coregister_prepared(&scans, &cfg, &opts, &log, 0.0).unwrap();
+        assert_eq!(r.registered, vec![true, true, true], "{:?}", seen.lock().unwrap());
+        assert!(r.optimisation.is_none());
+        let messages = seen.lock().unwrap();
+        assert!(messages.iter().any(|m| m == "Recovered 1 scan(s)"), "{messages:?}");
+        assert!(!messages.iter().any(|m| m.contains("ptimis")), "{messages:?}");
+        // The recovered scan sits where the stand puts it.
+        let truth = crate::coreg::transforms::yaw_transform(-0.7, -1.5, 2.5, 0.2);
+        let (_, off) = crate::coreg::transforms::transform_difference(&r.poses[2], &truth);
+        assert!(off < 0.05, "{off}");
+    }
+
+    #[test]
+    fn stems_of_unknown_quality_go_last_in_the_combined_map() {
+        // Every third stem has a NaN residual, so a NaN quality: sorting on
+        // that used to panic ("does not correctly implement a total order").
+        let mut rng = crate::util::nprandom::Generator::new(1);
+        let stems: Vec<StemRecord> = (0..60)
+            .map(|k| {
+                let mut s = StemRecord::new(k as f64 * 2.0, rng.random(), 1.3, 0.3);
+                (s.n_slices, s.coverage, s.rmse) = (6, rng.random(), if k % 3 == 0 { f64::NAN } else { 0.01 * rng.random() });
+                s
+            })
+            .collect();
+        let scan = ScanFeatures { stems, error: String::new(), ..crate::coreg::pipeline::unusable_scan("a", 0, None, Instant::now(), "") };
+        let combined = combined_stem_map(&[scan], &[true], &[Matrix4::identity()]);
+        assert_eq!(combined.len(), 60);
+        assert!(combined[..40].iter().all(|s| !s.quality().is_nan()));
+        assert!(combined[..40].windows(2).all(|w| w[0].quality() >= w[1].quality()));
+        assert!(combined[40..].iter().all(|s| s.quality().is_nan()));
+    }
+
+    #[test]
+    fn a_merge_ignores_the_preparation_cap() {
+        let dir = std::env::temp_dir().join(format!("sylva-merge-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("scan.xyz");
+        std::fs::write(&path, (0..1000).map(|k| format!("{k} 0 0\n")).collect::<String>()).unwrap();
+        let cfg = CoregConfig { max_points_per_scan: 10, ..CoregConfig::default() };
+        let merged = merge_clouds(&[ScanInput::Path(path)], &[Matrix4::identity()], &[Matrix4::identity()], &[true], true, None, &cfg);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(merged.unwrap().len(), 1000);
     }
 
     #[test]

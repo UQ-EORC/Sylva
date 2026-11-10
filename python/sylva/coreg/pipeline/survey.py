@@ -77,24 +77,37 @@ def coregister(
     -------
     SurveyResult
         Poses are ``world_from_scan`` with the world fixed to the reference
-        scan (or to the fixed scans).
+        scan (or to the fixed scans). A scan whose cloud, targets or
+        levelling cannot be read is set aside with the reason in its
+        :attr:`ScanFeatures.error`; the others are registered.
+
+    Raises
+    ------
+    ValueError
+        If ``reflectors`` or ``levelling`` does not have one entry per scan.
     """
     cfg = config or CoregConfig()
     n = len(clouds)
     targets = list(reflectors) if reflectors else [[]] * n
     levels = list(levelling) if levelling else [None] * n
+    for what, given in (("reflectors", targets), ("levelling", levels)):
+        if len(given) != n:
+            raise ValueError(f"{what} has {len(given)} entries for {n} scans; give one per scan "
+                             "(an empty list or None for a scan without)")
     inputs, target_tuples, level_mats = [], [], []
     for k in range(n):
         # A scan that cannot even be converted costs that scan, not the run.
+        # Converted before anything is appended, so that the three lists keep
+        # one entry per scan whichever conversion fails.
         try:
-            inputs.append(_input_core(clouds[k]))
-            target_tuples.append(_reflector_tuples(targets[k]))
-            level_mats.append(None if levels[k] is None else _mat4(levels[k]))
+            entry = (_input_core(clouds[k]), _reflector_tuples(targets[k]),
+                     None if levels[k] is None else _level_matrix(levels[k]))
         except Exception as exc:
             src = str(Path(clouds[k])) if isinstance(clouds[k], (str, Path)) else None
-            inputs.append(("failed", f"{type(exc).__name__}: {exc}", src))
-            target_tuples.append([])
-            level_mats.append(None)
+            entry = (("failed", f"{type(exc).__name__}: {exc}", src), [], None)
+        inputs.append(entry[0])
+        target_tuples.append(entry[1])
+        level_mats.append(entry[2])
     scan_dicts, d = _core.coreg_coregister(
         inputs,
         _config_core(cfg),
@@ -105,6 +118,13 @@ def coregister(
         log=_log_for(progress, cfg),
     )
     return _survey_from_core([_scan_from_core(s) for s in scan_dicts], d)
+
+
+def _level_matrix(levelling) -> np.ndarray:
+    m = _mat4(levelling)
+    if m.shape != (4, 4) or not np.all(np.isfinite(m)):
+        raise ValueError(f"a levelling must be a finite (4, 4) matrix, got shape {m.shape}")
+    return m
 
 
 def _survey_options(pairs, approximate_positions, fixed, priors) -> dict:

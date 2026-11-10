@@ -464,7 +464,8 @@ def riscan_like_mask(xyz: np.ndarray, amplitude: np.ndarray, mode: str = "curren
         support by their neighbours, 19-30 % of a scan. Reproduced as: drop an
         echo weaker than ``weak_db`` with fewer than ``min_neighbours`` other
         echoes within ``window_steps`` scan increments and ``window_range`` m
-        of range, plus the near-range drop. Agreement 85-86 %; the rest of
+        of range (azimuth wraps at 360 degrees), plus the near-range drop.
+        Agreement 85-86 %; the rest of
         RiSCAN's decision depends on pulse timing the point stream lacks.
     ``"none"``
         Keep everything.

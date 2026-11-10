@@ -100,12 +100,22 @@ def to_rgb(data: np.ndarray, cmap: str = "viridis", vmin: float | None = None,
     -------
     numpy.ndarray
         ``uint8`` of shape ``data.shape + (3,)``.
+
+    Raises
+    ------
+    ValueError
+        For an unknown colour map, or a ``vmin`` or ``vmax`` that is not
+        positive with ``log``.
     """
     v = np.asarray(data, dtype=float)
     if log:
         with np.errstate(divide="ignore", invalid="ignore"):
             v = np.where(v > 0, np.log10(v), np.nan)
     finite = np.isfinite(v)
+    if log:
+        for name, limit in (("vmin", vmin), ("vmax", vmax)):
+            if limit is not None and not limit > 0:
+                raise ValueError(f"{name} must be positive with log=True, got {limit}")
     if vmin is None:
         vmin = float(np.percentile(v[finite], 2)) if finite.any() else 0.0
     elif log:

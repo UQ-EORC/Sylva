@@ -74,7 +74,11 @@ class ICPConfig:
     max_points: int = 120_000
     """Cap per level after thinning."""
     plateau_tolerance: float = 0.0
+    """A step (translation in m plus 10 x rotation in radians) smaller than
+    this fraction of the previous iteration's RMSE counts as stalled; 0
+    disables the stop. A level's first iteration never counts."""
     plateau_patience: int = 3
+    """Consecutive stalled iterations that end a level."""
     seed: int = 0
 
     def distances(self) -> tuple[float, ...]:
@@ -97,6 +101,10 @@ class ICPResult:
         ``fitness_threshold``.
     inlier_rmse
         RMSE over those points (m).
+    converged
+        Whether the last (finest) pyramid level that ran stopped on the
+        translation and rotation tolerances, rather than at
+        ``max_iterations``, on a plateau or for want of correspondences.
     information
         How well the point-to-plane correspondences pin the final transform;
         None for point-to-point ICP or too little overlap.

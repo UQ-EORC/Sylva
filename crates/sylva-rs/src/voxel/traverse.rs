@@ -45,10 +45,20 @@ impl Geom {
         [(p[0] - self.origin[0]) / self.size, (p[1] - self.origin[1]) / self.size, (p[2] - self.origin[2]) / self.size]
     }
 
+    /// The voxel an echo at `p` belongs to: the last one a pulse travelling
+    /// along the unit vector `dir` crosses before it stops at `p`. That is
+    /// the voxel of `p` itself, except for an echo lying exactly on a voxel
+    /// face, which belongs to the voxel the pulse came through and not to the
+    /// one beyond the face that it never entered ([`walk_grid`] stops
+    /// [`FACE_TOLERANCE`] short of its end for the same reason, so the hit
+    /// and the path that led to it land in the same voxel).
     #[inline]
-    pub fn cell_of(&self, p: &Point) -> [i64; 3] {
+    pub fn hit_cell(&self, p: &Point, dir: Option<&Point>) -> [i64; 3] {
         let v = self.to_vox(p);
-        [v[0].floor() as i64, v[1].floor() as i64, v[2].floor() as i64]
+        match dir {
+            Some(d) => [(v[0] - d[0] * FACE_TOLERANCE).floor() as i64, (v[1] - d[1] * FACE_TOLERANCE).floor() as i64, (v[2] - d[2] * FACE_TOLERANCE).floor() as i64],
+            None => [v[0].floor() as i64, v[1].floor() as i64, v[2].floor() as i64],
+        }
     }
 
     fn center(&self, p: [i64; 3]) -> Point {
@@ -60,7 +70,9 @@ impl Geom {
     }
 
     /// Clip a segment to the grid box shrunk by `eps` (raylib `Cuboid::clipRay`).
-    fn clip(&self, start: &mut Point, end: &mut Point, eps: f64) -> bool {
+    /// `None` when the segment misses the box; otherwise whether its far end
+    /// was cut off, i.e. whether the segment goes on beyond the grid.
+    fn clip(&self, start: &mut Point, end: &mut Point, eps: f64) -> Option<bool> {
         let mut near = 0.0f64;
         let mut far = 1.0f64;
         let dir = sub(end, start);
@@ -74,17 +86,17 @@ impl Geom {
                 near = near.max(n / dir[ax]);
                 far = far.min(f / dir[ax]);
             } else if (n > 0.0) == (f > 0.0) {
-                return false;
+                return None;
             }
         }
         if far <= near {
-            return false;
+            return None;
         }
         let s = add(start, &scale(&dir, near));
         let e = sub(end, &scale(&dir, 1.0 - far));
         *start = s;
         *end = e;
-        true
+        Some(far < 1.0)
     }
 }
 
@@ -211,7 +223,12 @@ fn eff_free_path(z: f64, lambda1: f64) -> f64 {
 }
 
 /// Sums are kept in `f64` while pulses are added in whatever order the threads
-/// get to them, so that the `f32` results do not depend on that order.
+/// get to them, so that the order matters as little as it can: the `f64` sum
+/// still depends on it in its last bits, which can move the `f32` result by
+/// one unit in the last place between two multi-threaded runs. A trace that
+/// must be reproducible to the bit goes block by block
+/// ([`super::voxelize_blocks`]), where each block is filled by one thread in
+/// pulse order.
 ///
 /// Reading this without Rust: there is no atomic `f64`, so the running sum is
 /// kept as the `f64`'s own bit pattern inside an atomic 64-bit integer
@@ -320,6 +337,11 @@ struct Ray {
     unbound: bool,
     foliage: u8,
     weight: f64,
+    /// The segment goes on beyond the grid: it leaves its last voxel too.
+    open_end: bool,
+    /// Voxel of the echo this segment starts at (none for one starting at
+    /// the scanner): the pulse entered it on the segment before.
+    entered: Option<[i64; 3]>,
 }
 
 /// Margin (voxels) within which a segment counts as reaching a window.
@@ -340,11 +362,10 @@ impl Tracer<'_> {
         PI * r * r
     }
 
-    fn walk(&self, start: &Point, end: &Point, beam_origin: &Point, pass: Pass, weight: f64, unbound: bool, fol: u8) {
+    #[allow(clippy::too_many_arguments)]
+    fn walk(&self, start: &Point, end: &Point, beam_origin: &Point, pass: Pass, weight: f64, unbound: bool, fol: u8, entered: Option<[i64; 3]>) {
         let (mut cs, mut ce) = (*start, *end);
-        if !self.geom.clip(&mut cs, &mut ce, 1e-10) {
-            return;
-        }
+        let Some(open_end) = self.geom.clip(&mut cs, &mut ce, 1e-10) else { return };
         let (vs, ve) = (self.geom.to_vox(&cs), self.geom.to_vox(&ce));
         let d = sub(&ve, &vs);
         let len = norm(&d);
@@ -354,8 +375,11 @@ impl Tracer<'_> {
         if self.window.is_some_and(|w| !w.touches(&vs, &ve, WINDOW_MARGIN)) {
             return;
         }
-        let ray = Ray { vox_start: vs, vox_dir: scale(&d, 1.0 / len), beam_origin: *beam_origin, unbound, foliage: fol, weight };
-        let zenith = ray.vox_dir[2].clamp(-1.0, 1.0).acos();
+        let ray = Ray { vox_start: vs, vox_dir: scale(&d, 1.0 / len), beam_origin: *beam_origin, unbound, foliage: fol, weight, open_end, entered };
+        // Angle of the beam from the vertical, whichever way it travels: a
+        // beam going down at 170 degrees meets the leaves as one going up at
+        // 10 degrees does, and the two must not average to a horizontal one.
+        let zenith = ray.vox_dir[2].abs().min(1.0).acos();
         let az = ray.vox_dir[0].atan2(ray.vox_dir[1]);
         let (sin_az, cos_az) = az.sin_cos();
         // The walk is the whole-grid one; with a window it stops once it has
@@ -392,7 +416,9 @@ impl Tracer<'_> {
         let size = self.geom.size;
         let length = (end_len - in_len) * size;
         let chord = (out_len - in_len) * size;
-        let exits = end_len >= out_len - 1e-6;
+        // The pulse leaves this voxel unless the walk ends in it; a walk cut
+        // off at the grid's edge goes on, and so leaves its last voxel too.
+        let exits = out_len < max_len || ray.open_end;
         let a = self.acc;
 
         if pass == Pass::Occluded {
@@ -453,7 +479,14 @@ impl Tracer<'_> {
         }
         if pass != Pass::Full {
             let w = ray.weight;
-            a.addf(F::NumBeamsWeighted, idx, w);
+            // A segment that starts at an echo starts inside the voxel the
+            // pulse entered on the segment before: what is left of the pulse
+            // travels on through it (the path lengths below), but does not
+            // enter it a second time.
+            let enters = ray.entered != Some(cell);
+            if enters {
+                a.addf(F::NumBeamsWeighted, idx, w);
+            }
             a.addf(F::FreePathLength, idx, length * w);
             match ray.foliage {
                 foliage::PLANT => a.addf(F::FreePathLengthPlant, idx, length * w),
@@ -463,14 +496,18 @@ impl Tracer<'_> {
             }
             let eff = eff_free_path(length, self.lambda1);
             a.addf(F::EffectiveFreePathLength, idx, eff * w);
-            a.addf(F::SumOfAngles, idx, zenith * w);
-            a.addf(F::SumSinAzimuth, idx, sin_az * w);
-            a.addf(F::SumCosAzimuth, idx, cos_az * w);
-            // Distance from the scanner, not from the previous echo.
-            a.addf(F::SumOfLaserDistances, idx, norm(&sub(&self.geom.center(cell), &ray.beam_origin)) * w);
+            if enters {
+                a.addf(F::SumOfAngles, idx, zenith * w);
+                a.addf(F::SumSinAzimuth, idx, sin_az * w);
+                a.addf(F::SumCosAzimuth, idx, cos_az * w);
+                // Distance from the scanner, not from the previous echo.
+                a.addf(F::SumOfLaserDistances, idx, norm(&sub(&self.geom.center(cell), &ray.beam_origin)) * w);
+            }
             if self.params.beam.is_some() {
                 let bs = self.section(&ray.beam_origin, cell) * w;
-                a.addf(F::BsEntering, idx, bs);
+                if enters {
+                    a.addf(F::BsEntering, idx, bs);
+                }
                 a.addf(F::BsFreePath, idx, bs * length);
                 a.addf(F::BsEffectiveFreePath, idx, bs * eff);
                 if exits {
@@ -537,29 +574,31 @@ impl Tracer<'_> {
         let ray_vec = sub(&far.pos, origin);
         let ray_len = norm(&ray_vec);
 
+        let dir = (ray_len > 1e-12).then(|| scale(&ray_vec, 1.0 / ray_len));
         if let Some(last) = last_seg {
             if n == 1 && ray_len >= 1e-6 {
                 // The whole pulse is its only segment: one walk does both passes.
-                self.walk(origin, &far.pos, origin, Pass::Both, seg_w[0] as f64, !far.bound, far.foliage);
+                self.walk(origin, &far.pos, origin, Pass::Both, seg_w[0] as f64, !far.bound, far.foliage, None);
             } else if ray_len >= 1e-6 {
-                self.walk(origin, &rets[last].pos, origin, Pass::Full, 1.0, !rets[last].bound, 0);
+                self.walk(origin, &rets[last].pos, origin, Pass::Full, 1.0, !rets[last].bound, 0, None);
             }
             let mut seg_start = *origin;
+            let mut entered = None;
             for (k, r) in rets.iter().enumerate().take(if n == 1 { 0 } else { last + 1 }) {
                 if norm(&sub(&r.pos, &seg_start)) >= 1e-6 {
-                    self.walk(&seg_start, &r.pos, origin, Pass::Segment, seg_w[k] as f64, !r.bound, r.foliage);
+                    self.walk(&seg_start, &r.pos, origin, Pass::Segment, seg_w[k] as f64, !r.bound, r.foliage, entered);
                 }
                 seg_start = r.pos;
+                entered = Some(self.geom.hit_cell(&r.pos, dir.as_ref()));
             }
         }
 
-        let dir = (ray_len > 1e-12).then(|| scale(&ray_vec, 1.0 / ray_len));
         let a = self.acc;
         for (k, r) in rets.iter().enumerate() {
             if !r.bound || seg_w[k] <= 0.0 {
                 continue;
             }
-            let cell = self.geom.cell_of(&r.pos);
+            let cell = self.geom.hit_cell(&r.pos, dir.as_ref());
             let Some(idx) = self.index(cell) else { continue };
             // Full chord of the hit voxel and the free path from its entry to the echo.
             let (mut chord, mut free) = (0.0, 0.0);
@@ -602,7 +641,7 @@ impl Tracer<'_> {
                 diag += (self.geom.shape[k] as f64 * self.geom.size).powi(2);
             }
             let end = add(&far.pos, &scale(&ray_vec, 2.0 * diag.sqrt() / ray_len));
-            self.walk(&far.pos, &end, origin, Pass::Occluded, 1.0, false, 0);
+            self.walk(&far.pos, &end, origin, Pass::Occluded, 1.0, false, 0, None);
         }
 
         if self.ppl {
@@ -614,9 +653,12 @@ impl Tracer<'_> {
     /// chord), and the leaving fraction × section × chord per voxel.
     fn accumulate_ppl(&self, origin: &Point, rets: &[Ret], echo_w: &[f32], out: &mut Vec<PplHit>) {
         let (mut cs, mut ce) = (*origin, rets[rets.len() - 1].pos);
-        if !self.geom.clip(&mut cs, &mut ce, 1e-10) {
+        if self.geom.clip(&mut cs, &mut ce, 1e-10).is_none() {
             return;
         }
+        let ray_vec = sub(&rets[rets.len() - 1].pos, origin);
+        let ray_len = norm(&ray_vec);
+        let dir = (ray_len > 1e-12).then(|| scale(&ray_vec, 1.0 / ray_len));
         let (vs, ve) = (self.geom.to_vox(&cs), self.geom.to_vox(&ce));
         if self.window.is_some_and(|w| !w.touches(&vs, &ve, WINDOW_MARGIN)) {
             return;
@@ -641,7 +683,7 @@ impl Tracer<'_> {
             let section = if self.params.beam.is_some() { self.section(origin, cell) } else { 1.0 };
             let mut intercepted = 0.0;
             for (r, &w) in rets.iter().zip(echo_w) {
-                if r.bound && self.geom.cell_of(&r.pos) == cell {
+                if r.bound && self.geom.hit_cell(&r.pos, dir.as_ref()) == cell {
                     intercepted += w as f64;
                     if let Some(idx) = idx {
                         out.push(PplHit { voxel: idx, chord: chord as f32, section: (w as f64 * section) as f32 });
@@ -830,12 +872,21 @@ impl Engine {
             .fold(
                 || Local { scratch: Scratch::default(), hits: Vec::new(), done: 0 },
                 |mut l, s| {
+                    // Checked before the first pulse of each piece of work as
+                    // well, or a cancelled run would still trace 256 pulses
+                    // in every piece rayon has yet to start.
+                    if l.done % 256 == 0 {
+                        crate::util::progress::check();
+                    }
                     let sc = &mut l.scratch;
                     pulse_rets(inputs, s, geom, params, &mut sc.rets);
                     tracer.process(&shots.origin[s], &sc.rets, &mut sc.echo_w, &mut sc.seg_w, &mut l.hits);
                     l.done += 1;
-                    if l.done % 4096 == 0 {
-                        task.inc(4096);
+                    // Each thread's `Local` may see as few as 256 pulses (the
+                    // least rayon hands out), so the count, and with it the
+                    // check for a cancelled run, is made at that interval.
+                    if l.done % 256 == 0 {
+                        task.inc(256);
                     }
                     l
                 },
@@ -852,7 +903,12 @@ impl Engine {
     pub fn add_sequential(&mut self, inputs: &VoxelInputs, pulses: &[u32], peaks: Option<&[f64]>, ground: Option<&[f64]>, scratch: &mut Scratch) {
         let tracer = self.tracer(peaks, ground);
         let mut hits = Vec::new();
-        for &s in pulses {
+        for (k, &s) in pulses.iter().enumerate() {
+            // A cancelled run (Ctrl-C from Python) stops here, not only at
+            // the end of the block's list.
+            if k % 256 == 0 {
+                crate::util::progress::check();
+            }
             let s = s as usize;
             pulse_rets(inputs, s, &self.geom, &self.params, &mut scratch.rets);
             tracer.process(&inputs.shots.origin[s], &scratch.rets, &mut scratch.echo_w, &mut scratch.seg_w, &mut hits);
@@ -899,5 +955,178 @@ impl Engine {
             predominant_tree: None,
             tree_iad: BTreeMap::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::voxel::{voxelize, voxelize_blocks, Attenuation, BeamSpec, BlockOptions, Lad, Pulses, RayVoxels, VoxelInputs, VoxelParams, F, I};
+    use crate::{Point, Shots};
+
+    /// Pulses `(origin, direction, echo ranges)` as shots.
+    fn shots(pulses: &[(Point, Point, Vec<f64>)]) -> Shots {
+        let mut s = Shots::default();
+        for (o, d, ranges) in pulses {
+            s.origin.push(*o);
+            s.direction.push(*d);
+            s.echo_start.push(s.echo_range.len());
+            s.echo_count.push(ranges.len() as u32);
+            s.echo_range.extend(ranges);
+        }
+        s
+    }
+
+    /// A 1 x 1 m column of voxels from z = 0 to `top`.
+    fn column(voxel_size: f64, top: f64) -> VoxelParams {
+        VoxelParams { voxel_size, bounds: Some(([0.0; 3], [1.0, 1.0, top])), ..Default::default() }
+    }
+
+    fn trace(s: &Shots, p: &VoxelParams) -> RayVoxels {
+        voxelize(&VoxelInputs::new(s), p).unwrap()
+    }
+
+    const UP: Point = [0.0, 0.0, 1.0];
+    const DOWN: Point = [0.0, 0.0, -1.0];
+
+    /// Vertical pulses through a turbid layer of attenuation `lambda` (m⁻¹)
+    /// filling z = 0 to 4 m: free paths are exponential, drawn from a fixed
+    /// sequence, and a pulse whose free path passes 4 m has no echo.
+    fn slab(lambda: f64, n: usize) -> Shots {
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let mut uniform = || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((state >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+        };
+        let pulses: Vec<(Point, Point, Vec<f64>)> = (0..n)
+            .map(|_| {
+                let o = [0.05 + 0.9 * uniform(), 0.05 + 0.9 * uniform(), -1.0];
+                let free = -uniform().ln() / lambda;
+                (o, UP, if free < 4.0 { vec![1.0 + free] } else { vec![] })
+            })
+            .collect();
+        shots(&pulses)
+    }
+
+    #[test]
+    fn transmittance_attenuation_does_not_depend_on_voxel_size() {
+        let lambda = 0.5;
+        let s = slab(lambda, 60_000);
+        for beam in [None, Some(BeamSpec { diameter: 0.007, divergence: 0.00035 })] {
+            for size in [1.0, 0.5, 0.25] {
+                let p = VoxelParams { attenuation: vec![Attenuation::Transmittance, Attenuation::Fpl], beam, unbounded_range: 10.0, ..column(size, 4.0) };
+                let g = trace(&s, &p);
+                let n = g.n_voxels();
+                let mean = |f: &dyn Fn(usize) -> f64| (0..n).map(f).sum::<f64>() / n as f64;
+                let t = mean(&|i| g.attenuation(i, Attenuation::Transmittance));
+                assert!((t - lambda).abs() < 0.03, "voxel {size} m, beam {}: transmittance attenuation {t}", beam.is_some());
+                // Area density follows: lambda / G with G = 0.5.
+                let pad = mean(&|i| g.area_density(i, Attenuation::Transmittance).pad);
+                assert!((pad - 2.0 * lambda).abs() < 0.06, "voxel {size} m: pad {pad}");
+                // The `transmittance` metric is over one metre of path, at any voxel size.
+                if beam.is_some() {
+                    let per_metre = mean(&|i| g.transmittance(i));
+                    assert!((per_metre - (-lambda).exp()).abs() < 0.03, "voxel {size} m: transmittance {per_metre}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_pulse_enters_the_voxel_of_an_echo_once() {
+        // Two echoes of half the pulse each, in voxels 1 and 3 of a column.
+        let s = shots(&[([0.5, 0.5, -1.0], UP, vec![2.5, 4.5])]);
+        let beam = Some(BeamSpec { diameter: 0.007, divergence: 0.00035 });
+        let g = trace(&s, &VoxelParams { beam, attenuation: vec![Attenuation::Transmittance], ..column(1.0, 5.0) });
+        assert_eq!(g.f[F::NumBeamsWeighted as usize], vec![1.0, 1.0, 0.5, 0.5, 0.0]);
+        assert_eq!(g.f[F::HitsWeighted as usize], vec![0.0, 0.5, 0.0, 0.5, 0.0]);
+        // The paths are those of the fractions: all of it to the first echo, half beyond.
+        assert_eq!(g.f[F::FreePathLength as usize], vec![1.0, 0.75, 0.5, 0.25, 0.0]);
+        // Half of the entering section is intercepted in voxel 1, all of it in voxel 3.
+        let ratio = |i: usize| g.get_f(F::BsIntercepted, i) as f64 / g.get_f(F::BsEntering, i) as f64;
+        assert!((ratio(1) - 0.5).abs() < 1e-6 && (ratio(3) - 1.0).abs() < 1e-6, "{} {}", ratio(1), ratio(3));
+        assert!((g.attenuation(1, Attenuation::Transmittance) - 2f64.ln()).abs() < 1e-5);
+        // Mean angles and distances are weighted the same way.
+        assert!(g.mean_zenith(1).abs() < 1e-6);
+        assert!((g.mean_laser_distance(1) - 2.5).abs() < 1e-5);
+
+        // Both echoes in one voxel: one pulse entered, all of it stopped there.
+        let s = shots(&[([0.5, 0.5, -1.0], UP, vec![2.2, 2.8])]);
+        let g = trace(&s, &column(1.0, 5.0));
+        assert_eq!(g.f[F::NumBeamsWeighted as usize], vec![1.0, 1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(g.f[F::HitsWeighted as usize], vec![0.0, 1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(g.i[I::NumBeams as usize], vec![1, 1, 0, 0, 0]);
+    }
+
+    #[test]
+    fn beams_from_above_and_below_share_a_zenith() {
+        // The same line travelled both ways: vertical beams, not horizontal ones.
+        let mut pulses = Vec::new();
+        for _ in 0..50 {
+            pulses.push(([0.5, 0.5, -1.0], UP, vec![3.5]));
+            pulses.push(([0.5, 0.5, 6.0], DOWN, vec![3.5]));
+        }
+        let g = trace(&shots(&pulses), &VoxelParams { lad: Lad::Planophile, ..column(1.0, 5.0) });
+        for i in 0..5 {
+            assert!(g.mean_zenith(i).abs() < 1e-6, "voxel {i}: {}", g.mean_zenith(i));
+        }
+        let lambda = g.attenuation_corrected(2, Attenuation::Fpl);
+        assert!((lambda - 2.0).abs() < 1e-5);
+        let g_vertical = crate::voxel::compute_g(0.0, &Lad::Planophile);
+        assert!((g.pad_g_corrected(2) - lambda / g_vertical).abs() < 1e-5, "{}", g.pad_g_corrected(2));
+        // A beam at 170 degrees from the upward vertical is one at 10 degrees.
+        let tilt = 10f64.to_radians();
+        let d = [tilt.sin(), 0.0, -tilt.cos()];
+        let g = trace(&shots(&[([0.2, 0.5, 6.0], d, vec![3.0])]), &column(1.0, 5.0));
+        assert!((g.mean_zenith(4) - tilt).abs() < 1e-6, "{}", g.mean_zenith(4));
+    }
+
+    #[test]
+    fn an_echo_on_a_voxel_face_is_a_hit_in_the_voxel_it_came_through() {
+        let p = VoxelParams { attenuation: vec![Attenuation::Fpl, Attenuation::Ppl], ..column(1.0, 5.0) };
+        // Upwards to z = 2 exactly: the pulse stops at the top of voxel 1.
+        let up: Vec<_> = (0..10).map(|_| ([0.5, 0.5, -1.0], UP, vec![3.0])).collect();
+        let g = trace(&shots(&up), &p);
+        assert_eq!(g.i[I::NumHits as usize], vec![0, 10, 0, 0, 0]);
+        assert_eq!(g.i[I::NumBeams as usize], vec![10, 10, 0, 0, 0]);
+        // It crossed voxel 0 and ended in voxel 1: a miss in the first only.
+        assert_eq!(g.i[I::NumMissRays as usize], vec![10, 0, 0, 0, 0]);
+        assert_eq!(g.f[F::SumMissDelta as usize], vec![10.0, 0.0, 0.0, 0.0, 0.0]);
+        assert!((g.attenuation(1, Attenuation::Fpl) - 1.0).abs() < 1e-6);
+        // Every pulse was stopped: the exact PPL solve is at its cap, and voxel 2 saw nothing.
+        assert_eq!(g.ppl_lambda.as_ref().unwrap()[1], 20.0);
+        assert_eq!(g.attenuation(2, Attenuation::Ppl), 0.0);
+        // Downwards to the same face: it came through voxel 2.
+        let down: Vec<_> = (0..10).map(|_| ([0.5, 0.5, 6.0], DOWN, vec![4.0])).collect();
+        let g = trace(&shots(&down), &p);
+        assert_eq!(g.i[I::NumHits as usize], vec![0, 0, 10, 0, 0]);
+        assert_eq!(g.i[I::NumBeams as usize], vec![0, 0, 10, 10, 10]);
+        assert_eq!(g.i[I::NumMissRays as usize], vec![0, 0, 0, 10, 10]);
+        // A second echo beyond a first one on a face enters the next voxel once.
+        let g = trace(&shots(&[([0.5, 0.5, -1.0], UP, vec![3.0, 4.5])]), &column(1.0, 5.0));
+        assert_eq!(g.f[F::NumBeamsWeighted as usize], vec![1.0, 1.0, 0.5, 0.5, 0.0]);
+        assert_eq!(g.f[F::HitsWeighted as usize], vec![0.0, 0.5, 0.0, 0.5, 0.0]);
+    }
+
+    #[test]
+    fn echoes_without_a_finite_range_are_refused() {
+        for bad in [f64::NAN, f64::INFINITY] {
+            let s = shots(&[([2.5, 2.5, -1.0], UP, vec![2.5]), ([2.5, 2.5, -1.0], UP, vec![bad])]);
+            let p = VoxelParams { voxel_size: 1.0, bounds: Some(([0.0; 3], [5.0; 3])), ..Default::default() };
+            let err = voxelize(&VoxelInputs::new(&s), &p).unwrap_err().to_string();
+            assert!(err.contains("echo 1") && err.contains("finite"), "{err}");
+            let blocked = voxelize_blocks(&Pulses::Memory(VoxelInputs::new(&s)), &p, None, &BlockOptions { block: [2, 2, 2], ..Default::default() }, None);
+            assert!(blocked.unwrap_err().to_string().contains("finite"));
+        }
+    }
+
+    #[test]
+    fn miss_chords_cover_more_pulses_than_miss_rays() {
+        // One pulse to an echo in voxel 2, one that leaves the column without an echo.
+        let s = shots(&[([0.5, 0.5, -1.0], UP, vec![3.5]), ([0.5, 0.5, -1.0], UP, vec![])]);
+        let g = trace(&s, &column(1.0, 5.0));
+        // Both crossed voxels 0 and 1; only the first is a miss ray there.
+        assert_eq!(g.i[I::NumMissRays as usize], vec![1, 1, 0, 0, 0]);
+        assert_eq!(g.f[F::SumMissDelta as usize], vec![2.0, 2.0, 1.0, 1.0, 1.0]);
+        assert_eq!(g.i[I::NumUnboundRays as usize], vec![1, 1, 1, 1, 1]);
     }
 }

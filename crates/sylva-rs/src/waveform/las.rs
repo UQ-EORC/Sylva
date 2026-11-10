@@ -157,9 +157,17 @@ pub fn read_info(path: impl AsRef<Path>) -> Result<LasWaveInfo> {
     } else {
         (0, 0, legacy_n)
     };
-    if waveform_field_offset(point_format).is_none() {
+    let Some(wave_at) = waveform_field_offset(point_format) else {
         return Err(file_err(path, format!("point format {point_format} has no waveform data (waveform formats are 4, 5, 9 and 10)")));
+    };
+    // The wave packet fields are 29 bytes from `wave_at`; a record shorter
+    // than that is not this point format, whatever the header says.
+    if (record_length as usize) < wave_at + 29 {
+        return Err(file_err(path, format!("point records of {record_length} bytes are too short for point format {point_format} ({} bytes at least)", wave_at + 29)));
     }
+    // The header's count, held to the records the file has room for: an
+    // uncompressed file cannot hold more, and the count sizes the read.
+    let n_points = if compressed { n_points } else { n_points.min(file_len.saturating_sub(offset_to_points) / record_length as u64) };
 
     let mut descriptors = BTreeMap::new();
     f.seek(SeekFrom::Start(header_size))?;
@@ -904,5 +912,26 @@ mod tests {
         let cloud = crate::PointCloud::new(vec![[0.0, 0.0, 0.0]]);
         crate::io::las::write_las(&cloud, &p, &Default::default()).unwrap();
         assert!(read_info(&p).is_err());
+    }
+
+    #[test]
+    fn a_corrupt_header_is_an_error() {
+        let p = tmp("corrupt");
+        write_waveforms(&sample(), &p, &LasWriteWaveOptions { external: true, ..Default::default() }).unwrap();
+        let good = std::fs::read(&p).unwrap();
+        // Records too short for the point format (0 used to divide by zero).
+        for rl in [0u16, 20, 58] {
+            let mut b = good.clone();
+            LE::write_u16(&mut b[105..], rl);
+            std::fs::write(&p, &b).unwrap();
+            let e = read_waveforms(&p, &LasReadOptions::default()).unwrap_err().to_string();
+            assert!(e.contains("too short for point format 9"), "{rl}: {e}");
+        }
+        // A point count far beyond the file reads the records that are there.
+        let mut b = good.clone();
+        LE::write_u64(&mut b[247..], 1 << 50);
+        std::fs::write(&p, &b).unwrap();
+        assert_eq!(read_info(&p).unwrap().n_points, 5);
+        assert_eq!(read_waveforms(&p, &LasReadOptions::default()).unwrap().0.len(), 5);
     }
 }

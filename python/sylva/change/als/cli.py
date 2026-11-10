@@ -62,7 +62,11 @@ def _cmd_als_tree_change(args, write_raster):
     window = als.LinearWindow(*args.window_linear) if args.window_linear else args.window
     kw = dict(method=args.method, resolution=args.resolution, window=window, hmin=args.hmin,
               max_cr=args.max_cr, **run)
-    with tempfile.TemporaryDirectory() as tmp:
+    # The thinned copies of both surveys go beside the output, not in the
+    # system's temporary directory, which is often small or held in memory.
+    where = Path(args.output).resolve().parent
+    where.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".sylva-harmonise-", dir=where) as tmp:
         ta_cat, tb_cat = a, b
         if args.harmonise:
             ta_cat, tb_cat = harmonise(a, b, Path(tmp) / "a", Path(tmp) / "b",

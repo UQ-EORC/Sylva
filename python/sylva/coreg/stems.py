@@ -26,6 +26,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import _core
+from .geometry import KdTree
 from .ground import GroundModel, fit_ground
 from .transforms import transform_points, transform_vectors
 
@@ -313,12 +314,22 @@ def detect_stems(
     name
         Name of the stem map.
     heights
-        Heights above ground of ``points``, if already known.
+        Heights above ground (m) of ``points``, one per point, if already
+        known. Without ``ground``, the terrain under each stem is taken from
+        them: the elevation minus the height of the point nearest the stem
+        (horizontally) among those within 0.5 m of the reference height.
 
     Returns
     -------
     StemMap
-        Stems, best first, with ``z`` on the scan's own terrain.
+        Stems, best first, with ``z`` on the scan's own terrain: the
+        elevation, in the frame of ``points``, of the stem axis at the
+        reference height.
+
+    Raises
+    ------
+    ValueError
+        If ``heights`` does not have one value per point.
     """
     cfg = config or StemDetectionConfig()
     points = np.ascontiguousarray(np.asarray(points, dtype=np.float64).reshape(-1, 3))
@@ -328,9 +339,10 @@ def detect_stems(
         if ground is None:
             ground = fit_ground(points)
         heights = ground.normalise(points)
-    found = _core.detect_stems(
-        points, np.ascontiguousarray(heights, dtype=np.float64), **_detector_kwargs(cfg)
-    )
+    heights = np.ascontiguousarray(heights, dtype=np.float64).reshape(-1)
+    if len(heights) != len(points):
+        raise ValueError(f"{len(heights)} heights for {len(points)} points")
+    found = _core.detect_stems(points, heights, **_detector_kwargs(cfg))
     stems = []
     for t in found:
         axis = np.asarray(t.get("axis", (0.0, 0.0, 1.0)), dtype=float)
@@ -352,8 +364,20 @@ def detect_stems(
     # Circles are fitted in height-above-ground, so z comes back as the
     # reference height; lift it into the scan's own datum, or the vertical
     # offset between two scans could never be estimated.
-    if ground is not None and stems:
-        terrain = ground.height_at(np.array([[s.x, s.y] for s in stems]))
+    if stems:
+        xy = np.array([[s.x, s.y] for s in stems])
+        if ground is not None:
+            terrain = ground.height_at(xy)
+        else:
+            # Only heights were given: a point's elevation minus its height is
+            # the terrain under it, and the points at the reference height
+            # nearest a stem are the stem's own.
+            band = np.isfinite(heights) & (np.abs(heights - cfg.reference_height) <= 0.5)
+            if not band.any():
+                band = np.isfinite(heights)
+            near = points[band]
+            _, idx = KdTree(near[:, :2]).query(xy)
+            terrain = (near[:, 2] - heights[band])[idx]
         for stem, z0 in zip(stems, terrain, strict=True):
             stem.z = float(z0 + cfg.reference_height)
     return StemMap(stems, name=name, ground=ground).sorted_by_quality()

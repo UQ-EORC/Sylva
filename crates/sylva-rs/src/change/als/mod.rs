@@ -139,11 +139,44 @@ pub(crate) fn unit(h: u64) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
 }
 
+/// Fewest first returns for the check that GPS times tell pulses apart.
+const TIME_CHECK_MIN: usize = 16;
+/// GPS times do not tell pulses apart when the first returns outnumber the
+/// distinct `(gps_time, point_source_id)` values among them by more than
+/// this factor.
+const TIME_CHECK_RATIO: usize = 8;
+
+/// Whether `gps_time` (with the flight line) tells the pulses of `cloud`
+/// apart. A file written without times carries one value (usually 0) on
+/// every point, and one truncated to a coarse clock repeats each value over
+/// many pulses; either way thousands of first returns share a handful of
+/// times. True without a `gps_time` attribute is never returned: there is
+/// then nothing to judge.
+pub(crate) fn times_identify_pulses(cloud: &PointCloud) -> bool {
+    let Some(t) = cloud.attr("gps_time") else { return false };
+    let psid = cloud.attr("point_source_id");
+    let first = first_returns(cloud);
+    let mut seen: std::collections::HashSet<(u64, u64)> = std::collections::HashSet::new();
+    let mut n_first = 0usize;
+    for i in 0..cloud.len() {
+        if first[i] {
+            n_first += 1;
+            seen.insert((t.get_f64(i).to_bits(), psid.map_or(0, |p| p.get_f64(i) as u64)));
+        }
+    }
+    n_first < TIME_CHECK_MIN || seen.len() * TIME_CHECK_RATIO >= n_first
+}
+
 /// A key identifying each point's pulse: its GPS time and flight line, or
-/// without GPS time the point's own coordinates (to the millimetre).
+/// the point's own coordinates (to the millimetre) when the cloud has no
+/// GPS time or its GPS times do not tell pulses apart
+/// ([`times_identify_pulses`]: all zero, constant, or truncated). With the
+/// coordinates as key every return is its own pulse, so the returns of one
+/// pulse are no longer kept together; that is the documented fallback, and
+/// far better than treating a whole flight line as one pulse.
 pub(crate) fn pulse_keys(cloud: &PointCloud) -> Vec<u64> {
     let psid = cloud.attr("point_source_id");
-    match cloud.attr("gps_time") {
+    match cloud.attr("gps_time").filter(|_| times_identify_pulses(cloud)) {
         Some(t) => (0..cloud.len()).map(|i| mix(t.get_f64(i).to_bits() ^ psid.map_or(0, |p| (p.get_f64(i) as u64) << 48))).collect(),
         None => cloud.xyz.iter().map(|p| {
             let q = |v: f64| (v * 1000.0).round() as i64 as u64;
@@ -416,6 +449,28 @@ mod tests {
             assert_eq!(g.nearest(&pts, x, y, 50.0), near);
         }
         assert_eq!(g.nearest(&pts, 100.0, 100.0, 1.0), f64::INFINITY);
+    }
+
+    #[test]
+    fn constant_gps_times_do_not_make_one_pulse_of_a_flight_line() {
+        // 400 single returns, all with gps_time 0 (a file written without
+        // times): each must stay its own pulse.
+        let xyz: Vec<Point> = (0..400).map(|k| [(k % 20) as f64 * 0.5, (k / 20) as f64 * 0.5, 10.0 + (k % 7) as f64]).collect();
+        let mut c = PointCloud::new(xyz.clone());
+        c.attrs.insert("return_number".into(), Attr::U8(vec![1; 400]));
+        c.attrs.insert("gps_time".into(), Attr::F64(vec![0.0; 400]));
+        assert!(!times_identify_pulses(&c));
+        let keys = pulse_keys(&c);
+        let distinct: std::collections::HashSet<u64> = keys.iter().copied().collect();
+        assert_eq!(distinct.len(), 400);
+        // The same keys as a cloud without the attribute.
+        assert_eq!(keys, pulse_keys(&PointCloud::new(xyz)));
+        // Real times are used: both returns of a pulse share a key.
+        c.attrs.insert("gps_time".into(), Attr::F64((0..400).map(|k| 1e5 + (k / 2) as f64 * 1e-5).collect()));
+        c.attrs.insert("return_number".into(), Attr::U8((0..400).map(|k| 1 + (k % 2) as u8).collect()));
+        assert!(times_identify_pulses(&c));
+        let keys = pulse_keys(&c);
+        assert!(keys[0] == keys[1] && keys[1] != keys[2]);
     }
 
     #[test]

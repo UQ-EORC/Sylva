@@ -10,7 +10,7 @@
 |---|---|---|
 | ``.las`` / ``.laz`` | yes | yes |
 | ``.ply`` (ascii / binary, incl. raycloudtools ray clouds) | yes | yes |
-| ``.xyz`` ``.txt`` ``.csv`` ``.pts`` | yes | yes |
+| ``.xyz`` ``.txt`` ``.csv`` ``.asc`` ``.pts`` | yes | yes |
 | ``.rxp`` (RIEGL, needs RiVLib) | yes | no |
 | ``.rdbx`` (RIEGL RDB 2, needs librdb) | yes | no |
 
@@ -68,7 +68,14 @@ def read(path: str | Path, attrs: list[str] | None = None) -> PointCloud:
           ``classification``, ``scan_angle``, ``user_data``,
           ``point_source_id``, plus ``gps_time`` and ``red``/``green``/``blue``
           when the point format has them, and every extra-bytes dimension
-          under its own name and type. ``crs`` is the header's OGC WKT, or
+          under its own name and type; one stored with a scale or offset
+          (``Reflectance`` in hundredths of a dB, say) is returned as the
+          float64 values it stands for, ``stored * scale + offset``, with
+          its no-data value as NaN. ``withheld``, ``overlap``,
+          ``synthetic`` and ``key_point`` (uint8, 1 = set) are the
+          classification flags, each present only if some point of the
+          file has it set: drop ``withheld`` points before computing
+          anything from heights. ``crs`` is the header's OGC WKT, or
           ``"EPSG:n"`` (``"EPSG:h+v"`` with a vertical CRS) from its GeoTIFF
           keys; None if the header declares neither.
         - PLY: every ``vertex`` property except x, y, z, with its type.
@@ -104,24 +111,41 @@ def write(cloud: PointCloud, path: str | Path, point_format: int = 6, scale: flo
         exists.
     point_format
         LAS point data record format (LAS/LAZ only). 6 (LAS 1.4, with GPS
-        time) is the default; use 7 or 8 to keep RGB.
+        time) is the default. A cloud with ``red``, ``green`` or ``blue``
+        is written in the nearest format that has colour (6 becomes 7, 0
+        and 2 become 2 or 3, 1 becomes 3), and one with ``gps_time`` in one
+        that has time (0 becomes 1, 2 becomes 3), so neither is dropped.
     scale
-        LAS coordinate quantisation in the units of the coordinates
-        (LAS/LAZ only); the offset is the floor of the minimum coordinate.
-        By default 0.001 (millimetres), or 1e-7 degrees (about 1 cm) when
-        the cloud's ``crs`` is geographic (longitude and latitude).
+        Coordinate resolution in the units of the coordinates. LAS/LAZ: the
+        quantisation step; the offset is the floor of the minimum
+        coordinate. Text files: coordinates are written with one decimal
+        more than the scale has (0.001 gives four decimals, 0.1 mm). By
+        default 0.001 (millimetres), or 1e-7 degrees (about 1 cm; eight
+        decimals in text) when the cloud's ``crs`` is geographic (longitude
+        and latitude).
     binary
         Binary little-endian PLY if True, ASCII otherwise (PLY only).
 
     Notes
     -----
-    LAS/LAZ: attributes that are not standard dimensions of ``point_format``
-    are written as typed extra bytes, so ``height``, ``tree_id`` and the like
-    survive a round trip. The cloud's ``crs`` is stored as an OGC WKT VLR
-    (an EPSG code as the registry's WKT); a CRS given as a PROJ string has
-    no WKT form and is left out with a warning. Text files get a header
-    line naming the columns and coordinates to 0.1 mm; integer attributes
-    are written as integers. PLY and text files have no place for a CRS.
+    LAS/LAZ: attributes that are not standard LAS dimensions are written as
+    typed extra bytes, so ``height``, ``tree_id`` and the like survive a
+    round trip, 64-bit integers exactly. ``withheld``, ``overlap``,
+    ``synthetic`` and ``key_point`` (non-zero = set) are written as the
+    point's classification flags, and :func:`read` returns each of them
+    for a file in which it is set on at least one point. Class 12
+    (overlap) is stored as class 12 in point formats 0 to 5 and, as LAS 1.4
+    defines it, as class 1 with the ``overlap`` flag in formats 6 and
+    above. Coordinates that do not fit the file's 32-bit integers at
+    ``scale`` raise ``ValueError``. The cloud's ``crs`` is stored as an OGC
+    WKT VLR (an EPSG code as the registry's WKT); a CRS given as a PROJ
+    string has no WKT form and is left out with a warning.
+
+    Text files get a header line naming the columns; integer attributes
+    are written as integers. PLY: 64-bit integer attributes are written as
+    ``int`` when they fit 32 bits and as ``double`` otherwise (PLY has no
+    64-bit integer), and values beyond 2**53 raise ``ValueError``. PLY and
+    text files have no place for a CRS.
 
     Raises
     ------
@@ -141,7 +165,15 @@ def _las_crs_and_scale(crs: str | None, path: str | Path,
     CRS and 1 mm otherwise), as :func:`write` chooses them."""
     crs_wkt = None
     geographic = False
-    if crs is not None and Path(path).suffix.lower() in (".las", ".laz"):
+    las = Path(path).suffix.lower() in (".las", ".laz")
+    if crs is not None and not las:
+        # No place for the CRS in the file, but degrees still need the
+        # finer scale: it sets the decimals of a text file.
+        try:
+            geographic = bool(_core.crs_info(crs)["geographic"])
+        except ValueError:
+            pass
+    if crs is not None and las:
         try:
             info = _core.crs_info(crs)
             crs_wkt, geographic = info["wkt"], bool(info["geographic"])
@@ -251,7 +283,9 @@ def read_ascii(path: str | Path, columns: list[str] | None = None) -> PointCloud
     The delimiter (comma, semicolon, tab or whitespace) is detected from the
     first data line. Lines starting with ``#`` are skipped, a leading line
     holding a single integer (PTS point count) is skipped, and a non-numeric
-    first line is taken as a header.
+    first line is taken as a header. With a comma, semicolon or tab
+    delimiter an empty field is a missing value: it keeps its column and
+    reads as NaN.
 
     Parameters
     ----------

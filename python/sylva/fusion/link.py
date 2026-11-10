@@ -23,7 +23,10 @@ def _table(trees, what: str, columns: tuple) -> dict:
         if "x" not in trees or "y" not in trees:
             raise ValueError(f"{what} needs 'x' and 'y' columns")
         n = len(np.asarray(trees["x"]))
-        out = {k: np.asarray(v) for k, v in trees.items()}
+        # Crown outlines differ in vertex count, so they stay a list of arrays.
+        out = {k: (list(v) if k == "crowns" else np.asarray(v)) for k, v in trees.items()}
+        if "crowns" in out and len(out["crowns"]) != n:
+            raise ValueError(f"column 'crowns' of {what} has {len(out['crowns'])} outlines for {n} trees")
         for k, v in out.items():
             if k != "crowns" and v.ndim == 1 and len(v) != n:
                 raise ValueError(f"column {k!r} of {what} has {len(v)} values for {n} trees")
@@ -151,7 +154,8 @@ class TreeLinks:
             if len(stems) >= 2:
                 main = int(self.als_tls[j])
                 order = [main] + [int(i) for i in stems if int(i) != main] if main >= 0 else [int(i) for i in stems]
-                out[int(self.als["id"][j])] = [int(self.tls["tree_id"][i]) for i in order]
+                plain = lambda v: v.item() if isinstance(v, np.generic) else v  # noqa: E731
+                out[plain(self.als["id"][j])] = [plain(self.tls["tree_id"][i]) for i in order]
         return out
 
     def table(self) -> dict:
@@ -162,16 +166,19 @@ class TreeLinks:
         -------
         dict
             ``tree_id``, ``x``, ``y``, ``dbh``, ``height_tls``, ``volume``,
-            ``status``, ``als_id`` (-1 for none), ``als_height``,
+            ``status``, ``als_id`` (-1 for none; the empty string where the
+            ALS ids are text), ``als_height``,
             ``distance``, ``inside``, ``height``, ``height_source``,
             ``top_seen``, ``flag``.
         """
         ids = np.asarray(self.als["id"])
+        none = "" if ids.dtype.kind in "USO" else -1
         return {
             "tree_id": self.tls["tree_id"], "x": self.tls["x"], "y": self.tls["y"],
             "dbh": self.tls["dbh"], "height_tls": self.tls["height"], "volume": self.tls["volume"],
             "status": self.status,
-            "als_id": np.where(self.als_index >= 0, ids[np.clip(self.als_index, 0, None)] if len(ids) else -1, -1),
+            "als_id": np.where(self.als_index >= 0, ids[np.clip(self.als_index, 0, None)] if len(ids) else none,
+                               none),
             "als_height": self.als_height, "distance": self.distance, "inside": self.inside,
             "height": self.height, "height_source": self.height_source, "top_seen": self.top_seen,
             "flag": self.flag,
@@ -179,11 +186,16 @@ class TreeLinks:
 
     def als_table(self) -> dict:
         """One row per ALS tree: ``id``, ``x``, ``y``, ``height``,
-        ``tls_id`` (its matched TLS tree, -1 for none), ``n_stems`` (TLS
-        stems linked to it or under it) and ``stems`` (their ids)."""
+        ``tls_id`` (its matched TLS tree, -1 for none; the empty string where
+        the TLS ids are text), ``n_stems`` (TLS stems linked to it or under
+        it) and ``stems`` (their ids)."""
         tid = np.asarray(self.tls["tree_id"])
+        if tid.dtype.kind in "iu":
+            tls_id = np.array([tid[i] if i >= 0 else -1 for i in self.als_tls], dtype=np.int64)
+        else:
+            tls_id = np.array([str(tid[i]) if i >= 0 else "" for i in self.als_tls], dtype=str)
         return {"id": self.als["id"], "x": self.als["x"], "y": self.als["y"], "height": self.als["height"],
-                "tls_id": np.array([tid[i] if i >= 0 else -1 for i in self.als_tls], dtype=np.int64),
+                "tls_id": tls_id,
                 "n_stems": np.array([len(s) for s in self.als_stems], dtype=np.int64),
                 "stems": [tid[np.asarray(s, dtype=int)].tolist() for s in self.als_stems]}
 

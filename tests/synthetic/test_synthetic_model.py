@@ -426,3 +426,23 @@ def test_scan_of_empty_and_nan_clouds():
     xyz[::7] = np.nan
     s = synthetic.scan(PointCloud(xyz, cloud.attrs), origin=(0, 0, 0), resolution_deg=1.0, range_noise=0.001)
     assert s.n_echoes > 0 and np.isfinite(s.echo_range).all()
+
+
+def test_a_given_zenith_limit_overrides_the_scanner_preset():
+    f = synthetic.forest()
+    kw = dict(origin=(10, 10, 1.5), resolution_deg=2.0, scanner="vz400")
+    preset = synthetic.scan(f, **kw)
+    limited = synthetic.scan(f, max_zenith_deg=90.0, **kw)
+    zen_p, zen_l = preset.zenith_azimuth()[0], limited.zenith_azimuth()[0]
+    assert zen_p.max() > 100.0                       # the preset's own field of view
+    assert zen_l.max() < 90.0 and limited.n_shots < preset.n_shots
+    # Without a scanner the default is still 130 degrees.
+    assert synthetic.scan(f, origin=(10, 10, 1.5), resolution_deg=2.0).zenith_azimuth()[0].max() == pytest.approx(129.0, abs=1.01)
+
+
+def test_als_epochs_truth_table_lists_the_trees_kept():
+    ep = synthetic.als_epochs(n_trees=12, size=40.0, removed=1, gap=None, buildings=False,
+                              flight_a={"pulse_rate": 200.0}, flight_b={"pulse_rate": 200.0})
+    n = len(ep.trees["tree_id"])
+    assert 0 < n <= 12 and all(len(v) == n for v in ep.trees.values())
+    assert np.all(ep.trees["x"] < 40.0 - 2.0)        # trees by the east edge are left out, as documented

@@ -326,3 +326,24 @@ def test_hemispherical_photo_from_points(tmp_path):
     width, height = np.frombuffer(head[16:24], dtype=">u4")
     assert (width, height) == (300, 300)
 
+
+
+def test_pad_profile_leaves_the_ground_out(rng):
+    # A canopy layer at 5-6 m and ground returns under it, in projected coordinates.
+    n = 20000
+    xy = np.column_stack([rng.uniform(0, 10, n), rng.uniform(0, 10, n)]) + [500_000.0, 8_500_000.0]
+    canopy_pts = np.column_stack([xy[: n // 20], rng.uniform(5, 6, n // 20)])
+    ground_pts = np.column_stack([xy, rng.uniform(0.0, 0.05, n)])
+    both = np.vstack([canopy_pts, ground_pts])
+    alone = PointCloud(canopy_pts, {"height": canopy_pts[:, 2]})
+    pc = PointCloud(both, {"height": both[:, 2]})
+    z, pad = canopy.pad_profile_voxel(pc, voxel_size=0.5)
+    _, pad_alone = canopy.pad_profile_voxel(alone, voxel_size=0.5)
+    assert pad[0] == 0.0                      # the ground layer holds no plant area
+    np.testing.assert_allclose(pad.sum(), pad_alone.sum(), rtol=1e-9)
+    # With the ground counted the bottom layer saturates.
+    _, with_ground = canopy.pad_profile_voxel(pc, voxel_size=0.5, min_height=0.0)
+    assert with_ground[0] > 10 * pad.max()
+    # Bare ground has no plant area at all.
+    bare = PointCloud(ground_pts, {"height": ground_pts[:, 2]})
+    assert canopy.pad_profile_voxel(bare, voxel_size=0.5)[1].sum() == 0.0

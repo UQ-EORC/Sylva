@@ -253,11 +253,21 @@ impl Catalog {
         self.tiles.iter().map(|t| t.n_points).sum()
     }
 
-    /// `[xmin, ymin, zmin, xmax, ymax, zmax]` over all tiles; None if there are none.
+    /// `[xmin, ymin, zmin, xmax, ymax, zmax]` (m) over the tiles that hold
+    /// points; None if there are no tiles.
+    ///
+    /// A tile without points has no extent, and its header usually says
+    /// zeros: counting it would stretch a survey in projected coordinates
+    /// all the way to the origin, and every grid laid over the catalogue
+    /// with it. Such tiles are left out; only when no tile holds a point
+    /// are the header extents of all of them used.
     pub fn bounds(&self) -> Option<[f64; 6]> {
-        let first = self.tiles.first()?;
+        let mut held = self.tiles.iter().filter(|t| t.n_points > 0).peekable();
+        let mut all = self.tiles.iter();
+        let tiles: &mut dyn Iterator<Item = &Tile> = if held.peek().is_some() { &mut held } else { &mut all };
+        let first = tiles.next()?;
         let mut b = first.bounds;
-        for t in &self.tiles[1..] {
+        for t in tiles {
             for k in 0..3 {
                 b[k] = b[k].min(t.bounds[k]);
                 b[k + 3] = b[k + 3].max(t.bounds[k + 3]);
@@ -1019,6 +1029,28 @@ mod tests {
         assert!((gaps[0].1 - 100.0 * 100.0).abs() < 0.05 * 1e4, "{}", gaps[0].1);
         let kinds: Vec<String> = ring.issues(1.0).into_iter().map(|i| i.kind).collect();
         assert_eq!(kinds, ["no_crs", "gap"]);
+    }
+
+    #[test]
+    fn an_empty_tile_does_not_stretch_the_extent() {
+        // A survey in UTM coordinates with one tile that holds no points
+        // and whose header extent is all zeros, as most writers leave it.
+        let mut cat = Catalog::default();
+        for (i, (x, y)) in [(512_000.0, 6_234_000.0), (512_100.0, 6_234_000.0)].iter().enumerate() {
+            cat.tiles.push(tile(&format!("t{i}.laz"), [*x, *y, x + 99.99, y + 99.99], 1000, Some("EPSG:28355"), 6));
+        }
+        let full = cat.bounds().unwrap();
+        cat.tiles.insert(0, tile("empty.laz", [0.0, 0.0, 0.0, 0.0], 0, Some("EPSG:28355"), 6));
+        assert_eq!(cat.bounds().unwrap(), full);
+        assert_eq!(cat.xy_bounds().unwrap(), [512_000.0, 6_234_000.0, 512_199.99, 6_234_099.99]);
+        let grid = catalog_grid(&cat, 1.0).unwrap();
+        assert_eq!((grid.nrows, grid.ncols, grid.xmin, grid.ymin), (100, 200, 512_000.0, 6_234_000.0));
+        assert_eq!(plan(&cat, Layout::Grid { size: 100.0, origin: None }, 10.0).unwrap().len(), 2);
+        assert!(cat.gaps(1.0).is_empty());
+        // With nothing but empty tiles the headers are all there is.
+        let mut none = Catalog::default();
+        none.tiles.push(tile("a.laz", [1.0, 2.0, 3.0, 4.0], 0, None, 6));
+        assert_eq!(none.xy_bounds().unwrap(), [1.0, 2.0, 3.0, 4.0]);
     }
 
     #[test]

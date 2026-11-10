@@ -87,6 +87,10 @@ enum Command {
         input: PathBuf,
         #[arg(long, default_value_t = 0.5)]
         voxel: f64,
+        /// Points at or below this height (m) are ground, not canopy
+        /// (default: one voxel).
+        #[arg(long)]
+        min_height: Option<f64>,
     },
     /// Convert a ray cloud (sx,sy,sz or nx,ny,nz attributes) to a sylva shots
     /// file (.parquet): one row per pulse, misses without far points.
@@ -200,7 +204,7 @@ fn main() -> Result<()> {
         Command::Ground { input, output, method, resolution, dtm } => {
             let mut c = io::read(&input)?;
             let mask = match method.as_str() {
-                "csf" => ground::csf_ground_mask(&c.xyz, &ground::CsfParams { cloth_resolution: resolution, ..Default::default() }),
+                "csf" => ground::csf_ground_mask(&c.xyz, &ground::CsfParams { cloth_resolution: resolution, ..Default::default() })?,
                 "pmf" => ground::pmf_ground_mask(&c.xyz, &ground::PmfParams { cell_size: resolution, ..Default::default() })?,
                 other => anyhow::bail!("unknown method {other:?} (csf|pmf)"),
             };
@@ -262,10 +266,10 @@ fn main() -> Result<()> {
             chm.write_ascii_grid(&output, -9999.0)?;
             println!("CHM {}x{} -> {}; cover(>2m)={:.2}", chm.nrows, chm.ncols, output.display(), canopy::canopy_cover(&chm.data, 2.0));
         }
-        Command::Pad { input, voxel } => {
+        Command::Pad { input, voxel, min_height } => {
             let c = io::read(&input)?;
             let h = heights(&c, &input);
-            let (z, pad) = canopy::pad_profile_voxel(&c.xyz, &h, voxel, None, 1.0)?;
+            let (z, pad) = canopy::pad_profile_voxel(&c.xyz, &h, voxel, None, 1.0, min_height.unwrap_or(voxel))?;
             println!("height,pad");
             for (zz, p) in z.iter().zip(&pad) {
                 println!("{zz:.2},{p:.4}");

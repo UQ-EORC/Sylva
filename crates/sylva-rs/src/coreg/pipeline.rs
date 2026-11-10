@@ -314,7 +314,11 @@ pub struct CoregConfig {
     /// Scans with fewer points (after the reading filters) are set aside
     /// rather than processed.
     pub min_points_per_scan: i64,
-    /// 0 reads every point (Python's None and 0 alike).
+    /// Most points a scan is prepared from, after the reading filters; a
+    /// larger scan is thinned by an even stride through its recording order
+    /// ([`stride_subsample`]), so the whole rotation stays covered. 0 reads
+    /// every point (Python's None and 0 alike). Only preparation is capped:
+    /// [`crate::coreg::survey::merge_clouds`] always merges every point.
     pub max_points_per_scan: usize,
 }
 
@@ -534,7 +538,8 @@ pub fn path_stem(path: &Path) -> String {
 /// Points of a scan file in its own frame, filtered for coregistration
 /// (`_read_scan`): RiSCAN's import filter on the whole stream first, then
 /// the closed intervals on range (from the scanner), deviation, reflectance
-/// and amplitude, then the cap on the number of points.
+/// and amplitude, then the cap on the number of points
+/// (`max_points_per_scan`, an even stride through the file: [`stride_subsample`]).
 pub fn read_scan(path: &Path, cfg: &CoregConfig) -> std::result::Result<Vec<Point>, PrepareError> {
     let is_rxp = path.extension().map(|e| e.to_string_lossy().to_lowercase() == "rxp").unwrap_or(false);
     let cloud = if is_rxp {
@@ -590,9 +595,24 @@ pub fn read_scan(path: &Path, cfg: &CoregConfig) -> std::result::Result<Vec<Poin
     }
     let mut out: Vec<Point> = xyz.into_iter().zip(keep).filter(|(_, k)| *k).map(|(p, _)| p).collect();
     if cfg.max_points_per_scan > 0 && out.len() > cfg.max_points_per_scan {
-        out.truncate(cfg.max_points_per_scan);
+        out = stride_subsample(&out, cfg.max_points_per_scan);
     }
     Ok(out)
+}
+
+/// `count` of `points` spread evenly through their order (point
+/// `floor(i * n / count)` for `i` in `0..count`), or all of them if there are
+/// no more than `count`.
+///
+/// A scan file is in recording order, so its first `count` points are one
+/// wedge of the rotation; an even stride keeps the whole field of view at a
+/// lower density, and is the same every run.
+pub fn stride_subsample(points: &[Point], count: usize) -> Vec<Point> {
+    let n = points.len();
+    if n <= count {
+        return points.to_vec();
+    }
+    (0..count).map(|i| points[(i as u128 * n as u128 / count as u128) as usize]).collect()
 }
 
 fn ground_params(cfg: &CoregConfig) -> GroundParams {
@@ -709,9 +729,15 @@ pub fn prepare_scan(input: &ScanInput, cfg: &CoregConfig, name: &str, reflectors
     Ok(ScanFeatures { name: name.clone(), n_points: points.len(), ground: Some(ground), stems, stem_map_name: name, icp_points, reflectors, icp_heights, levelling: level, origin: scanner, source, seconds: start.elapsed().as_secs_f64(), error: String::new() })
 }
 
+/// Fewest returns the terrain refit of [`refit_visible_ground`] is made from;
+/// with fewer left (the returns steeper than 45 degrees below the scanner and
+/// those at sighted azimuths), the first fit stands.
+const REFIT_MIN_RETURNS: usize = 100;
+
 /// The terrain refitted without the directions in which the scanner could
 /// not see it (`_refit_visible_ground`), or `None` where every azimuth, or
-/// none, is blind and the fit stands.
+/// none, is blind, or fewer than 100 returns would be left
+/// to fit, and the fit stands.
 ///
 /// An azimuth (1 degree) is blind when the scan sampled less than
 /// `ground_min_coverage` of the elevations from -30 to +5 degrees in it;
@@ -740,6 +766,12 @@ pub fn refit_visible_ground(points: &[Point], scanner: Point, cfg: &CoregConfig)
     let widen = 3i64;
     let widened: Vec<bool> = (0..360i64).map(|a| (-widen..=widen).any(|d| blind[(a + d).rem_euclid(360) as usize])).collect();
     let kept: Vec<Point> = (0..n).filter(|&k| !widened[azimuth[k]] || elevation[k] < -45.0).map(|k| points[k]).collect();
+    // Scattered blind azimuths, once widened, can cover the whole circle and
+    // leave nothing (an upright scanner sees nothing 45 degrees down): a
+    // terrain cannot be fitted to that, so the fit from every return stands.
+    if kept.len() < REFIT_MIN_RETURNS {
+        return Ok(None);
+    }
     Ok(Some(fit_ground(&kept, &ground_params(cfg))?))
 }
 
@@ -1072,13 +1104,10 @@ fn score(source: &ScanFeatures, target: &ScanFeatures, pyramid: Option<&IcpTarge
     let (fitness, rmse, n) = evaluate_registration(&source.icp_points, &target.icp_points, transform, cfg.icp.fitness_threshold, 200_000, Some(0.05), 0);
     let pc = plane_config(&cfg.icp);
     let information = match pyramid {
-        Some(t) => {
-            if !t.matches(&pc) {
-                return Err(Error::invalid("the prepared ICP target was built with other pyramid settings"));
-            }
-            plane_information(&source.icp_points, t, transform, &pc)
-        }
-        None => plane_information(&source.icp_points, &IcpTarget::new(&target.icp_points, &pc), transform, &pc),
+        // A pyramid prepared for point-to-point ICP has no normals: the
+        // information is always point-to-plane, so that pyramid is built here.
+        Some(t) if t.matches(&pc) => plane_information(&source.icp_points, t, transform, &pc),
+        _ => plane_information(&source.icp_points, &IcpTarget::new(&target.icp_points, &pc), transform, &pc),
     };
     Ok(IcpResult { transform: *transform, fitness, inlier_rmse: rmse, n_correspondences: n, iterations: refined.iterations, converged: false, history: refined.history.clone(), information })
 }
@@ -1419,5 +1448,66 @@ mod tests {
         assert!(!few.usable());
         let offset = height_offset(&other, &moved, &[(&scan, Matrix4::identity())], &cfg);
         assert!(offset.abs() < 0.02, "{offset}");
+    }
+
+    #[test]
+    fn a_kept_coarse_transform_is_scored_against_a_point_to_point_pyramid() {
+        // A negative tolerance makes the stem cross-check keep the coarse
+        // transform, which is then scored: with a pyramid prepared for
+        // point-to-point ICP that used to fail the pair, and the survey with it.
+        let mut cfg = CoregConfig { stem_agreement_tolerance: -1.0, ..CoregConfig::default() };
+        cfg.icp.method = "point_to_point".into();
+        let pts = stand(3);
+        let moved = crate::coreg::transforms::yaw_transform(0.4, 2.0, -1.0, 0.3);
+        let a = prepare_scan(&ScanInput::Points(pts.clone()), &cfg, "a", &[], None, None).unwrap();
+        let b = prepare_scan(&ScanInput::Points(transform_points(&invert(&moved), &pts)), &cfg, "b", &[], None, None).unwrap();
+        let prepared = IcpTarget::new(&b.icp_points, &cfg.icp);
+        let pair = register_pair(&a, &b, &cfg, None, None, 0, 1, Some(&prepared)).unwrap();
+        assert!(pair.success && !pair.used_icp, "{}", pair.reason);
+        assert!(pair.icp.unwrap().information.is_some());
+    }
+
+    #[test]
+    fn the_point_cap_strides_through_the_whole_scan() {
+        let pts: Vec<Point> = (0..10).map(|k| [k as f64, 0.0, 0.0]).collect();
+        let x = |v: Vec<Point>| v.iter().map(|p| p[0] as usize).collect::<Vec<_>>();
+        assert_eq!(x(stride_subsample(&pts, 4)), vec![0, 2, 5, 7]);
+        assert_eq!(x(stride_subsample(&pts, 10)), (0..10).collect::<Vec<_>>());
+        assert_eq!(stride_subsample(&pts, 99).len(), 10);
+        assert!(stride_subsample(&pts, 0).is_empty());
+        // Through a file: the cap reaches the far end of the recording.
+        let dir = std::env::temp_dir().join(format!("sylva-cap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("scan.xyz");
+        let text: String = (0..1000).map(|k| format!("{k} 0 0\n")).collect();
+        std::fs::write(&path, text).unwrap();
+        let cfg = CoregConfig { max_points_per_scan: 10, ..CoregConfig::default() };
+        let read = read_scan(&path, &cfg);
+        std::fs::remove_dir_all(&dir).unwrap();
+        let read = read.unwrap();
+        assert_eq!(read.len(), 10);
+        assert_eq!(read[9][0], 900.0);
+    }
+
+    #[test]
+    fn a_refit_that_would_leave_no_ground_keeps_the_first_fit() {
+        // Flat ground seen from 1.6 m at 3-30 m (elevations -28 to -3 degrees,
+        // under 80 % of the band) and a thin pole every 6 degrees filling the
+        // band there: the blind azimuths, widened, cover the circle, and an
+        // upright scanner has nothing 45 degrees down to keep.
+        let mut rng = crate::util::nprandom::Generator::new(5);
+        let mut pts: Vec<Point> = Vec::new();
+        for _ in 0..60000 {
+            let (a, r) = (rng.random() * std::f64::consts::TAU, 3.0 + 27.0 * rng.random());
+            pts.push([r * a.cos(), r * a.sin(), 0.0]);
+        }
+        for k in 0..60 {
+            let a = (k as f64 * 6.0 + 0.5).to_radians();
+            pts.extend((0..500).map(|i| [8.0 * a.cos(), 8.0 * a.sin(), 6.0 * i as f64 / 500.0]));
+        }
+        let cfg = CoregConfig::default();
+        assert!(refit_visible_ground(&pts, [0.0, 0.0, 1.6], &cfg).unwrap().is_none());
+        let scan = prepare_scan(&ScanInput::Points(pts), &cfg, "open", &[], None, Some([0.0, 0.0, 1.6])).unwrap();
+        assert!(scan.usable(), "{}", scan.error);
     }
 }

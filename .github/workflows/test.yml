@@ -1,0 +1,52 @@
+name: test
+
+# The Rust and Python tests on every push to main and every pull request,
+# at both ends of the Python range the package supports. The release
+# workflow runs them again, and tests the wheels on each platform.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release -p sylva-rs
+      # The command-line crate and the bindings have no tests of their own
+      # here, but they must build against the core as it is.
+      - run: cargo build --release -p sylva-cli
+      - run: cargo check -p sylva-py
+
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: |
+          python -m venv .venv && . .venv/bin/activate
+          pip install maturin pytest numpy scipy matplotlib   # what the tests import
+          maturin develop --release
+          # The parity recordings are bit-level guards for the machine that
+          # made them (see release.yml); every other test runs.
+          pytest -q --ignore=tests/test_parity.py

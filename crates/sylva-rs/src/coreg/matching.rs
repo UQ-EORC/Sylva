@@ -79,7 +79,7 @@ pub struct StemMap {
     /// Diameter at breast height of each stem (m).
     pub diameters: Vec<f64>,
     /// 0-1 confidence of each stem ([`crate::coreg::stemmap::stem_quality`]);
-    /// only the `max_stems` best take part.
+    /// only the `max_stems` best take part, a NaN (unknown) ranking last.
     pub qualities: Vec<f64>,
 }
 
@@ -94,10 +94,14 @@ impl StemMap {
         self.positions.is_empty()
     }
 
-    /// Indices of the `n` highest-quality stems, best first (ties keep input order).
+    /// Indices of the `n` highest-quality stems, best first (ties keep input
+    /// order); a stem of unknown quality (NaN) ranks below every other.
     fn top(&self, n: usize) -> Vec<usize> {
         let mut idx: Vec<usize> = (0..self.len()).collect();
-        idx.sort_by(|&a, &b| self.qualities[b].partial_cmp(&self.qualities[a]).unwrap_or(std::cmp::Ordering::Equal));
+        // NaN compares equal to nothing, which is not an order a sort can use
+        // (the standard library panics on it), so it is ranked explicitly.
+        let rank = |k: usize| if self.qualities[k].is_nan() { f64::NEG_INFINITY } else { self.qualities[k] };
+        idx.sort_by(|&a, &b| rank(b).partial_cmp(&rank(a)).expect("no NaN left"));
         idx.truncate(n);
         idx
     }
@@ -426,6 +430,28 @@ mod tests {
     fn lcg(seed: &mut u64) -> f64 {
         *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         (*seed >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    #[test]
+    fn stems_of_unknown_quality_rank_last_and_do_not_panic() {
+        // NaN qualities used to break the sort's ordering, which the standard
+        // library reports with a panic for maps of a few dozen stems.
+        for n in [30usize, 60, 200] {
+            let mut seed = 5;
+            let mut m = StemMap::default();
+            for k in 0..n {
+                m.positions.push([lcg(&mut seed) * 40.0, lcg(&mut seed) * 40.0, 1.3]);
+                m.diameters.push(0.3);
+                m.qualities.push(if k % 3 == 0 { f64::NAN } else { lcg(&mut seed) });
+            }
+            let known = m.qualities.iter().filter(|q| !q.is_nan()).count();
+            let top = m.top(n);
+            assert!(top[..known].iter().all(|&k| !m.qualities[k].is_nan()));
+            assert!(top[..known].windows(2).all(|w| m.qualities[w[0]] >= m.qualities[w[1]]));
+            assert!(top[known..].windows(2).all(|w| w[0] < w[1]), "unknown stems keep their order");
+            let r = match_stem_maps(&m, &m, &MatchParams::default());
+            assert!(r.success && r.n_inliers >= 20, "{n}: {}", r.n_inliers);
+        }
     }
 
     #[test]

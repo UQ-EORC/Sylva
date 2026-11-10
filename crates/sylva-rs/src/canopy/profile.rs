@@ -289,7 +289,8 @@ impl GapArrays<'_> {
 
     /// Cumulative plant area index below each height: `"hinge"` (the ring
     /// holding 57.5 degrees, Jupp et al. 2009), `"linear"` (least squares of
-    /// -ln P on tan of the zenith) or `"weighted"` (Miller's integral).
+    /// -ln P on tan of the zenith; an error with pulses in fewer than two
+    /// rings) or `"weighted"` (Miller's integral).
     pub fn pai_profile(&self, method: &str) -> Result<Vec<f64>> {
         let p = self.pgap()?;
         let (lp, ok) = self.log_gap(&p);
@@ -313,16 +314,26 @@ impl GapArrays<'_> {
                     })
                     .collect())
             }
-            "linear" => Ok(self.linear(&lp, &th, &ok).0),
+            "linear" => {
+                if ok.iter().filter(|&&o| o).count() < 2 {
+                    return Err(Error::invalid("the linear model needs pulses in at least two zenith rings"));
+                }
+                Ok(self.linear(&lp, &th, &ok).0)
+            }
             _ => Err(Error::invalid("method must be 'hinge', 'linear' or 'weighted'")),
         }
     }
 
     /// Jupp et al. (2009) linear model: -ln P = PAI_h + (2/pi) PAI_v tan(theta),
-    /// per height. Returns the PAI and the mean leaf angle (degrees).
+    /// per height. Returns the PAI and the mean leaf angle (degrees); both
+    /// NaN at every height with fewer than two complete rings, which do not
+    /// determine the two terms.
     fn linear(&self, lp: &[f64], th: &[f64], ok: &[bool]) -> (Vec<f64>, Vec<f64>) {
         let nh = self.n_heights;
         let rings: Vec<usize> = (0..th.len()).filter(|&r| ok[r]).collect();
+        if rings.len() < 2 {
+            return (vec![f64::NAN; nh], vec![f64::NAN; nh]);
+        }
         let x: Vec<f64> = rings.iter().map(|&r| th[r].tan()).collect();
         let a = nalgebra::DMatrix::from_fn(x.len(), 2, |i, j| if j == 0 { 1.0 } else { x[i] });
         let svd = a.svd(true, true);
@@ -597,5 +608,26 @@ mod tests {
         let g = GapArrays { zenith_edges: &edges, n_azimuth: 1, height_bin: 1.0, n_heights: 2, hits: &hits, shots: &shots, min_height: 0.0 };
         let pai = g.pai_profile("hinge").unwrap();
         assert!((pai[1] - 1.1 * (10.0f64).ln()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn the_linear_model_needs_two_rings() {
+        let edges = [50.0, 55.0, 60.0];
+        let hits = [1.0, 1.0, 1.0, 1.0]; // 2 rings, 1 sector, 2 heights
+        // No pulses anywhere: an error, as for the hinge, not a panic.
+        let none = [0.0, 0.0];
+        let g = GapArrays { zenith_edges: &edges, n_azimuth: 1, height_bin: 1.0, n_heights: 2, hits: &hits, shots: &none, min_height: 0.0 };
+        assert_eq!(g.pai_profile("linear").unwrap_err().to_string(), "the linear model needs pulses in at least two zenith rings");
+        assert!(g.pavd_profile("linear").is_err());
+        // One ring: the hinge still reads, the report's linear figures are NaN.
+        let one = [0.0, 10.0];
+        let g = GapArrays { zenith_edges: &edges, n_azimuth: 1, height_bin: 1.0, n_heights: 2, hits: &hits, shots: &one, min_height: 0.0 };
+        assert!(g.pai_profile("linear").is_err());
+        let r = gap_report(&g, &[], &[], &[], 0.99, 0.01).unwrap();
+        assert!(r.pai_hinge > 0.0 && r.pai_linear.is_nan() && r.mla_linear.is_nan());
+        // Two rings: fitted.
+        let two = [10.0, 10.0];
+        let g = GapArrays { zenith_edges: &edges, n_azimuth: 1, height_bin: 1.0, n_heights: 2, hits: &hits, shots: &two, min_height: 0.0 };
+        assert!(g.pai_profile("linear").unwrap().iter().all(|v| v.is_finite()));
     }
 }

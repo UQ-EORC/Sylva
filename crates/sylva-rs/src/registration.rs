@@ -50,7 +50,8 @@ pub struct IcpParams {
     pub max_iterations: usize,
     /// Stop when the RMSE changes by less than this (m) between iterations.
     pub tolerance: f64,
-    /// `point` or `plane`.
+    /// `"point"` (point-to-point) or `"plane"` (point-to-plane); anything else
+    /// is an error, not a silent point-to-point run.
     pub method: String,
     /// Fraction of closest correspondences kept (trimmed ICP); 1.0 = all.
     pub trim: f64,
@@ -87,7 +88,18 @@ fn normals_of(cloud: &PointCloud, k: usize) -> Vec<Point> {
 /// Iterative closest point: point-to-point (Besl & McKay 1992) or
 /// point-to-plane (Chen & Medioni 1992), with an optional trimmed
 /// fraction of correspondences (Chetverikov et al. 2002).
+///
+/// With `method = "plane"` the target's normals are its `nx`, `ny`, `nz`
+/// attributes if it has all three, else PCA normals over `normal_k`
+/// neighbours.
+///
+/// # Errors
+/// If `method` is neither `"point"` nor `"plane"`, or fewer than 3
+/// correspondences lie within `max_correspondence_distance` (m).
 pub fn icp(source: &PointCloud, target: &PointCloud, init: Option<Transform>, p: &IcpParams) -> Result<IcpResult> {
+    if !matches!(p.method.as_str(), "point" | "plane") {
+        return Err(Error::invalid(format!("unknown ICP method {:?}: use \"point\" or \"plane\"", p.method)));
+    }
     let tree = KdTree::new(&target.xyz);
     let normals = if p.method == "plane" { Some(normals_of(target, p.normal_k)) } else { None };
     let mut t = init.unwrap_or_default();
@@ -162,4 +174,61 @@ pub fn merge_scans(clouds: &[PointCloud], transforms: Option<&[Transform]>) -> R
         parts.push(c);
     }
     PointCloud::concatenate(&parts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A tilted plane, 0.1 m grid.
+    fn plane() -> Vec<Point> {
+        (0..40).flat_map(|i| (0..40).map(move |j| [0.1 * i as f64, 0.1 * j as f64, 0.02 * i as f64])).collect()
+    }
+
+    #[test]
+    fn an_unknown_method_is_an_error_not_point_to_point() {
+        let cloud = PointCloud::new(plane());
+        // The coregistration ICP's names, easily typed here by mistake, used to
+        // run point-to-point without a word.
+        for method in ["point_to_plane", "point_to_point", "Plane", ""] {
+            let p = IcpParams { method: method.into(), ..Default::default() };
+            let e = icp(&cloud, &cloud, None, &p).unwrap_err().to_string();
+            assert!(e.contains("unknown ICP method"), "{method}: {e}");
+        }
+        for method in ["point", "plane"] {
+            let p = IcpParams { method: method.into(), max_iterations: 2, ..Default::default() };
+            assert!(icp(&cloud, &cloud, None, &p).is_ok());
+        }
+    }
+
+    /// Three faces of a corner, 0.1 m grid: every direction is constrained.
+    fn corner() -> Vec<Point> {
+        let mut pts = Vec::new();
+        for i in 0..20 {
+            for j in 0..20 {
+                let (u, v) = (0.1 * i as f64, 0.1 * j as f64);
+                pts.extend([[u, v, 0.0], [u, 0.0, v + 0.1], [0.0, u + 0.1, v + 0.1]]);
+            }
+        }
+        pts
+    }
+
+    #[test]
+    fn the_targets_own_normals_are_used_for_point_to_plane() {
+        // With PCA normals a 2 cm offset is recovered. Normals of NaN in the
+        // target's nx, ny, nz cannot give a transform at all, which shows they
+        // were the ones used.
+        let pts = corner();
+        let start = Some(Transform::translation(0.02, -0.02, 0.02));
+        let p = IcpParams { method: "plane".into(), max_correspondence_distance: 0.2, ..Default::default() };
+        let source = PointCloud::new(pts.clone());
+        let pca = icp(&source, &PointCloud::new(pts.clone()), start, &p).unwrap();
+        assert!(pca.transform.translation_vec().norm() < 5e-3, "{}", pca.transform.translation_vec());
+        let mut target = PointCloud::new(pts.clone());
+        for name in ["nx", "ny", "nz"] {
+            target.set_attr(name, Attr::F64(vec![f64::NAN; pts.len()])).unwrap();
+        }
+        let usable = icp(&source, &target, start, &p).is_ok_and(|r| r.transform.0.iter().all(|v| v.is_finite()));
+        assert!(!usable);
+    }
 }

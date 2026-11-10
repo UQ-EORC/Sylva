@@ -131,7 +131,9 @@ impl Shots {
 
     /// Build shots from a point cloud where each point is one single-return
     /// pulse from `origin` (e.g. a scan in SOCS). Adjacent points with equal
-    /// `gps_time` (if present) are grouped into one multi-echo shot.
+    /// `gps_time` (if present) are grouped into one multi-echo shot. A point
+    /// with a coordinate that is not finite has no range and is left out, and
+    /// a pulse of only such points with it.
     pub fn from_pointcloud(cloud: &PointCloud, origin: Point) -> Shots {
         let times = cloud.attr_f64("gps_time");
         let mut shots = Shots::default();
@@ -148,9 +150,13 @@ impl Shots {
             // Sort this pulse's echoes by range.
             let mut members: Vec<(f64, usize)> = (i..j)
                 .map(|k| (crate::transform::norm(&sub(&cloud.xyz[k], &origin)), k))
+                .filter(|m| m.0.is_finite())
                 .collect();
-            members.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-            let far = members.last().unwrap().1;
+            members.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let Some(&(_, far)) = members.last() else {
+                i = j;
+                continue;
+            };
             shots.origin.push(origin);
             shots.direction.push(normalize(&sub(&cloud.xyz[far], &origin)));
             shots.echo_start.push(shots.echo_range.len());
@@ -176,7 +182,8 @@ impl Shots {
     /// which store `start - end` as float32). Points with
     /// `bound == 0` (or, without that attribute, `alpha == 0`) are unbounded
     /// rays: they become shots without an echo, so their far end is dropped
-    /// and traversals run them to the edge of the grid.
+    /// and traversals run them to the edge of the grid. A point whose end or
+    /// start is not finite is left out, and a pulse of only such points with it.
     ///
     /// When `number_of_returns` and a pulse key (`beam_id`, else `gps_time`)
     /// are present, the returns of a pulse are joined into one multi-echo
@@ -224,9 +231,9 @@ impl Shots {
         let mut echo_idx = Vec::with_capacity(n);
         for members in &pulses {
             let origin = starts[members[0]];
-            let mut by_range: Vec<(f64, usize)> = members.iter().map(|&i| (crate::transform::norm(&sub(&cloud.xyz[i], &origin)), i)).collect();
-            by_range.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-            let far = by_range.last().unwrap().1;
+            let mut by_range: Vec<(f64, usize)> = members.iter().map(|&i| (crate::transform::norm(&sub(&cloud.xyz[i], &origin)), i)).filter(|m| m.0.is_finite()).collect();
+            by_range.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let Some(&(_, far)) = by_range.last() else { continue };
             shots.origin.push(origin);
             shots.direction.push(normalize(&sub(&cloud.xyz[far], &origin)));
             shots.echo_start.push(shots.echo_range.len());
@@ -246,5 +253,29 @@ impl Shots {
             .map(|(k, v)| (k.clone(), v.take(&echo_idx)))
             .collect();
         Ok(shots)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn points_without_a_finite_position_are_left_out() {
+        // One pulse of two echoes, one of them NaN; then a pulse that is NaN alone.
+        let mut cloud = PointCloud::new(vec![[0.0, 0.0, 1.0], [f64::NAN, 0.0, 2.0], [f64::NAN, f64::NAN, f64::NAN], [0.0, 3.0, 0.0]]);
+        cloud.attrs.insert("gps_time".into(), Attr::F64(vec![1.0, 1.0, 2.0, 3.0]));
+        cloud.attrs.insert("amplitude".into(), Attr::F32(vec![10.0, 11.0, 12.0, 13.0]));
+        let s = Shots::from_pointcloud(&cloud, [0.0; 3]);
+        assert_eq!((s.n_shots(), s.echo_count.clone(), s.echo_range.clone()), (2, vec![1, 1], vec![1.0, 3.0]));
+        assert_eq!(s.echo_attrs["amplitude"], Attr::F32(vec![10.0, 13.0]));
+        assert!(s.direction.iter().flatten().all(|v| v.is_finite()));
+
+        let mut rays = PointCloud::new(vec![[0.0, 0.0, 5.0], [f64::NAN, 0.0, 5.0], [1.0, 0.0, 5.0]]);
+        for (k, v) in [("sx", [0.0, 0.0, f64::NAN]), ("sy", [0.0; 3]), ("sz", [-5.0; 3])] {
+            rays.attrs.insert(k.into(), Attr::F64(v.to_vec()));
+        }
+        let s = Shots::from_ray_cloud(&rays).unwrap();
+        assert_eq!((s.n_shots(), s.echo_range.clone()), (1, vec![5.0]));
     }
 }

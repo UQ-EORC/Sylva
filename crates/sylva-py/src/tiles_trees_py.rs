@@ -123,7 +123,7 @@ fn tiles_segment_trees<'py>(py: Python<'py>, catalog: &Bound<'_, PyDict>, stems:
     let stems = trees_from_py(stems)?;
     let seg = graph_params(SegmentParams { voxel_origin: Some([0.0; 3]), ..Default::default() }, segment, "segment")?;
     let s = TreeTiling { height_attr, segment: seg, merge: merge.map(merge_settings).transpose()?, percentile, prune: prune.map(prune_params).transpose()?, buffer, max_buffer, edge_margin, attribute };
-    let r = py.detach(|| tt::segment_trees(&c, &stems, &out_dir, format.as_deref(), &s, workers)).map_err(err)?;
+    let r = crate::detach_interruptible(py, || tt::segment_trees(&c, &stems, &out_dir, format.as_deref(), &s, workers))?.map_err(err)?;
     let list = PyList::empty(py);
     for (i, t) in &r.trees {
         list.append((*i, tree_to_py(py, t)?))?;

@@ -22,6 +22,7 @@ imported there and documented under that module):
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import pickle
@@ -64,6 +65,43 @@ def _options(value, name: str) -> dict | None:
     if isinstance(value, dict):
         return dict(value)
     raise ValueError(f"{name} must be True, False or a dict of keyword arguments, got {value!r}")
+
+
+def _plain(value):
+    """A JSON-ready copy of settings (NumPy values, tuples, paths)."""
+    if isinstance(value, dict):
+        return {str(k): _plain(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return _plain(value.tolist())
+    if isinstance(value, np.generic):
+        return _plain(value.item())
+    if isinstance(value, float):
+        return repr(value)
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    return repr(value)
+
+
+def _fingerprint(settings) -> str:
+    """A short digest of the settings a cached result was made with."""
+    text = json.dumps(_plain(settings), sort_keys=True)
+    return hashlib.sha256(text.encode()).hexdigest()[:24]
+
+
+def _made_with(path: Path, fingerprint: str) -> bool:
+    """Does the note at ``path`` record this fingerprint?"""
+    try:
+        return path.read_text().strip() == fingerprint
+    except OSError:
+        return False
+
+
+def _note(path: Path, fingerprint: str) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(fingerprint)
+    tmp.replace(path)
 
 
 def _origin(v) -> tuple[float, float, float]:
@@ -310,12 +348,14 @@ class TreeStore:
     def map(self, fn, ids=None, workers: int | None = None, label: str = "trees") -> dict:
         """``fn(tree_id, cloud)`` for every tree, a few trees at a time.
 
-        Trees are taken largest first, each read when a worker is free, so
-        at most ``workers`` trees are in memory; ``workers`` is lowered when
-        that many of the largest tree would not fit in the memory budget
-        (:mod:`sylva.util.limits`, :data:`BYTES_PER_TREE_POINT` per point). The
-        work runs on threads: Sylva's computations release the interpreter,
-        so threads run them in parallel.
+        Trees are taken largest first (most points; ties by id), each read
+        when a worker is free, so at most ``workers`` trees are in memory;
+        ``workers`` is lowered when that many of the largest tree would not
+        fit in the memory budget (:mod:`sylva.util.limits`,
+        :data:`BYTES_PER_TREE_POINT` per point). The work runs on threads:
+        Sylva's computations release the interpreter, so threads run them in
+        parallel. If ``fn`` raises, the trees not yet started are dropped
+        and the error is raised once the trees already running have ended.
 
         Parameters
         ----------
@@ -337,11 +377,14 @@ class TreeStore:
         for i in todo:
             self._entry(i)
         return _map_trees(todo, lambda i: fn(i, self.read(i)),
-                          max((self.n_points(i) for i in todo), default=0), workers, label)
+                          {i: self.n_points(i) for i in todo}, workers, label)
 
 
-def _map_trees(ids: list[int], job, largest: int, workers: int | None, label: str) -> dict:
-    """Run ``job(id)`` on threads, largest first, within the memory budget."""
+def _map_trees(ids: list[int], job, sizes: dict[int, int], workers: int | None, label: str) -> dict:
+    """Run ``job(id)`` on threads, largest first (``sizes`` gives each id's
+    points), within the memory budget. A failing job cancels those not started."""
+    ids = sorted(ids, key=lambda i: (-int(sizes.get(i, 0)), i))
+    largest = max((int(sizes.get(i, 0)) for i in ids), default=0)
     w = (os.cpu_count() or 1) if workers is None else _workers(workers)
     b = limits.budget()
     need = max(1, largest) * BYTES_PER_TREE_POINT
@@ -359,9 +402,15 @@ def _map_trees(ids: list[int], job, largest: int, workers: int | None, label: st
         else:
             with ThreadPoolExecutor(max_workers=w) as pool:
                 futures = {pool.submit(job, i): i for i in ids}
-                for f in as_completed(futures):
-                    out[futures[f]] = f.result()
-                    bar.update()
+                try:
+                    for f in as_completed(futures):
+                        out[futures[f]] = f.result()
+                        bar.update()
+                except BaseException:
+                    # Leaving the pool waits for what is running; do not start the rest.
+                    for f in futures:
+                        f.cancel()
+                    raise
     return {i: out[i] for i in sorted(out)}
 
 
@@ -436,7 +485,7 @@ def _store(store) -> TreeStore:
 def classify_leaf_wood(store, catalog: Catalog, out: str | Path, min_points: int = 100,
                        voxel_size: float = 0.02, method: str = "gbs", attribute: str = "tree_id",
                        name: str = "wood", resume: bool = False, workers: int | None = None,
-                       format: str | None = None, **wood_params) -> Catalog:
+                       format: str | None = None, ids=None, **wood_params) -> Catalog:
     """Leaf / wood of every tree, written to the tiles as ``wood``.
 
     Each tree of ``min_points`` points or more is classified on its own
@@ -464,10 +513,18 @@ def classify_leaf_wood(store, catalog: Catalog, out: str | Path, min_points: int
         Attribute written, and the name the values are kept under in the store.
     resume
         Keep values already in the store rather than classifying again.
+        Only values made with the same ``voxel_size``, ``method`` and
+        ``wood_params`` are kept (the settings are noted beside them, in
+        ``<name>.settings`` of each tree's directory); a tree classified
+        with other settings, or by a version that noted none, is classified
+        again.
     workers
         Trees, then tiles, at once.
     format
         ``"las"`` or ``"laz"``; that of each input tile if None.
+    ids
+        Trees to classify; every tree of the store if None. The others are
+        written as -1, unless the store holds values for them.
 
     Returns
     -------
@@ -476,14 +533,25 @@ def classify_leaf_wood(store, catalog: Catalog, out: str | Path, min_points: int
     """
     st = _store(store)
     cat = _as_catalog(catalog)
-    ids = [i for i in st.ids if st.n_points(i) >= int(min_points)
-           and not (resume and st.has_values(i, name))]
+    made = _fingerprint({"voxel_size": float(voxel_size), "method": str(method),
+                         "wood_params": dict(wood_params)})
+
+    def note(i):
+        return st.path / f"tree_{i}" / f"{name}.settings"
+
+    wanted = st.ids if ids is None else [int(i) for i in ids]
+    for i in wanted:
+        st._entry(i)
+    todo = [i for i in wanted if st.n_points(i) >= int(min_points)
+            and not (resume and st.has_values(i, name) and _made_with(note(i), made))]
 
     def one(i, cloud):
         w = leaves.classify_leaf_wood(cloud, voxel_size=voxel_size, method=method, **dict(wood_params))
+        note(i).unlink(missing_ok=True)
         st.set_values(i, name, np.asarray(w, dtype=np.int8))
+        _note(note(i), made)
 
-    st.map(one, ids=ids, workers=workers, label="leaf / wood")
+    st.map(one, ids=todo, workers=workers, label="leaf / wood")
     paths, info = _core.tiles_write_back(cat._core(), str(st.path), str(out), str(attribute), str(name),
                                          -1.0, "int8", _format(format), _workers(workers))
     _record(info)
@@ -529,7 +597,11 @@ def build_qsms(store, stems=None, voxel_size: float = 0.01, wood: bool = True,
         As in :func:`sylva.qsm.build_plot`.
     resume
         Keep models already saved in the store (``qsm.pkl`` beside each tree)
-        rather than fitting them again.
+        rather than fitting them again. A saved model is kept only if it was
+        fitted with the same settings (``voxel_size``, ``wood``,
+        ``buttress``, ``min_points``, ``height_attr``, ``params`` and the
+        tree's stem from ``stems``); one fitted with other settings, or
+        saved by a version that recorded none, is fitted again.
     ids
         Trees to model; every tree of the store if None.
     workers
@@ -553,22 +625,35 @@ def build_qsms(store, stems=None, voxel_size: float = 0.01, wood: bool = True,
     wanted = st.ids if ids is None else [int(i) for i in ids]
     for i in wanted:
         st._entry(i)
+    def made(i):
+        s = by_id.get(i)
+        stem = None if s is None else [float(s.x), float(s.y), float(getattr(s, "dbh", np.nan))]
+        return _fingerprint({"voxel_size": float(voxel_size), "wood": bool(wood),
+                             "buttress": bool(buttress), "min_points": float(min_points),
+                             "height_attr": str(height_attr), "settings": settings, "stem": stem})
+
     if resume:
         for i in wanted:
             if path(i).exists():
-                with open(path(i), "rb") as f:
-                    saved[i] = pickle.load(f)
+                try:
+                    with open(path(i), "rb") as f:
+                        kept = pickle.load(f)
+                except (OSError, EOFError, pickle.UnpicklingError):
+                    continue
+                # Models saved before the settings were recorded have no "made_with".
+                if isinstance(kept, dict) and kept.get("made_with") == made(i):
+                    saved[i] = kept["result"]
 
     def one(i, _cloud=None):
         d = _qsm_one(st, i, by_id.get(i), voxel_size, wood, buttress, min_points, height_attr, settings)
         tmp = path(i).with_suffix(".tmp")
         with open(tmp, "wb") as f:
-            pickle.dump(d, f)
+            pickle.dump({"made_with": made(i), "result": d}, f)
         tmp.replace(path(i))
         return d
 
     todo = [i for i in wanted if i not in saved]
-    done = _map_trees(todo, one, max((st.n_points(i) for i in todo), default=0), workers, "fitting QSMs")
+    done = _map_trees(todo, one, {i: st.n_points(i) for i in todo}, workers, "fitting QSMs")
     results = {**saved, **done}
     models, bases, skipped, points, heights = {}, {}, {}, {}, {}
     for i in sorted(results):
@@ -595,7 +680,7 @@ def build_qsms(store, stems=None, voxel_size: float = 0.01, wood: bool = True,
 
 
 def crown_metrics(store, height_attr: str = "height", crown_base_fraction: float = 0.1,
-                  workers: int | None = None) -> dict[int, dict]:
+                  workers: int | None = None, ids=None) -> dict[int, dict]:
     """:func:`sylva.trees.crown_metrics` for every tree of a store.
 
     Parameters
@@ -608,6 +693,8 @@ def crown_metrics(store, height_attr: str = "height", crown_base_fraction: float
         Density threshold for the crown base.
     workers
         Trees at once.
+    ids
+        Trees to measure; every tree of the store if None.
 
     Returns
     -------
@@ -621,7 +708,7 @@ def crown_metrics(store, height_attr: str = "height", crown_base_fraction: float
         return trees.crown_metrics(cloud, np.full(len(cloud), i, dtype=np.int64), i,
                                    height_attr=height_attr, crown_base_fraction=crown_base_fraction)
 
-    return {i: m for i, m in st.map(one, workers=workers, label="crowns").items() if m}
+    return {i: m for i, m in st.map(one, ids=ids, workers=workers, label="crowns").items() if m}
 
 
 # ------------------------------------------------------------------ workflow
@@ -710,13 +797,19 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
     ``sor/``                :func:`sylva.als.tiles.statistical_outlier_removal`
     ``ground/``             :func:`sylva.als.tiles.classify_ground` on a ``ground_voxel`` thinning; the DTM in ``dtm.npz`` (full precision, used for the heights) and ``dtm.asc``
     ``heights/``            :func:`sylva.als.tiles.normalize` with that DTM
-    ``stems.pkl``           :func:`sylva.als.tiles.detect_stems` on the tiles inside ``plot``
-    ``segmented/``          :func:`segment_trees`, with ``trees.pkl``
+    ``stems.pkl``           :func:`sylva.als.tiles.detect_stems` on every tile
+    ``segmented/``          :func:`segment_trees` on every tile, with ``trees.pkl`` (the trees of the margin too)
     ``trees/``              :func:`split_trees`, with per-tree leaf / wood and QSMs
     ``wood/``               :func:`classify_leaf_wood`
     ``qsm_table.csv``       :func:`build_qsms`, with ``qsm_models.pkl``
     ``trees.csv``           the trees with their crown metrics and QSM volumes
     ======================  ==============================================================
+
+    With ``plot``, stems are detected and trees segmented over everything
+    inside ``bounds``, so that a tree at the plot's edge keeps the part of
+    its crown that hangs over the edge and competes for points with its
+    neighbours outside; the trees whose stem stands inside ``plot`` are then
+    kept, and only they are classified, modelled and listed.
 
     Memory is bounded by the tile size, the buffers and ``workers``, not by
     the plot: no stage holds more than a few tiles with their buffers, or a
@@ -725,10 +818,11 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
     Parameters
     ----------
     scans
-        Registered scan files or point clouds in scan order (as
-        :func:`sylva.als.tiles.from_scans` takes them), or a RiSCAN project (its
-        directory, or a :class:`sylva.riscan.RiscanProject`), whose scans are
-        read with their SOPs.
+        Registered scan files or point clouds in scan order (a list, or any
+        iterable, as :func:`sylva.als.tiles.from_scans` takes them), or a
+        RiSCAN project (its directory, or a
+        :class:`sylva.riscan.RiscanProject`), whose scans are read with their
+        SOPs.
     out
         Directory of the run.
     transforms
@@ -737,11 +831,15 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
     use
         One flag per scan; scans flagged False are left out.
     bounds
-        ``(xmin, ymin, xmax, ymax)`` of everything kept: the plot and a
-        margin for ground and buffers.
+        ``(xmin, ymin, xmax, ymax)`` (m) of everything kept: the plot and a
+        margin for the ground, the buffers and the crowns that reach over
+        the plot's edge (the width of the largest crown is a good margin).
     plot
-        ``(xmin, ymin, xmax, ymax)`` of the plot whose trees are wanted, on
-        the tile grid (tiles inside it are used); all tiles if None.
+        ``(xmin, ymin, xmax, ymax)`` (m) of the plot whose trees are wanted:
+        the trees whose stem stands inside it (edges included) are kept,
+        with their whole crowns; every tree found if None. Tree ids are
+        those of the segmentation of everything inside ``bounds``, so with
+        a plot they are not consecutive.
     tile_size, voxel_size, scale
         Of :func:`sylva.als.tiles.from_scans`.
     read_options
@@ -784,6 +882,13 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
     Returns
     -------
     PlotRun
+
+    Raises
+    ------
+    ValueError
+        For ``scans`` given as one file path (give a list of files, or the
+        directory of a RiSCAN project), for ``use`` or ``transforms`` that
+        do not have one entry per scan, or for a ``plot`` that is not a box.
     """
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -810,7 +915,12 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
 
     # --------------------------------------------------------- scans to tiles
     positions = _positions(scans)
-    n_scans = len(positions) if positions is not None else len(list(scans))
+    if positions is None:
+        if isinstance(scans, (str, os.PathLike)):
+            raise ValueError(f"scans must be a list of scan files or point clouds, or the directory "
+                             f"of a RiSCAN project; {str(scans)!r} is not a directory")
+        scans = list(scans)  # an iterator can be read only once
+    n_scans = len(positions) if positions is not None else len(scans)
     flags = [True] * n_scans if use is None else [bool(u) for u in use]
     if len(flags) != n_scans:
         raise ValueError(f"{len(flags)} use flags for {n_scans} scans")
@@ -818,15 +928,27 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
     if len(mats) != n_scans:
         raise ValueError(f"{len(mats)} transforms for {n_scans} scans")
     b = None if bounds is None else tuple(float(v) for v in bounds)
+    p = None
+    if plot is not None:
+        p = tuple(float(v) for v in plot)
+        if len(p) != 4 or not (np.all(np.isfinite(p)) and p[0] < p[2] and p[1] < p[3]):
+            raise ValueError(f"plot must be (xmin, ymin, xmax, ymax) with xmin < xmax and "
+                             f"ymin < ymax, got {plot!r}")
     if positions is not None:
         sdir = out / "scans"
+
+        # A scan read by an interrupted run is kept only if it was read with these settings.
+        read_with = _fingerprint({"bounds": b, "voxel_size": float(voxel_size),
+                                  "read_options": dict(read_options or {})})
 
         def export():
             sdir.mkdir(parents=True, exist_ok=True)
             with progress.task("reading scans", n_scans) as bar:
                 for i, pos in enumerate(positions):
                     f = sdir / f"{i:03d}.laz"
-                    if flags[i] and not f.exists():
+                    note = sdir / f"{i:03d}.settings"
+                    if flags[i] and not (f.exists() and _made_with(note, read_with)):
+                        note.unlink(missing_ok=True)
                         pc = pos.read(**(read_options or {}))
                         if b is not None:
                             m = (pc.x >= b[0]) & (pc.x <= b[2]) & (pc.y >= b[1]) & (pc.y <= b[3])
@@ -836,13 +958,14 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
                         tmp = sdir / f"{i:03d}.tmp.laz"
                         io.write(pc, tmp)
                         tmp.replace(f)
+                        _note(note, read_with)
                     bar.update()
             return f"{sum(flags)} scans read"
 
         stage("scans", sdir, export)
         sources = [sdir / f"{i:03d}.laz" for i in range(n_scans)]
     else:
-        sources = list(scans)
+        sources = scans
     kept = [i for i in range(n_scans) if flags[i]]
     cat_dirs = {k: out / k for k in ("tiles", "sor", "ground_thin", "ground", "heights", "segmented",
                                      "wood")}
@@ -906,13 +1029,12 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
     stage("heights", cat_dirs["heights"], run_heights)
     heights = catalog(cat_dirs["heights"])
     cats["heights"] = heights
-    if plot is not None:
-        p = tuple(float(v) for v in plot)
-        inside = [t.path for t in heights.tiles
-                  if p[0] <= (t.bounds[0] + t.bounds[3]) / 2 <= p[2] and p[1] <= (t.bounds[1] + t.bounds[4]) / 2 <= p[3]]
-        plot_cat = catalog(inside)
-    else:
-        plot_cat = heights
+    # Stems and trees are found over every tile, margin included: a tile's
+    # buffer is read from the catalogue's tiles, so leaving the margin out
+    # would cut the crowns of the plot's edge trees at the plot boundary and
+    # hand them the overhanging crowns of the trees outside. The trees
+    # standing inside the plot are picked afterwards.
+    plot_cat = heights
 
     stems_path = out / "stems.pkl"
     stem_kw = {"min_arc_deg": 130.0} if stems is None else dict(stems)
@@ -948,6 +1070,8 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
     stage("segmentation", cat_dirs["segmented"], run_segment)
     with open(trees_path, "rb") as f:
         found = pickle.load(f)
+    if p is not None:
+        found = [t for t in found if p[0] <= t.x <= p[2] and p[1] <= t.y <= p[3]]
     segmented = catalog(cat_dirs["segmented"])
     cats["segmented"] = segmented
 
@@ -959,12 +1083,14 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
 
     stage("split", out / "trees.d", run_split)
     store = TreeStore(store_dir)
+    # With a plot, only its trees are classified, modelled and listed.
+    wanted = None if p is None else [t.tree_id for t in found if t.tree_id in store]
 
     if leaf_wood is not False:
         def run_wood():
             _fresh(cat_dirs["wood"])
             c = classify_leaf_wood(store, segmented, cat_dirs["wood"], resume=True, workers=workers,
-                                   **(leaf_wood or {}))
+                                   **{"ids": wanted, **(leaf_wood or {})})
             return f"leaf / wood in {len(c)} tiles"
         stage("leaf/wood", cat_dirs["wood"], run_wood)
         cats["wood"] = catalog(cat_dirs["wood"])
@@ -976,7 +1102,7 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
         def run_qsm():
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
-                m = build_qsms(store, found, resume=True, workers=workers, **q_kw)
+                m = build_qsms(store, found, resume=True, workers=workers, **{"ids": wanted, **q_kw})
             for w in caught:
                 say(f"  {w.message}")
             with open(out / "qsm_models.pkl", "wb") as f:
@@ -992,7 +1118,7 @@ def run_plot(scans, out: str | Path, transforms=None, use=None, bounds=None, plo
             qsms = pickle.load(f)
 
     def run_table():
-        crowns = crown_metrics(store, workers=workers)
+        crowns = crown_metrics(store, workers=workers, ids=wanted)
         rows = []
         for t in found:
             row = {**t.as_dict(), **crowns.get(t.tree_id, {})}

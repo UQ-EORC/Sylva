@@ -145,9 +145,20 @@ pub fn vertical_histogram(heights: &[f64], bin_size: f64, max_height: Option<f64
 ///
 /// Each voxel column is traced top-down; the fraction of still-alive columns
 /// intercepted in a layer gives `PAD = -ln(1 - p) / (G dz)`.
-/// Returns `(layer_bottoms, pad)`.
-pub fn pad_profile_voxel(points: &[Point], heights: &[f64], voxel_size: f64, max_height: Option<f64>, clumping: f64) -> Result<(Vec<f64>, Vec<f64>)> {
-    let keep: Vec<Point> = points.iter().zip(heights).filter(|(_, &h)| h > 0.0).map(|(p, &h)| [p[0], p[1], h]).collect();
+///
+/// Only points higher than `min_height` (m above ground) take part: the
+/// ground and what lies on it are returns too, and with them nearly every
+/// column is "intercepted" in the bottom layer, which then reads as several
+/// units of plant area on bare ground. One voxel is the usual choice; layers
+/// wholly below `min_height` come out as 0. A negative or NaN `min_height`
+/// counts as 0.
+/// Returns `(layer_bottoms, pad)`: heights (m) and density (m² m⁻³).
+pub fn pad_profile_voxel(points: &[Point], heights: &[f64], voxel_size: f64, max_height: Option<f64>, clumping: f64, min_height: f64) -> Result<(Vec<f64>, Vec<f64>)> {
+    if !(voxel_size > 0.0) {
+        return Err(Error::invalid("voxel_size must be positive"));
+    }
+    let floor = if min_height > 0.0 { min_height } else { 0.0 };
+    let keep: Vec<Point> = points.iter().zip(heights).filter(|(_, &h)| h > floor).map(|(p, &h)| [p[0], p[1], h]).collect();
     if keep.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
@@ -215,14 +226,22 @@ pub const GAP_FLOOR: f64 = 1e-5;
 
 /// Effective plant area index from directional gap fraction.
 ///
-/// `hinge`: `PAI = -ln P(57.5°) cos(57.5°) / 0.5` (≈ 1.1 · -ln P). `miller`:
-/// `PAI = 2 ∫ -ln P(θ) cos θ sin θ dθ`. NaN rings are skipped; a gap of 0 is
-/// floored at [`GAP_FLOOR`] so saturated rings contribute a large finite value.
+/// `hinge`: `PAI = -ln P(57.5°) cos(57.5°) / 0.5` (≈ 1.1 · -ln P), from the
+/// ring nearest 57.5°. `miller`: `PAI = 2 ∫ -ln P(θ) cos θ sin θ dθ`, summed
+/// ring by ring with the gap constant over each ring,
+/// `Σ -ln P_r (sin² θ_hi - sin² θ_lo)`. `zenith_deg` holds ring centres
+/// (degrees, any order); a ring's edges are taken halfway to its neighbours,
+/// and the first and last ring reach as far out as they do in, kept within
+/// 0-90° (a single ring is taken to span 0-90°), so rings of equal width
+/// over 0-90° are integrated over the whole hemisphere. NaN rings are
+/// skipped, their neighbours widening over them; a gap of 0 is floored at
+/// [`GAP_FLOOR`] so saturated rings contribute a large finite value.
 pub fn lai_from_gap_fraction(zenith_deg: &[f64], gap: &[f64], method: &str) -> Result<f64> {
-    let pairs: Vec<(f64, f64)> = zenith_deg.iter().zip(gap).filter(|(_, &g)| g.is_finite()).map(|(&z, &g)| (z.to_radians(), g.max(GAP_FLOOR))).collect();
+    let mut pairs: Vec<(f64, f64)> = zenith_deg.iter().zip(gap).filter(|(&z, &g)| g.is_finite() && z.is_finite()).map(|(&z, &g)| (z.to_radians(), g.max(GAP_FLOOR))).collect();
     if pairs.is_empty() {
         return Ok(f64::NAN);
     }
+    pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
     match method {
         "hinge" => {
             let target = 57.5f64.to_radians();
@@ -230,12 +249,20 @@ pub fn lai_from_gap_fraction(zenith_deg: &[f64], gap: &[f64], method: &str) -> R
             Ok(-g.ln() * target.cos() / 0.5)
         }
         "miller" => {
+            let quarter = std::f64::consts::FRAC_PI_2;
+            let n = pairs.len();
             let mut s = 0.0;
-            for w in pairs.windows(2) {
-                let f = |(z, g): (f64, f64)| -g.ln() * z.cos() * z.sin();
-                s += 0.5 * (f(w[0]) + f(w[1])) * (w[1].0 - w[0].0);
+            for (r, &(z, g)) in pairs.iter().enumerate() {
+                let (lo, hi) = if n == 1 {
+                    (0.0, quarter)
+                } else {
+                    let below = if r > 0 { 0.5 * (z - pairs[r - 1].0) } else { 0.5 * (pairs[1].0 - z) };
+                    let above = if r + 1 < n { 0.5 * (pairs[r + 1].0 - z) } else { 0.5 * (z - pairs[n - 2].0) };
+                    ((z - below).clamp(0.0, quarter), (z + above).clamp(0.0, quarter))
+                };
+                s += -g.ln() * (hi.sin().powi(2) - lo.sin().powi(2));
             }
-            Ok(2.0 * s)
+            Ok(s)
         }
         other => Err(Error::invalid(format!("unknown LAI method {other:?}"))),
     }
@@ -595,6 +622,16 @@ mod tests {
         let z = [0.0, 30.0, 57.5, 90.0];
         let hinge = lai_from_gap_fraction(&z, &[p; 4], "hinge").unwrap();
         assert!((hinge + p.ln() * 57.5f64.to_radians().cos() / 0.5).abs() < 1e-12);
+        // Ring centres, as the ring gap fractions give them: the integral runs
+        // over the rings, not only between the first and last centre.
+        for width in [30.0, 10.0, 5.0] {
+            let centres: Vec<f64> = (0..(90.0 / width) as usize).map(|i| (i as f64 + 0.5) * width).collect();
+            let m = lai_from_gap_fraction(&centres, &vec![p; centres.len()], "miller").unwrap();
+            assert!((m + p.ln()).abs() < 1e-12, "{width} degree rings: {m}");
+        }
+        // Rings to 60 degrees cover sin^2(60) = 3/4 of the integral; order does not matter.
+        let part = lai_from_gap_fraction(&[45.0, 15.0], &[p; 2], "miller").unwrap();
+        assert!((part + 0.75 * p.ln()).abs() < 1e-12, "{part}");
         let fine: Vec<f64> = (0..=900).map(|i| i as f64 * 0.1).collect();
         let miller = lai_from_gap_fraction(&fine, &vec![p; fine.len()], "miller").unwrap();
         assert!((miller + p.ln()).abs() < 1e-5, "{miller}");
@@ -660,5 +697,40 @@ mod tests {
         assert!(b.hits.iter().zip(&a.hits).all(|(x, y)| *x == 2.0 * y));
         let other = PgapHistogram::new(vec![0.0, 45.0, 90.0], 8, 1.0, 10);
         assert_eq!(b.merge(&other).unwrap_err().to_string(), "histograms have different bins");
+    }
+
+    #[test]
+    fn pad_profile_leaves_the_ground_out() {
+        // A canopy layer at 5-6 m over half the columns of a 10 m square,
+        // in projected coordinates, and ground returns in every column.
+        let (ox, oy) = (500_000.0, 8_500_000.0);
+        let mut canopy = Vec::new();
+        let mut ground = Vec::new();
+        for i in 0..20 {
+            for j in 0..20 {
+                let (x, y) = (ox + 0.25 + 0.5 * i as f64, oy + 0.25 + 0.5 * j as f64);
+                ground.push([x, y, 0.02]);
+                if (i + j) % 2 == 0 {
+                    canopy.push([x, y, 5.6]);
+                }
+            }
+        }
+        let h = |pts: &[Point]| pts.iter().map(|q| q[2]).collect::<Vec<f64>>();
+        let pai = |pad: &[f64]| pad.iter().sum::<f64>() * 0.5;
+        let (_, alone) = pad_profile_voxel(&canopy, &h(&canopy), 0.5, None, 1.0, 0.5).unwrap();
+        // Half the columns intercepted in one layer: PAD = -ln(1/2) / (G dz), PAI = PAD dz.
+        let want = -(0.5f64).ln() / (0.5 * 0.5) * 0.5;
+        assert!((pai(&alone) - want).abs() < 1e-9, "{}", pai(&alone));
+        let both: Vec<Point> = canopy.iter().chain(&ground).copied().collect();
+        let (z, pad) = pad_profile_voxel(&both, &h(&both), 0.5, None, 1.0, 0.5).unwrap();
+        assert_eq!(z[0], 0.0);
+        assert_eq!(pad[0], 0.0, "the ground layer holds no plant area");
+        assert!((pai(&pad) - want).abs() < 1e-9, "{}", pai(&pad));
+        // Without the floor the ground fills the bottom layer.
+        let (_, with_ground) = pad_profile_voxel(&both, &h(&both), 0.5, None, 1.0, 0.0).unwrap();
+        assert!(pai(&with_ground) > 5.0 * want);
+        // Bare ground has no plant area, and a bad voxel is an error.
+        assert!(pad_profile_voxel(&ground, &h(&ground), 0.5, None, 1.0, 0.5).unwrap().1.is_empty());
+        assert!(pad_profile_voxel(&both, &h(&both), 0.0, None, 1.0, 0.5).is_err());
     }
 }

@@ -42,3 +42,17 @@ def test_chm(forest):
     chm = ground.make_chm(norm, resolution=0.5)
     assert chm.data.max() == pytest.approx(15.0, abs=0.3)
     assert chm.data.min() >= 0
+
+
+def test_flatten_keeps_the_crs():
+    import numpy as np
+
+    from sylva import PointCloud, Raster, ground
+
+    rng = np.random.default_rng(0)
+    cloud = PointCloud(rng.uniform(0, 10, (500, 3)), {"intensity": np.arange(500)}, "EPSG:28355")
+    dtm = Raster(np.zeros((20, 20)), 0.0, 0.0, 0.5)
+    flat = ground.flatten(cloud, dtm)
+    assert flat.crs == "EPSG:28355"                 # x and y have not moved
+    assert ground.normalize_height(cloud, dtm).crs == "EPSG:28355"
+    np.testing.assert_allclose(flat.xyz[:, 2], cloud.xyz[:, 2], atol=1e-9)

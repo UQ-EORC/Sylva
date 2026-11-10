@@ -58,6 +58,40 @@ pub fn relay<T: Send>(work: impl FnOnce(Log) -> T + Send, mut deliver: impl FnMu
     })
 }
 
+/// [`relay`] for a caller that also has something to do while it waits.
+///
+/// `event` is called on this thread with `Some(line)` for every message, in
+/// order, and with `None` whenever `every` has passed without one: the place
+/// for a binding to ask its interpreter whether the user wants to stop (and
+/// to call [`crate::util::progress::cancel`] if so). If `work` unwinds, the
+/// unwinding continues on this thread with the same payload.
+pub fn relay_ticking<T: Send>(work: impl FnOnce(Log) -> T + Send, every: std::time::Duration, mut event: impl FnMut(Option<&str>)) -> T {
+    let (tx, rx) = mpsc::channel::<String>();
+    std::thread::scope(|s| {
+        let handle = s.spawn(move || {
+            let tx = Mutex::new(tx);
+            let log = move |msg: &str| {
+                if let Ok(tx) = tx.lock() {
+                    let _ = tx.send(msg.to_string());
+                }
+            };
+            work(&log)
+        });
+        loop {
+            match rx.recv_timeout(every) {
+                Ok(msg) => event(Some(&msg)),
+                Err(mpsc::RecvTimeoutError::Timeout) => event(None),
+                // The sender went with the work: it has returned or unwound.
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        match handle.join() {
+            Ok(v) => v,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    })
+}
+
 /// `f` over `0..n` on `workers` threads, results in index order.
 ///
 /// Items are handed out in order, one at a time, to whichever of the
@@ -140,6 +174,31 @@ mod tests {
             assert_eq!(out, (0..20).map(|k| k * k).collect::<Vec<_>>());
             assert_eq!(seen.into_inner().unwrap(), (0..20).map(|k| (k, k * k)).collect::<Vec<_>>());
         }
+    }
+
+    #[test]
+    fn a_ticking_relay_delivers_lines_ticks_while_idle_and_passes_an_unwinding_on() {
+        let (mut got, mut ticks) = (Vec::new(), 0);
+        let r = relay_ticking(
+            |log| {
+                log("first");
+                std::thread::sleep(std::time::Duration::from_millis(60));
+                log("second");
+                7
+            },
+            std::time::Duration::from_millis(5),
+            |m| match m {
+                Some(m) => got.push(m.to_string()),
+                None => ticks += 1,
+            },
+        );
+        assert_eq!(r, 7);
+        assert_eq!(got, ["first", "second"]);
+        assert!(ticks >= 1, "the caller was woken while the work was quiet");
+        #[derive(Debug)]
+        struct Stop;
+        let caught = std::panic::catch_unwind(|| relay_ticking(|_| -> u8 { std::panic::resume_unwind(Box::new(Stop)) }, std::time::Duration::from_millis(5), |_| {})).unwrap_err();
+        assert!(caught.is::<Stop>());
     }
 
     #[test]

@@ -68,7 +68,7 @@ fn ground_and_stems_pipeline() {
         .collect();
     xyz.extend(stem(&mut s, 5.0, 5.0, 0.15, 8.0, 20000).into_iter().map(|p| [p[0], p[1], p[2] + 0.25]));
     let cloud = PointCloud::new(xyz);
-    let mask = ground::csf_ground_mask(&cloud.xyz, &ground::CsfParams::default());
+    let mask = ground::csf_ground_mask(&cloud.xyz, &ground::CsfParams::default()).unwrap();
     let ground_pts: Vec<_> = cloud.xyz.iter().zip(&mask).filter(|(_, &m)| m).map(|(p, _)| *p).collect();
     assert!(ground_pts.len() > 18000 && ground_pts.len() < 22000, "{}", ground_pts.len());
     let dtm = ground::make_dtm(&ground_pts, 0.5, None).unwrap();

@@ -117,7 +117,9 @@ pub fn volume_above(rows: &[Row], z: f64) -> f64 {
 }
 
 /// The model above the plane `z`: a cylinder crossing it keeps the part
-/// above (cut where its axis crosses the plane), one wholly below is
+/// above (cut where its axis crosses the plane, whichever way it points:
+/// the base of one that rises through it, the tip of one that droops
+/// through it), one wholly below is
 /// dropped, and parents are renumbered, a child whose parent went becoming
 /// a branch base (-1). A parent past the last row counts as the last row.
 pub fn above(rows: &[Row], z: f64) -> Vec<Row> {
@@ -141,6 +143,9 @@ pub fn above(rows: &[Row], z: f64) -> Vec<Row> {
             row[1] = r[1] + r[4] * tl;
             row[2] = r[2] + r[5] * tl;
             row[6] = len * (1.0 - t);
+        } else if e[2] < z && steep {
+            // Points down through the plane: keep the start, trim the tip.
+            row[6] = len * ((r[2] - z) / -dz).clamp(0.0, 1.0);
         }
         idx[i] = out.len() as i64;
         out.push(row);
@@ -456,6 +461,12 @@ mod tests {
         let lean = [[0.0, 0.0, 0.0, 0.0, 0.6, 0.8, 5.0, 0.2, -1.0, 0.0, 0.0, 10.0]];
         assert!((above(&lean, 2.0)[0][6] - (5.0 - 2.0 / 0.8)).abs() < 1e-12);
         assert!(above(&lean, 100.0).is_empty());
+        // A drooping branch through the plane loses its tip, not nothing.
+        let droop = [[500_000.0, 8_500_000.0, 2.0, 0.6, 0.0, -0.8, 2.0, 0.1, -1.0, 1.0, 1.0, 10.0]];
+        let kept = above(&droop, 1.0);
+        assert_eq!(kept[0][..3], droop[0][..3]);
+        assert!((kept[0][6] - 1.25).abs() < 1e-12);
+        assert!((totals(&kept).total_volume - volume_above(&droop, 1.0)).abs() < 1e-15);
         assert_eq!(totals(&[]).max_branch_order, 0.0);
     }
 

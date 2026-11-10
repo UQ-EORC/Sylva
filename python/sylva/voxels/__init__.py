@@ -148,8 +148,8 @@ class RayVoxelGrid:
     | ``pad_g0_5`` | plant area density with G = 0.5 |
     | ``pad_g_corrected`` | PAD with G at the voxel's mean beam zenith, first attenuation method |
     | ``surface_area`` | ``pad_g0_5`` × voxel volume (m²) |
-    | ``transmittance`` | beam-section transmittance (0-1) |
-    | ``mean_zenith_angle``, ``mean_azimuth_angle`` | mean beam direction (degrees) |
+    | ``transmittance`` | beam-section transmittance over one metre of path (0-1), ``exp(-bs_intercepted / bs_free_path)``; not the gap probability of the voxel itself |
+    | ``mean_zenith_angle``, ``mean_azimuth_angle`` | mean beam direction (degrees); the zenith is the angle from the vertical, 0-90, the same for a beam travelling up or down |
     | ``azimuth_concentration`` | 0 (all azimuths) to 1 (one azimuth) |
     | ``mean_laser_dist`` | mean distance from the scanner (m) |
     | ``sd_path_length`` | spread of the chord lengths (m) |

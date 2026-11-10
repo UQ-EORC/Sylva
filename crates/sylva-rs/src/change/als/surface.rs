@@ -82,7 +82,7 @@ impl Surface {
 pub enum DtmKind {
     /// At each cell centre, a plane fitted by least squares to the ground
     /// returns within a radius (1.5 cells, doubled until it holds six, at
-    /// most [`PLANE_RADIUS`]; no value beyond): unbiased by the density of
+    /// most [`plane_reach`]; no value beyond): unbiased by the density of
     /// ground returns, with the standard error of the plane's height there,
     /// and the same whatever the chunks, since each cell depends only on
     /// the returns near it.
@@ -192,7 +192,9 @@ pub struct EpochStats {
     pub n_scan_angle: u64,
     /// Largest `number_of_returns`.
     pub max_returns: u32,
-    /// Area (m²) of the cells holding returns.
+    /// Area (m²) the survey covers: the 10 m blocks holding first returns
+    /// ([`covered_area`]), before harmonisation for the surveys as they
+    /// were and after it for the surveys as compared.
     pub area: f64,
 }
 
@@ -427,8 +429,64 @@ struct EpochCells {
     dtm: Vec<f64>,
 }
 
-/// Largest radius (m) of the ground planes of [`DtmKind::Plane`].
+/// Largest radius (m) of the ground planes of [`DtmKind::Plane`] on cells
+/// of up to 10 m; see [`plane_reach`] for coarser ones.
 pub const PLANE_RADIUS: f64 = 16.0;
+
+/// Largest radius (m) of the ground planes of [`DtmKind::Plane`] on cells of
+/// side `resolution` (m), and the farthest a ground return may lie from a
+/// cell centre for the cell to have a DTM value: [`PLANE_RADIUS`], or the
+/// first radius tried (1.5 cells) where that is larger, so that cells
+/// coarser than 10.7 m still get a plane.
+pub fn plane_reach(resolution: f64) -> f64 {
+    PLANE_RADIUS.max(1.5 * resolution)
+}
+
+/// Side (m) of the blocks whose occupancy gives the area a survey covers
+/// ([`covered_area`]).
+pub const COVER_BLOCK: f64 = 10.0;
+
+/// Area (m²) a survey covers, from a raster of its first returns per cell:
+/// the cells of every block of [`COVER_BLOCK`] m (whole cells, at least one,
+/// on the raster's own lattice) that holds a first return. Counting only the
+/// cells that hold a return would shrink the area of a sparse survey (at 0.5
+/// pulses per m² four 1 m cells in ten are empty) and overstate its density;
+/// a block of 10 m is empty only where the survey has no data.
+pub fn covered_area(first: &Raster) -> f64 {
+    let k = ((COVER_BLOCK / first.resolution).round() as usize).max(1);
+    let (bnr, bnc) = (first.nrows.div_ceil(k), first.ncols.div_ceil(k));
+    let mut cells = 0usize;
+    for br in 0..bnr {
+        for bc in 0..bnc {
+            let (r1, c1) = (((br + 1) * k).min(first.nrows), ((bc + 1) * k).min(first.ncols));
+            let hit = (br * k..r1).any(|r| (bc * k..c1).any(|c| first.get(r, c) > 0.0));
+            if hit {
+                cells += (r1 - br * k) * (c1 - bc * k);
+            }
+        }
+    }
+    cells as f64 * first.resolution * first.resolution
+}
+
+/// First returns per m² in each cell of the window `(xmin, ymin, nrows,
+/// ncols)` of side `res` (m); `alignment` moves the points into the first
+/// survey's frame first (for the second survey as read).
+fn first_density(cloud: &PointCloud, alignment: Option<&Alignment>, win: (f64, f64, usize, usize), res: f64) -> Vec<f64> {
+    let (x0, y0, nr, nc) = win;
+    let first = first_returns(cloud);
+    let mut out = vec![0.0; nr * nc];
+    for (i, q) in cloud.xyz.iter().enumerate() {
+        if !first[i] {
+            continue;
+        }
+        let o = alignment.map_or([0.0; 3], |al| al.offset_at(q[0], q[1]));
+        let (r, c) = (((q[1] - o[1] - y0) / res).floor(), ((q[0] - o[0] - x0) / res).floor());
+        if r >= 0.0 && c >= 0.0 && (r as usize) < nr && (c as usize) < nc {
+            out[r as usize * nc + c as usize] += 1.0 / (res * res);
+        }
+    }
+    out
+}
 
 /// A survey's DTM over the chunk's buffered box on `grid`, and its standard
 /// deviation per cell: for [`DtmKind::Plane`] the plane's standard error
@@ -436,7 +494,9 @@ pub const PLANE_RADIUS: f64 = 16.0;
 /// `n` the ground returns within a cell's width; both plus
 /// `interpolation_error` times the distance to the nearest ground return.
 /// `ground` must be in canonical order ([`super::canonical`]); None with
-/// fewer than 3 ground returns.
+/// fewer than 3 ground returns. `reach` (m) is the farthest a ground return
+/// may lie from a cell centre; it is never taken smaller than
+/// [`plane_reach`] of the grid, so that a coarse grid is not left empty.
 pub(crate) fn chunk_dtm(ground: &[Point], grid: &Raster, outer: &[f64; 4], kind: DtmKind, noise: f64, interpolation_error: f64, reach: f64) -> Result<Option<(Raster, Raster)>> {
     if ground.len() < 3 {
         return Ok(None);
@@ -463,6 +523,7 @@ pub(crate) fn chunk_dtm(ground: &[Point], grid: &Raster, outer: &[f64; 4], kind:
     };
     let mut plane = sd.clone();
     let r0 = (1.5 * res).max(1.0);
+    let reach = reach.max(plane_reach(res));
     for row in 0..sd.nrows {
         for col in 0..sd.ncols {
             let (cx, cy) = sd.cell_center(row, col);
@@ -512,7 +573,7 @@ pub(crate) fn chunk_dtm(ground: &[Point], grid: &Raster, outer: &[f64; 4], kind:
 
 /// One survey's cells over the chunk window `(xmin, ymin, nrows, ncols)`.
 #[allow(clippy::too_many_arguments)]
-fn epoch_cells(cloud: &PointCloud, heights: &[f64], dtm_sd: &Raster, dtm_fine: Option<&(Raster, Raster)>, win: (f64, f64, usize, usize), p: &SurfaceParams) -> EpochCells {
+fn epoch_cells(cloud: &PointCloud, heights: &[f64], dtm_sd: Option<&Raster>, dtm_fine: Option<&(Raster, Raster)>, win: (f64, f64, usize, usize), p: &SurfaceParams) -> EpochCells {
     let (x0, y0, nr, nc) = win;
     let res = p.resolution;
     let n = nr * nc;
@@ -594,9 +655,11 @@ fn epoch_cells(cloud: &PointCloud, heights: &[f64], dtm_sd: &Raster, dtm_fine: O
                 sd[k] = s.data[k];
             }
             _ => {
-                let (row, col) = dtm_sd.cell_index(cx, cy);
-                if dtm_sd.in_bounds(row, col) {
-                    sd[k] = dtm_sd.get(row as usize, col as usize);
+                if let Some(dtm_sd) = dtm_sd {
+                    let (row, col) = dtm_sd.cell_index(cx, cy);
+                    if dtm_sd.in_bounds(row, col) {
+                        sd[k] = dtm_sd.get(row as usize, col as usize);
+                    }
                 }
             }
         }
@@ -714,7 +777,8 @@ pub fn surface_change(cat_a: &Catalog, cat_b: &Catalog, alignment: Option<&Align
     let grid = catalog_grid(cat_a, res)?;
     let dgrid = catalog_grid(cat_a, p.dtm_resolution)?;
     // Whole cells, and the ground planes of the DTM cells under them.
-    let mut buffer = buffer.max(2.0 * res.max(p.dtm_resolution)).max(PLANE_RADIUS + res + 2.0 * p.dtm_resolution);
+    let plane = plane_reach(p.dtm_resolution).max(if p.surface == Surface::Dtm { plane_reach(res) } else { 0.0 });
+    let mut buffer = buffer.max(2.0 * res.max(p.dtm_resolution)).max(plane + res + 2.0 * p.dtm_resolution);
     if let Some(h) = &p.harmonise {
         buffer = buffer.max(h.cell + 2.0 * res);
     }
@@ -722,7 +786,7 @@ pub fn surface_change(cat_a: &Catalog, cat_b: &Catalog, alignment: Option<&Align
     let chunks = plan(cat_a, layout, buffer)?;
     let est: Vec<u64> = chunks.iter().map(|c| c.est_points + est_other(cat_b, c, grow)).collect();
     let w = workers_for_estimates(&est, workers, BYTES_PER_POINT)?;
-    const LAYERS: usize = 14;
+    const LAYERS: usize = 16;
     let parts = run(cat_a, &chunks, w, "surface change", |chunk, data| {
         let a = without_noise(data.cloud, data.buffer);
         let (braw, _) = super::read_other(cat_b, chunk, grow, None)?;
@@ -730,6 +794,13 @@ pub fn surface_change(cat_a: &Catalog, cat_b: &Catalog, alignment: Option<&Align
         let b = without_noise(braw, bbuf);
         let raw_a = EpochStats::of(&a.0, &a.1);
         let raw_b = EpochStats::of(&b.0, &core_flags(&b.0, chunk, alignment));
+        let bnd = chunk_bounds(&grid, &chunk.outer);
+        let nc = ((bnd.2 - bnd.0) / res).floor() as usize + 1;
+        let nr = ((bnd.3 - bnd.1) / res).floor() as usize + 1;
+        let win = (bnd.0, bnd.1, nr, nc);
+        // Where each survey has first returns before any thinning: the area
+        // its own pulse density is taken over.
+        let raw_first = p.harmonise.as_ref().map(|_| (first_density(&a.0, None, win, res), first_density(&b.0, alignment, win, res)));
         // Thin before moving the second survey, so that the pulses kept are
         // those harmonise_catalog keeps.
         let (a, b) = match &p.harmonise {
@@ -738,25 +809,26 @@ pub fn surface_change(cat_a: &Catalog, cat_b: &Catalog, alignment: Option<&Align
         };
         let b = shift_crop(b.0, chunk, alignment);
         let (stats_a, stats_b) = (EpochStats::of(&a.0, &a.1), EpochStats::of(&b.0, &b.1));
-        let (ga, gb) = (ground_of(&a.0), ground_of(&b.0));
-        let reach = PLANE_RADIUS;
-        let (Some(da), Some(db)) = (chunk_dtm(&ga, &dgrid, &chunk.outer, p.dtm, p.noise_a, p.interpolation_error, reach)?, chunk_dtm(&gb, &dgrid, &chunk.outer, p.dtm, p.noise_b, p.interpolation_error, reach)?) else {
-            return Ok(None);
-        };
-        let bnd = chunk_bounds(&grid, &chunk.outer);
-        let nc = ((bnd.2 - bnd.0) / res).floor() as usize + 1;
-        let nr = ((bnd.3 - bnd.1) / res).floor() as usize + 1;
-        let win = (bnd.0, bnd.1, nr, nc);
-        let fine = |g: &[Point], noise: f64| -> Result<Option<(Raster, Raster)>> {
-            if p.surface != Surface::Dtm {
+        let (ca, cb) = if p.surface == Surface::Dsm {
+            // A surface model is the elevation of the highest return: it
+            // needs neither survey's ground.
+            (epoch_cells(&a.0, &[], None, None, win, p), epoch_cells(&b.0, &[], None, None, win, p))
+        } else {
+            let (ga, gb) = (ground_of(&a.0), ground_of(&b.0));
+            let reach = plane_reach(p.dtm_resolution);
+            let (Some(da), Some(db)) = (chunk_dtm(&ga, &dgrid, &chunk.outer, p.dtm, p.noise_a, p.interpolation_error, reach)?, chunk_dtm(&gb, &dgrid, &chunk.outer, p.dtm, p.noise_b, p.interpolation_error, reach)?) else {
                 return Ok(None);
-            }
-            chunk_dtm(g, &grid, &chunk.outer, p.dtm, noise, p.interpolation_error, reach)
+            };
+            let fine = |g: &[Point], noise: f64| -> Result<Option<(Raster, Raster)>> {
+                if p.surface != Surface::Dtm {
+                    return Ok(None);
+                }
+                chunk_dtm(g, &grid, &chunk.outer, p.dtm, noise, p.interpolation_error, plane_reach(res))
+            };
+            let (fa, fb) = (fine(&ga, p.noise_a)?, fine(&gb, p.noise_b)?);
+            let origin = (dgrid.xmin, dgrid.ymin);
+            (epoch_cells(&a.0, &heights(&a.0, &da.0, origin), Some(&da.1), fa.as_ref(), win, p), epoch_cells(&b.0, &heights(&b.0, &db.0, origin), Some(&db.1), fb.as_ref(), win, p))
         };
-        let (fa, fb) = (fine(&ga, p.noise_a)?, fine(&gb, p.noise_b)?);
-        let origin = (dgrid.xmin, dgrid.ymin);
-        let ca = epoch_cells(&a.0, &heights(&a.0, &da.0, origin), &da.1, fa.as_ref(), win, p);
-        let cb = epoch_cells(&b.0, &heights(&b.0, &db.0, origin), &db.1, fb.as_ref(), win, p);
         let n = nr * nc;
         let mut layers = vec![vec![f64::NAN; n]; LAYERS];
         let mut lf = LnFactorial::new();
@@ -765,6 +837,9 @@ pub fn surface_change(cat_a: &Catalog, cat_b: &Catalog, alignment: Option<&Align
             layers[11][k] = cb.first[k];
             layers[12][k] = ca.dtm_sd[k];
             layers[13][k] = cb.dtm_sd[k];
+            let (fa0, fb0) = raw_first.as_ref().map_or((ca.first[k], cb.first[k]), |r| (r.0[k], r.1[k]));
+            layers[14][k] = fa0;
+            layers[15][k] = fb0;
             if p.surface == Surface::Dtm {
                 layers[0][k] = ca.dtm[k];
                 layers[1][k] = cb.dtm[k];
@@ -797,7 +872,11 @@ pub fn surface_change(cat_a: &Catalog, cat_b: &Catalog, alignment: Option<&Align
     })?;
     let parts: Vec<_> = parts.into_iter().flatten().flatten().collect();
     if parts.is_empty() {
-        return Err(Error::invalid("no chunk has 3 ground returns (classification 2) in both surveys; classify ground first (als.classify_ground)"));
+        return Err(Error::invalid(if p.surface == Surface::Dsm {
+            "the surveys have no chunk to compare"
+        } else {
+            "no chunk has 3 ground returns (classification 2) in both surveys; classify ground first (als.classify_ground)"
+        }));
     }
     let mut stats = [EpochStats::default(); 4];
     for (_, _, s) in &parts {
@@ -810,10 +889,10 @@ pub fn surface_change(cat_a: &Catalog, cat_b: &Catalog, alignment: Option<&Align
         m.push(mosaic(&grid, &parts.iter().map(|(r, core, _)| (r[k].clone(), *core)).collect::<Vec<_>>())?);
     }
     let cell_area = res * res;
-    for (k, first) in [(0usize, &m[10]), (1, &m[11])] {
-        let cells = first.data.iter().filter(|v| v.is_finite() && **v > 0.0).count() as f64;
-        stats[k].area = cells * cell_area;
-        stats[k + 2].area = cells * cell_area;
+    // Each survey's density over the area it covers: as it was (before
+    // thinning) and as compared (after).
+    for (k, first) in [(0usize, &m[14]), (1, &m[15]), (2, &m[10]), (3, &m[11])] {
+        stats[k].area = covered_area(first);
     }
     let (ra, rb) = (&m[0], &m[1]);
     let mean = Raster { data: ra.data.iter().zip(&rb.data).map(|(x, y)| if x.is_finite() && y.is_finite() { 0.5 * (x + y) } else if x.is_finite() { *x } else { *y }).collect(), ..ra.clone() };
@@ -1055,6 +1134,82 @@ mod tests {
         pooled.sort_by(|x, y| x.total_cmp(y));
         let nl = null_of_maxima(&pooled, 25, 8, 0.05, &mut LnFactorial::new());
         assert!(0.07 - 19.8 < nl.lower, "{nl:?}");
+    }
+
+    #[test]
+    fn the_covered_area_does_not_shrink_with_sparse_pulses() {
+        // 20 x 20 m at 1 m, a first return in one cell of four: the survey
+        // covers all 400 m², not the 100 m² of its occupied cells.
+        let mut r = Raster::filled(20, 20, 0.0, 0.0, 1.0, 0.0);
+        for row in (0..20).step_by(2) {
+            for col in (0..20).step_by(2) {
+                r.set(row, col, 1.0);
+            }
+        }
+        assert_eq!(covered_area(&r), 400.0);
+        // A 10 m block without any return is not covered.
+        for row in 0..10 {
+            for col in 0..10 {
+                r.set(row, col, if (row + col) % 3 == 0 { f64::NAN } else { 0.0 });
+            }
+        }
+        assert_eq!(covered_area(&r), 300.0);
+        // Cells coarser than the block count one by one.
+        let mut c = Raster::filled(2, 2, 0.0, 0.0, 20.0, 0.0);
+        c.set(1, 1, 0.01);
+        assert_eq!(covered_area(&c), 400.0);
+    }
+
+    #[test]
+    fn a_plane_dtm_on_coarse_cells_has_values() {
+        // 20 m cells: the first plane radius (30 m) is beyond PLANE_RADIUS.
+        let ground: Vec<Point> = super::super::canonical((0..3600).map(|k| {
+            let (x, y) = ((k % 60) as f64 + 0.5, (k / 60) as f64 + 0.5);
+            [x, y, 100.0 + 0.1 * x - 0.05 * y]
+        }).collect());
+        let grid = Raster::filled(3, 3, 0.0, 0.0, 20.0, f64::NAN);
+        let (v, sd) = chunk_dtm(&ground, &grid, &[0.0, 0.0, 59.9, 59.9], DtmKind::Plane, 0.05, 0.02, PLANE_RADIUS).unwrap().expect("a DTM");
+        assert!((v.get(1, 1) - (100.0 + 3.0 - 1.5)).abs() < 1e-6, "{}", v.get(1, 1));
+        assert!(v.data.iter().all(|z| z.is_finite()) && sd.data.iter().all(|z| z.is_finite()));
+        assert_eq!(plane_reach(1.0), PLANE_RADIUS);
+        assert_eq!(plane_reach(20.0), 30.0);
+    }
+
+    #[test]
+    fn a_dsm_is_compared_without_ground_or_gps_times() {
+        // Two surveys with no ground class and no GPS times (format 6 then
+        // stores 0 on every point): four returns per 1 m cell on a flat
+        // surface, raised by 2 m west of x = 10 in the second.
+        use crate::io::las::{write_las, LasWriteOptions};
+        let dir = std::env::temp_dir().join(format!("sylva-change-dsm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut seed = 7u64;
+        let mut make = |raise: f64, name: &str| -> Catalog {
+            let mut xyz = Vec::new();
+            for i in 0..80 {
+                for j in 0..80 {
+                    seed = super::super::mix(seed);
+                    let (x, y) = (i as f64 * 0.5 + 0.25, j as f64 * 0.5 + 0.25);
+                    xyz.push([x, y, 50.0 + 0.05 * super::super::unit(seed) + if x < 10.0 { raise } else { 0.0 }]);
+                }
+            }
+            let path = dir.join(name);
+            write_las(&PointCloud::new(xyz), &path, &LasWriteOptions::default()).unwrap();
+            Catalog::open(&[path])
+        };
+        let (cat_a, cat_b) = (make(0.0, "a.las"), make(2.0, "b.las"));
+        let p = SurfaceParams { surface: Surface::Dsm, ..Default::default() };
+        let c = surface_change(&cat_a, &cat_b, None, &p, Layout::Tiles, 0.0, 1).unwrap();
+        let gain = c.classes.iter().filter(|&&k| k == 2).count();
+        let loss = c.classes.iter().filter(|&&k| k == 3).count();
+        assert!(c.area_compared >= 1500.0, "{}", c.area_compared);
+        // The 400 raised cells, plus the few of the 1200 others that a 95 %
+        // test calls either way.
+        assert!((400..=460).contains(&gain) && loss <= 60, "{gain} gains, {loss} losses");
+        // Four pulses per cell in both surveys, over the 1600 m² they cover.
+        assert!((c.raw_a.pulse_density() - 4.0).abs() < 0.2 && (c.raw_b.pulse_density() - 4.0).abs() < 0.2, "{} {}", c.raw_a.pulse_density(), c.raw_b.pulse_density());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

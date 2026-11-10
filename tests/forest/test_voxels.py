@@ -43,7 +43,7 @@ def test_estimators_recover_attenuation(slab):
         assert np.all(g[name][2] == 0)
     np.testing.assert_allclose(g.pad_ppl[1], 1.6, atol=0.1)  # spherical G = 0.5
     np.testing.assert_allclose(g.transmittance[1], np.exp(-0.8), atol=0.03)
-    np.testing.assert_allclose(g.mean_zenith_angle[1], 180, atol=0.05)  # float32 sums
+    np.testing.assert_allclose(g.mean_zenith_angle[1], 0, atol=0.05)  # from the vertical, up or down alike
     assert g.profile("pad_ppl")[1] == pytest.approx(1.6, abs=0.1)
     assert "bs_entering" in g.fields and "ppl_lambda" in g.fields
     assert not hasattr(g, "not_a_metric")

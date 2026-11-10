@@ -105,7 +105,8 @@ impl EchoPoints {
                     continue;
                 }
                 let p = add(&o, &scale(&d, shots.echo_range[e]));
-                let Some(idx) = geom.flat(geom.cell_of(&p)) else { continue };
+                // The voxel the hit was counted in (see `Geom::hit_cell`).
+                let Some(idx) = geom.flat(geom.hit_cell(&p, Some(&d))) else { continue };
                 self.pts.push(p);
                 self.meta.push((idx, inputs.foliage.map_or(foliage::PLANT, |f| f[e]), inputs.tree_id.map_or(0, |t| t[e]), beam));
             }

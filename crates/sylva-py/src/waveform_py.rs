@@ -20,7 +20,7 @@ use sylva_rs::waveform::pulsewaves::{self as pls, Kinds, PlsReadOptions, PlsWrit
 use sylva_rs::waveform::simulate::{self, SimulateOptions};
 use sylva_rs::waveform::{self, Echoes, FileFormat, Waveforms};
 
-use crate::{attrs_from_py, attrs_to_py, err, shots_from_py, shots_to_py, xyz_from_py, xyz_to_py};
+use crate::{attrs_from_py, attrs_to_py, err, shots_from_py, xyz_from_py, xyz_to_py};
 
 fn get<'py>(d: &Bound<'py, PyDict>, k: &str) -> PyResult<Bound<'py, PyAny>> {
     d.get_item(k)?.ok_or_else(|| PyValueError::new_err(format!("waveforms dict missing {k:?}")))
@@ -272,8 +272,8 @@ fn waveform_to_shots<'py>(py: Python<'py>, wf: &Bound<'_, PyDict>, echoes: &Boun
     let w = waveforms_from_py(wf)?;
     let e = echoes_from_py(echoes)?;
     let o = origin.map(xyz_from_py).transpose()?;
-    let s = waveform::to_shots(&w, &e, o.as_deref()).map_err(err)?;
-    shots_to_py(py, &s)
+    let s = py.detach(|| waveform::to_shots(&w, &e, o.as_deref())).map_err(err)?;
+    crate::shots_into_py(py, s)
 }
 
 #[pyfunction]

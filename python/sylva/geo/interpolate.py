@@ -74,8 +74,8 @@ def transfer_attributes(source: PointCloud, target: PointCloud, names: str | Ite
     fill
         Value for target points left without one (beyond ``max_distance``,
         non-finite coordinates, or an empty source). By default NaN for
-        floating-point results (including every ``"idw"`` result) and -1
-        for integer and boolean attributes.
+        floating-point results (including every ``"idw"`` result), -1
+        for integer and boolean attributes and the empty string for text.
 
     Returns
     -------
@@ -87,15 +87,18 @@ def transfer_attributes(source: PointCloud, target: PointCloud, names: str | Ite
         ``fill`` it cannot represent (for example -1 in ``uint8``) is widened
         to the smallest signed type holding both, whenever ``max_distance``
         is given or some point is left unfilled; pass a representable
-        ``fill`` (``fill=0``) to keep the dtype. ``"idw"`` returns float32
+        ``fill`` (``fill=0``) to keep the dtype. A ``uint64`` attribute
+        becomes ``int64``, never a float that would round large ids. A text
+        attribute is widened to hold its ``fill``. ``"idw"`` returns float32
         for float32 attributes and float64 otherwise.
 
     Raises
     ------
     ValueError
         For an unknown method or attribute name, ``"idw"`` on a
-        non-numeric attribute, ``k < 1``, a negative ``power`` or a
-        negative ``max_distance``.
+        non-numeric attribute, ``k < 1``, a negative ``power``, a
+        negative ``max_distance``, or ``uint64`` values above the ``int64``
+        range with a negative ``fill``.
 
     Examples
     --------
@@ -171,11 +174,23 @@ def _gather(values: np.ndarray, idx: np.ndarray, fill, may_miss: bool) -> np.nda
     """``values[idx]`` with ``fill`` where ``idx < 0``, widening the dtype if needed."""
     miss = idx < 0
     any_miss = bool(miss.any())
+    text = values.dtype.kind in "US"
     if fill is None:
-        fill = np.nan if values.dtype.kind in "fc" else -1
+        fill = np.nan if values.dtype.kind in "fc" else ("" if text else -1)
     dtype = values.dtype
-    if values.dtype.kind in "iub" and (may_miss or any_miss) and not _holds(values.dtype, fill):
+    if text:
+        # Wide enough for the fill, so that it is not cut to the labels' width.
+        dtype = np.result_type(values.dtype, np.asarray(fill, dtype=values.dtype.kind).dtype)
+    elif values.dtype.kind in "iub" and (may_miss or any_miss) and not _holds(values.dtype, fill):
         dtype = _widen(values.dtype, fill)
+        if dtype.kind == "f" and values.dtype.kind in "iu":
+            # No integer type holds both (uint64 and a negative fill): int64
+            # does when the values fit, and float64 would round them.
+            if len(values) and int(values.max()) > np.iinfo(np.int64).max:
+                raise ValueError(f"no integer type holds both the {values.dtype} values and fill={fill!r}; "
+                                 "give a fill the attribute can store (fill=0)")
+            if _holds(np.dtype(np.int64), fill):
+                dtype = np.dtype(np.int64)
     if len(values) == 0:
         return np.full(len(idx), fill, dtype=dtype)
     out = values[np.where(miss, 0, idx)].astype(dtype, copy=False)

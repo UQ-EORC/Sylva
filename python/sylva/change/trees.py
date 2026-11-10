@@ -12,6 +12,7 @@ import numpy as np
 
 from .. import _core
 from ..pointcloud import PointCloud
+from ..coreg.transforms import invert, transform_points
 from .epochs import EpochAlignment, _transform_xy
 
 __all__ = ["TreeMatch", "match_trees", "TreeIncrements", "tree_increments"]
@@ -21,7 +22,7 @@ class _Row:
     """A tree of a table given as a dict of arrays."""
 
     def __init__(self, table: dict, k: int):
-        for name in ("tree_id", "x", "y", "dbh", "height"):
+        for name in ("tree_id", "x", "y", "z", "dbh", "height"):
             if name in table:
                 setattr(self, name, table[name][k])
         if not hasattr(self, "tree_id"):
@@ -60,6 +61,23 @@ def _matrix(transform) -> np.ndarray | None:
     if m.shape != (4, 4):
         raise ValueError(f"transform must be a (4, 4) matrix or an EpochAlignment, got shape {m.shape}")
     return m
+
+
+def _stem_elevations(trees: list, transform, m: np.ndarray) -> np.ndarray:
+    """Elevation (m, in the trees' own frame) at which each stem position is
+    moved by ``m``: the tree's own ``z`` where it has one, else the height of
+    the alignment's centre seen from that frame, else 0."""
+    fallback = 0.0
+    if isinstance(transform, EpochAlignment):
+        centre = np.asarray(transform.centre, dtype=float).reshape(-1)
+        if centre.shape == (3,) and np.all(np.isfinite(centre)):
+            fallback = float(transform_points(invert(m), centre[None, :])[0, 2])
+    z = np.array([float(getattr(t, "z", np.nan)) for t in trees], dtype=float)
+    return np.where(np.isfinite(z), z, fallback)
+
+
+def _tree_id(tree, k: int) -> int:
+    return int(getattr(tree, "tree_id", k + 1))
 
 
 @dataclass
@@ -151,6 +169,44 @@ class TreeMatch:
         split_from = {int(self.related_b[j]) for j, s in enumerate(self.status_b) if s == "split"}
         return np.array([int(j) in merged_into or int(i) in split_from for i, j in self.pairs], dtype=bool)
 
+    def id_pairs(self) -> np.ndarray:
+        """The survivors as pairs of tree ids.
+
+        :attr:`pairs` holds positions in ``trees_a`` and ``trees_b``, which
+        are not the trees' ids (ids usually start at 1, and need not be
+        consecutive). Functions that look trees up by id, such as
+        :func:`sylva.change.compare_plot_qsms`, take these pairs.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(n, 2)`` integers ``(tree_id in epoch a, tree_id in epoch b)``,
+            one row per row of :attr:`pairs`. A tree without a ``tree_id``
+            counts from 1 in the order given.
+        """
+        return np.array([[_tree_id(self.trees_a[i], int(i)), _tree_id(self.trees_b[j], int(j))]
+                         for i, j in self.pairs], dtype=np.int64).reshape(-1, 2)
+
+    def death_ids(self) -> list[int]:
+        """Tree ids (epoch a) of the trees not found in the second epoch.
+
+        Returns
+        -------
+        list of int
+        """
+        return [_tree_id(t, k) for k, (t, s) in enumerate(zip(self.trees_a, self.status_a, strict=True))
+                if s == "dead"]
+
+    def recruit_ids(self) -> list[int]:
+        """Tree ids (epoch b) of the trees not found in the first epoch.
+
+        Returns
+        -------
+        list of int
+        """
+        return [_tree_id(t, k) for k, (t, s) in enumerate(zip(self.trees_b, self.status_b, strict=True))
+                if s == "recruit"]
+
     def counts(self) -> dict:
         """Numbers of survivors, deaths and recruits, and of the trees of
         either epoch in a merge or a split."""
@@ -179,11 +235,13 @@ def match_trees(trees_a, trees_b, max_distance: float = 1.0, transform=None, dbh
     little.
 
     Trees left over are checked for a merge before being called dead: when a
-    stem of the second epoch is wide enough (``merge_factor`` times the
-    quadratic sum of the DBHs) to stand for its partner and an unmatched
-    neighbour of the first epoch, the neighbour is ``merged`` into it, as
-    happens when the detector sees two touching stems as one. Splits are
-    the mirror case.
+    stem of the second epoch is wider than its own partner by enough to hold
+    an unmatched neighbour of the first epoch (``dbh² - partner² >=
+    merge_factor² * sum(neighbour dbh²)``; without a partner it must hold at
+    least two neighbours), the neighbour is ``merged`` into it, as happens
+    when the detector sees two touching stems as one. A stem no wider than
+    its partner absorbed nothing, so a small tree that died beside a large
+    survivor is a death. Splits are the mirror case.
 
     Parameters
     ----------
@@ -191,12 +249,22 @@ def match_trees(trees_a, trees_b, max_distance: float = 1.0, transform=None, dbh
         Trees of the two epochs (:class:`sylva.trees.Tree`, e.g. from
         :func:`sylva.trees.detect_stems` and :func:`sylva.trees.tree_heights`),
         or tables (dicts of arrays with ``x``, ``y`` and optionally
-        ``tree_id``, ``dbh``, ``height``), each in its own frame.
+        ``tree_id``, ``dbh``, ``height``, ``z``), each in its own frame.
+        ``z`` is the elevation (m) of the stem position in that frame, as
+        :class:`sylva.coreg.Stem` carries it; see ``transform``.
     max_distance
         Farthest apart (m) the two stems of one tree can be.
     transform
         :class:`EpochAlignment` or ``(4, 4)`` matrix taking the second
         epoch onto the first; the epochs are taken to share a frame if None.
+        Each stem of the second epoch is moved at its own elevation ``z``
+        where the trees have one. Trees without (:class:`sylva.trees.Tree`)
+        are moved at the height of the alignment's centre (the mean
+        elevation of the stems it was fitted on), or at z = 0 under a plain
+        matrix: a transform with a tilt of ``t`` radians shifts a stem
+        sideways by ``t`` times its elevation, so in a frame whose origin is
+        far below the plot (heights above sea level), give ``z`` or an
+        :class:`EpochAlignment`.
     dbh_tolerance
         Largest relative DBH increase of one tree; NaN DBHs are not tested.
     max_shrink
@@ -205,7 +273,8 @@ def match_trees(trees_a, trees_b, max_distance: float = 1.0, transform=None, dbh
     dbh_weight, height_weight
         Weights of the relative DBH and height differences in the cost.
     merge_factor
-        Test for merges and splits, as above.
+        Test for merges and splits, as above (dimensionless; ``inf`` switches
+        them off).
 
     Returns
     -------
@@ -226,7 +295,7 @@ def match_trees(trees_a, trees_b, max_distance: float = 1.0, transform=None, dbh
     m = _matrix(transform)
     a, b = _table(ta), _table(tb)
     if m is not None:
-        b[:, :2] = _transform_xy(m, b[:, :2])
+        b[:, :2] = _transform_xy(m, b[:, :2], _stem_elevations(tb, transform, m))
     d = _core.change_match_trees(a, b, float(max_distance), float(dbh_tolerance), float(max_shrink), float(dbh_weight),
                                  float(height_weight), float(merge_factor))
     return TreeMatch(
@@ -393,7 +462,9 @@ def tree_increments(match: TreeMatch, cloud_a: PointCloud, cloud_b: PointCloud, 
     registration_sigma
         Vertical one-sigma alignment uncertainty (m), or an
         :class:`EpochAlignment` (its ``sigma_vertical``); by default the
-        alignment ``match`` was made with, else 0.
+        alignment ``match`` was made with, else 0. An alignment that does
+        not constrain the vertical direction (``stable="stems"``, whose
+        ``sigma_vertical`` is NaN) is refused: give the number.
     height_attr
         Attribute holding height above ground.
     slice_heights
@@ -401,7 +472,10 @@ def tree_increments(match: TreeMatch, cloud_a: PointCloud, cloud_b: PointCloud, 
     slice_thickness
         Slice thickness (m).
     search_radius
-        Only points this close (m) to the stem centre enter a slice.
+        Only points this close (m) to the stem centre enter a slice. A lower
+        bound: for a wide stem it grows to 1.5 times the median distance of
+        the tree's points at the slice heights from the stem centre, plus
+        0.1 m, so that stems wider than twice this value are still measured.
     min_slices
         Fewest slices measured in both epochs for an increment.
     confidence
@@ -435,7 +509,9 @@ def tree_increments(match: TreeMatch, cloud_a: PointCloud, cloud_b: PointCloud, 
     Raises
     ------
     ValueError
-        If the labels do not fit the clouds or a setting is out of range.
+        If the labels do not fit the clouds, a setting is out of range, or
+        the alignment's vertical uncertainty is unknown (NaN) and no
+        ``registration_sigma`` is given.
 
     Notes
     -----
@@ -459,8 +535,15 @@ def tree_increments(match: TreeMatch, cloud_a: PointCloud, cloud_b: PointCloud, 
     if registration_sigma is None:
         registration_sigma = match.alignment
     if isinstance(registration_sigma, EpochAlignment):
-        reg = registration_sigma.sigma_vertical
-        reg = 0.0 if not np.isfinite(reg) else float(reg)
+        reg = float(registration_sigma.sigma_vertical)
+        if not np.isfinite(reg):
+            # Unknown is not zero: the vertical error enters the DBH error through the taper.
+            raise ValueError(
+                "the alignment does not constrain the vertical direction (its sigma_vertical is "
+                f"{reg}; stable={registration_sigma.stable!r} leaves z at the coarse transform's), "
+                "so the vertical registration uncertainty is unknown: give registration_sigma, "
+                "the one-sigma vertical alignment error in metres (0 if the epochs are known to "
+                "share their heights), or align with stable='stems+ground'")
     else:
         reg = 0.0 if registration_sigma is None else float(registration_sigma)
         if not reg >= 0:

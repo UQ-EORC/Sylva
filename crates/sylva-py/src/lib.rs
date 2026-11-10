@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArray3, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
-use pyo3::exceptions::{PyIOError, PyValueError};
+use pyo3::exceptions::{PyIOError, PyKeyboardInterrupt, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict, PyList};
 use sylva_rs::pointcloud::Attr;
@@ -113,6 +113,11 @@ fn xyz_ref_from_py<'a>(xyz: &'a PyReadonlyArray2<'_, f64>) -> PyResult<std::borr
     if a.ncols() != 3 {
         return Err(PyValueError::new_err(format!("xyz must have shape (N, 3), got (N, {})", a.ncols())));
     }
+    // `as_slice` also succeeds for a Fortran-ordered array, whose memory is
+    // column by column: only a C-ordered buffer is rows of three.
+    if !xyz.is_c_contiguous() {
+        return Ok(std::borrow::Cow::Owned(a.rows().into_iter().map(|r| [r[0], r[1], r[2]]).collect()));
+    }
     match xyz.as_slice() {
         Ok(flat) => {
             // SAFETY: a C-contiguous `(N, 3)` buffer of `f64` is `N` rows of
@@ -129,6 +134,85 @@ fn slice_from_py<'a, T: numpy::Element + Clone>(a: &'a PyReadonlyArray1<'_, T>) 
     match a.as_slice() {
         Ok(s) => std::borrow::Cow::Borrowed(s),
         Err(_) => std::borrow::Cow::Owned(a.as_array().to_vec()),
+    }
+}
+
+/// A `ValueError` unless a per-point array (`what`, of `len` values) has one
+/// value for each of the `n` points: the core indexes one by the other.
+pub(crate) fn same_len(what: &str, len: usize, n: usize) -> PyResult<()> {
+    if len != n {
+        return Err(PyValueError::new_err(format!("{what} must have one value per point, got {len} for {n} points")));
+    }
+    Ok(())
+}
+
+/// A `ValueError` unless `value` (the argument `what`, a size or a step) is
+/// finite and above zero.
+pub(crate) fn positive(what: &str, value: f64) -> PyResult<()> {
+    if !(value.is_finite() && value > 0.0) {
+        return Err(PyValueError::new_err(format!("{what} must be a positive number, got {value}")));
+    }
+    Ok(())
+}
+
+/// Run `work` with Python's lock released, as `py.detach` does, but so that
+/// Ctrl-C can end it.
+///
+/// The work goes to a scoped thread while this one wakes ten times a second
+/// to let Python run its signal handlers. When one raises (KeyboardInterrupt),
+/// the core is asked to stop (`progress::cancel`): the work unwinds at its
+/// next progress count and the exception is raised. Work that never counts
+/// runs to its end first, and the exception is raised then.
+pub(crate) fn detach_interruptible<T: Send>(py: Python<'_>, work: impl FnOnce() -> T + Send) -> PyResult<T> {
+    interruptible(py, None, |_| work())
+}
+
+/// [`detach_interruptible`] for work that reports through a `Log`: each line
+/// is passed to `log` (a Python callable, or None for silence) on this
+/// thread. An exception raised by `log` or by a signal handler stops the
+/// work at its next line or progress count, and is raised.
+pub(crate) fn interruptible<T: Send>(py: Python<'_>, log: Option<Py<PyAny>>, work: impl FnOnce(sylva_rs::util::relay::Log) -> T + Send) -> PyResult<T> {
+    use sylva_rs::util::{progress, relay};
+    let mut failed: Option<PyErr> = None;
+    let out = py.detach(|| {
+        // The unwinding of cancelled work is caught here; the values it
+        // leaves half-made are dropped with it, none is looked at again.
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            relay::relay_ticking(
+                |sink| {
+                    work(&|line: &str| {
+                        progress::check();
+                        sink(line)
+                    })
+                },
+                std::time::Duration::from_millis(100),
+                |line| {
+                    if failed.is_some() {
+                        return;
+                    }
+                    let seen = Python::attach(|py| {
+                        if let (Some(line), Some(log)) = (line, &log) {
+                            log.call1(py, (line,))?;
+                        }
+                        py.check_signals()
+                    });
+                    if let Err(e) = seen {
+                        failed = Some(e);
+                        progress::cancel();
+                    }
+                },
+            )
+        }))
+    });
+    if failed.is_some() {
+        progress::clear_cancel();
+    }
+    match (out, failed) {
+        (_, Some(e)) => Err(e),
+        (Ok(v), None) => Ok(v),
+        // Cancelled by another call that was interrupted at the same time.
+        (Err(payload), None) if payload.is::<progress::Cancelled>() => Err(PyKeyboardInterrupt::new_err("interrupted")),
+        (Err(payload), None) => std::panic::resume_unwind(payload),
     }
 }
 
@@ -314,6 +398,25 @@ fn shots_to_py<'py>(py: Python<'py>, s: &Shots) -> PyResult<Bound<'py, PyDict>> 
     Ok(d)
 }
 
+/// [`shots_to_py`] taking the shots: their columns become the arrays, so
+/// pulses that are already owned are never held twice.
+pub(crate) fn shots_into_py<'py>(py: Python<'py>, s: Shots) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    d.set_item("origin", xyz_into_py(py, s.origin))?;
+    d.set_item("direction", xyz_into_py(py, s.direction))?;
+    d.set_item("echo_start", s.echo_start.iter().map(|&v| v as i64).collect::<Vec<_>>().into_pyarray(py))?;
+    drop(s.echo_start);
+    d.set_item("echo_count", s.echo_count.iter().map(|&v| v as i64).collect::<Vec<_>>().into_pyarray(py))?;
+    drop(s.echo_count);
+    d.set_item("echo_range", s.echo_range.into_pyarray(py))?;
+    let attrs = PyDict::new(py);
+    for (k, v) in s.echo_attrs {
+        attrs.set_item(k, attr_into_py(py, v))?;
+    }
+    d.set_item("echo_attrs", attrs)?;
+    Ok(d)
+}
+
 fn tree_to_py<'py>(py: Python<'py>, t: &trees::Tree) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new(py);
     d.set_item("tree_id", t.tree_id)?;
@@ -410,6 +513,8 @@ fn write_las_batched(py: Python<'_>, path: &Path, xyz: PyReadonlyArray2<f64>, at
     let mut start = 0;
     let mut pending = batch_attrs(0, n.min(BATCH))?;
     let schema = extra_schema(&pending);
+    // Colour and GPS time are standard dimensions: written in a format that has them.
+    let opts = &sylva_rs::io::las::LasWriteOptions { point_format: sylva_rs::io::las::format_for(opts.point_format, &pending), ..opts.clone() };
     let mut writer = LasWriter::create(path, opts, &[], &schema, lo).map_err(err)?;
     loop {
         let end = (start + BATCH).min(n);
@@ -500,7 +605,7 @@ fn read_rxp_shots<'py>(py: Python<'py>, path: PathBuf, library: Option<PathBuf>,
         Some(r) => Some(miss_report_to_py(py, &r)?),
         None => None,
     };
-    Ok((shots_to_py(py, &s)?, report))
+    Ok((shots_into_py(py, s)?, report))
 }
 
 fn miss_report_to_py<'py>(py: Python<'py>, r: &sylva_rs::shots::reconstruct::MissReport) -> PyResult<Bound<'py, PyDict>> {
@@ -598,27 +703,27 @@ fn read_matrix_file<'py>(py: Python<'py>, path: PathBuf) -> PyResult<Bound<'py, 
 #[pyo3(signature = (xyz, attrs=None, origin=(0.0, 0.0, 0.0)))]
 fn shots_from_pointcloud<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>, origin: (f64, f64, f64)) -> PyResult<Bound<'py, PyDict>> {
     let c = cloud_from_py(xyz, attrs)?;
-    shots_to_py(py, &Shots::from_pointcloud(&c, [origin.0, origin.1, origin.2]))
+    shots_into_py(py, py.detach(|| Shots::from_pointcloud(&c, [origin.0, origin.1, origin.2])))
 }
 
 #[pyfunction]
 #[pyo3(signature = (xyz, attrs=None))]
 fn shots_from_ray_cloud<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, attrs: Option<&Bound<'_, PyDict>>) -> PyResult<Bound<'py, PyDict>> {
     let c = cloud_from_py(xyz, attrs)?;
-    shots_to_py(py, &Shots::from_ray_cloud(&c).map_err(err)?)
+    shots_into_py(py, py.detach(|| Shots::from_ray_cloud(&c)).map_err(err)?)
 }
 
 #[pyfunction]
 fn shots_to_pointcloud<'py>(py: Python<'py>, shots: &Bound<'_, PyDict>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
     let s = shots_from_py(shots)?;
-    cloud_to_py(py, &s.to_pointcloud())
+    cloud_into_py(py, py.detach(|| s.to_pointcloud()))
 }
 
 #[pyfunction]
 fn shots_transform<'py>(py: Python<'py>, shots: &Bound<'_, PyDict>, matrix: PyReadonlyArray2<f64>) -> PyResult<Bound<'py, PyDict>> {
     let s = shots_from_py(shots)?;
     let t = matrix_from_py(Some(matrix))?.unwrap();
-    shots_to_py(py, &s.transformed(&t))
+    shots_into_py(py, py.detach(|| s.transformed(&t)))
 }
 
 // -------------------------------------------------------------------- filters
@@ -713,7 +818,7 @@ fn knn<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, queries: PyReadonlyArra
 fn csf_ground_mask<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, cloth_resolution: f64, rigidness: usize, class_threshold: f64, iterations: usize, time_step: f64) -> PyResult<Bound<'py, PyArray1<bool>>> {
     let p = xyz_from_py(xyz)?;
     let params = ground::CsfParams { cloth_resolution, rigidness, class_threshold, iterations, time_step };
-    Ok(py.detach(|| ground::csf_ground_mask(&p, &params)).into_pyarray(py))
+    Ok(py.detach(|| ground::csf_ground_mask(&p, &params)).map_err(err)?.into_pyarray(py))
 }
 
 #[pyfunction]
@@ -752,6 +857,8 @@ fn raster_fill_nearest<'py>(py: Python<'py>, data: PyReadonlyArray2<f64>) -> PyR
 fn make_chm<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, resolution: f64, bounds: Option<(f64, f64, f64, f64)>, min_height: f64) -> PyResult<Bound<'py, PyDict>> {
     let p = xyz_from_py(xyz)?;
     let h = heights.as_array().to_vec();
+    same_len("heights", h.len(), p.len())?;
+    positive("resolution", resolution)?;
     let r = py.detach(|| ground::make_chm(&p, &h, resolution, bounds_opt(bounds), min_height)).map_err(err)?;
     raster_to_py(py, &r)
 }
@@ -794,6 +901,27 @@ fn write_geotiff(py: Python<'_>, path: PathBuf, data: PyReadonlyArray2<f64>, xmi
 #[pyo3(signature = (xyz, voxel_size, origin=None, shape=None))]
 fn voxelize<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, origin: Option<(f64, f64, f64)>, shape: Option<(usize, usize, usize)>) -> PyResult<Bound<'py, PyDict>> {
     let p = xyz_from_py(xyz)?;
+    positive("voxel_size", voxel_size)?;
+    // The grid is allocated whole: say so before asking for it, rather than
+    // overflowing the allocator on a voxel far smaller than the cloud.
+    let cells = match shape {
+        Some(s) => s.0 as f64 * s.1 as f64 * s.2 as f64,
+        None => {
+            let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+            for q in p.iter().filter(|q| q.iter().all(|v| v.is_finite())) {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(q[k]);
+                    hi[k] = hi[k].max(q[k]);
+                }
+            }
+            (0..3).map(|k| if hi[k] >= lo[k] { ((hi[k] - lo[k]) / voxel_size).floor() + 1.0 } else { 0.0 }).product()
+        }
+    };
+    if cells > 1e18 {
+        return Err(PyValueError::new_err(format!("a voxel of {voxel_size} m over this extent is {cells:.3e} cells; use a larger voxel or crop the cloud")));
+    }
+    // 4 bytes a count in the core and 8 in the array handed back.
+    sylva_rs::util::limits::check_cells(cells as u128, 12, "the voxel grid", "use a larger voxel or crop the cloud").map_err(err)?;
     let g = py.detach(|| canopy::voxelize(&p, voxel_size, origin.map(|o| [o.0, o.1, o.2]), shape.map(|s| [s.0, s.1, s.2]))).map_err(err)?;
     let d = PyDict::new(py);
     // Return counts as (nz, ny, nx) so numpy indexing is [k, j, i]; flat layout matches.
@@ -805,11 +933,13 @@ fn voxelize<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, o
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, heights, voxel_size=0.5, max_height=None, clumping=1.0))]
-fn pad_profile_voxel<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, voxel_size: f64, max_height: Option<f64>, clumping: f64) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+#[pyo3(signature = (xyz, heights, voxel_size=0.5, max_height=None, clumping=1.0, min_height=None))]
+fn pad_profile_voxel<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, voxel_size: f64, max_height: Option<f64>, clumping: f64, min_height: Option<f64>) -> PyResult<(Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>)> {
+    // One voxel by default: the ground and what lies on it are not canopy.
+    let min_height = min_height.unwrap_or(voxel_size);
     let p = xyz_from_py(xyz)?;
     let h = heights.as_array().to_vec();
-    let (z, pad) = py.detach(|| canopy::pad_profile_voxel(&p, &h, voxel_size, max_height, clumping)).map_err(err)?;
+    let (z, pad) = py.detach(|| canopy::pad_profile_voxel(&p, &h, voxel_size, max_height, clumping, min_height)).map_err(err)?;
     Ok((z.into_pyarray(py), pad.into_pyarray(py)))
 }
 
@@ -819,7 +949,7 @@ fn gap_fraction_zenith<'py>(py: Python<'py>, shots: &Bound<'_, PyDict>, echo_hei
     let s = shots_from_py(shots)?;
     let h = echo_heights.as_array().to_vec();
     let edges: Vec<f64> = zenith_edges.map(|e| e.as_array().to_vec()).unwrap_or_else(|| (0..=18).map(|i| i as f64 * 5.0).collect());
-    let (c, g) = canopy::gap_fraction_zenith(&s, &h, min_height, &edges);
+    let (c, g) = py.detach(|| canopy::gap_fraction_zenith(&s, &h, min_height, &edges));
     Ok((c.into_pyarray(py), g.into_pyarray(py)))
 }
 
@@ -939,7 +1069,7 @@ fn read_shots<'py>(py: Python<'py>, path: PathBuf, groups: Option<Vec<usize>>) -
             }
         })
         .map_err(err)?;
-    shots_to_py(py, &s)
+    shots_into_py(py, s)
 }
 
 /// Header of a shots file: counts, row groups, echo bounds, scanner positions, attributes.
@@ -966,11 +1096,22 @@ fn kabsch<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, target: PyReadonl
 }
 
 #[pyfunction]
-#[pyo3(signature = (source, target, init=None, max_correspondence_distance=0.5, max_iterations=50, tolerance=1e-6, method="point", trim=1.0, normal_k=12))]
+#[pyo3(signature = (source, target, init=None, max_correspondence_distance=0.5, max_iterations=50, tolerance=1e-6, method="point", trim=1.0, normal_k=12, target_normals=None))]
 #[allow(clippy::too_many_arguments)]
-fn icp<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, target: PyReadonlyArray2<f64>, init: Option<PyReadonlyArray2<f64>>, max_correspondence_distance: f64, max_iterations: usize, tolerance: f64, method: &str, trim: f64, normal_k: usize) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
+fn icp<'py>(py: Python<'py>, source: PyReadonlyArray2<f64>, target: PyReadonlyArray2<f64>, init: Option<PyReadonlyArray2<f64>>, max_correspondence_distance: f64, max_iterations: usize, tolerance: f64, method: &str, trim: f64, normal_k: usize, target_normals: Option<PyReadonlyArray2<f64>>) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyDict>)> {
     let s = PointCloud::new(xyz_from_py(source)?);
-    let t = PointCloud::new(xyz_from_py(target)?);
+    let mut t = PointCloud::new(xyz_from_py(target)?);
+    // The target's own normals, `(N, 3)`, for the "plane" method: the core
+    // reads them as the cloud's nx, ny, nz and falls back to PCA without them.
+    if let Some(normals) = target_normals {
+        let n = normals.as_array();
+        if n.ncols() != 3 || n.nrows() != t.len() {
+            return Err(PyValueError::new_err(format!("target_normals must have shape ({}, 3), got ({}, {})", t.len(), n.nrows(), n.ncols())));
+        }
+        for (k, name) in ["nx", "ny", "nz"].into_iter().enumerate() {
+            t.set_attr(name, n.column(k).to_vec()).map_err(err)?;
+        }
+    }
     let init = matrix_from_py(init)?;
     let params = registration::IcpParams { max_correspondence_distance, max_iterations, tolerance, method: method.to_string(), trim, normal_k };
     let r = py.detach(|| registration::icp(&s, &t, init, &params)).map_err(err)?;
@@ -1023,7 +1164,8 @@ fn rows_from_py<'a, const K: usize>(a: &'a PyReadonlyArray2<'_, f64>, name: &str
     if v.ncols() != K {
         return Err(PyValueError::new_err(format!("{name} must have shape (N, {K}), got (N, {})", v.ncols())));
     }
-    if let Ok(s) = a.as_slice() {
+    // Not for a Fortran-ordered array, which `as_slice` would also hand over.
+    if let (true, Ok(s)) = (a.is_c_contiguous(), a.as_slice()) {
         // SAFETY: `[f64; K]` has the size and alignment of K consecutive f64.
         let rows = unsafe { std::slice::from_raw_parts(s.as_ptr() as *const [f64; K], s.len() / K) };
         return Ok(std::borrow::Cow::Borrowed(rows));
@@ -1342,6 +1484,9 @@ fn detect_stems<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRea
         return Err(PyValueError::new_err("heights must have one value per point"));
     }
     let (p, h) = (&*p, &*h);
+    positive("slice_step", slice_step)?;
+    positive("slice_thickness", slice_thickness)?;
+    positive("cluster_cell", cluster_cell)?;
     let params = sylva_rs::trees::stems::StemParams { slice_min, slice_max, slice_thickness, slice_step, reference_height, min_radius, max_radius, cluster_cell, min_cluster_points, max_cluster_extent, ransac_iterations, ransac_tolerance, max_circles_per_cluster, min_circle_inliers, min_coverage, min_arc_deg, max_circle_rmse, link_radius, link_radius_ratio, min_slices, max_lean_deg, link_radius_abs, prefilter, prefilter_k, prefilter_max_nz, prefilter_max_variation, seed, ransac_block, ransac_presample, recluster_wide, cluster_grid_at_slice_min, band_top_inclusive, shared_rng, taper_weight_power, min_total_points, cluster_seeds };
     let found = py.detach(|| sylva_rs::trees::stems::detect_stems_full(p, h, &params));
     let list = PyList::empty(py);
@@ -1406,6 +1551,7 @@ fn stems_coreg_defaults<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
 fn stem_root_support<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, trees_list: &Bound<'_, PyList>, slab_heights: PyReadonlyArray1<f64>, slab_half: f64, trunk_scale: f64, trunk_min: f64, prefilter: bool) -> PyResult<Bound<'py, PyArray2<i64>>> {
     let p = xyz_from_py(xyz)?;
     let h = heights.as_array().to_vec();
+    same_len("heights", h.len(), p.len())?;
     let t = trees_from_py(trees_list)?;
     let slabs = slab_heights.as_array().to_vec();
     let params = sylva_rs::trees::stems::StemParams { prefilter, ..Default::default() };
@@ -1420,6 +1566,7 @@ fn stem_root_support<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: 
 fn dbh_profile<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, cx: f64, cy: f64, at_heights: PyReadonlyArray1<f64>, slice_thickness: f64, search_radius: f64) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let p = xyz_from_py(xyz)?;
     let h = heights.as_array().to_vec();
+    same_len("heights", h.len(), p.len())?;
     let at = at_heights.as_array().to_vec();
     Ok(py.detach(|| trees::dbh_profile(&p, &h, cx, cy, &at, slice_thickness, search_radius)).into_pyarray(py))
 }
@@ -1431,6 +1578,7 @@ fn segment_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRe
     let p = xyz_ref_from_py(&xyz)?;
     let h = slice_from_py(&heights);
     let (p, h) = (&*p, &*h);
+    same_len("heights", h.len(), p.len())?;
     let ex = exclude.as_ref().map(slice_from_py);
     let ex: Option<&[bool]> = ex.as_deref();
     if ex.is_some_and(|e| e.len() != p.len()) {
@@ -1438,7 +1586,7 @@ fn segment_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRe
     }
     let t = trees_from_py(trees_list)?;
     let params = trees::SegmentParams { k, max_edge, voxel_size, seed_height, seed_radius, seed_ring, power, angle_penalty, gravity, cut_above_ground, height_prior, height_prior_radius, height_prior_power, low_height, low_radius, wood_costs, wood_k, wood_threshold, understorey_height, understorey_band, voxel_origin: voxel_origin.map(|o| [o.0, o.1, o.2]), bridge };
-    Ok(py.detach(|| trees::segment_trees_masked(p, h, &t, &params, ex)).into_pyarray(py))
+    Ok(detach_interruptible(py, || trees::segment_trees_masked(p, h, &t, &params, ex))?.into_pyarray(py))
 }
 
 #[pyfunction]
@@ -1448,6 +1596,7 @@ fn merge_branches<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyR
     let p = xyz_ref_from_py(&xyz)?;
     let h = slice_from_py(&heights);
     let (p, h) = (&*p, &*h);
+    same_len("heights", h.len(), p.len())?;
     let t = trees_from_py(trees_list)?;
     let params = trees::SegmentParams { k, max_edge, voxel_size, seed_height, seed_radius, seed_ring, power, angle_penalty, gravity: 0.0, cut_above_ground, height_prior: false, height_prior_radius: 1.5, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, voxel_origin: voxel_origin.map(|o| [o.0, o.1, o.2]), ..Default::default() };
     let (kept, merged) = py.detach(|| trees::merge_branches(p, h, &t, &params, ground_height, trunk_scale, trunk_min, search_radius));
@@ -1464,6 +1613,7 @@ fn tree_heights<'py>(py: Python<'py>, heights: PyReadonlyArray1<f64>, labels: Py
     let mut t = trees_from_py(trees_list)?;
     let (h, l) = (slice_from_py(&heights), slice_from_py(&labels));
     let (h, l) = (&*h, &*l);
+    same_len("labels", l.len(), h.len())?;
     py.detach(|| trees::tree_heights(h, l, &mut t, percentile));
     let list = PyList::empty(py);
     for tr in &t {
@@ -1477,6 +1627,8 @@ fn tree_heights<'py>(py: Python<'py>, heights: PyReadonlyArray1<f64>, labels: Py
 fn crown_metrics<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, labels: PyReadonlyArray1<i64>, tree_id: i64, crown_base_fraction: f64) -> PyResult<Option<Bound<'py, PyDict>>> {
     let p = xyz_ref_from_py(&xyz)?;
     let (h, l) = (slice_from_py(&heights), slice_from_py(&labels));
+    same_len("heights", h.len(), p.len())?;
+    same_len("labels", l.len(), p.len())?;
     let m = trees::crown_metrics(&p, &h, &l, tree_id, crown_base_fraction);
     match m {
         None => Ok(None),
@@ -1497,6 +1649,8 @@ fn crown_metrics_all<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: 
     let p = xyz_ref_from_py(&xyz)?;
     let (h, l) = (slice_from_py(&heights), slice_from_py(&labels));
     let (p, h, l) = (&*p, &*h, &*l);
+    same_len("heights", h.len(), p.len())?;
+    same_len("labels", l.len(), p.len())?;
     let all = py.detach(|| trees::crown_metrics_all(p, h, l, crown_base_fraction));
     let out = PyDict::new(py);
     for (id, [area, base, depth, diam]) in all {
@@ -1590,7 +1744,7 @@ fn build_qsm<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, base_xy: Option<(
     let params = qsm::QsmParams { k, max_edge, bin_length, min_points, ransac_threshold, max_radius, taper_limit, max_rmse, smooth_steps, apex_radius, min_arc_deg, min_inlier_fraction, prune_points, fit_min_points, crop_length, butt_height, relative_tolerance, base_radius, allometry_tolerance, stem_radius_cap, buttress_equivalent_area, buttress_max_inlier_fraction, pipe_slack, branch_min_inlier_fraction, spacing_scale, radius_power, power_above_spacing, sensor_noise, cluster_eps, centre_fit_points, radius_smooth_steps, butt_swell, butt_vertical_run, butt_max_lean_deg, chain_max_d, fourier_min_radius, min_weight, min_mean_weight };
     let weights = weights.map(|w| w.as_array().to_vec());
     let base_xy = base_xy.map(|b| [b.0, b.1]);
-    let q = py.detach(|| match &weights { Some(w) => qsm::build_qsm_weighted(&p, base_xy, &params, w), None => qsm::build_qsm(&p, base_xy, &params) }).map_err(err)?;
+    let q = detach_interruptible(py, || match &weights { Some(w) => qsm::build_qsm_weighted(&p, base_xy, &params, w), None => qsm::build_qsm(&p, base_xy, &params) })?.map_err(err)?;
     qsm_to_py(py, &q)
 }
 
@@ -1831,13 +1985,13 @@ impl PyProgressTask {
     #[pyo3(signature = (n=1))]
     fn inc(&self, n: u64) {
         if let Some(t) = &self.task {
-            t.inc(n);
+            t.inc_unchecked(n);
         }
     }
 
     fn set(&self, done: u64) {
         if let Some(t) = &self.task {
-            t.set(done);
+            t.set_unchecked(done);
         }
     }
 

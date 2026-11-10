@@ -48,11 +48,29 @@ pub struct Tree {
 
 // ------------------------------------------------------------------ circles
 
-/// Kåsa (1976) algebraic circle fit: `(cx, cy, r)`.
+/// Mean of 2-D points, the origin the circle fits work about: far from the
+/// coordinate origin (projected coordinates) the sums of squares of a fit on
+/// the coordinates as given lose every digit a decimetre circle needs.
+fn centroid_xy(xy: &[[f64; 2]]) -> [f64; 2] {
+    let n = xy.len().max(1) as f64;
+    [xy.iter().map(|p| p[0]).sum::<f64>() / n, xy.iter().map(|p| p[1]).sum::<f64>() / n]
+}
+
+/// Kåsa (1976) algebraic circle fit: `(cx, cy, r)`, in the units and frame
+/// of `xy` (m). The fit runs about the points' centroid, so it is as good in
+/// projected coordinates as at the origin.
 pub fn fit_circle_algebraic(xy: &[[f64; 2]]) -> Result<(f64, f64, f64)> {
     if xy.len() < 3 {
         return Err(Error::invalid("need >= 3 points"));
     }
+    let m = centroid_xy(xy);
+    let local: Vec<[f64; 2]> = xy.iter().map(|p| [p[0] - m[0], p[1] - m[1]]).collect();
+    let (cx, cy, r) = fit_circle_algebraic_local(&local)?;
+    Ok((cx + m[0], cy + m[1], r))
+}
+
+/// [`fit_circle_algebraic`] on points already about their own centroid.
+fn fit_circle_algebraic_local(xy: &[[f64; 2]]) -> Result<(f64, f64, f64)> {
     // Normal equations for [x y 1] [a b c]^T = x^2 + y^2.
     let mut ata = nalgebra::Matrix3::<f64>::zeros();
     let mut atb = nalgebra::Vector3::<f64>::zeros();
@@ -68,9 +86,22 @@ pub fn fit_circle_algebraic(xy: &[[f64; 2]]) -> Result<(f64, f64, f64)> {
     Ok((cx, cy, r))
 }
 
-/// Geometric (LM) circle fit initialised algebraically: `(cx, cy, r, rmse)`.
+/// Geometric (LM) circle fit initialised algebraically: `(cx, cy, r, rmse)`,
+/// in the units and frame of `xy` (m). The fit runs about the points'
+/// centroid, so it is as good in projected coordinates as at the origin.
 pub fn fit_circle(xy: &[[f64; 2]]) -> Result<(f64, f64, f64, f64)> {
-    let (cx, cy, r) = fit_circle_algebraic(xy)?;
+    if xy.len() < 3 {
+        return Err(Error::invalid("need >= 3 points"));
+    }
+    let m = centroid_xy(xy);
+    let local: Vec<[f64; 2]> = xy.iter().map(|p| [p[0] - m[0], p[1] - m[1]]).collect();
+    let (cx, cy, r, rmse) = fit_circle_local(&local)?;
+    Ok((cx + m[0], cy + m[1], r, rmse))
+}
+
+/// [`fit_circle`] on points already about their own centroid.
+fn fit_circle_local(xy: &[[f64; 2]]) -> Result<(f64, f64, f64, f64)> {
+    let (cx, cy, r) = fit_circle_algebraic_local(xy)?;
     let res = levenberg_marquardt(
         |p, out| {
             out.clear();
@@ -116,12 +147,17 @@ impl Default for RansacCircleParams {
 }
 
 /// RANSAC circle fit (Fischler & Bolles 1981): `(cx, cy, r, inlier mask)`,
-/// refit on the inliers.
+/// refit on the inliers; centre and radius in the units and frame of `xy`
+/// (m). Hypotheses and the refit are computed about the points' centroid, so
+/// the result does not depend on how far the points are from the origin.
 pub fn fit_circle_ransac(xy: &[[f64; 2]], p: &RansacCircleParams) -> Result<(f64, f64, f64, Vec<bool>)> {
     let n = xy.len();
     if n < 3 {
         return Err(Error::invalid("need >= 3 points"));
     }
+    let m = centroid_xy(xy);
+    let local: Vec<[f64; 2]> = xy.iter().map(|q| [q[0] - m[0], q[1] - m[1]]).collect();
+    let xy = &local[..];
     let mut rng = Rng::new(p.seed);
     let mut best: Vec<bool> = Vec::new();
     let mut best_n = 0usize;
@@ -145,7 +181,7 @@ pub fn fit_circle_ransac(xy: &[[f64; 2]], p: &RansacCircleParams) -> Result<(f64
     }
     let inl: Vec<[f64; 2]> = xy.iter().zip(&best).filter(|(_, &b)| b).map(|(q, _)| *q).collect();
     let (cx, cy, r, _) = fit_circle(&inl)?;
-    Ok((cx, cy, r, best))
+    Ok((cx + m[0], cy + m[1], r, best))
 }
 
 // ---------------------------------------------------------------- detection
@@ -460,7 +496,7 @@ pub fn segment_nodes(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentPara
 
 /// The last step of [`segment_trees`]: each point takes the label of its
 /// nearest graph node (`work`, labelled by [`segment_nodes`]); points below
-/// `cut_above_ground`, and those below `low_height` farther than
+/// `cut_above_ground` or with a NaN height, and those below `low_height` farther than
 /// `max(low_radius, 1.5 DBH)` from their tree's stem, get -1.
 pub fn label_points(points: &[Point], heights: &[f64], work: &[Point], labels_work: &[i64], trees: &[Tree], p: &SegmentParams) -> Vec<i64> {
     label_points_masked(points, heights, work, labels_work, trees, p, None)
@@ -474,7 +510,9 @@ pub fn label_points_masked(points: &[Point], heights: &[f64], work: &[Point], la
         .into_par_iter()
         .map(|i| {
             let (q, h) = (&points[i], heights[i]);
-            if h < p.cut_above_ground || exclude.is_some_and(|e| e[i]) {
+            // `!(h >= cut)` rather than `h < cut`: a NaN height (a point
+            // over a hole in the terrain model) is not a graph node either.
+            if !(h >= p.cut_above_ground) || exclude.is_some_and(|e| e[i]) {
                 return -1;
             }
             let l = tree.nearest(q).map(|(j, _)| labels_work[j]).unwrap_or(-1);
@@ -523,6 +561,7 @@ pub fn branch_parents(points: &[Point], heights: &[f64], trees: &[Tree], p: &Seg
     }
     let (dist, _, pred) = dijkstra_gravity(&graph, &sources, None, 0.0);
     let traced = |ci: usize| only.is_none_or(|o| o[ci]);
+    let grid = FlatGrid::new(&work, p.seed_radius.max(1e-3));
     // Seed node per candidate: nearest graph node to (x, y, seed_height) that is connected to ground.
     let seed_node: Vec<Option<usize>> = trees
         .iter()
@@ -531,12 +570,15 @@ pub fn branch_parents(points: &[Point], heights: &[f64], trees: &[Tree], p: &Seg
             if !traced(ci) {
                 return None;
             }
+            // Among the nodes of the grid cells the seed disc touches, not
+            // a pass over every node per candidate; the nearest to the
+            // ground wins, the lowest index among equals.
             let mut best: Option<(usize, f64)> = None;
-            for i in 0..work.len() {
+            for i in grid.candidates(t.x, t.y, p.seed_radius) {
                 if (work[i][0] - t.x).hypot(work[i][1] - t.y) > p.seed_radius || (hw[i] - p.seed_height).abs() > 0.5 || !dist[i].is_finite() {
                     continue;
                 }
-                if best.map(|b| dist[i] < b.1).unwrap_or(true) {
+                if best.map(|b| dist[i] < b.1 || (dist[i] == b.1 && i < b.0)).unwrap_or(true) {
                     best = Some((i, dist[i]));
                 }
             }
@@ -545,6 +587,9 @@ pub fn branch_parents(points: &[Point], heights: &[f64], trees: &[Tree], p: &Seg
         .collect();
     for (ci, t) in trees.iter().enumerate() {
         let Some(mut node) = seed_node[ci] else { continue };
+        // The other candidates within `search_radius`, found once per
+        // candidate rather than at every step of its path.
+        let near: Vec<usize> = (0..trees.len()).filter(|&oi| oi != ci && (trees[oi].x - t.x).hypot(trees[oi].y - t.y) <= search_radius).collect();
         // Walk the predecessor chain to the ground.
         let mut guard = 0;
         while pred[node] != usize::MAX && guard < 1_000_000 {
@@ -552,10 +597,8 @@ pub fn branch_parents(points: &[Point], heights: &[f64], trees: &[Tree], p: &Seg
             guard += 1;
             let q = work[node];
             let h = hw[node];
-            for (oi, o) in trees.iter().enumerate() {
-                if oi == ci || (o.x - t.x).hypot(o.y - t.y) > search_radius {
-                    continue;
-                }
+            for &oi in &near {
+                let o = &trees[oi];
                 let r = (trunk_scale * o.dbh / 2.0).max(trunk_min);
                 if h >= p.cut_above_ground && h <= p.seed_height + 0.5 && (q[0] - o.x).hypot(q[1] - o.y) <= r {
                     parent[ci] = Some(oi);
@@ -573,31 +616,48 @@ pub fn branch_parents(points: &[Point], heights: &[f64], trees: &[Tree], p: &Seg
 /// [`branch_parents`] to the candidate each one belongs to, and return the
 /// survivors and, for every candidate, the id it now belongs to.
 pub fn resolve_branches(trees: &[Tree], parent: &[Option<usize>]) -> (Vec<Tree>, Vec<i64>) {
-    // Resolve chains (a -> b -> c) and mutual pairs (keep the higher quality one).
+    // Follow each candidate's parents to the end of its chain. A chain that
+    // runs into a cycle (a mutual pair, or a longer ring) ends at the ring's
+    // best candidate (highest quality, ties to the lower index), whether or
+    // not the chain started inside the ring, so every candidate is mapped to
+    // a survivor and every member of a ring agrees on which one.
     let mut target: Vec<usize> = (0..trees.len()).collect();
+    let mut step_of: Vec<usize> = vec![usize::MAX; trees.len()];
+    let mut walk: Vec<usize> = Vec::new();
     for ci in 0..trees.len() {
+        walk.clear();
         let mut cur = ci;
-        let mut seen = 0;
-        while let Some(pi) = parent[cur] {
-            if pi == ci || seen > trees.len() {
-                // cycle: keep the better candidate (`cur` is the member that
-                // points back at `ci`); ties go to the lower index so both
-                // ends of a mutual pair agree.
-                let (qa, qb) = (trees[ci].quality, trees[cur].quality);
-                cur = if qa > qb || (qa == qb && ci <= cur) { ci } else { cur };
-                break;
+        let end = loop {
+            if step_of[cur] != usize::MAX {
+                // Back on the walk: the ring is everything from there on.
+                let ring = &walk[step_of[cur]..];
+                break ring.iter().copied().fold(ring[0], |b, q| {
+                    let (qb, qq) = (trees[b].quality, trees[q].quality);
+                    if qq > qb || (qq == qb && q < b) { q } else { b }
+                });
             }
-            cur = pi;
-            seen += 1;
+            step_of[cur] = walk.len();
+            walk.push(cur);
+            match parent[cur] {
+                Some(pi) => cur = pi,
+                None => break cur,
+            }
+        };
+        for &q in &walk {
+            step_of[q] = usize::MAX;
         }
-        target[ci] = cur;
+        target[ci] = end;
     }
     let survivors: Vec<Tree> = trees.iter().enumerate().filter(|(i, _)| target[*i] == *i).map(|(_, t)| t.clone()).collect();
     let merged_into: Vec<i64> = target.iter().map(|&ti| trees[ti].tree_id).collect();
     (survivors, merged_into)
 }
 
-/// Fill `height` and `n_points` for each tree from segmentation labels.
+/// Fill `height` (m above ground) and `n_points` for each tree from
+/// segmentation labels. `n_points` counts every point carrying the tree's
+/// label; the height is the `percentile` (0-100) of those with a height, so
+/// a NaN height (no terrain under the point) is counted but not ranked, and
+/// a tree whose heights are all NaN gets a NaN height.
 pub fn tree_heights(heights: &[f64], labels: &[i64], trees: &mut [Tree], percentile: f64) {
     // One pass over the labels, bucketing each tree's heights, rather than
     // a pass per tree. A tree id that several entries share takes the first.
@@ -618,11 +678,12 @@ pub fn tree_heights(heights: &[f64], labels: &[i64], trees: &mut [Tree], percent
             hs = labels.iter().zip(heights).filter(|(&l, _)| l == t.tree_id).map(|(_, &h)| h).collect();
         }
         t.n_points = hs.len();
+        hs.retain(|h| !h.is_nan());
         if hs.is_empty() {
             t.height = f64::NAN;
             continue;
         }
-        hs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        hs.sort_by(|a, b| a.total_cmp(b));
         let pos = ((percentile / 100.0) * (hs.len() - 1) as f64).round() as usize;
         t.height = hs[pos.min(hs.len() - 1)];
     }
@@ -736,15 +797,19 @@ pub fn crown_shape(points: &[Point], base_xy: Option<[f64; 2]>, z_min: f64, slic
         }
     }
     // Area centroid of the projection.
+    // Taken about the first hull vertex: the cross products of coordinates
+    // as given cancel to nothing in projected (UTM) coordinates.
+    let h0 = hull.first().copied().unwrap_or([0.0, 0.0]);
     let (mut cx, mut cy, mut a2) = (0.0, 0.0, 0.0);
     for i in 0..hull.len() {
         let (p, q) = (hull[i], hull[(i + 1) % hull.len()]);
+        let (p, q) = ([p[0] - h0[0], p[1] - h0[1]], [q[0] - h0[0], q[1] - h0[1]]);
         let c = p[0] * q[1] - q[0] * p[1];
         cx += (p[0] + q[0]) * c;
         cy += (p[1] + q[1]) * c;
         a2 += c;
     }
-    let centroid = if a2.abs() > 1e-12 { [cx / (3.0 * a2), cy / (3.0 * a2)] } else { [xy.iter().map(|p| p[0]).sum::<f64>() / xy.len() as f64, xy.iter().map(|p| p[1]).sum::<f64>() / xy.len() as f64] };
+    let centroid = if a2.abs() > 1e-12 { [h0[0] + cx / (3.0 * a2), h0[1] + cy / (3.0 * a2)] } else { [xy.iter().map(|p| p[0]).sum::<f64>() / xy.len() as f64, xy.iter().map(|p| p[1]).sum::<f64>() / xy.len() as f64] };
     let lowest = crown.iter().min_by(|a, b| a[2].partial_cmp(&b[2]).unwrap()).unwrap();
     let origin = base_xy.unwrap_or([lowest[0], lowest[1]]);
     let (dx, dy) = (centroid[0] - origin[0], centroid[1] - origin[1]);
@@ -982,5 +1047,177 @@ mod seed_and_height_tests {
         assert_eq!(odd[0].height.to_bits(), odd[2].height.to_bits());
         assert_eq!(odd[1].n_points, 0);
         assert!(odd[1].height.is_nan());
+    }
+}
+
+#[cfg(test)]
+mod review_regression_tests {
+    use super::*;
+
+    /// A plot corner in projected coordinates (UTM easting, northing).
+    const UTM: [f64; 2] = [500_000.0, 8_500_000.0];
+
+    fn unit(rng: &mut Rng) -> f64 {
+        (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    #[test]
+    fn circle_fits_hold_in_projected_coordinates() {
+        let mut rng = Rng::new(1);
+        let local: Vec<[f64; 2]> = (0..400)
+            .map(|_| {
+                let a = unit(&mut rng) * std::f64::consts::TAU;
+                let r = 0.25 + 0.002 * (unit(&mut rng) - 0.5);
+                [r * a.cos(), r * a.sin()]
+            })
+            .collect();
+        let far: Vec<[f64; 2]> = local.iter().map(|q| [q[0] + UTM[0], q[1] + UTM[1]]).collect();
+        let (ax, ay, ar) = fit_circle_algebraic(&far).unwrap();
+        assert!((ax - UTM[0]).abs() < 1e-3 && (ay - UTM[1]).abs() < 1e-3 && (ar - 0.25).abs() < 1e-3, "{ax} {ay} {ar}");
+        let (cx, cy, r, rmse) = fit_circle(&far).unwrap();
+        assert!((cx - UTM[0]).abs() < 1e-3 && (cy - UTM[1]).abs() < 1e-3 && (r - 0.25).abs() < 1e-3 && rmse < 2e-3, "{cx} {cy} {r} {rmse}");
+        let (rx, ry, rr, inl) = fit_circle_ransac(&far, &RansacCircleParams::default()).unwrap();
+        assert!((rx - UTM[0]).abs() < 1e-3 && (ry - UTM[1]).abs() < 1e-3 && (rr - 0.25).abs() < 1e-3);
+        assert_eq!(inl.iter().filter(|&&b| b).count(), 400);
+        // The same circle at the origin, to the precision the offset leaves.
+        let (lx, ly, lr, _) = fit_circle(&local).unwrap();
+        assert!((cx - UTM[0] - lx).abs() < 1e-6 && (cy - UTM[1] - ly).abs() < 1e-6 && (r - lr).abs() < 1e-6);
+        let pts: Vec<Point> = far.iter().map(|q| [q[0], q[1], 1.3]).collect();
+        let d = dbh_profile(&pts, &vec![1.3; pts.len()], UTM[0], UTM[1], &[1.3], 0.2, 1.0);
+        assert!((d[0] - 0.5).abs() < 2e-3, "{}", d[0]);
+    }
+
+    #[test]
+    fn crown_offset_holds_in_projected_coordinates() {
+        // A 3 m disc of crown points centred 1 m east of the stem.
+        let mut rng = Rng::new(3);
+        let local: Vec<Point> = (0..5000)
+            .map(|_| {
+                let a = unit(&mut rng) * std::f64::consts::TAU;
+                let r = 3.0 * unit(&mut rng).sqrt();
+                [1.0 + r * a.cos(), r * a.sin(), 5.0 + 5.0 * unit(&mut rng)]
+            })
+            .collect();
+        let far: Vec<Point> = local.iter().map(|q| [q[0] + UTM[0], q[1] + UTM[1], q[2]]).collect();
+        let a = crown_shape(&local, Some([0.0, 0.0]), 0.0, 0.5);
+        let b = crown_shape(&far, Some(UTM), 0.0, 0.5);
+        assert!((a.offset - 1.0).abs() < 0.05, "{}", a.offset);
+        assert!((b.offset - a.offset).abs() < 1e-4, "{} vs {}", b.offset, a.offset);
+        assert!((b.offset_direction - a.offset_direction).abs() < 0.01 && (b.asymmetry - a.asymmetry).abs() < 1e-4);
+        assert!((b.projected_area - a.projected_area).abs() < 0.01);
+    }
+
+    #[test]
+    fn a_nan_height_is_unlabelled_and_does_not_stop_the_heights() {
+        let mut pts: Vec<Point> = Vec::new();
+        for k in 0..4000 {
+            let a = k as f64 * 0.37;
+            pts.push([0.1 * a.cos(), 0.1 * a.sin(), 6.0 * (k as f64 / 4000.0)]);
+        }
+        let mut h: Vec<f64> = pts.iter().map(|q| q[2]).collect();
+        h[2000] = f64::NAN;
+        let mut trees = vec![Tree { tree_id: 1, x: 0.0, y: 0.0, dbh: 0.2, height: f64::NAN, n_points: 0, inlier_fraction: 1.0, n_slices: 5, rmse: 0.0, lean_deg: 0.0, quality: 1.0 }];
+        let labels = segment_trees(&pts, &h, &trees, &SegmentParams { voxel_size: 0.05, ..Default::default() });
+        assert_eq!(labels[2000], -1, "a point without a height is not labelled");
+        assert_eq!(labels[2001], 1);
+        tree_heights(&h, &labels, &mut trees, 100.0);
+        assert!((trees[0].height - 6.0).abs() < 0.01);
+        // Labels from elsewhere may still sit on NaN heights: counted, not ranked.
+        let all = vec![1i64; pts.len()];
+        tree_heights(&h, &all, &mut trees, 100.0);
+        assert_eq!(trees[0].n_points, pts.len());
+        assert!((trees[0].height - 6.0).abs() < 0.01);
+        tree_heights(&[f64::NAN, f64::NAN], &[1, 1], &mut trees, 100.0);
+        assert!(trees[0].height.is_nan() && trees[0].n_points == 2);
+    }
+
+    fn candidate(id: i64, x: f64, quality: f64) -> Tree {
+        Tree { tree_id: id, x, y: 0.0, dbh: 0.2, height: f64::NAN, n_points: 1, inlier_fraction: 1.0, n_slices: 5, rmse: 0.0, lean_deg: 0.0, quality }
+    }
+
+    #[test]
+    fn a_branch_of_a_mutual_pair_goes_to_the_pairs_survivor() {
+        // 1 -> 2 <-> 3, and a free 4: 3 is the better of the pair.
+        let trees = vec![candidate(1, 0.0, 0.1), candidate(2, 1.0, 0.5), candidate(3, 2.0, 0.6), candidate(4, 9.0, 0.9)];
+        let (kept, merged) = resolve_branches(&trees, &[Some(1), Some(2), Some(1), None]);
+        assert_eq!(kept.iter().map(|t| t.tree_id).collect::<Vec<_>>(), vec![3, 4]);
+        assert_eq!(merged, vec![3, 3, 3, 4]);
+        // Even when the branch is the best of the three it is still a branch.
+        let trees = vec![candidate(1, 0.0, 0.9), candidate(2, 1.0, 0.5), candidate(3, 2.0, 0.6)];
+        let (kept, merged) = resolve_branches(&trees, &[Some(1), Some(2), Some(1)]);
+        assert_eq!(kept.iter().map(|t| t.tree_id).collect::<Vec<_>>(), vec![3]);
+        assert_eq!(merged, vec![3, 3, 3]);
+        // Every id merged into is a survivor's; a tie goes to the lower index.
+        let trees = vec![candidate(1, 0.0, 0.5), candidate(2, 1.0, 0.5), candidate(3, 2.0, 0.5)];
+        let (kept, merged) = resolve_branches(&trees, &[Some(1), Some(2), Some(0)]);
+        assert_eq!((kept.len(), merged), (1, vec![1, 1, 1]));
+    }
+
+    /// `branch_parents` as it was: a pass over every node per candidate and
+    /// over every candidate per path step.
+    fn branch_parents_scanning(points: &[Point], heights: &[f64], trees: &[Tree], p: &SegmentParams, ground_height: f64, trunk_scale: f64, trunk_min: f64, search_radius: f64) -> Vec<Option<usize>> {
+        let mut parent: Vec<Option<usize>> = vec![None; trees.len()];
+        let work_idx = graph_nodes(points, heights, p);
+        let work: Vec<Point> = work_idx.iter().map(|&i| points[i]).collect();
+        let hw: Vec<f64> = work_idx.iter().map(|&i| heights[i]).collect();
+        let graph = if p.bridge { directed_knn_graph_bridged(&work, p.k, p.max_edge, p.power, p.angle_penalty, None) } else { directed_knn_graph(&work, p.k, p.max_edge, p.power, p.angle_penalty) };
+        let sources: Vec<usize> = (0..work.len()).filter(|&i| hw[i] < ground_height).collect();
+        if sources.is_empty() {
+            return parent;
+        }
+        let (dist, _, pred) = dijkstra_gravity(&graph, &sources, None, 0.0);
+        for (ci, t) in trees.iter().enumerate() {
+            let mut best: Option<(usize, f64)> = None;
+            for i in 0..work.len() {
+                if (work[i][0] - t.x).hypot(work[i][1] - t.y) > p.seed_radius || (hw[i] - p.seed_height).abs() > 0.5 || !dist[i].is_finite() {
+                    continue;
+                }
+                if best.map(|b| dist[i] < b.1).unwrap_or(true) {
+                    best = Some((i, dist[i]));
+                }
+            }
+            let Some((mut node, _)) = best else { continue };
+            while pred[node] != usize::MAX {
+                node = pred[node];
+                for (oi, o) in trees.iter().enumerate() {
+                    if oi == ci || (o.x - t.x).hypot(o.y - t.y) > search_radius {
+                        continue;
+                    }
+                    let r = (trunk_scale * o.dbh / 2.0).max(trunk_min);
+                    if hw[node] >= p.cut_above_ground && hw[node] <= p.seed_height + 0.5 && (work[node][0] - o.x).hypot(work[node][1] - o.y) <= r {
+                        parent[ci] = Some(oi);
+                    }
+                }
+                if parent[ci].is_some() {
+                    break;
+                }
+            }
+        }
+        parent
+    }
+
+    #[test]
+    fn gridded_branch_parents_are_the_scanned_ones() {
+        // Two trunks, and a limb leaving the first at 1 m that passes through
+        // the seed height 0.6 m out, where a third candidate was "detected".
+        let mut pts: Vec<Point> = Vec::new();
+        for (x, y) in [(UTM[0], UTM[1]), (UTM[0] + 4.0, UTM[1])] {
+            for k in 0..3000 {
+                let a = k as f64 * 0.37;
+                pts.push([x + 0.1 * a.cos(), y + 0.1 * a.sin(), 4.0 * (k as f64 / 3000.0)]);
+            }
+        }
+        for k in 0..1500 {
+            let s = k as f64 / 1500.0;
+            let a = k as f64 * 0.61;
+            pts.push([UTM[0] + 0.1 + 1.0 * s + 0.03 * a.cos(), UTM[1] + 0.03 * a.sin(), 1.0 + 1.0 * s]);
+        }
+        let h: Vec<f64> = pts.iter().map(|q| q[2]).collect();
+        let trees = vec![candidate(1, UTM[0], 0.9), candidate(2, UTM[0] + 4.0, 0.8), candidate(3, UTM[0] + 0.6, 0.3)];
+        let trees: Vec<Tree> = trees.into_iter().map(|t| Tree { y: UTM[1], ..t }).collect();
+        let p = SegmentParams { voxel_size: 0.03, ..Default::default() };
+        let got = branch_parents(&pts, &h, &trees, &p, 0.5, 1.5, 0.15, 6.0, None);
+        assert_eq!(got, branch_parents_scanning(&pts, &h, &trees, &p, 0.5, 1.5, 0.15, 6.0));
+        assert_eq!(got, vec![None, None, Some(0)]);
     }
 }

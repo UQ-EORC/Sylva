@@ -83,7 +83,9 @@ def _neighbour_pairs(origins, neighbours):
     for i in range(n):
         dist = np.linalg.norm(origins - origins[i], axis=1)
         dist[i] = np.inf
-        for j in np.argsort(dist)[:neighbours]:
+        # Never more partners than there are other scans: past them the sort
+        # reaches the scan itself, and a scan against itself agrees perfectly.
+        for j in np.argsort(dist)[:max(0, min(int(neighbours), n - 1))]:
             pairs.add((min(i, int(j)), max(i, int(j))))
     return sorted(pairs)
 

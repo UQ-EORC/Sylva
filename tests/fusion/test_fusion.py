@@ -528,3 +528,84 @@ def test_command_line(stand, tmp_path):
     with pytest.raises(SystemExit):
         main(["--no-progress", "fusion-upscale", str(tmp_path / "plots.csv"), str(tmp_path / "metrics"),
               str(tmp_path / "up"), "--response", "biomass", "--predictors", "zq95"])
+
+
+def test_fit_model_uses_the_metrics_of_a_plot_table_not_its_bookkeeping():
+    # Without names, the predictors of a PlotMetrics are its metrics; the
+    # plot index and id columns used to be regressed on as well.
+    h, c, agb = _power_law(n=20, seed=2)
+    pm = als.PlotMetrics({"plot": np.arange(20), "id": np.arange(100, 120), "zq95": h, "cover": c},
+                         ["zq95", "cover"])
+    m = fusion.fit_model(agb, pm, "linear")
+    assert m.names == ["zq95", "cover"]
+    named = fusion.fit_model(agb, pm, "linear", names=["zq95", "cover"])
+    np.testing.assert_allclose(m.coef, named.coef)
+    assert fusion.fit_model(agb, pm).names == ["zq95", "cover"]          # loglog: ln(plot 0) used to raise
+    # A plain table has no such list: every column is a predictor, as before.
+    assert fusion.fit_model(agb, {"zq95": h, "cover": c}, "linear").names == ["zq95", "cover"]
+
+
+def _pentagon(cx, cy, r):
+    a = np.linspace(0, 2 * np.pi, 5, endpoint=False)
+    return np.column_stack([cx + r * np.cos(a), cy + r * np.sin(a)])
+
+
+def test_link_trees_takes_crowns_of_any_vertex_count():
+    # A table's crowns are outlines of differing length, and one may be missing.
+    als_t = {"id": np.array([11, 12, 13]), "x": np.array([0.0, 10.0, 30.0]), "y": np.zeros(3),
+             "height": np.array([20.0, 15.0, 18.0]),
+             "crowns": [_square(0, 0, 3), _pentagon(10, 0, 3.0), np.zeros((0, 2))]}
+    tls_t = {"tree_id": np.array([1, 2, 3]), "x": np.array([1.0, 10.5, 30.2]), "y": np.zeros(3),
+             "dbh": np.array([0.4, 0.3, 0.3]), "height": np.array([19.5, 14.5, 17.5])}
+    links = fusion.link_trees(tls_t, als_t)
+    assert list(links.status) == ["matched"] * 3
+    assert list(links.table()["als_id"]) == [11, 12, 13]
+    assert list(links.inside[:2]) == [True, True]
+    with pytest.raises(ValueError, match="crowns"):
+        fusion.link_trees(tls_t, {**als_t, "crowns": als_t["crowns"][:2]})
+
+
+def _fusion_trees_inputs(tmp_path, tls_ids, als_ids):
+    with open(tmp_path / "tls.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["tree_id", "x", "y", "dbh", "height"])
+        for tid, x in zip(tls_ids, (1.0, 10.5, 30.2), strict=True):
+            w.writerow([tid, x, 0.0, 0.3, 15.0])
+    with open(tmp_path / "als.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["id", "x", "y", "height"])
+        for aid, x in zip(als_ids, (0.0, 10.0, 30.0), strict=True):
+            w.writerow([aid, x, 0.0, 16.0])
+    close = lambda ring: ring.tolist() + [ring[0].tolist()]  # noqa: E731
+    feats = [{"type": "Feature", "properties": {"id": als_ids[0]},
+              "geometry": {"type": "Polygon", "coordinates": [close(_square(0, 0, 3))]}},
+             {"type": "Feature", "properties": {"id": als_ids[1]},
+              "geometry": {"type": "Polygon", "coordinates": [close(_pentagon(10, 0, 3.0))]}}]   # none for the third
+    (tmp_path / "crowns.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": feats}))
+    return [str(tmp_path / "tls.csv"), str(tmp_path / "als.csv"), str(tmp_path / "links.csv"),
+            "--crowns", str(tmp_path / "crowns.geojson"), "--als-output", str(tmp_path / "als_links.csv")]
+
+
+def test_fusion_trees_cli_keeps_ids_as_written(tmp_path):
+    from sylva.cli import main
+
+    # Whole-number ids stay whole numbers, with crowns of 4 and 5 vertices and one missing.
+    main(["--no-progress", "fusion-trees", *_fusion_trees_inputs(tmp_path, [1, 2, 3], [7, 9, 12])])
+    rows = list(csv.DictReader(open(tmp_path / "links.csv")))
+    assert [r["tree_id"] for r in rows] == ["1", "2", "3"]
+    assert [r["als_id"] for r in rows] == ["7", "9", "12"]
+    a = list(csv.DictReader(open(tmp_path / "als_links.csv")))
+    assert [r["id"] for r in a] == ["7", "9", "12"]
+    assert [r["tls_id"] for r in a] == ["1", "2", "3"] and [r["stems"] for r in a] == ["1", "2", "3"]
+
+
+def test_fusion_trees_cli_takes_ids_that_are_not_numbers(tmp_path):
+    from sylva.cli import main
+
+    main(["--no-progress", "fusion-trees", *_fusion_trees_inputs(tmp_path, ["T1", "T2", "T3"], ["A", "B", "C"])])
+    rows = list(csv.DictReader(open(tmp_path / "links.csv")))
+    assert [r["tree_id"] for r in rows] == ["T1", "T2", "T3"]
+    assert [r["als_id"] for r in rows] == ["A", "B", "C"]
+    a = list(csv.DictReader(open(tmp_path / "als_links.csv")))
+    assert [r["id"] for r in a] == ["A", "B", "C"]
+    assert [r["tls_id"] for r in a] == ["T1", "T2", "T3"] and [r["stems"] for r in a] == ["T1", "T2", "T3"]

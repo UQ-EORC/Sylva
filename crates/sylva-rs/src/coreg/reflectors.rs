@@ -415,6 +415,14 @@ fn score(src: &[Point], dst: &[Point], s: [usize; 3], d: [usize; 3], tolerance: 
 /// `distance_tolerance`; each candidate is scored by how many targets land
 /// within `tolerance` of a partner, ties going to the lower RMSE. Success
 /// needs `min_inliers` targets.
+///
+/// The target's pairs are indexed by separation (m), so a source triangle
+/// is compared only with the target pairs as far apart as its first side,
+/// and the search ends as soon as every target of the smaller set is
+/// matched, which no later triangle can better. Both sets fully shared is
+/// therefore the cheap case; the cost grows steeply with targets that have
+/// no partner (as roughly the cube of their number), so a list of hundreds
+/// of bright clusters, most of them not targets, is worth thinning first.
 pub fn match_reflectors(src: &[Point], dst: &[Point], tolerance: f64, min_inliers: i64, distance_tolerance: f64) -> Result<ReflectorMatch> {
     let failure = ReflectorMatch::failure(Mat4::identity(), 0);
     if src.len() < 3 || dst.len() < 3 {
@@ -422,8 +430,16 @@ pub fn match_reflectors(src: &[Point], dst: &[Point], tolerance: f64, min_inlier
     }
     let n = dst.len();
     let dd: Vec<f64> = (0..n * n).map(|k| dist(&dst[k / n], &dst[k % n])).collect();
+    // Ordered target pairs (i, j), i != j, by separation; those whose
+    // separation is NaN pass every comparison below and are kept apart.
+    let mut by_length: Vec<(f64, usize)> = (0..n * n).filter(|&k| k / n != k % n && !dd[k].is_nan()).map(|k| (dd[k], k)).collect();
+    by_length.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    let lengths: Vec<f64> = by_length.iter().map(|p| p.0).collect();
+    let unordered: Vec<usize> = (0..n * n).filter(|&k| k / n != k % n && dd[k].is_nan()).collect();
+    let everything = src.len().min(n);
+    let mut pairs: Vec<usize> = Vec::new();
     let mut best = failure;
-    for a in 0..src.len() {
+    'search: for a in 0..src.len() {
         for b in a + 1..src.len() {
             let d_ab = dist(&src[a], &src[b]);
             for c in b + 1..src.len() {
@@ -438,19 +454,39 @@ pub fn match_reflectors(src: &[Point], dst: &[Point], tolerance: f64, min_inlier
                 if shortest < 0.3 || collinear(&src[a], &src[b], &src[c], 0.05) {
                     continue;
                 }
-                for i in 0..n {
-                    for j in 0..n {
-                        if j == i || (dd[i * n + j] - d_ab).abs() > distance_tolerance {
+                // The target pairs about as far apart as a and b: a slightly
+                // generous slice of the index, put back in (i, j) order and
+                // then held to the exact test, so the candidates and their
+                // order are those of comparing every pair.
+                pairs.clear();
+                if d_ab.is_nan() || distance_tolerance.is_nan() {
+                    pairs.extend((0..n * n).filter(|&k| k / n != k % n));
+                } else {
+                    let slack = distance_tolerance.abs() + 1e-9 * (1.0 + d_ab.abs() + distance_tolerance.abs());
+                    let lo = lengths.partition_point(|&d| d < d_ab - slack);
+                    let hi = lengths.partition_point(|&d| d <= d_ab + slack);
+                    pairs.extend(by_length[lo..hi].iter().map(|p| p.1));
+                    pairs.extend_from_slice(&unordered);
+                    pairs.sort_unstable();
+                }
+                for &pair in &pairs {
+                    let (i, j) = (pair / n, pair % n);
+                    if (dd[pair] - d_ab).abs() > distance_tolerance {
+                        continue;
+                    }
+                    for k in 0..n {
+                        if k == i || k == j || (dd[i * n + k] - d_ac).abs() > distance_tolerance || (dd[j * n + k] - d_bc).abs() > distance_tolerance {
                             continue;
                         }
-                        for k in 0..n {
-                            if k == i || k == j || (dd[i * n + k] - d_ac).abs() > distance_tolerance || (dd[j * n + k] - d_bc).abs() > distance_tolerance {
-                                continue;
-                            }
-                            let cand = score(src, dst, [a, b, c], [i, j, k], tolerance)?;
-                            if cand.n_inliers > best.n_inliers || (cand.n_inliers == best.n_inliers && cand.rmse < best.rmse) {
-                                best = cand;
-                            }
+                        let cand = score(src, dst, [a, b, c], [i, j, k], tolerance)?;
+                        if cand.n_inliers > best.n_inliers || (cand.n_inliers == best.n_inliers && cand.rmse < best.rmse) {
+                            best = cand;
+                        }
+                        // Every target of the smaller set matched one-to-one:
+                        // any other triangle that does so pairs the same
+                        // targets and fits the same transform.
+                        if best.n_inliers >= everything {
+                            break 'search;
                         }
                     }
                 }
@@ -483,6 +519,80 @@ mod tests {
         assert!(m.success && m.n_inliers == 6);
         assert!((m.transform - t).abs().max() < 1e-9);
         assert!(!match_reflectors(&src[..2], &dst, 0.05, 3, 0.03).unwrap().success);
+    }
+
+    /// The search as it was: every source triangle against every ordered
+    /// target triple, with no index and no early end.
+    fn exhaustive(src: &[Point], dst: &[Point], tolerance: f64, distance_tolerance: f64) -> ReflectorMatch {
+        let n = dst.len();
+        let mut best = ReflectorMatch::failure(Mat4::identity(), 0);
+        for a in 0..src.len() {
+            for b in a + 1..src.len() {
+                for c in b + 1..src.len() {
+                    let (d_ab, d_ac, d_bc) = (dist(&src[a], &src[b]), dist(&src[a], &src[c]), dist(&src[b], &src[c]));
+                    if d_ab.min(d_ac).min(d_bc) < 0.3 || collinear(&src[a], &src[b], &src[c], 0.05) {
+                        continue;
+                    }
+                    for i in 0..n {
+                        for j in 0..n {
+                            for k in 0..n {
+                                if i == j || k == i || k == j || (dist(&dst[i], &dst[j]) - d_ab).abs() > distance_tolerance || (dist(&dst[i], &dst[k]) - d_ac).abs() > distance_tolerance || (dist(&dst[j], &dst[k]) - d_bc).abs() > distance_tolerance {
+                                    continue;
+                                }
+                                let cand = score(src, dst, [a, b, c], [i, j, k], tolerance).unwrap();
+                                if cand.n_inliers > best.n_inliers || (cand.n_inliers == best.n_inliers && cand.rmse < best.rmse) {
+                                    best = cand;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        best
+    }
+
+    fn lcg(seed: &mut u64) -> f64 {
+        *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (*seed >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    fn scatter(n: usize, seed: &mut u64) -> Vec<Point> {
+        (0..n).map(|_| [lcg(seed) * 40.0, lcg(seed) * 40.0, lcg(seed) * 3.0]).collect()
+    }
+
+    #[test]
+    fn the_indexed_search_finds_what_the_exhaustive_one_did() {
+        let t = se3_exp(&Vector6::new(0.02, -0.01, 0.8, 3.0, -2.0, 0.3));
+        let mut seed = 11;
+        // Part shared, part not, with millimetres of noise; then nothing shared.
+        for (shared, extra) in [(7, 5), (4, 8), (0, 10)] {
+            let common = scatter(shared, &mut seed);
+            let mut dst = common.clone();
+            dst.extend(scatter(extra, &mut seed));
+            let mut src: Vec<Point> = transform_points(&invert(&t), &common).iter().map(|p| [p[0] + 0.004 * lcg(&mut seed), p[1], p[2] - 0.003 * lcg(&mut seed)]).collect();
+            src.extend(scatter(extra, &mut seed));
+            let old = exhaustive(&src, &dst, 0.05, 0.03);
+            let new = match_reflectors(&src, &dst, 0.05, 1, 0.03).unwrap();
+            assert_eq!((new.n_inliers, &new.correspondences), (old.n_inliers, &old.correspondences), "{shared} shared");
+            assert_eq!(new.transform, old.transform);
+            assert!(new.rmse == old.rmse);
+        }
+    }
+
+    #[test]
+    fn fully_shared_targets_end_the_search_early() {
+        // 150 targets seen from both scans: over half a million source
+        // triangles, each of which the search used to score in full (hours).
+        let t = se3_exp(&Vector6::new(0.05, -0.03, 1.2, 4.0, -3.0, 0.5));
+        let mut seed = 2;
+        let dst = scatter(150, &mut seed);
+        let src = transform_points(&invert(&t), &dst);
+        let start = std::time::Instant::now();
+        let m = match_reflectors(&src, &dst, 0.05, 3, 0.03).unwrap();
+        assert!(m.success && m.n_inliers == 150);
+        assert!((m.transform - t).abs().max() < 1e-9);
+        assert!(start.elapsed().as_secs_f64() < 20.0, "{:?}", start.elapsed());
     }
 
     #[test]

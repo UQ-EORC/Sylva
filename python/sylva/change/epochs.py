@@ -268,12 +268,17 @@ def align_epochs(ref, new, stable: str = "stems+ground", config: CoregConfig | N
         coarse=coarse, reference=fa, new=fb, stable=stable, settings=settings)
 
 
-def _transform_xy(transform, xy) -> np.ndarray:
-    """``(n, 2)`` horizontal positions moved by a rigid transform (z = 0)."""
+def _transform_xy(transform, xy, z=0.0) -> np.ndarray:
+    """``(n, 2)`` horizontal positions moved by a rigid transform.
+
+    ``z`` is the elevation (m) of each position in its own frame, one value
+    or one per position. A transform with a tilt moves a point sideways by
+    the tilt times its elevation, so the elevation matters wherever the
+    frame's origin is far below or above the points."""
     xy = np.asarray(xy, dtype=float).reshape(-1, 2)
     if len(xy) == 0:
         return xy.copy()
-    pts = np.column_stack([xy, np.zeros(len(xy))])
+    pts = np.column_stack([xy, np.broadcast_to(np.asarray(z, dtype=float), (len(xy),))])
     return transform_points(np.asarray(transform, dtype=float), pts)[:, :2]
 
 

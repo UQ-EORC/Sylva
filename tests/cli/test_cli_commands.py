@@ -314,3 +314,83 @@ def test_qsm_plot_reports_the_trees_it_skips(tmp_path, capsys):
     out = capsys.readouterr().out.splitlines()
     assert out[0].startswith("0 QSMs, 2 skipped, 0.000 m3 of wood")
     assert [line.split(":")[0] for line in out[1:]] == ["  skipped 1", "  skipped 2"]
+
+
+# --------------------------------------------------------------------------- #
+# edges: no trees, a segmented cloud in another format, a GeoTIFF as --dtm,
+# and the single-tree QSM at the library's shell width
+# --------------------------------------------------------------------------- #
+
+
+def test_trees_writes_its_header_when_it_finds_no_tree(tmp_path, capsys):
+    rng = np.random.default_rng(5)
+    xyz = np.column_stack([rng.uniform(0, 10, (20000, 2)), rng.normal(0, 0.01, 20000)])
+    src = tmp_path / "bare.laz"
+    io.write(PointCloud(xyz, {"height": xyz[:, 2].copy()}), src)
+    run("trees", src)
+    assert capsys.readouterr().out == f"0 trees -> {tmp_path / 'bare_trees.csv'}\n"
+    lines = (tmp_path / "bare_trees.csv").read_text().splitlines()
+    assert len(lines) == 1                                    # used to be an empty file
+    header = lines[0].split(",")
+    assert header[:4] == ["tree_id", "x", "y", "dbh"] and "height" in header and "crown_area" in header
+    # qsm-plot --stems reads it as a table of no stems.
+    assert cli._read_stems(tmp_path / "bare_trees.csv") == []
+
+
+def test_trees_csv_has_the_same_columns_with_and_without_trees(tmp_path):
+    from test_cli import _two_tree_plot
+
+    io.write(_two_tree_plot(), tmp_path / "plot.laz")
+    run("trees", tmp_path / "plot.laz")
+    rng = np.random.default_rng(5)
+    xyz = np.column_stack([rng.uniform(0, 10, (20000, 2)), rng.normal(0, 0.01, 20000)])
+    io.write(PointCloud(xyz, {"height": xyz[:, 2].copy()}), tmp_path / "bare.laz")
+    run("trees", tmp_path / "bare.laz")
+    head = lambda name: (tmp_path / name).read_text().splitlines()[0]  # noqa: E731
+    assert head("plot_trees.csv") == head("bare_trees.csv")
+
+
+def test_trees_segment_in_another_format_keeps_the_attributes(tmp_path):
+    from test_cli import _two_tree_plot
+
+    plot = _two_tree_plot().without("tree_id")
+    plot = plot.with_attrs(intensity=np.arange(len(plot), dtype=np.uint16))
+    src = tmp_path / "plot.laz"
+    io.write(plot, src)
+    # A LAS input is read as coordinates and heights; the segmented cloud
+    # written in another format used to hold only those and the tree id.
+    run("trees", src, "--segment", tmp_path / "seg.ply")
+    seg = io.read(tmp_path / "seg.ply")
+    assert {"height", "tree_id", "intensity"} <= set(seg.attrs)
+    np.testing.assert_array_equal(seg.attrs["intensity"], plot.attrs["intensity"])
+    assert len(set(np.unique(seg.attrs["tree_id"])) - {-1}) == 2
+
+
+def test_a_geotiff_dtm_is_refused_with_what_to_do(ray_cloud, tmp_path, capsys):
+    src = tmp_path / "rays.ply"
+    io.write(ray_cloud, src)
+    Raster(np.zeros((4, 4)), 0.0, 0.0, 0.5).to_geotiff(tmp_path / "dtm.tif")
+    err = fails(capsys, "voxel", src, "--voxel", 1.0, "--dtm", tmp_path / "dtm.tif")
+    assert "ESRI ASCII grid (.asc)" in err and "dtm.tif" in err
+    assert not (tmp_path / "rays.vox").exists()
+    # The same terrain as .asc is read.
+    Raster(np.zeros((4, 4)), 0.0, 0.0, 0.5).to_ascii_grid(tmp_path / "dtm.asc")
+    run("voxel", src, "--voxel", 1.0, "--dtm", tmp_path / "dtm.asc")
+    assert (tmp_path / "rays.vox").exists()
+    with pytest.raises(ValueError, match="not a GeoTIFF"):
+        cli._read_dtm("DTM.TIFF")
+
+
+def test_qsm_shell_width_is_the_library_default(single_tree, tmp_path):
+    import inspect
+
+    from sylva import qsm
+
+    src = tmp_path / "tree.ply"
+    io.write(single_tree, src)
+    run("qsm", src)
+    assert inspect.signature(qsm.build_qsm).parameters["bin_length"].default == 0.1
+    qsm.build_qsm(io.read(src)).to_csv(tmp_path / "api.csv")
+    assert (tmp_path / "tree_qsm.csv").read_text() == (tmp_path / "api.csv").read_text()
+    run("qsm", src, tmp_path / "wide.csv", "--bin-length", 0.3)
+    assert (tmp_path / "wide.csv").read_text() != (tmp_path / "api.csv").read_text()

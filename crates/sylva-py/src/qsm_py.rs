@@ -257,7 +257,7 @@ fn qsm_build_plot<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, labels: PyRe
         (None, Some(w)) => Some(plot::PointWood::Weights(w)),
         (None, None) => None,
     };
-    let r = py.detach(|| plot::build_plot_with(&pts, &labels, h.as_deref(), &stems, &p, given)).map_err(err)?;
+    let r = crate::detach_interruptible(py, || plot::build_plot_with(&pts, &labels, h.as_deref(), &stems, &p, given))?.map_err(err)?;
     let share = py.detach(|| plot::median_measured_length(r.models.iter().map(|m| m.1.as_slice())));
     let d = PyDict::new(py);
     let models = PyList::empty(py);
@@ -341,7 +341,7 @@ fn plot_write_csv(py: Python<'_>, path: PathBuf, entries: Vec<EntryArgs<'_>>) ->
 #[pyfunction]
 fn plot_write_meshes(py: Python<'_>, directory: PathBuf, entries: Vec<EntryArgs<'_>>, fmt: &str, sides: usize, contiguous: bool, prefix: &str) -> PyResult<Vec<PathBuf>> {
     let owned = entries_from_py(entries)?;
-    py.detach(|| plot::write_meshes(&directory, &views(&owned), fmt, sides, contiguous, prefix)).map_err(err)
+    crate::detach_interruptible(py, || plot::write_meshes(&directory, &views(&owned), fmt, sides, contiguous, prefix))?.map_err(err)
 }
 
 #[pyfunction]

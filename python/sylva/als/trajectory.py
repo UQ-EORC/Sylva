@@ -230,8 +230,10 @@ def week_seconds(gps_time):
         ``(t + 1e9) mod 604800``.
     """
     t = np.asarray(gps_time, dtype=np.float64)
-    out = np.vectorize(_core.als_week_seconds, otypes=[np.float64])(t)
-    return float(out) if out.ndim == 0 else out
+    if t.ndim == 0:
+        return float(_core.als_week_seconds(float(t)))
+    # One array operation: the same floored remainder as the core's, per element.
+    return np.mod(t + 1e9, 604800.0)
 
 
 def read_trajectory(path: str | Path, format: str | None = None, crs: str | None = None,

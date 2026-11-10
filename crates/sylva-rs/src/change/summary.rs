@@ -11,7 +11,8 @@
 //! increments are perturbed by their standard errors (the registration
 //! uncertainty is already part of the increments' errors), and survivors
 //! whose increment could not be measured take the increment of a randomly
-//! drawn measured survivor. The interval is the central `confidence` range
+//! drawn measured survivor (a missing height increment is drawn from the
+//! measured height increments alone; it is never taken as zero). The interval is the central `confidence` range
 //! of the draws. It covers measurement noise only: the counts of deaths and
 //! recruits are taken as exact, and the sampling error of a plot as a
 //! sample of a stand is not included.
@@ -162,8 +163,14 @@ pub fn plot_summary(survivors: &[Survivor], dead: &[Single], recruits: &[Single]
         return Err(Error::invalid("every tree needs a finite DBH"));
     }
     let per_ha = 1e4 / p.area / p.years;
-    let measured: Vec<(f64, f64)> = survivors.iter().filter(|t| t.d_dbh.is_finite()).map(|t| (t.d_dbh, if t.d_height.is_finite() { t.d_height } else { 0.0 })).collect();
-    let mean_measured = if measured.is_empty() { (0.0, 0.0) } else { (measured.iter().map(|m| m.0).sum::<f64>() / measured.len() as f64, measured.iter().map(|m| m.1).sum::<f64>() / measured.len() as f64) };
+    // Survivors with a measured DBH increment, with their height increment
+    // (NaN if that was not measured), and the measured height increments on
+    // their own: an unmeasured height increment is imputed from these, never
+    // counted as zero growth.
+    let measured: Vec<(f64, f64)> = survivors.iter().filter(|t| t.d_dbh.is_finite()).map(|t| (t.d_dbh, t.d_height)).collect();
+    let heights: Vec<f64> = survivors.iter().map(|t| t.d_height).filter(|h| h.is_finite()).collect();
+    let mean = |v: &[f64]| if v.is_empty() { 0.0 } else { v.iter().sum::<f64>() / v.len() as f64 };
+    let mean_measured = (mean(&measured.iter().map(|m| m.0).collect::<Vec<_>>()), mean(&heights));
     // Point estimate: no noise, unmeasured survivors at the measured mean.
     let point = realise(survivors, dead, recruits, p.form_factor, &mut |v, _| v, &mut || Some(mean_measured));
     let mut noise_rng = Generator::new(p.seed);
@@ -176,7 +183,22 @@ pub fn plot_summary(survivors: &[Survivor], dead: &[Single], recruits: &[Single]
             recruits,
             p.form_factor,
             &mut |v, se| if se.is_finite() && se > 0.0 { v + se * noise_rng.standard_normal() } else { v },
-            &mut || if measured.is_empty() { None } else { Some(measured[pick_rng.bounded(measured.len() as u64 - 1) as usize]) },
+            &mut || {
+                if measured.is_empty() {
+                    return None;
+                }
+                let (d, h) = measured[pick_rng.bounded(measured.len() as u64 - 1) as usize];
+                // A drawn survivor without a height increment takes one from
+                // the survivors that have it.
+                let h = if h.is_finite() {
+                    h
+                } else if heights.is_empty() {
+                    0.0
+                } else {
+                    heights[pick_rng.bounded(heights.len() as u64 - 1) as usize]
+                };
+                Some((d, h))
+            },
         ));
     }
     let (qlo, qhi) = ((1.0 - p.confidence) / 2.0, (1.0 + p.confidence) / 2.0);
@@ -252,6 +274,23 @@ mod tests {
         let q = plot_summary(&s, &[], &[], 0, &SummaryParams { area: 1e4, ..Default::default() }).unwrap();
         let g = q.iter().find(|x| x.name == "dbh_increment").unwrap();
         assert!((g.estimate - 0.01).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_missing_height_increment_is_imputed_not_zero() {
+        // Three alike trees; one lacks its height increment, one both.
+        let full = surv(0.3, 0.01);
+        let s = [full, Survivor { d_height: f64::NAN, ..full }, Survivor { d_dbh: f64::NAN, d_height: f64::NAN, ..full }];
+        let p = SummaryParams { area: 1e4, ..Default::default() };
+        let q = plot_summary(&s, &[], &[], 0, &p).unwrap();
+        let v = q.iter().find(|x| x.name == "volume_growth").unwrap();
+        let expect = 3.0 * 0.5 * (ba(0.31) * 15.5 - ba(0.3) * 15.0);
+        assert!((v.estimate - expect).abs() < 1e-12, "{} vs {expect}", v.estimate);
+        // The draws impute 0.5 m too: their interval brackets the estimate.
+        assert!(v.low < expect && expect < v.high, "{v:?}");
+        let all = plot_summary(&[full, full, full], &[], &[], 0, &p).unwrap();
+        let w = all.iter().find(|x| x.name == "volume_growth").unwrap();
+        assert!((v.estimate - w.estimate).abs() < 1e-12);
     }
 
     #[test]

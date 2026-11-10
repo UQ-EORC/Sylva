@@ -127,6 +127,22 @@ def _cmd_ground(args):
     print(f"{int(ground.ground_mask(cloud).sum()):,} ground points; wrote {args.output}")
 
 
+#: Crown columns of the trees CSV, as :func:`sylva.trees.crown_metrics` names them.
+_CROWN_COLUMNS = ("crown_area", "crown_base_height", "crown_depth", "crown_diameter")
+
+
+def _read_dtm(path: str) -> Raster:
+    """The terrain raster of a ``--dtm`` option: an ESRI ASCII grid.
+
+    Sylva writes GeoTIFF but does not read it, and a ``.tif`` parsed as text
+    fails with a message about its first bytes; say what to do instead.
+    """
+    if str(path).lower().endswith((".tif", ".tiff")):
+        raise ValueError(f"{path}: --dtm reads an ESRI ASCII grid (.asc), not a GeoTIFF; "
+                         "write the DTM as .asc (sylva ground --dtm dtm.asc, sylva als-dtm ... dtm.asc)")
+    return Raster.from_ascii_grid(path)
+
+
 def _is_las(path) -> bool:
     return str(path).lower().endswith((".las", ".laz"))
 
@@ -162,16 +178,28 @@ def _cmd_trees(args):
             io.write_annotated(args.input, args.segment, {"tree_id": tree_id},
                                origin=cloud.bounds[0])
         else:
-            io.write(cloud.with_attrs(tree_id=tree_id), args.segment)
+            # The cloud in hand is coordinates and heights only; a format
+            # that cannot be streamed gets the whole file read again, so
+            # that the segmented cloud keeps every attribute of the input.
+            full = io.read(args.input) if las else cloud
+            io.write(full.with_attrs(tree_id=tree_id), args.segment)
     rows = [{**t.as_dict(), **crowns.get(t.tree_id, {})} for t in found]
+    # The header does not depend on the trees found: a plot with none still
+    # gets its columns, and a first tree without crown metrics does not
+    # drop them for the rest.
+    fields = list(trees.Tree(0, 0.0, 0.0).as_dict()) + list(_CROWN_COLUMNS)
+    for r in rows:
+        fields += [k for k in r if k not in fields]
     to_file = args.output != "-"
     out = open(args.output, "w", newline="") if to_file else sys.stdout
-    if rows:
-        w = csv.DictWriter(out, fieldnames=list(rows[0]))
+    try:
+        w = csv.DictWriter(out, fieldnames=fields, restval="")
         w.writeheader()
         w.writerows(rows)
+    finally:
+        if to_file:
+            out.close()
     if to_file:
-        out.close()
         print(f"{len(found)} trees -> {args.output}")
 
 
@@ -190,7 +218,7 @@ def _cmd_chm(args):
 def _cmd_pad(args):
     cloud = io.read(args.input)
     _heights_warning(cloud, args.input)
-    z, pad = canopy.pad_profile_voxel(cloud, voxel_size=args.voxel)
+    z, pad = canopy.pad_profile_voxel(cloud, voxel_size=args.voxel, min_height=args.min_height)
     print("height,pad")
     for zz, p in zip(z, pad, strict=True):
         print(f"{zz:.2f},{p:.4f}")
@@ -268,7 +296,7 @@ def _cmd_voxel(args):
         bounds = (args.bounds[:3], args.bounds[3:])
     grid = voxels.ray_voxelize(
         shots, args.voxel, bounds,
-        dtm=Raster.from_ascii_grid(args.dtm) if args.dtm else None,
+        dtm=_read_dtm(args.dtm) if args.dtm else None,
         ground_class=args.ground_class, ground_distance=args.ground_distance,
         leaf_classes=args.leaf_classes, wood_classes=args.wood_classes, class_attr=args.class_attr,
         weighting=args.weighting, attenuation=args.attenuation, laser=args.laser, beam=args.beam,
@@ -387,7 +415,7 @@ def _cmd_als_dtm(args):
 
 def _cmd_als_chm(args):
     cat = als.catalog(args.input, pattern=args.pattern)
-    dtm = None if args.normalized else (Raster.from_ascii_grid(args.dtm) if args.dtm else "auto")
+    dtm = None if args.normalized else (_read_dtm(args.dtm) if args.dtm else "auto")
     chm = als.chm(cat, resolution=args.resolution, dtm=dtm, dtm_resolution=args.dtm_resolution,
                   min_height=args.min_height, drop_noise=not args.keep_noise, **_als_run(args))
     _write_raster(chm, args.output)
@@ -397,7 +425,7 @@ def _cmd_als_chm(args):
 
 def _cmd_als_normalize(args):
     cat = als.catalog(args.input, pattern=args.pattern)
-    dtm = Raster.from_ascii_grid(args.dtm) if args.dtm else "auto"
+    dtm = _read_dtm(args.dtm) if args.dtm else "auto"
     out = als.normalize(cat, args.output, dtm=dtm, dtm_resolution=args.dtm_resolution,
                         replace_z=args.replace_z, **_als_run(args))
     print(f"normalised {out.n_points:,} points in {len(out)} tiles -> {args.output}")
@@ -405,7 +433,7 @@ def _cmd_als_normalize(args):
 
 def _cmd_als_trees(args):
     cat = als.catalog(args.input, pattern=args.pattern)
-    dtm = None if args.normalized else (Raster.from_ascii_grid(args.dtm) if args.dtm else "auto")
+    dtm = None if args.normalized else (_read_dtm(args.dtm) if args.dtm else "auto")
     if args.window_linear is not None:
         window = als.LinearWindow(*args.window_linear)
     else:
@@ -534,13 +562,16 @@ def main(argv=None):
                        **fmt)
     s.add_argument("input", help="cloud with a height attribute")
     s.add_argument("--voxel", type=float, default=0.5, help="voxel size and layer thickness (m)")
+    s.add_argument("--min-height", type=float, default=None,
+                   help="points at or below this height (m) are ground, not canopy "
+                        "(default: one voxel)")
     s.set_defaults(func=_cmd_pad)
 
     s = sub.add_parser("qsm", help="build a cylinder model of a single tree", **fmt)
     s.add_argument("input", help="one tree's wood points")
     s.add_argument("output", nargs="?", default=None,
                    help="CSV of cylinders (default: <input>_qsm.csv beside the input)")
-    s.add_argument("--bin-length", type=float, default=0.3, help="geodesic shell width (m)")
+    s.add_argument("--bin-length", type=float, default=0.1, help="geodesic shell width (m)")
     s.set_defaults(func=_cmd_qsm)
 
     s = sub.add_parser("qsm-plot", help="build a QSM for every tree of a segmented cloud", **fmt)

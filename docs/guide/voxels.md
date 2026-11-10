@@ -41,7 +41,7 @@ the fallback and the beam-section estimate agree within 3 % in PAI.
 |---|---|
 | `fpl` | intercepted beam section / effective free path length, minus the [Pimont et al. (2018)](../references.md) bias term, with the beam footprint of [Pimont et al. (2019)](../references.md) |
 | `ppl` | exact maximum-likelihood solve of `Σ_hits s L / (e^{λL} − 1) = Σ_misses s L` over the beams of each voxel (capped at 20) |
-| `transmittance` | `−ln(1 − intercepted / entering)` beam section |
+| `transmittance` | `−ln(1 − intercepted / entering) / mean chord`: the optical depth of the voxel from its beam-section transmittance, over the mean length of the pulses' paths across it (`path_length / num_beams`, m) |
 | `bailey` | [Bailey & Mahaffee (2017)](../references.md) eq. 10 per class, with `G` from triangle facets between neighbouring echoes |
 
 Area density is `λ / G`, with the same bias-corrected λ as `attenuation_fpl`

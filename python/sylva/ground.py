@@ -37,7 +37,10 @@ def classify_ground_csf(cloud: PointCloud, cloth_resolution: float = 0.5, rigidn
         a tilted scanner frame). Thin to ~2-5 cm first for large plots.
     cloth_resolution
         Cloth grid spacing (m). Smaller follows the terrain more closely
-        but can drape over logs and low shrubs.
+        but can drape over logs and low shrubs. Each cloth node rests on
+        the lowest point of its cell, so on a slope ground reads up to
+        ``slope * cloth_resolution / 2`` above the cloth: keep that below
+        ``class_threshold`` on steep terrain.
     rigidness : {1, 2, 3}
         1 for steep terrain, 2 for moderate slopes, 3 for flat ground.
     class_threshold
@@ -81,8 +84,10 @@ def classify_ground_pmf(cloud: PointCloud, cell_size: float = 0.5, max_window: f
     cell_size
         Grid cell size (m).
     max_window
-        Largest window (m); should exceed the largest non-ground object
-        (e.g. crown or building) footprint.
+        Largest opening window (m), its full width; should exceed the
+        largest non-ground object (e.g. crown or building) footprint. The
+        windows are ``(2 w + 1) * cell_size`` wide for ``w`` = 1, 2, 4, ...
+        cells, as long as that is no more than ``max_window``.
     slope
         Terrain slope (rise over run) used to grow the height threshold
         with window size.
@@ -136,6 +141,16 @@ def ground_mask(cloud: PointCloud) -> np.ndarray:
     return np.asarray(cloud.attrs["classification"]) == GROUND
 
 
+def _bounds(bounds):
+    """``bounds`` as the tuple of four floats the core takes, or None."""
+    if bounds is None:
+        return None
+    b = np.asarray(bounds, dtype=float).ravel()
+    if b.size != 4:
+        raise ValueError(f"bounds must be (xmin, ymin, xmax, ymax), got {bounds!r}")
+    return tuple(float(v) for v in b)
+
+
 def make_dtm(cloud: PointCloud, resolution: float = 0.5, bounds=None,
              method: str = "lowest") -> Raster:
     """Digital terrain model from the ground points.
@@ -151,9 +166,15 @@ def make_dtm(cloud: PointCloud, resolution: float = 0.5, bounds=None,
     resolution
         Cell size (m).
     bounds
-        ``(xmin, ymin, xmax, ymax)`` of the grid; the extent of the ground
-        points if None. Pass the plot extent to get identical grids across
-        dates.
+        ``(xmin, ymin, xmax, ymax)`` of the grid (m), as a tuple, list or
+        array; the extent of the ground points if None. Pass the plot
+        extent to get identical grids across dates. The grid's corner is
+        exactly ``(xmin, ymin)`` and it has ``floor((xmax - xmin) /
+        resolution) + 1`` columns (rows likewise), so that a point at
+        ``xmax`` has a cell: an extent that is a whole number of cells gets
+        one more column and row than ``extent / resolution`` (``(0, 0, 20,
+        20)`` at 0.5 m is 41 x 41 cells, reaching 20.5 m). For exactly ``n``
+        columns pass ``xmax = xmin + (n - 0.5) * resolution``.
     method : {"lowest", "tin", "natural", "idw"}
         ``"lowest"`` (the default) is the per-cell minimum described above.
         The others interpolate the ground points at cell centres with
@@ -178,6 +199,7 @@ def make_dtm(cloud: PointCloud, resolution: float = 0.5, bounds=None,
     """
     if method not in ("lowest", "tin", "natural", "idw"):
         raise ValueError(f"unknown method {method!r}; expected 'lowest', 'tin', 'natural' or 'idw'")
+    bounds = _bounds(bounds)
     ground = cloud[ground_mask(cloud)]
     if method == "lowest":
         return Raster._from_core(_core.make_dtm(ground.xyz, resolution, bounds))
@@ -221,12 +243,12 @@ def flatten(cloud: PointCloud, dtm: Raster) -> PointCloud:
     Returns
     -------
     PointCloud
-        x, y unchanged and z = height above the DTM. Use for methods that
+        x, y and ``crs`` unchanged and z = height above the DTM. Use for methods that
         read z as height; keep :func:`normalize_height` when true
         elevations must be preserved.
     """
     h = _heights_above(cloud, dtm)
-    return PointCloud(np.column_stack([cloud.x, cloud.y, h]), dict(cloud.attrs))
+    return PointCloud(np.column_stack([cloud.x, cloud.y, h]), dict(cloud.attrs), cloud.crs)
 
 
 def _heights_above(cloud: PointCloud, dtm: Raster) -> np.ndarray:
@@ -247,15 +269,30 @@ def make_chm(cloud: PointCloud, resolution: float = 0.5, height_attr: str = "hei
     height_attr
         Attribute holding height above ground; z is used if absent.
     bounds
-        ``(xmin, ymin, xmax, ymax)``; the cloud extent if None.
+        ``(xmin, ymin, xmax, ymax)`` of the grid (m), as a tuple, list or
+        array, sized as for :func:`make_dtm` (``floor(extent / resolution)
+        + 1`` cells each way). If None, the extent of every point of the
+        cloud with finite x and y, whatever its height: the raster covers
+        the whole cloud, not only where the canopy is, so cover computed
+        from it refers to the whole cloud.
     min_height
-        Cells with nothing above this height are 0.
+        Cells with nothing at or above this height (m) are 0, including
+        cells with no points at all.
 
     Returns
     -------
     Raster
         Maximum height per cell (m). No pit filling is applied, and TLS
-        under-samples the upper canopy far from the scanners.
+        under-samples the upper canopy far from the scanners. A cloud with
+        nothing at or above ``min_height`` gives a raster of zeros.
+
+    Raises
+    ------
+    ValueError
+        For a resolution that is not positive, bounds that are not four
+        finite numbers in order, or (without bounds) a cloud with no
+        finite point.
     """
+    bounds = _bounds(bounds)
     h = np.ascontiguousarray(cloud.heights(height_attr))
     return Raster._from_core(_core.make_chm(cloud.xyz, h, resolution, bounds, min_height))
