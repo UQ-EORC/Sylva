@@ -50,8 +50,8 @@ on Zenodo, which gives it a DOI: https://doi.org/10.5281/zenodo.23718985
 always resolves to the latest version, and each version has its own.
 
 > Devereux, T. (2026). *Sylva: terrestrial and airborne laser scanning
-> processing for forest ecology* (version 0.3.2) [Computer software].
-> The University of Queensland. https://doi.org/10.5281/zenodo.23936915
+> processing for forest ecology* (version 0.3.4) [Computer software].
+> The University of Queensland. https://doi.org/10.5281/zenodo.24094941
 
 ```bibtex
 @software{sylva,
@@ -59,9 +59,9 @@ always resolves to the latest version, and each version has its own.
   title        = {Sylva: terrestrial and airborne laser scanning processing
                   for forest ecology},
   year         = {2026},
-  version      = {0.3.2},
+  version      = {0.3.4},
   organization = {The University of Queensland},
-  doi          = {10.5281/zenodo.23936915},
+  doi          = {10.5281/zenodo.24094941},
   url          = {https://github.com/UQ-EORC/Sylva}
 }
 ```

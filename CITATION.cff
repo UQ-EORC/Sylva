@@ -7,11 +7,14 @@ authors:
     family-names: Devereux
     email: devereux.tj@gmail.com
     affiliation: The University of Queensland
-doi: 10.5281/zenodo.23936915
+doi: 10.5281/zenodo.24094941
 identifiers:
   - type: doi
     value: 10.5281/zenodo.23718985
     description: The concept DOI, resolving to the latest version
+  - type: doi
+    value: 10.5281/zenodo.24094941
+    description: Version 0.3.4
   - type: doi
     value: 10.5281/zenodo.23936915
     description: Version 0.3.2

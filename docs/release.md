@@ -59,9 +59,13 @@ replaced, and the name is claimed for good. PyPI is the same in practice.
     ```
 
 3. Commit, tag and push: `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-4. Once Zenodo has archived the release, record its version DOI in
-   `CITATION.cff`, and bump the version and DOI of the citation in
-   `README.md` and `docs/index.md`.
+4. When the `release` workflow has published, create the GitHub release
+   (`gh release create vX.Y.Z --title "Sylva X.Y.Z" --notes-file NOTES.md`,
+   with the changes since the last release as in the earlier ones). Zenodo
+   archives GitHub releases, not tags, and mints the version DOI within
+   minutes; `.zenodo.json` supplies the metadata.
+5. Record that DOI in `CITATION.cff` (`doi` and the `identifiers` list), and
+   bump the version and DOI of the citation in `README.md` and `docs/index.md`.
 
 The `release` workflow then tests, checks that the tag matches both version
 numbers, builds abi3 wheels (one per platform serves every Python ≥ 3.10) for
