@@ -104,7 +104,7 @@ def test_blocks_equal_a_one_thread_whole_grid_bit_for_bit(tmp_path, scene, dtm):
         print("differ:", bad)
     """)
     np.save(tmp_path / "dtm.npy", dtm.data)
-    env = dict(os.environ, RAYON_NUM_THREADS="1", PYTHONPATH=str(Path(voxels.__file__).parents[1]))
+    env = dict(os.environ, RAYON_NUM_THREADS="1", PYTHONPATH=str(Path(voxels.__file__).parents[2]))
     out = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True, check=True)
     assert "differ: []" in out.stdout, out.stdout + out.stderr
 
