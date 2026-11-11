@@ -1,6 +1,6 @@
 # Sylva
 
-NOTE: This software is in BETA, if you notice anything strange please raise an issue [here](https://github.com/UQ-EORC/Sylva/issues).
+If you notice anything strange, please raise an issue [here](https://github.com/UQ-EORC/Sylva/issues).
 
 [![PyPI](https://img.shields.io/pypi/v/sylva-rs)](https://pypi.org/project/sylva-rs/)
 [![crates.io](https://img.shields.io/crates/v/sylva-rs)](https://crates.io/crates/sylva-rs)
@@ -51,8 +51,8 @@ always resolves to the latest version, and each version has its own.
 
 > Devereux, T., Rivory, J., Woodgate, W., Aryal, R. R., Eaton, G., & Phinn, S.
 > (2026). *Sylva: terrestrial and airborne laser scanning
-> processing for forest ecology* (version 0.4.0) [Computer software].
-> The University of Queensland. https://doi.org/10.5281/zenodo.24120204
+> processing for forest ecology* (version 1.0.0) [Computer software].
+> The University of Queensland. https://doi.org/10.5281/zenodo.23718985
 
 ```bibtex
 @software{sylva,
@@ -61,9 +61,9 @@ always resolves to the latest version, and each version has its own.
   title        = {Sylva: terrestrial and airborne laser scanning processing
                   for forest ecology},
   year         = {2026},
-  version      = {0.4.0},
+  version      = {1.0.0},
   organization = {The University of Queensland},
-  doi          = {10.5281/zenodo.24120204},
+  doi          = {10.5281/zenodo.23718985},
   url          = {https://github.com/UQ-EORC/Sylva}
 }
 ```
