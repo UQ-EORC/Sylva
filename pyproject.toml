@@ -10,7 +10,14 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
-authors = [{ name = "Tim Devereux", email = "devereux.tj@gmail.com" }]
+authors = [
+    { name = "Tim Devereux", email = "devereux.tj@gmail.com" },
+    { name = "Josh Rivory" },
+    { name = "Will Woodgate" },
+    { name = "Raja Ram Aryal" },
+    { name = "Glen Eaton" },
+    { name = "Stuart Phinn" },
+]
 maintainers = [{ name = "Tim Devereux", email = "devereux.tj@gmail.com" }]
 keywords = ["lidar", "tls", "forestry", "point cloud", "qsm", "remote sensing", "rust"]
 classifiers = [

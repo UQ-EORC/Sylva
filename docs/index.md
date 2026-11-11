@@ -94,19 +94,22 @@ labels = trees.segment_trees(cloud, stems)         # tree_id per point
 
 ## Author and licence
 
-Tim Devereux, The University of Queensland.
+Tim Devereux, Josh Rivory, Will Woodgate, Raja Ram Aryal, Glen Eaton and
+Stuart Phinn, The University of Queensland.
 
 Free software under the GNU General Public License v3.0 or later: you may
 use, study, change and share it, and anything you distribute that builds on
 it carries the same licence. See the LICENSE file in the repository.
 
-Cite it as: Devereux, T. (2026). *Sylva: terrestrial and airborne laser
+Cite it as: Devereux, T., Rivory, J., Woodgate, W., Aryal, R. R., Eaton, G.,
+& Phinn, S. (2026). *Sylva: terrestrial and airborne laser
 scanning processing for forest ecology* (version 0.4.0) [Computer software].
 The University of Queensland. <https://doi.org/10.5281/zenodo.24120204>
 
 ```bibtex
 @software{sylva,
-  author       = {Devereux, Tim},
+  author       = {Devereux, Tim and Rivory, Josh and Woodgate, Will and
+                  Aryal, Raja Ram and Eaton, Glen and Phinn, Stuart},
   title        = {Sylva: terrestrial and airborne laser scanning processing
                   for forest ecology},
   year         = {2026},

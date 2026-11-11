@@ -7,6 +7,21 @@ authors:
     family-names: Devereux
     email: devereux.tj@gmail.com
     affiliation: The University of Queensland
+  - given-names: Josh
+    family-names: Rivory
+    affiliation: The University of Queensland
+  - given-names: Will
+    family-names: Woodgate
+    affiliation: The University of Queensland
+  - given-names: Raja Ram
+    family-names: Aryal
+    affiliation: The University of Queensland
+  - given-names: Glen
+    family-names: Eaton
+    affiliation: The University of Queensland
+  - given-names: Stuart
+    family-names: Phinn
+    affiliation: The University of Queensland
 doi: 10.5281/zenodo.24120204
 identifiers:
   - type: doi

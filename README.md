@@ -49,13 +49,15 @@ If Sylva contributed to your work, please cite it. Every release is archived
 on Zenodo, which gives it a DOI: https://doi.org/10.5281/zenodo.23718985
 always resolves to the latest version, and each version has its own.
 
-> Devereux, T. (2026). *Sylva: terrestrial and airborne laser scanning
+> Devereux, T., Rivory, J., Woodgate, W., Aryal, R. R., Eaton, G., & Phinn, S.
+> (2026). *Sylva: terrestrial and airborne laser scanning
 > processing for forest ecology* (version 0.4.0) [Computer software].
 > The University of Queensland. https://doi.org/10.5281/zenodo.24120204
 
 ```bibtex
 @software{sylva,
-  author       = {Devereux, Tim},
+  author       = {Devereux, Tim and Rivory, Josh and Woodgate, Will and
+                  Aryal, Raja Ram and Eaton, Glen and Phinn, Stuart},
   title        = {Sylva: terrestrial and airborne laser scanning processing
                   for forest ecology},
   year         = {2026},

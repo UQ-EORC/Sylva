@@ -5,6 +5,26 @@
     {
       "name": "Devereux, Tim",
       "affiliation": "The University of Queensland"
+    },
+    {
+      "name": "Rivory, Josh",
+      "affiliation": "The University of Queensland"
+    },
+    {
+      "name": "Woodgate, Will",
+      "affiliation": "The University of Queensland"
+    },
+    {
+      "name": "Aryal, Raja Ram",
+      "affiliation": "The University of Queensland"
+    },
+    {
+      "name": "Eaton, Glen",
+      "affiliation": "The University of Queensland"
+    },
+    {
+      "name": "Phinn, Stuart",
+      "affiliation": "The University of Queensland"
     }
   ],
   "description": "<p>Sylva is an open-source library and command-line tool for processing terrestrial, mobile and airborne laser scans of forests for ecology and remote-sensing research. A Rust core holds every computation and file format; Python gets a numpy-friendly API and a <code>sylva</code> command over it. It reads and writes LAS/LAZ, PLY, XYZ, RIEGL RXP and RDBX and RiSCAN PRO projects, and covers ground classification and terrain models, subsampling and filtering, marker-free coregistration of scan positions, tree segmentation, stem detection and diameter at breast height, cylinder quantitative structure models with volumes and branch orders, leaf and wood separation, ray-traced voxels with plant area density and occlusion, gap-fraction and plant area index profiles, scan quality assessment, change detection between survey epochs, airborne lidar over tiled areas with area-based and individual-tree metrics, fusion of terrestrial and airborne data, full-waveform decomposition, and synthetic scenes with known answers for testing.</p><p>Install with <code>pip install sylva-rs</code>; the Rust crate is on crates.io as <code>sylva-rs</code>. Documentation is at <a href=\"https://uq-eorc.github.io/Sylva/\">uq-eorc.github.io/Sylva</a>.</p>",
