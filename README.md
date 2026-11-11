@@ -1,11 +1,11 @@
 # Sylva
 
-If you notice anything strange, please raise an issue [here](https://github.com/UQ-EORC/Sylva/issues).
-
 [![PyPI](https://img.shields.io/pypi/v/sylva-rs)](https://pypi.org/project/sylva-rs/)
 [![crates.io](https://img.shields.io/crates/v/sylva-rs)](https://crates.io/crates/sylva-rs)
 [![Documentation](https://img.shields.io/badge/docs-uq--eorc.github.io%2FSylva-blue)](https://uq-eorc.github.io/Sylva/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23718985.svg)](https://doi.org/10.5281/zenodo.23718985)
+
+If you notice anything strange, please raise an issue [here](https://github.com/UQ-EORC/Sylva/issues).
 
 Terrestrial and airborne laser scanning processing for forest ecology and
 remote sensing. A Rust core (the `sylva-rs` crate) holds every computation and file
