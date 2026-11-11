@@ -23,6 +23,19 @@ use crate::error::{Error, Result};
 /// Set by [`set_budget`]; 0 means "work it out from the system".
 static BUDGET: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(test)]
+thread_local! {
+    /// A budget for one test thread only. Tests run in parallel, so a test
+    /// that shrank the shared [`BUDGET`] would starve whatever ran beside it.
+    static TEST_BUDGET: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Set a budget seen only by the calling test thread; 0 clears it.
+#[cfg(test)]
+pub(crate) fn set_test_budget(bytes: u64) {
+    TEST_BUDGET.with(|b| b.set(bytes));
+}
+
 /// Memory the system reports as available (bytes), if it will say.
 ///
 /// Linux only: `MemAvailable` from `/proc/meminfo`, which already accounts
@@ -39,6 +52,10 @@ pub fn available() -> Option<u64> {
 /// `SYLVA_MEM_BUDGET` (GB) wins, then anything given to [`set_budget`], then
 /// 80 % of what the system says is available. None when nothing is known.
 pub fn budget() -> Option<u64> {
+    #[cfg(test)]
+    if let b @ 1.. = TEST_BUDGET.with(|b| b.get()) {
+        return Some(b);
+    }
     if let Ok(v) = std::env::var("SYLVA_MEM_BUDGET") {
         if let Ok(gb) = v.trim().parse::<f64>() {
             if gb > 0.0 {
@@ -117,20 +134,20 @@ mod tests {
     #[test]
     fn a_budget_can_be_set_and_put_back() {
         let was = budget();
-        set_budget(1_000_000);
+        set_test_budget(1_000_000);
         assert_eq!(budget(), Some(1_000_000));
         assert!(check(999_999, "a thing", "less of it").is_ok());
         let e = check(2_000_000, "a grid of 10 cells", "a larger voxel").unwrap_err().to_string();
         assert!(e.contains("2.0 MB") && e.contains("1.0 MB") && e.contains("a larger voxel"), "{e}");
-        set_budget(0);
+        set_test_budget(0);
         assert_eq!(budget().is_some(), was.is_some());
     }
 
     #[test]
     fn a_count_that_cannot_fit_in_bytes_is_refused() {
-        set_budget(1_000_000);
+        set_test_budget(1_000_000);
         let e = check_cells(u128::MAX / 2, 64, "a grid", "a larger voxel").unwrap_err().to_string();
-        set_budget(0);
+        set_test_budget(0);
         assert!(e.contains("than can be counted"), "{e}");
     }
 

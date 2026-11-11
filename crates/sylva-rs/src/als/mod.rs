@@ -1113,11 +1113,11 @@ mod tests {
         let cat = grid2x2();
         let chunks = plan(&cat, Layout::Tiles, 20.0).unwrap();
         let need = chunks.iter().map(|c| c.est_points).max().unwrap() * 100;
-        limits::set_budget(3 * need + 1);
+        limits::set_test_budget(3 * need + 1);
         let w = workers_for(&chunks, 8, 100);
-        limits::set_budget(1000);
+        limits::set_test_budget(1000);
         let refused = workers_for(&chunks, 8, 100);
-        limits::set_budget(0);
+        limits::set_test_budget(0);
         assert_eq!(w.unwrap(), 3);
         assert!(refused.unwrap_err().to_string().contains("smaller chunk_size"));
     }
