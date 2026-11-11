@@ -1,6 +1,6 @@
 # Sylva
 
-NOTE: This software is still in ALPHA and is not yet thoroughly tested, if you notice anything strange please raise an issue [here](https://github.com/UQ-EORC/Sylva/issues).
+NOTE: This software is still in ALPHA, if you notice anything strange please raise an issue [here](https://github.com/UQ-EORC/Sylva/issues).
 
 [![PyPI](https://img.shields.io/pypi/v/sylva-rs)](https://pypi.org/project/sylva-rs/)
 [![crates.io](https://img.shields.io/crates/v/sylva-rs)](https://crates.io/crates/sylva-rs)
