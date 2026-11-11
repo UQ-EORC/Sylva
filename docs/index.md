@@ -7,8 +7,11 @@ ecology and remote sensing. A Rust core (the `sylva-rs` crate) does the work; Py
 numpy-friendly API (`import sylva`) and a `sylva` command.
 
 ```bash
-pip install maturin && maturin develop --release
+pip install sylva-rs
 ```
+
+See [Install](install.md) for RIEGL support, containers and building from
+source.
 
 ```python
 import sylva
