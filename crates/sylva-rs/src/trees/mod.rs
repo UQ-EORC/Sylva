@@ -236,7 +236,9 @@ pub struct SegmentParams {
     /// Scale each tree's path costs by `1 / max(height_estimate, 2)`, the
     /// height estimate being the 95th-percentile point height within
     /// `height_prior_radius` of the stem (raycloudtools' per-root scaling), so
-    /// tall trees win contested crown points over understorey stems.
+    /// tall trees win contested crown points over understorey stems. The
+    /// estimate is the height of the vegetation over the stem, not of the
+    /// tree: under a closed canopy every stem competes at canopy height.
     pub height_prior: bool,
     /// Horizontal radius about the stem (m) within which graph nodes supply the tree's height estimate.
     pub height_prior_radius: f64,
@@ -268,9 +270,10 @@ pub struct SegmentParams {
     /// further than `max(low_radius, 1.5 DBH)` from every stem, become extra
     /// sources whose path costs are scaled as for a tree this tall (with
     /// `height_prior`); what they claim is left unassigned. 0, the default,
-    /// disables: on the four CHERLET reference plots the sources gained no
-    /// tree and lost up to four, and what they take from a crown they take
-    /// through foliage regardless of how they are costed.
+    /// disables. On the four CHERLET reference plots a value of 10 keeps
+    /// another 7 to 17 % of the off-tree points below 2 m out of the trees
+    /// and loses about two small trees in a hundred on two of the plots,
+    /// whose crowns the sources reach through foliage from below.
     pub understorey_height: f64,
     /// Height band above `cut_above_ground` (m) in which graph nodes clear of every stem become understorey sources.
     pub understorey_band: f64,

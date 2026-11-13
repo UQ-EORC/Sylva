@@ -824,7 +824,8 @@ def _add_commands(sub, fmt: dict) -> None:
     s.add_argument("--height-attribute", default="height",
                    help="attribute holding heights (z if the tiles lack it)")
     s.add_argument("--min-arc", type=float, default=0.0,
-                   help="longest contiguous arc a circle must cover (degrees; 130 suits merged plots)")
+                   help="longest contiguous arc a circle must cover (degrees; 130 rejects short arcs on merged plots, "
+                        "and the stems seen from one side only)")
     common(s, buffer=2.0)
     s.set_defaults(func=stems_cmd)
 

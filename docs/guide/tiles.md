@@ -301,6 +301,14 @@ the plot protocol rather than the Python defaults: `--riscan` and
 `--min-height` 2, `--buffer` 20 and `--stem-radius-cap` 1.5;
 `sylva tiles-plot --help` lists them all.
 
+`--min-arc 130` suits a savanna plot scanned on a 20 m grid, where it
+removes thousands of mounds and tussocks fitted as stems. It also removes
+the stems seen from one side only, which in a closed stand is many of them
+(a quarter of the trees found without it on a rainforest reference plot;
+see [Trees](trees.md) and *Benchmarks > Tree detection*). Count the stems
+both ways before keeping it: `sylva tiles-stems` on the run's
+height-normalised tiles, with `--min-arc 130` and with its default of 0.
+
 The stages, each in its own directory of `out` with a `.done` marker
 written when it is complete:
 

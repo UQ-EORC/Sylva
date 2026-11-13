@@ -55,7 +55,11 @@ pub struct StemParams {
     /// Fraction of the circumference that must be observed (a single scan sees ~0.5).
     pub min_coverage: f64,
     /// Longest contiguous arc (degrees) the inliers must cover; 0 disables.
-    /// 130-180 deg suits merged multi-scan plots.
+    /// Measured in 10-degree bins; a sparsely sampled circle may leave up to
+    /// two bins in a row empty without breaking the arc (as many as its
+    /// point count explains), a dense one none. 130-180 deg rejects short
+    /// arcs on merged multi-scan plots, and with them the stems seen from
+    /// one side only.
     pub min_arc_deg: f64,
     /// Largest RMS radial residual of its inliers a circle may have (m).
     pub max_circle_rmse: f64,
@@ -290,6 +294,13 @@ pub(crate) fn fit_circle_refined(xy: &[[f64; 2]]) -> Option<(f64, f64, f64)> {
 
 /// `(fraction of 10-degree bins occupied, longest contiguous arc in degrees)`.
 pub(crate) fn angular_coverage(xy: &[[f64; 2]], cx: f64, cy: f64) -> (f64, f64) {
+    angular_coverage_bridged(xy, cx, cy, 0)
+}
+
+/// As [`angular_coverage`], with the arc allowed to run across up to `gap`
+/// empty bins in a row (the bins it crosses count towards its length; empty
+/// bins at either end do not).
+fn angular_coverage_bridged(xy: &[[f64; 2]], cx: f64, cy: f64, gap: usize) -> (f64, f64) {
     const BINS: usize = 36;
     let mut seen = [false; BINS];
     for p in xy {
@@ -298,18 +309,42 @@ pub(crate) fn angular_coverage(xy: &[[f64; 2]], cx: f64, cy: f64) -> (f64, f64) 
         seen[b] = true;
     }
     let occupied = seen.iter().filter(|&&s| s).count();
-    // Longest run around the circle (wrapping).
+    // Longest run around the circle (wrapping), from an occupied bin to an
+    // occupied bin.
     let mut best = 0usize;
-    let mut run = 0usize;
+    let mut run = 0usize; // length up to the last occupied bin
+    let mut empty = 0usize; // empty bins since then
     for i in 0..2 * BINS {
         if seen[i % BINS] {
-            run += 1;
+            run = if run > 0 && empty <= gap { run + empty + 1 } else { 1 };
+            empty = 0;
             best = best.max(run.min(BINS));
         } else {
-            run = 0;
+            empty += 1;
         }
     }
     (occupied as f64 / BINS as f64, best as f64 * 360.0 / BINS as f64)
+}
+
+/// [`angular_coverage`] for a circle whose points may be sparse: the arc
+/// runs across the empty bins that the sampling itself accounts for.
+///
+/// With `n` points in `m` occupied bins, a bin inside the observed arc is
+/// empty by chance with probability `exp(-n / m)`. The arc is carried over
+/// `g` empty bins in a row, with `g` the smallest count for which a longer
+/// chance gap is expected fewer than once in twenty circles
+/// (`m exp(-(g + 1) n / m) <= 0.05`), and never more than two. A densely
+/// sampled circle (about six points a bin or more) gets `g = 0`, the plain
+/// test.
+fn sampled_arc(xy: &[[f64; 2]], cx: f64, cy: f64) -> (f64, f64) {
+    let (coverage, _) = angular_coverage(xy, cx, cy);
+    let occupied = (coverage * 36.0).round();
+    if occupied < 1.0 {
+        return (coverage, 0.0);
+    }
+    let per_bin = xy.len() as f64 / occupied;
+    let gap = (((20.0 * occupied).ln() / per_bin).ceil() as usize).saturating_sub(1).min(2);
+    angular_coverage_bridged(xy, cx, cy, gap)
 }
 
 /// RANSAC circle scored by (`inliers * (1 - mean_residual / tol)`)
@@ -574,7 +609,7 @@ fn fit_layer(xy: &[[f64; 2]], height: f64, p: &StemParams, rng: &mut Rng) -> Vec
                 break;
             }
             let rmse = (inliers.iter().map(|q| ((q[0] - cx).hypot(q[1] - cy) - r).powi(2)).sum::<f64>() / inliers.len() as f64).sqrt();
-            let (coverage, arc) = angular_coverage(&inliers, cx, cy);
+            let (coverage, arc) = sampled_arc(&inliers, cx, cy);
             if rmse <= p.max_circle_rmse && coverage >= p.min_coverage && arc >= p.min_arc_deg {
                 circles.push(CircleFit { x: cx, y: cy, radius: r, height, n_inliers: inliers.len(), rmse, coverage });
             }
@@ -884,6 +919,47 @@ mod tests {
         }
         let h = pts.iter().map(|q| q[2]).collect();
         (pts, h, stems)
+    }
+
+    /// `n` points evenly over `arc_deg` of a unit circle, leaving out the
+    /// 10-degree bins listed in `holes`.
+    fn arc_points(arc_deg: f64, n: usize, holes: &[usize]) -> Vec<[f64; 2]> {
+        (0..n)
+            .map(|i| -180.0 + (i as f64 + 0.5) * arc_deg / n as f64)
+            .filter(|a| !holes.contains(&(((a + 180.0) / 10.0) as usize)))
+            .map(|a| [a.to_radians().cos(), a.to_radians().sin()])
+            .collect()
+    }
+
+    #[test]
+    fn a_sparse_arc_runs_across_the_bins_its_sampling_leaves_empty() {
+        // Three points a bin over 200 degrees, two single bins empty: the
+        // plain test sees three short arcs, the sampled one the whole.
+        let xy = arc_points(200.0, 60, &[6, 13]);
+        assert_eq!(angular_coverage(&xy, 0.0, 0.0).1, 60.0);
+        assert_eq!(sampled_arc(&xy, 0.0, 0.0).1, 200.0);
+        // The occupied share of the circle is the same in both.
+        assert_eq!(sampled_arc(&xy, 0.0, 0.0).0, angular_coverage(&xy, 0.0, 0.0).0);
+    }
+
+    #[test]
+    fn a_dense_arc_is_broken_by_one_empty_bin() {
+        // Twenty points a bin: an empty bin is a real gap.
+        let xy = arc_points(200.0, 400, &[6]);
+        assert_eq!(sampled_arc(&xy, 0.0, 0.0).1, 130.0);
+        assert_eq!(sampled_arc(&xy, 0.0, 0.0), angular_coverage(&xy, 0.0, 0.0));
+    }
+
+    #[test]
+    fn a_short_arc_stays_short_however_sparse() {
+        // Bridging joins occupied bins; it never extends an arc past its ends,
+        // and never crosses more than two empty bins.
+        let xy = arc_points(100.0, 20, &[]);
+        assert_eq!(sampled_arc(&xy, 0.0, 0.0).1, 100.0);
+        let mut two = arc_points(60.0, 12, &[]);
+        two.extend(arc_points(130.0, 26, &[]).into_iter().skip(18)); // bins 9..12, three empty bins away
+        assert_eq!(sampled_arc(&two, 0.0, 0.0).1, 60.0);
+        assert_eq!(sampled_arc(&[], 0.0, 0.0), (0.0, 0.0));
     }
 
     #[test]

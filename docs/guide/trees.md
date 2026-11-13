@@ -54,9 +54,21 @@ duplicates, and the next steps remove them. Settings that matter:
 |---|---|---|
 | `min_radius`, `max_radius` | 0.015, 0.75 m | the smallest or largest stems of interest differ |
 | `min_coverage` | 0.12 | single scans: about 0.5, since only the near side is seen |
-| `min_arc_deg` | 0 | merged plots: 130 or more rejects arcs that are too short |
+| `min_arc_deg` | 0 | many candidates are shrubs, mounds or foliage fitted from a short arc: 130 or more rejects them, and with them the stems seen from one side only (below) |
 | `max_lean_deg` | 25 | strongly leaning stems (mangroves, windthrow) |
 | `slice_min`, `slice_max` | 1.0, 5.0 m | buttresses (raise `slice_min`) or tall shrub layers |
+
+`min_arc_deg` asks for an unbroken arc of points around each circle,
+measured in 10° bins. On a cloud thinned to 2–3 cm a thin stem has only two
+or three points a bin, and bins stay empty by chance, so the arc is carried
+across up to two empty bins in a row where the point count explains them
+(a densely sampled circle gets no such allowance). It remains a real
+filter: on the four reference plots of *Benchmarks > Tree detection*, 130°
+keeps 80 %, 56 %, 66 % and 65 % of the reference trees where the default
+keeps 98 %, 74 %, 83 % and 71 %, because many stems are not seen that far
+round. It pays where spurious candidates outnumber the trees
+it costs (the conifer plot: half the spurious trees gone, F1 0.65 → 0.69)
+and not elsewhere, so try it against a count you trust before adopting it.
 
 `trees.dbh_profile(cloud, (t.x, t.y))` measures the stem diameter at a
 series of heights (a taper curve). `trees.fit_circle` and
@@ -65,12 +77,24 @@ series of heights (a taper curve). `trees.fit_circle` and
 ## 3. Segmentation and pruning
 
 ```python
-stems, merged_into = trees.merge_branches(cloud, stems)   # drop limbs detected as stems
+stems, merged_into = trees.merge_branches(cloud, stems)   # optional: drop limbs detected as stems
 labels = trees.segment_trees(cloud, stems)                # tree_id per point, -1 unassigned
 trees.tree_heights(cloud, labels, stems, percentile=99)   # fills height and n_points
 stems, labels = trees.prune_trees(stems, labels, min_height=3.0)
 cloud = cloud.with_attrs(tree_id=labels.astype("int32"))
 ```
+
+`merge_branches` drops the candidates whose path to the ground runs through
+another candidate's trunk: low limbs and forks that the detector fitted as
+stems. It is optional, and what it does depends on the stand. On the four
+reference plots it removes a fifth to two fifths of the spurious trees, and
+it lets the surviving trees take more of the understorey. Where trees fork
+above the ground that is the whole effect. Where stems share a base it
+merges real trees too: at Wytham, with its coppice stools, 22 of the 149
+trees found without it are lost (F1 0.861 → 0.798), and 5 on each of two
+other plots (*Benchmarks > Tree detection*).
+The `sylva trees` command does not run it. Leave it out for coppice and
+multi-stemmed stands.
 
 `segment_trees` grows every tree from its stem over a kNN graph by least-cost
 paths, after raycloudtools' `rayextract trees`
@@ -95,7 +119,13 @@ paths, after raycloudtools' `rayextract trees`
   sampled branches whatever points the thinning kept. Without this the
   labels of trees of 5 to 10 m depended on which point survived each voxel
   (see *Benchmarks > Tree detection*).
-- **`height_prior`** lets tall trees win contested crown points.
+- **`height_prior`** lets tall trees win contested crown points: each
+  tree's costs are divided by a height. That height is the vegetation's
+  over the stem (the 95th percentile within `height_prior_radius`, 1.5 m),
+  since a tree's own is not known before the plot is segmented. A tree
+  standing free is costed by its own height; under a closed canopy every
+  stem, sapling or dominant, is costed by the canopy's, and the prior
+  separates little.
 - **`wood_costs=True`** stops foliage from bridging neighbouring crowns. It is
   slower.
 - **`voxel_size`** (3 cm) sets the graph resolution, on a grid anchored at
@@ -108,12 +138,18 @@ paths, after raycloudtools' `rayextract trees`
   it (see [Large clouds](io.md#large-clouds)).
 - **Understorey sources** (`understorey_height`, off by default). After
   raycloudtools, near-ground points away from every detected stem can be
-  sources too, so grass, shrubs and saplings keep their own points instead
-  of flowing into the nearest tree. Measured on the four CHERLET reference
-  plots they find no tree and lose up to four: what they take from a crown
-  they take through foliage whatever they are costed, and the `low_height`
-  rule already keeps the ground layer beyond `low_radius` of a stem out of
-  the tree. Set `understorey_height=10` to have them back.
+  sources too, so shrubs and saplings keep their own points instead of
+  flowing into the nearest tree. Without them a tree holds a good deal that
+  is not the tree: on the four CHERLET reference plots, 26 to 71 % of the
+  points below 2 m that belong to no reference tree are given to one.
+  `understorey_height=10` brings that down to 9 to 64 %, releasing 2 to 13
+  points of understorey for each point it takes from a real tree, and costs
+  about two small trees in a hundred on two of the plots, whose crowns the
+  sources reach from below. Turn it on when the lower two metres of
+  each tree matter (stem models, understorey work); leave it off when the
+  tree list does. The `low_height` rule is separate and always applies:
+  below 0.5 m a tree keeps only what lies within `low_radius` of its stem.
+  Numbers in *Benchmarks > Tree detection*.
 
 `prune_trees` removes candidates lower than `min_height` and merges stems
 closer than `merge_radius`. In conifer stands with many low branches,

@@ -7,21 +7,184 @@ best-overlapping sylva tree has IoU ≥ 0.5; predicted trees outside the
 reference coverage are ignored. raycloudtools' `rayextract trees`
 ([Devereux et al. 2026](../references.md)) output is scored the same way.
 
-| Site (points) | sylva F1, pruned at 3 m | at 5 m | raycloudtools F1 | sylva TP / ref | point accuracy |
-|---|---|---|---|---|---|
-| LITCH_CHERLET (8 M) | 0.964 | 0.968 | 0.97 | 122 / 127 | 0.977 |
-| ROBSON_CHERLET (9 M) | 0.591 | 0.613 | 0.55 | 99 / 149 | 0.626 |
-| WYTHAM_CHERLET (14 M) | 0.864 | 0.874 | 0.73 | 149 / 180 | 0.896 |
-| OFENTAL_CHERLET (15 M) | 0.594 | 0.622 | 0.73 | 57 / 89 | 0.706 |
+| Plot (points) | F1, pruned at 3 m | at 5 m | trees found / reference | point accuracy | understorey taken | raycloudtools F1 |
+|---|---|---|---|---|---|---|
+| Litchfield, savanna (8 M) | 0.977 (0.972–0.980) | 0.979 (0.972–0.984) | 124.0 / 127 | 0.981 | 0.26 | 0.97 |
+| Robson Creek, rainforest (9 M) | 0.653 (0.641–0.667) | 0.671 (0.654–0.687) | 109.8 / 149 | 0.691 | 0.71 | 0.55 |
+| Wytham Woods, temperate broadleaf (14 M) | 0.861 (0.846–0.872) | 0.863 (0.851–0.876) | 149.2 / 180 | 0.893 | 0.33 | 0.73 |
+| Ofental, conifer (15 M) | 0.649 (0.646–0.653) | 0.689 (0.678–0.707) | 63.0 / 89 | 0.726 | 0.39 | 0.73 |
 
-Scored in October 2026 with the current defaults on the plot clouds and
-reference labels as kept beside the harvest benchmark (the `basis` arrays):
-ground by PMF (the protocol's choice; `sylva ground` defaults to CSF) on a
-5 cm thinning, a 0.5 m DTM, stems detected with the defaults, the graph on
-5 cm voxels (`voxel_size=0.05`; the default is 3 cm), pruned at 3 m (left)
-and 5 m (right).
-The same figures come out at three different corners of the thinning grid,
-which was not so before (below).
+Scored in November 2026 with the defaults of version 1.0 on the plot clouds
+and reference labels as kept beside the harvest benchmark (the `basis`
+arrays): ground by PMF (the protocol's choice; `sylva ground` defaults to
+CSF) on a 5 cm thinning with windows of up to 17 m, a 0.5 m DTM, stems
+detected and trees segmented with the defaults (a 3 cm graph), pruned at
+3 m and at 5 m.
+
+Each sylva figure is the **mean of four runs** of the same plot, with the
+range in brackets: the plot as it is, with the thinning grid moved by a
+fraction of a voxel, with its points in another order, and rotated by 30°
+(next section). *Understorey taken* is the share of the points between 0.1
+and 2 m that lie on no reference tree and carry a tree label all the same
+(lower is better; [below](#what-the-scores-cannot-see)). The raycloudtools
+column is one run, scored the same way.
+
+Earlier versions of this page gave one run with a 5 cm graph: 0.964, 0.591,
+0.864 and 0.594. Those figures reproduce exactly, and as four-run means the
+5 cm graph gives 0.968, 0.597, 0.854 and 0.603. The 3 cm graph, which is
+the default, is better on 13 of the 16 paired runs, by 0.057 at Robson
+Creek and 0.047 at Ofental, for about 1.6 times the segmentation time
+(52 s against 32 s at Ofental).
+
+## One run is not a measurement
+
+Nothing in a result should depend on where the thinning grid sits, on the
+order of the points in the file, or on which way the plot faces. All three
+move it. Over seven runs of each plot with the 5 cm graph (two grid shifts
+of a fraction of a voxel, two shuffles, two rotations and the plot as
+given), F1 at 3 m spans:
+
+| Plot | F1 over seven runs | reference trees found in all seven | in some | in none |
+|---|---|---|---|---|
+| Litchfield | 0.964–0.988 | 119 | 7 | 1 |
+| Robson Creek | 0.582–0.625 | 70 | 53 | 26 |
+| Wytham | 0.797–0.874 | 119 | 47 | 14 |
+| Ofental | 0.576–0.636 | 52 | 17 | 20 |
+
+The count of trees found is steadier than the trees themselves: at Robson
+Creek about 100 of the 149 are found in any one of these runs, but only 70
+in every one, and a third of the plot's trees are found or missed
+according to a nuisance. These are trees whose best overlap sits near the
+0.5 threshold, in crowns that two stems contest.
+
+The default 3 cm graph is steadier as well as better. Over the four runs
+of the table at the top it spans 0.008, 0.026, 0.026 and 0.007 of F1,
+where the 5 cm graph spans 0.012, 0.028, 0.045 and 0.022 over the same
+four; 122, 100, 135 and 57 reference trees are found in all four of its
+runs and 3, 19, 26 and 10 in some. So:
+
+- a difference between two settings of less than about 0.04 F1 on one plot,
+  from one run each, is not evidence. Compare settings as paired runs
+  (the same nuisance on both sides) over several nuisances;
+- the tuning notes further down, which are single runs, are kept as the
+  record of what was tried and not as measurements of that size.
+
+An earlier version of this page said that the scores came out the same at
+three corners of the thinning grid. The three corners tested were whole
+voxels apart, which is the same grid three times, so the test could not
+have failed. The bridged graph (below) did remove the largest effect of
+the grid: without it Litchfield loses 0.039 F1 and ranges over 0.886–0.948,
+and the other three plots do not change.
+
+## What the scores cannot see
+
+The reference labels trees. Shrubs, saplings, grass and litter carry no
+label, so a tree that also takes the vegetation around its base scores
+exactly as one that does not. Measured directly, as the share of a matched
+tree's points that have no reference tree point within 0.1 m (one run,
+5 cm graph):
+
+| Height above ground | Litchfield | Robson Creek | Wytham | Ofental |
+|---|---|---|---|---|
+| 0.1–0.5 m | 0.87 | 0.69 | 0.74 | 0.73 |
+| 0.5–1 m | 0.83 | 0.61 | 0.50 | 0.51 |
+| 1–2 m | 0.54 | 0.64 | 0.43 | 0.33 |
+| 2–3 m | 0.23 | 0.63 | 0.42 | 0.18 |
+
+Below a metre, most of what a tree is given is not the tree. Part of this
+is by design: under `low_height` (0.5 m) a tree keeps what lies within
+`low_radius` (1 m) of its stem, grass included. The rest is understorey
+that the least-cost paths reach from the stem.
+
+The understorey sources (`understorey_height`, off by default) are the
+setting that addresses it, and what they cost and buy is now measured on
+both sides (four paired runs, 3 cm graph):
+
+| Plot | trees found: off → 10 m | F1 at 3 m | understorey taken | reference tree points left unlabelled |
+|---|---|---|---|---|
+| Litchfield | 124.0 → 121.8 | 0.977 → 0.968 | 0.26 → 0.09 | 0.1 % → 0.7 % |
+| Robson Creek | 109.8 → 110.2 | 0.653 → 0.657 | 0.71 → 0.64 | 0.1 % → 0.3 % |
+| Wytham | 149.2 → 146.2 | 0.861 → 0.851 | 0.33 → 0.22 | 0.3 % → 1.3 % |
+| Ofental | 63.0 → 63.0 | 0.649 → 0.657 | 0.39 → 0.28 | 0.4 % → 0.5 % |
+
+They release between 1.7 (Wytham) and 13 (Litchfield) points of understorey
+for every point they take from a reference tree, and they cost two trees
+at Litchfield and three at Wytham: small trees whose crowns the sources
+reach from below and which then fall under the pruning height. Costing the
+sources as a 5 m tree instead of 10 m loses the same trees. The default
+stays off, because a tree dropped from the table cannot be had back
+afterwards while low points can still be filtered; set
+`understorey_height=10` where the lower two metres of each tree matter more
+than the last two trees in a hundred (stem models, understorey studies).
+
+## What the November 2026 review found
+
+The segmentation was reviewed against these plots in November 2026, each
+setting as four paired runs. No defect was found in the segmentation and
+its defaults did not change; one was found in stem detection (the arc
+test, below) and fixed. What was learned:
+
+**Where the trees are lost.** In one run with the 5 cm graph, 5, 50, 31 and
+32 reference trees are missed. Most have a detected stem and a crown
+divided wrongly, the tree losing its crown to a neighbour or taking a
+neighbour's: 4 of the 5, 47 of the 50, 18 of the 31 and 20 of the 32. The
+rest have no stem candidate (1, 2, 13 and 7) or one whose tree ended under
+the pruning height (1 at Robson Creek, 5 at Ofental). The missed trees are
+shorter than the ones found (9.2 m against 15.6 m at Ofental, 8.7 m
+against 13.5 m at Wytham).
+
+**Leaning stems are not detected.** Of the 13 Wytham trees that are missed
+for want of a candidate, 12 lean between 25° and 45°, beyond `max_lean_deg`
+(25). Raising it to 45 with `link_radius=0.3` finds 8 more trees there, 2
+at Ofental and 1 at Robson Creek, and adds 7 to 11 spurious trees on each
+of those three plots, so F1 at 3 m does not improve (−0.001 to −0.014). It
+is the setting to change for a stand known to lean, not a better default.
+
+**The height prior is the canopy's height.** `height_prior` scales each
+tree's costs by one over the 95th percentile of the heights within 1.5 m of
+its stem. In a closed stand that is the height of whatever stands over the
+stem: at Robson Creek it is within 20 % of the height the tree ends up with
+for 22 of 352 candidates, and the candidates that end below 3 m had
+competed as trees of 25.7 m (11.1 m at Litchfield, 18.4 m at Wytham, 16.0 m
+at Ofental). Taking each tree's own height from a first pass and segmenting
+again helps where short trees stand under tall ones of one species and
+hurts where everything is tall and interlocked: F1 +0.070 at Ofental,
+−0.033 at Robson Creek, −0.006 at Wytham and +0.001 at Litchfield. It was
+not adopted.
+
+**`merge_branches` is not free.** The guide and the notebooks run it before
+segmenting; the `sylva trees` command does not. With the 3 cm graph it
+removes a fifth to two fifths of the spurious trees on every plot (77 → 60
+at Robson Creek, 42 → 30 at Ofental), and it merges real trees wherever
+stems share a base: 22 of the 149 trees found at Wytham, a coppice (F1
+0.861 → 0.798), 5 at each of Robson Creek and Ofental, none at Litchfield.
+F1 at 3 m moves by +0.002, +0.016, −0.062 and +0.005. The trees that remain
+also take more of the understorey (*understorey taken* rises by 0.05 to
+0.19). It is a step for single-stemmed trees with low limbs, not for
+coppice or multi-stemmed stands.
+
+**`min_arc_deg` failed real stems on thinned clouds, and was fixed.** The
+arc was the longest run of occupied 10° bins. On these clouds (points
+about 2.5 cm apart) a stem of 5 cm radius has about three points a bin, a
+bin is empty by chance one time in twenty, and an unbroken 130° needs
+thirteen in a row: at Litchfield 9 % of well-supported stems under 5 cm
+radius passed, and 130° kept 11 % of the plot's trees (8 % at Robson
+Creek, 36 % at Wytham, 35 % at Ofental). The arc is now carried across the
+empty bins that the point count explains, up to two in a row. With that,
+130° keeps 80 %, 56 %, 66 % and 65 % of the reference trees against 98 %,
+74 %, 83 % and 71 % without it, at a precision of 0.97, 0.61, 0.90 and
+0.73 against 0.98, 0.59, 0.90 and 0.60. What it still removes are stems
+that the scans did not see far enough round. It pays at Ofental (F1
+0.649 → 0.688) and costs elsewhere (−0.10, −0.07 and −0.10).
+
+**Measured and not adopted.** Giving a seed point that two stems claim to
+the nearer bark instead of the better-supported stem (17 to 33 % of seed
+points go to a stem other than the nearest): more spurious trees on 14 of
+16 runs, F1 −0.029
+at Wytham and −0.028 at Ofental. Segmenting a second time from the
+candidates that survive pruning: +0.006 overall, 7 runs up and 7 down. The
+99th height percentile in place of the top point, and CSF ground in place
+of PMF: no difference beyond the run-to-run range.
 
 ## What the October 2026 changes did
 
@@ -36,7 +199,8 @@ four plots with this protocol:
    and -0.014 at Ofental: more than any setting ever tuned here. The graph now
    joins its components wherever two come within `max_edge`, one edge per pair
    of components, so its connectivity is the cloud's at that distance and not
-   the thinning's. On a synthetic plot of interlocking crowns that took the
+   the thinning's. (The division of contested crowns still depends on the
+   grid; see *One run is not a measurement*.) On a synthetic plot of interlocking crowns that took the
    share of tree points left unlabelled from 31 % to under 1 %.
 2. **Stems are seeded along the whole bark shell** from the ground to half a
    metre above `seed_height` (1.5 m by default, so to 2 m), and the ground cut dropped from 0.25 m to 0.1 m
@@ -48,18 +212,22 @@ four plots with this protocol:
    by the vegetation height around each source, or by the height of the
    column above it up to the first gap, they found no tree on any plot and
    lost two at Litchfield and four at Wytham. What they take from a crown
-   they take through foliage from below, whatever they are costed.
+   they take through foliage from below, whatever they are costed. (That
+   judged them on trees alone; what they keep out of the trees is measured
+   [above](#what-the-scores-cannot-see).)
 
-| Plot | before (F1 at 3 m, two grid corners) | after (three grid corners) | after, understorey sources on |
+| Plot | before (F1 at 3 m, two grid corners) | after | after, understorey sources on |
 |---|---|---|---|
-| Litchfield | 0.924 / 0.877 | 0.964 / 0.964 / 0.964 | 0.956 |
-| Robson Creek | 0.562 / 0.589 | 0.591 / 0.591 / 0.591 | 0.589 |
-| Wytham | 0.848 / 0.856 | 0.864 / 0.864 / 0.866 | 0.850 |
-| Ofental | 0.611 / 0.597 | 0.594 / 0.594 / 0.594 | 0.597 |
+| Litchfield | 0.924 / 0.877 | 0.964 | 0.956 |
+| Robson Creek | 0.562 / 0.589 | 0.591 | 0.589 |
+| Wytham | 0.848 / 0.856 | 0.864 | 0.850 |
+| Ofental | 0.611 / 0.597 | 0.594 | 0.597 |
 
-Any comparison finer than about 0.03 on a single plot made before these
-changes is within the grid noise, including the tuning notes further down,
-which are kept as the record of what was tried.
+These are single runs with the 5 cm graph. The *after* column was reported
+at the time as identical at three grid corners; those corners were whole
+voxels apart and so one grid (see *One run is not a measurement*). Any
+comparison finer than about 0.04 on a single plot, here and in the tuning
+notes further down, is within the run-to-run range.
 
 ## Scored the way the benchmark scores
 

@@ -321,11 +321,16 @@ axes[0].set_ylabel("y, project (m)");""",
 
 Two settings differ from the defaults, both for a plot this size:
 
-- `min_arc_deg=130`. A stem circle must cover 130 degrees of arc
-  unbroken. With a scan every 20 m, every real stem is seen from most sides, while
+- `min_arc_deg=130`. A stem circle must cover 130 degrees of arc (empty
+  10-degree bins that sparse sampling explains do not break it). With a
+  scan every 20 m, most real stems are seen from most sides, while
   grass tussocks, termite mounds and shrubs give short arcs. Without it,
   detection returned over 5 000 candidates on this plot, many of them
-  1.4 m wide at the diameter limit.
+  1.4 m wide at the diameter limit. It also drops the stems seen from one
+  side only: on the reference plots of *Benchmarks > Tree detection*, 8 to
+  25 % of the trees found without it. Compare the stem count with and
+  without it before relying on it. The outputs shown here predate the
+  November 2026 change to the arc test, which lets more thin stems pass.
 - `voxel_size=0.1` for the merge and segmentation graphs. On 70-76 M
   points the default 5 cm graph took 17 minutes and 38 GB. At 10 cm the
   whole step takes about 4 minutes and 15 GB.
