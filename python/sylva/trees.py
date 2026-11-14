@@ -358,7 +358,8 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
                   low_radius: float = 1.0, wood_costs: bool = False,
                   wood_k: int = 20, wood_threshold: float = 0.9, understorey_height: float = 0.0,
                   understorey_band: float = 0.5, voxel_origin=None,
-                  ground: str | np.ndarray | None = None, bridge: bool = True) -> np.ndarray:
+                  ground: str | np.ndarray | None = None, bridge: bool = True,
+                  angle_rate: float = 0.046051) -> np.ndarray:
     """Assign each point to a stem by least-cost path through a directed kNN
     graph (multi-source Dijkstra from stem seeds), after raycloudtools'
     ``rayextract trees`` (Devereux et al. 2026) and Arbor (J.-R. Roussel,
@@ -367,8 +368,9 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
     source (see ``THIRD_PARTY_NOTICES.md``).
 
     The edge cost is ``d ** power`` times an angle penalty
-    ``min(exp(0.046 * deg_from_vertical), 100)`` -- climbing is free,
-    horizontal edges cost x63 and downward ones x100 -- so paths run up
+    ``min(exp(angle_rate * deg_from_vertical), 100)`` -- at the default
+    rate climbing is free, horizontal edges cost x63 and downward ones
+    x100 -- so paths run up
     through a tree instead of leaking across the ground or understorey.
     ``gravity`` adds raycloudtools' term ``1 + g * lateral**2`` from the seed
     (0.3 favours vertical trees). ``height_prior`` scales each tree's costs
@@ -420,6 +422,19 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
         with interlocking crowns (see *Benchmarks > Tree detection*).
     angle_penalty
         Apply the angle factor above.
+    angle_rate
+        Rate of the angle factor per degree from vertical: an edge costs
+        ``min(exp(angle_rate * deg), 100)`` times its length term. 0.046, the
+        default, makes a horizontal step cost 63 times a vertical one; 0.023
+        makes it 8 times and 0.012 three times; 0 is no penalty. A lower
+        rate lets a tree keep the outer parts of its branches against trees
+        standing under them: 0.023 raised F1 by 0.01 to 0.03 on five of six
+        real plots scanned densely from many positions and left the sixth
+        unchanged. The default is the safer one on sparse or heavily
+        occluded clouds, where crowns are in pieces: 0.012 lowers F1 on
+        clouds thinned to 5 cm or more, and both lower it on simulated
+        plots scanned from five positions (see *Benchmarks > Tree
+        detection*).
     gravity
         Lateral-distance term; 0 disables it.
     cut_above_ground
@@ -510,7 +525,7 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
                                low_height, low_radius, wood_costs, wood_k, wood_threshold,
                                understorey_height, understorey_band,
                                None if voxel_origin is None else tuple(float(v) for v in voxel_origin),
-                               exclude, bool(bridge))
+                               exclude, bool(bridge), float(angle_rate))
 
 
 def merge_branches(cloud: PointCloud, trees: list[Tree], height_attr: str = "height",

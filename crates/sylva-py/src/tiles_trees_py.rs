@@ -60,6 +60,7 @@ fn graph_params(mut p: SegmentParams, d: &Bound<'_, PyDict>, what: &str) -> PyRe
             "voxel_origin" => p.voxel_origin = origin(&v)?,
             _ if what == "merge" => return Err(PyValueError::new_err(format!("unknown merge_branches parameter {key:?}"))),
             "gravity" => p.gravity = v.extract()?,
+            "angle_rate" => p.angle_rate = v.extract()?,
             "height_prior" => p.height_prior = v.extract()?,
             "height_prior_radius" => p.height_prior_radius = v.extract()?,
             "height_prior_power" => p.height_prior_power = v.extract()?,

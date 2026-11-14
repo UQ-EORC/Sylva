@@ -1,6 +1,6 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
-// The directed edge cost (`EdgeCost`) is adapted from Arbor
+// The directed edge cost (`EdgeCost`, `ANGLE_RATE`) is adapted from Arbor
 // (Copyright (C) 2026 Jean-Romain Roussel, r-lidar; GPL-3.0-or-later);
 // see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
@@ -37,12 +37,18 @@ pub struct Graph<'a> {
     cost: Option<EdgeCost<'a>>,
 }
 
+/// The default rate of the angle penalty of [`directed_knn_graph`], per
+/// degree from vertical: `exp(rate * deg)` is 100 at 100 degrees and 63 for
+/// a horizontal edge.
+pub const ANGLE_RATE: f64 = 0.046051;
+
 /// The direction-dependent edge cost of [`directed_knn_graph_wood`].
 #[derive(Debug, Clone)]
 struct EdgeCost<'a> {
     points: &'a [Point],
     power: f64,
-    angle_penalty: bool,
+    /// Rate of the angle penalty per degree from vertical; 0 for none.
+    angle_rate: f64,
     wood: Option<&'a [bool]>,
 }
 
@@ -52,10 +58,10 @@ impl EdgeCost<'_> {
         let d = crate::transform::sub(&self.points[to], &self.points[from]);
         let len = crate::transform::norm(&d).max(1e-12);
         let mut c = len.powf(self.power);
-        if self.angle_penalty {
+        if self.angle_rate > 0.0 {
             let cos_theta = (d[2] / len).clamp(-1.0, 1.0);
             let deg = cos_theta.acos().to_degrees();
-            c *= (0.046051 * deg).exp().min(100.0);
+            c *= (self.angle_rate * deg).exp().min(100.0);
         }
         if let Some(w) = self.wood {
             c *= match (w[from], w[to]) {
@@ -582,14 +588,23 @@ pub fn directed_knn_graph_bridged<'a>(points: &'a [Point], k: usize, max_distanc
     directed_knn_graph_full(points, k, max_distance, power, angle_penalty, wood, true)
 }
 
-fn directed_knn_graph_full<'a>(points: &'a [Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&'a [bool]>, bridge: bool) -> Graph<'a> {
+/// [`directed_knn_graph_wood`] (or, with `bridge`,
+/// [`directed_knn_graph_bridged`]) with the angle penalty's rate given:
+/// the penalty is `min(exp(angle_rate * deg), 100)` for an edge `deg`
+/// degrees from vertical, so [`ANGLE_RATE`] is the usual one, a smaller
+/// rate makes sideways and downward steps cheaper, and 0 is no penalty.
+pub fn directed_knn_graph_rate<'a>(points: &'a [Point], k: usize, max_distance: f64, power: f64, angle_rate: f64, wood: Option<&'a [bool]>, bridge: bool) -> Graph<'a> {
     if let Err(e) = check_graph(points.len(), k, false) {
         // The callers of this one cannot carry an error; refusing loudly is
         // still better than the machine going down.
         panic!("{e}");
     }
     let (offsets, neighbors) = Graph::symmetric_knn_csr(points, k, max_distance, bridge);
-    Graph { offsets, neighbors, weights: Vec::new(), xy: Vec::new(), cost: Some(EdgeCost { points, power, angle_penalty, wood }) }
+    Graph { offsets, neighbors, weights: Vec::new(), xy: Vec::new(), cost: Some(EdgeCost { points, power, angle_rate: angle_rate.max(0.0), wood }) }
+}
+
+fn directed_knn_graph_full<'a>(points: &'a [Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&'a [bool]>, bridge: bool) -> Graph<'a> {
+    directed_knn_graph_rate(points, k, max_distance, power, if angle_penalty { ANGLE_RATE } else { 0.0 }, wood, bridge)
 }
 
 /// Symmetric k-nearest-neighbour graph; edges longer than `max_distance` are dropped.
@@ -849,7 +864,7 @@ mod tests {
             list.sort_unstable();
             list.dedup();
         }
-        let cost = EdgeCost { points, power, angle_penalty, wood };
+        let cost = EdgeCost { points, power, angle_rate: if angle_penalty { ANGLE_RATE } else { 0.0 }, wood };
         let weighted: Vec<Vec<(u32, f64)>> = adj.into_iter().enumerate().map(|(i, list)| list.into_iter().map(|j| (j, cost.cost(i, j as usize))).collect()).collect();
         let mut g = graph_from_directed(weighted);
         g.xy = points.iter().map(|p| [p[0], p[1]]).collect();
@@ -979,6 +994,31 @@ mod tests {
             assert_eq!(euclidean_clusters(&pts, radius, 10), labels.iter().map(|&l| remap[l]).collect::<Vec<_>>());
         }
         assert_eq!(radius_components(&[], 1.0), (0, Vec::new()));
+    }
+
+    #[test]
+    fn the_angle_rate_sets_what_a_sideways_step_costs() {
+        // Two points 0.1 m apart, side by side and one above the other.
+        let side: [Point; 2] = [[0.0, 0.0, 0.0], [0.1, 0.0, 0.0]];
+        let up: [Point; 2] = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.1]];
+        let cost = |points: &[Point], rate: f64, from: usize, to: usize| EdgeCost { points, power: 2.0, angle_rate: rate, wood: None }.cost(from, to);
+        let base = 0.01;
+        let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-9;
+        assert!(close(cost(&up, ANGLE_RATE, 0, 1), base)); // climbing is free
+        assert!(close(cost(&side, ANGLE_RATE, 0, 1), base * (ANGLE_RATE * 90.0).exp())); // about 63
+        assert!((cost(&side, ANGLE_RATE, 0, 1) / base - 63.1).abs() < 0.1);
+        assert!(close(cost(&up, ANGLE_RATE, 1, 0), base * 100.0)); // straight down: the cap
+        assert!(close(cost(&side, 0.023, 0, 1), base * (0.023f64 * 90.0).exp())); // about 8
+        assert!(close(cost(&side, 0.0, 0, 1), base)); // no penalty
+        // The constructors that take a switch use the default rate, or none.
+        let mut rng = Rng::new(5);
+        let mut u = || (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
+        let pts: Vec<Point> = (0..300).map(|_| [u(), u(), u()]).collect();
+        for (on, rate) in [(true, ANGLE_RATE), (false, 0.0)] {
+            let a = directed_knn_graph_bridged(&pts, 6, 0.5, 6.0, on, None);
+            let b = directed_knn_graph_rate(&pts, 6, 0.5, 6.0, rate, None, true);
+            assert_eq!(dijkstra(&a, &[0]).0, dijkstra(&b, &[0]).0);
+        }
     }
 
     #[test]

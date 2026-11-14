@@ -106,6 +106,24 @@ factors) is adapted.
 - **Cost.** Climbing is cheap, while horizontal and downward steps are
   expensive, so paths go up through a tree rather than across the
   understorey.
+- **`angle_rate`** is how steeply that cost rises with an edge's angle from
+  vertical: the factor is `exp(angle_rate × degrees)`, capped at 100. The
+  default, 0.046, makes a horizontal step cost 63 times a vertical one. On
+  plots scanned densely from many positions, where every tree is a
+  connected surface from its base to its twigs, that is more than is
+  needed: travelling out along a branch becomes so dear that a tree
+  standing underneath takes the outer part of it through a small vertical
+  gap. `angle_rate=0.023` (a horizontal step costs 8 times a vertical one)
+  raised F1 by 0.01 to 0.03 on five of the six real plots it was tried on
+  at their native point spacing, with about a tenth fewer spurious trees,
+  and left the sixth, an open savanna already at 0.98, where it was; 0.012
+  (3 times) gains more on those and loses on coarser clouds. The default
+  stays where it is because the gain depends on the sampling. On clouds
+  thinned to 8 cm the gain at 0.023 is gone, and on simulated plots
+  scanned from five positions, where crowns are in pieces and a path must
+  jump from one to the next, it costs 0.01: there the stronger preference
+  for what stands above the stem is what keeps a tree together. Numbers in
+  *Benchmarks > Tree detection*.
 - **Seeds.** Each stem is seeded along its whole bark shell, from the
   ground to half a metre above `seed_height`, so the trunk belongs to its
   tree at no cost instead of being grown into from breast height against

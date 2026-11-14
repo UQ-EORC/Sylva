@@ -14,7 +14,7 @@ reference and are adaptations of it, translated into Rust and modified
 (September to November 2026):
 
 - `crates/sylva-rs/src/cluster.rs`: the directed edge cost of the tree
-  segmentation graph (`EdgeCost::cost`): edge length raised to
+  segmentation graph (`EdgeCost::cost`, `ANGLE_RATE`): edge length raised to
   a power, the angle penalty `exp(0.046051 x degrees)` capped at 100, and
   the wood / leaf cost factors 0.1, 20 and 1000 (Arbor
   `src/segment/GraphBuilder.cpp`, `src/api/arbor.h`).

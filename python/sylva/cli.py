@@ -165,7 +165,7 @@ def _cmd_trees(args):
     cloud = io.read(args.input, attrs=["height"] if las else None)
     _heights_warning(cloud, args.input)
     found = trees.detect_stems(cloud, min_radius=args.min_dbh / 2)
-    labels = trees.segment_trees(cloud, found, voxel_size=args.voxel)
+    labels = trees.segment_trees(cloud, found, voxel_size=args.voxel, angle_rate=args.angle_rate)
     trees.tree_heights(cloud, labels, found)
     found, labels = trees.prune_trees(found, labels, min_height=args.min_height,
                                       min_slenderness=args.min_slenderness,
@@ -549,6 +549,10 @@ def main(argv=None):
                         "beside the input)")
     s.add_argument("--voxel", type=float, default=0.03,
                    help="voxel size of the segmentation graph (m); 0.05 halves a 2 cm plot's graph")
+    s.add_argument("--angle-rate", type=float, default=0.046051,
+                   help="rate of the segmentation's angle penalty per degree from vertical (the default makes "
+                        "a horizontal step cost 63 times a vertical one; 0.023, 8 times, divides crowns "
+                        "better on plots scanned densely from many positions)")
     s.set_defaults(func=_cmd_trees)
 
     s = sub.add_parser("chm", help="canopy height model from a height-normalised cloud", **fmt)

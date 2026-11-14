@@ -154,6 +154,12 @@ In Sylva: the beta fit of the leaf inclination distribution in `sylva.leaves`,
 the two-parameter beta distribution of `sylva.voxels`, and the leaf angles of
 `synthetic.tree_model`.
 
+Grady, L. (2006). Random walks for image segmentation. *IEEE Transactions on
+Pattern Analysis and Machine Intelligence*, *28*(11), 1768–1783.
+<https://doi.org/10.1109/TPAMI.2006.233>
+In Sylva: not used. A random-walk assignment of points to stems was
+prototyped and rejected (*Benchmarks > Tree detection*).
+
 Hofton, M. A., Minster, J. B., & Blair, J. B. (2000). Decomposition of laser
 altimeter waveforms. *IEEE Transactions on Geoscience and Remote Sensing*,
 *38*(4), 1989–1996. <https://doi.org/10.1109/36.851780>

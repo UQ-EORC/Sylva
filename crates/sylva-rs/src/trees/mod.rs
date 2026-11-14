@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 use rayon::prelude::*;
 
-use crate::cluster::{dijkstra_gravity, dijkstra_scaled, directed_knn_graph, directed_knn_graph_bridged, directed_knn_graph_wood};
+use crate::cluster::{dijkstra_gravity, dijkstra_scaled, directed_knn_graph_rate};
 use crate::error::{Error, Result};
 use crate::filters::Rng;
 use crate::util::spatial::first_in_voxel;
@@ -228,6 +228,11 @@ pub struct SegmentParams {
     pub power: f64,
     /// Penalise edges by their angle from vertical (up free, down x100).
     pub angle_penalty: bool,
+    /// Rate of the angle penalty per degree from vertical: an edge costs
+    /// `min(exp(angle_rate * deg), 100)` times its length term. The default
+    /// ([`crate::cluster::ANGLE_RATE`], 0.046) makes a horizontal step 63
+    /// times a vertical one; 0.023 makes it 8 times, 0.012 three times.
+    pub angle_rate: f64,
     /// raycloudtools gravity factor: cost x (1 + g * lateral^2 from the seed); 0 disables.
     pub gravity: f64,
     /// Points below this height are left unassigned (-1) and kept out of
@@ -293,9 +298,20 @@ pub struct SegmentParams {
     pub bridge: bool,
 }
 
+impl SegmentParams {
+    /// The angle rate the graph is built with: `angle_rate`, or 0 without `angle_penalty`.
+    fn graph_angle_rate(&self) -> f64 {
+        if self.angle_penalty {
+            self.angle_rate
+        } else {
+            0.0
+        }
+    }
+}
+
 impl Default for SegmentParams {
     fn default() -> Self {
-        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.03, seed_height: 1.5, seed_radius: 0.25, power: 6.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.1, seed_ring: true, height_prior: true, height_prior_radius: 1.5, height_prior_power: 1.0, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 0.0, understorey_band: 0.5, voxel_origin: None, bridge: true }
+        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.03, seed_height: 1.5, seed_radius: 0.25, power: 6.0, angle_penalty: true, angle_rate: crate::cluster::ANGLE_RATE, gravity: 0.0, cut_above_ground: 0.1, seed_ring: true, height_prior: true, height_prior_radius: 1.5, height_prior_power: 1.0, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, understorey_height: 0.0, understorey_band: 0.5, voxel_origin: None, bridge: true }
     }
 }
 
@@ -473,7 +489,7 @@ pub fn segment_nodes(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentPara
     } else {
         None
     };
-    let graph = if p.bridge { directed_knn_graph_bridged(work, p.k, p.max_edge, p.power, p.angle_penalty, wood.as_deref()) } else { directed_knn_graph_wood(work, p.k, p.max_edge, p.power, p.angle_penalty, wood.as_deref()) };
+    let graph = directed_knn_graph_rate(work, p.k, p.max_edge, p.power, p.graph_angle_rate(), wood.as_deref(), p.bridge);
     let Seeds { mut seeds, mut seed_tree, mut seed_xy, mut seed_scale } = collect_seeds(work, hw, trees, p);
     if seeds.is_empty() {
         return vec![-1; work.len()];
@@ -562,7 +578,7 @@ pub fn branch_parents(points: &[Point], heights: &[f64], trees: &[Tree], p: &Seg
     let work_idx = graph_nodes(points, heights, p);
     let work: Vec<Point> = work_idx.iter().map(|&i| points[i]).collect();
     let hw: Vec<f64> = work_idx.iter().map(|&i| heights[i]).collect();
-    let graph = if p.bridge { directed_knn_graph_bridged(&work, p.k, p.max_edge, p.power, p.angle_penalty, None) } else { directed_knn_graph(&work, p.k, p.max_edge, p.power, p.angle_penalty) };
+    let graph = directed_knn_graph_rate(&work, p.k, p.max_edge, p.power, p.graph_angle_rate(), None, p.bridge);
     let sources: Vec<usize> = (0..work.len()).filter(|&i| hw[i] < ground_height).collect();
     if sources.is_empty() {
         return parent;
@@ -1168,7 +1184,7 @@ mod review_regression_tests {
         let work_idx = graph_nodes(points, heights, p);
         let work: Vec<Point> = work_idx.iter().map(|&i| points[i]).collect();
         let hw: Vec<f64> = work_idx.iter().map(|&i| heights[i]).collect();
-        let graph = if p.bridge { directed_knn_graph_bridged(&work, p.k, p.max_edge, p.power, p.angle_penalty, None) } else { directed_knn_graph(&work, p.k, p.max_edge, p.power, p.angle_penalty) };
+        let graph = directed_knn_graph_rate(&work, p.k, p.max_edge, p.power, p.graph_angle_rate(), None, p.bridge);
         let sources: Vec<usize> = (0..work.len()).filter(|&i| hw[i] < ground_height).collect();
         if sources.is_empty() {
             return parent;

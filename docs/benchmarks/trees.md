@@ -186,6 +186,96 @@ candidates that survive pruning: +0.006 overall, 7 runs up and 7 down. The
 99th height percentile in place of the top point, and CSF ground in place
 of PMF: no difference beyond the run-to-run range.
 
+## The angle penalty and how well the plot is sampled
+
+The cost of an edge rises with its angle from vertical as
+`exp(angle_rate × degrees)`. The rate has been 0.046 since the method was
+written (a horizontal step costs 63 times a vertical one). Measured in
+November 2026 with paired runs, the best rate turns out to depend on how
+completely the trees are sampled:
+
+| Data | 0.046 (default) | 0.023 | 0.012 |
+|---|---|---|---|
+| Litchfield (7 runs) | 0.976 | 0.974 | 0.974 |
+| Robson Creek (7 runs) | 0.653 | 0.676 | 0.677 |
+| Wytham (7 runs) | 0.852 | 0.860 | 0.862 |
+| Ofental (7 runs) | 0.641 | 0.674 | 0.718 |
+| Gingin banksia woodland, 291 trees (2 runs) | 0.671 | 0.693 | 0.704 |
+| Great Western Woodlands, 16 trees (2 runs) | 0.660 | 0.690 | 0.698 |
+| the four reference plots thinned to 5 cm (mean, 3 runs each) | 0.765 | 0.777 | 0.754 |
+| the same thinned to 8 cm, graph at 8 cm | 0.612 | 0.608 | 0.566 |
+| eight simulated plots, five scan positions each | 0.721 | 0.710 | 0.693 |
+
+F1 with trees under 3 m pruned. The two woodland plots were never used to
+choose a setting. The simulated plots are four stand types of
+`sylva.synthetic.plot`, two seeds each, scanned with the VZ-400 model.
+
+At their native spacing of about 2.5 cm, every real plot but Litchfield
+gains from a lower rate, with fewer spurious trees (77 → 61 at Robson
+Creek and 43 → 33 at Ofental at 0.012), the same or a higher overlap of
+the trees found, and no more understorey taken. The mechanism is the one the miss
+analysis points to: with horizontal steps at 63 times the cost of vertical
+ones, the way out along a branch is so dear that a tree standing under it
+reaches the outer part more cheaply across a small vertical gap, and takes
+it.
+
+The simulated plots and the thinned clouds go the other way, and for a
+reason that can be measured. In the real plots 91 to 98 % of a tree's
+points are connected to its own base through its own points by links of
+5 cm, and nearly all of them by links of 8 cm. In the simulated scans it is 22 to
+45 % at 5 cm and 55 to 81 % at 8 cm: seen from five positions, the crowns
+are in pieces. A path then has to jump from piece to piece, the length
+term can no longer tell a tree's own gap from the gap to its neighbour,
+and the preference for what stands above the stem is what is left to hold
+a tree together.
+
+So the default is unchanged, and `angle_rate` is a setting: 0.023 for
+plots scanned from many positions and kept at 2 to 5 cm, where it gained
+up to 0.03 and lost nothing beyond the run-to-run range; the default for
+sparse, coarse or heavily occluded clouds. Raising `power` behaves the same way (10 in place of 6:
++0.012 on the reference plots, +0.02 at Gingin, −0.030 on the simulated
+ones) and was left alone for the same reason.
+
+Also measured in this round and not adopted, each as paired runs: a 4 cm
+clustering cell in stem detection (+0.011 on the reference plots, −0.08
+at Gingin, where it adds a hundred spurious trees); 500 RANSAC iterations
+(+0.010, but 250, 1000 and 2000 give +0.003, +0.003 and −0.005: a
+different random draw, not a better fit); linking stem circles across
+layers where a fit failed (13 more trees found over the four plots, 16 to
+25 more spurious);
+merging only the stems that join above breast height (joins of coppice
+stems and of fragments happen at the same heights); a higher lean limit
+alone; a 2 cm graph; and every other graph, seed, prior and pruning
+setting, none of which beat the defaults by more than the run-to-run
+range. Removing by hand every stem that the reference shows to be a
+fragment of another tree raised F1 by 0.02 to 0.05 on the three
+closed-canopy plots and recovered no missed tree, which bounds what
+better candidate filtering could do.
+
+Two other ways of dividing contested crowns were prototyped and rejected,
+both on the reference plots themselves:
+
+- **A capacity from the pipe model.** A stem can carry a crown in
+  proportion to its cross-section, so a tree claiming far more than its
+  DBH allows was costed up and the plot segmented again. On well-fitted
+  stems crown size does go as DBH to the power 1.9 to 2.2 on three plots,
+  and the trees that take a neighbour's branches sit at about twice the
+  usual ratio; but the scatter of the relation is as large as that, and at
+  Robson Creek the power is 0.8 to 1.3. Every strength tried lost F1:
+  −0.04 to −0.09 with a fixed DBH² law, −0.06 to no change with the
+  plot's own fitted law and a dead zone, and worse the harder it was
+  applied.
+- **Assignment by random walks.** Each point goes to the stem a random
+  walk from it most probably reaches first ([Grady 2006](../references.md)), so a thick
+  attachment should outweigh a thin contact. As a replacement for the
+  cheapest path it scored 0.87 to 0.93 at Litchfield and 0.12 to 0.15 at
+  Ofental: under a closed canopy the branches of neighbours touch at
+  every height, and a few metres above the stem bases the probabilities
+  blend (the best stem's averaged 0.15 at Ofental). Used only to
+  re-decide a band around the cheapest-path boundaries it did less harm
+  the narrower the band (−0.12 to −0.02), and in the narrowest it still
+  cost Robson Creek 0.020 in each of four runs.
+
 ## What the October 2026 changes did
 
 Three things changed together in the segmentation, and were measured on all
