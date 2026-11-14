@@ -10,6 +10,11 @@ remote sensing. A Rust core (the `sylva-rs` crate) holds every computation and f
 format; Python gets a numpy-friendly API (`import sylva`) and a `sylva`
 command over it.
 
+Parts of Sylva are ports of existing open-source software into Rust, not new
+methods: see
+[THIRD_PARTY_NOTICES.md](https://github.com/UQ-EORC/Sylva/blob/main/THIRD_PARTY_NOTICES.md)
+for what was ported and from where.
+
 | Module | What it does |
 |---|---|
 | `sylva.io` | LAS/LAZ (typed extra bytes, CRS from and to the WKT or GeoTIFF records), PLY (incl. raycloudtools ray clouds), XYZ/CSV/PTS, RIEGL `.rxp` via RiVLib (converted much like RiSCAN PRO: MTA resolution and its filters, with a small shim built from the SDK; the MTA resolution is a work in progress and not an exact match) and `.rdbx` (RDB 2) via librdb, RiSCAN project parsing |
