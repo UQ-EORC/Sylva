@@ -106,7 +106,7 @@ it carries the same licence. See the LICENSE file in the repository.
 
 Cite it as: Devereux, T., Rivory, J., Woodgate, W., Aryal, R. R., Eaton, G.,
 & Phinn, S. (2026). *Sylva: terrestrial and airborne laser
-scanning processing for forest ecology* (version 1.0.0) [Computer software].
+scanning processing for forest ecology* (version 1.1.0) [Computer software].
 The University of Queensland. <https://doi.org/10.5281/zenodo.23718985>
 
 ```bibtex
@@ -116,7 +116,7 @@ The University of Queensland. <https://doi.org/10.5281/zenodo.23718985>
   title        = {Sylva: terrestrial and airborne laser scanning processing
                   for forest ecology},
   year         = {2026},
-  version      = {1.0.0},
+  version      = {1.1.0},
   organization = {The University of Queensland},
   doi          = {10.5281/zenodo.23718985},
   url          = {https://github.com/UQ-EORC/Sylva}
