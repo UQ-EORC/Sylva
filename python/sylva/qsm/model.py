@@ -460,6 +460,11 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
     Leafy tips shorter than ``crop_length`` are not reconstructed. Run
     :func:`wood_points` first on leafy trees.
 
+    The skeleton (path-length shells clustered and chained), the stem taper
+    prior, the pipe-model rule, the radius smoothing, the axis ordering and
+    the butt straightening are adapted from the source of Arbor (J.-R.
+    Roussel, r-lidar; see ``THIRD_PARTY_NOTICES.md``).
+
     Parameters
     ----------
     cloud

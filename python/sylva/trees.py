@@ -361,7 +361,10 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
                   ground: str | np.ndarray | None = None, bridge: bool = True) -> np.ndarray:
     """Assign each point to a stem by least-cost path through a directed kNN
     graph (multi-source Dijkstra from stem seeds), after raycloudtools'
-    ``rayextract trees`` (Devereux et al. 2026).
+    ``rayextract trees`` (Devereux et al. 2026) and Arbor (J.-R. Roussel,
+    r-lidar), whose edge cost this is: the length power, the angle penalty
+    and its constants, and the wood / leaf factors are adapted from Arbor's
+    source (see ``THIRD_PARTY_NOTICES.md``).
 
     The edge cost is ``d ** power`` times an angle penalty
     ``min(exp(0.046 * deg_from_vertical), 100)`` -- climbing is free,

@@ -1,10 +1,14 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
+// `entropy`, `zpcum` and the set, names and formulas of the standard metrics
+// are adapted from lidR (Copyright 2016 Jean-Romain Roussel; GPL-3.0-or-later);
+// see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Area-based metrics of airborne lidar: the standard set of height,
-//! intensity and return metrics (Roussel et al. 2020) computed from heights
-//! above ground, on a grid over a whole catalogue ([`grid_metrics`]), for
+//! intensity and return metrics of lidR's `stdmetrics` (Roussel et al.
+//! 2020; names, formulas and binning rules adapted from its source,
+//! `R/metrics_stdmetrics.R`) computed from heights above ground, on a grid over a whole catalogue ([`grid_metrics`]), for
 //! plots ([`plot_metrics`]) or for one cloud ([`cloud_metrics`]).
 //!
 //! # Definitions

@@ -4,8 +4,9 @@
 # see the LICENSE file. There is no warranty, to the extent permitted by law.
 """Area-based metrics of airborne lidar: grids, plots and single clouds.
 
-The standard set follows the area-based metrics of Roussel et al. (2020):
-height statistics, quantiles, cumulative deciles and the normalised
+The standard set is that of lidR's ``stdmetrics`` (Roussel et al. 2020),
+whose names, formulas and binning rules are adapted from its source (see
+``THIRD_PARTY_NOTICES.md``): height statistics, quantiles, cumulative deciles and the normalised
 Shannon entropy of the heights, with intensity and return metrics, plus
 canopy cover and gap fraction from first returns. :func:`grid_metrics`
 computes them on a raster over a whole catalogue, chunk by chunk, so that

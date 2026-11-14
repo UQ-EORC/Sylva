@@ -315,8 +315,14 @@ package for analysis of Airborne Laser Scanning (ALS) data. *Remote Sensing of
 Environment*, *251*, 112061. <https://doi.org/10.1016/j.rse.2020.112061>
 In Sylva: the catalogue of tiles processed in buffered chunks that
 [`sylva.als`](api/als.md) follows, and the reference its DTMs and CHMs were
-checked against; the definitions of the area-based metrics of
-[`sylva.als.metrics`](api/als_metrics.md) (`stdmetrics`, `entropy`).
+checked against. Code adapted from lidR's source
+(<https://github.com/r-lidar/lidR>, GPL-3): the region growing
+`als.dalponte2016`, the decision logic of `als.li2012` and the rules of the
+local maximum filter in `als.locate_trees`, with lidR's parameter names and
+defaults; and in [`sylva.als.metrics`](api/als_metrics.md) the entropy
+index, the cumulative height percentages and the set, names and formulas of
+the standard metrics (`stdmetrics`). The copyright and licence notice is in
+`THIRD_PARTY_NOTICES.md`.
 
 Rusu, R. B., Marton, Z. C., Blodow, N., Dolha, M., & Beetz, M. (2008). Towards
 3D point cloud based object maps for household environments. *Robotics and
@@ -449,12 +455,16 @@ Zhang, K., Chen, S.-C., Whitman, D., Shyu, M.-L., Yan, J., & Zhang, C. (2003). A
 progressive morphological filter for removing nonground measurements from
 airborne LIDAR data. *IEEE Transactions on Geoscience and Remote Sensing*,
 *41*(4), 872–882. <https://doi.org/10.1109/TGRS.2003.810682>
-In Sylva: `ground.classify_ground_pmf`.
+In Sylva: `ground.classify_ground_pmf`, whose parameters and sequence of
+windows follow the approximate filter of the Point Cloud Library
+(<https://pointclouds.org>; notice in `THIRD_PARTY_NOTICES.md`).
 
 Zhang, W., Qi, J., Wan, P., Wang, H., Xie, D., Wang, X., & Yan, G. (2016). An
 easy-to-use airborne LiDAR data filtering method based on cloth simulation.
 *Remote Sensing*, *8*(6), 501. <https://doi.org/10.3390/rs8060501>
-In Sylva: `ground.classify_ground_csf`.
+In Sylva: `ground.classify_ground_csf`, whose update scheme and constants
+follow the authors' reference implementation (the qCSF plugin of
+CloudCompare; notice in `THIRD_PARTY_NOTICES.md`).
 
 ## Validation data
 
@@ -587,10 +597,18 @@ package* [Computer software]. Zenodo. <https://doi.org/10.5281/zenodo.6837613>
 In Sylva: the reference implementation (CC BY 4.0) that
 `leaves.classify_leaf_wood(method="gbs")` translates into Rust.
 
-arbor (J.-R. Roussel, r-lidar): tree segmentation and QSMs for point clouds;
-the idea of seeding the trunk surface rather than its axis in
-`trees.segment_trees` (`seed_ring`) came from it:
-<https://github.com/r-lidar/arbor>.
+Arbor (J.-R. Roussel, r-lidar): semantic and instance segmentation and
+quantitative structure models for mobile and terrestrial laser scanning
+[Computer software, GPL-3.0-or-later]. <https://github.com/r-lidar/arbor>.
+In Sylva: the reference implementation that parts of `sylva.trees` and
+`sylva.qsm` are adapted from. In `trees.segment_trees`, the directed edge
+cost (edge length to a power, the angle penalty and its constants, the wood
+/ leaf factors of `wood_costs`), the outline of the steps and the idea of
+seeding the trunk surface (`seed_ring`); in `qsm.build_qsm`, the skeleton,
+the stem taper prior, the pipe-model rule for unmeasured radii, the radius
+smoothing, the axis ordering and the butt straightening; in
+`qsm.wood_points`, the stages and most defaults of the filter. The copyright
+and licence notice is in `THIRD_PARTY_NOTICES.md`.
 
 Virtanen, P., Gommers, R., Oliphant, T. E., Haberland, M., Reddy, T.,
 Cournapeau, D., Burovski, E., Peterson, P., Weckesser, W., Bright, J., van der

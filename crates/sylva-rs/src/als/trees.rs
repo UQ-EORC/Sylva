@@ -1,12 +1,17 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
+// `dalponte2016`, the logic of `li2012` and the rules of the local maximum
+// filter are adapted from lidR (Copyright 2016 Jean-Romain Roussel; GPL-3.0-or-later);
+// see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Individual trees from airborne lidar: tree tops, crowns and labelled
 //! points, for one cloud or a whole catalogue.
 //!
-//! The algorithms are those collected by Roussel et al. (2020), whose
-//! implementations are followed line by line where the papers leave a
+//! The algorithms are those collected in lidR (Roussel et al. 2020).
+//! [`dalponte2016`] and the decision logic of [`li2012`] are translated from
+//! lidR's source (`src/C_dalponte2016.cpp`, `src/LAS.cpp`), and lidR's
+//! rules, parameter names and defaults are kept where the papers leave a
 //! detail open:
 //!
 //! - **Tree tops** ([`local_maxima_raster`], [`local_maxima_points`]): the

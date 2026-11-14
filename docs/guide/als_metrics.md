@@ -31,8 +31,8 @@ The metrics are computed from the heights above ground `z` of the
 returns kept (see [Heights](#heights)); `n` is their number and `m` their
 mean. The definitions are those of the standard height, intensity and
 return-number metrics and of the entropy index
-([Roussel et al. 2020](../references.md)), reimplemented from the published
-definitions.
+of lidR's `stdmetrics` ([Roussel et al. 2020](../references.md)), whose
+names, formulas and binning rules are adapted from its source.
 
 | Metric | Definition |
 |---|---|

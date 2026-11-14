@@ -9,7 +9,7 @@ description = "Terrestrial and airborne laser scanning processing for forest eco
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
-license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_LICENSES.md"]
 authors = [
     { name = "Tim Devereux", email = "devereux.tj@gmail.com" },
     { name = "Josh Rivory" },

@@ -2,8 +2,11 @@
 
 `sylva.als` finds individual trees in airborne lidar: their tops, their
 crowns, and which points belong to which tree, for one cloud or for a whole
-catalogue of tiles. The algorithms are the published ones (listed below),
-with the details the papers leave open fixed as described, and the
+catalogue of tiles. The algorithms are the published ones (listed below)
+as collected in lidR ([Roussel et al. 2020](../references.md)): the region
+growing of Dalponte and Coomes and the logic of the Li et al. segmentation
+are translated from lidR's source, and the details the papers leave open
+are fixed as lidR fixes them, as described. The
 catalogue runs through the same chunk engine as the rest of
 [`sylva.als`](als.md), so a crown that crosses a tile edge is found once and
 whole.

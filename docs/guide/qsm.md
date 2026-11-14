@@ -25,6 +25,11 @@ medium step is what recovers bark on big occluded stems (DBH rRMSE 12 %
 against 17 % without it) but on small leafy crowns it pulls foliage in
 around the stem; pass `medium_threshold=1.0` to skip it for saplings.
 
+The wood filter's stages and the cylinder stage described next (the
+skeleton, the stem taper prior, the pipe-model radii, the radius smoothing
+and the butt straightening) are adapted from the source of
+[Arbor](../references.md) (J.-R. Roussel, r-lidar).
+
 In the cylinder stage, points are binned into 10 cm geodesic
 shells from the base and clustered within each shell, the level-set skeleton
 of [Verroust and Lazarus (2000)](../references.md) and [Xu et al. (2007)](../references.md); cluster centres

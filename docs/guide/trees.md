@@ -98,7 +98,10 @@ multi-stemmed stands.
 
 `segment_trees` grows every tree from its stem over a kNN graph by least-cost
 paths, after raycloudtools' `rayextract trees`
-([Devereux et al. 2026](../references.md)).
+([Devereux et al. 2026](../references.md)) and
+[Arbor](../references.md) (J.-R. Roussel, r-lidar), from whose source the
+edge cost below (the length power, the angle penalty and the wood / leaf
+factors) is adapted.
 
 - **Cost.** Climbing is cheap, while horizontal and downward steps are
   expensive, so paths go up through a tree rather than across the

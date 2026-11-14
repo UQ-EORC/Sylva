@@ -1,5 +1,8 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
+// The outline of `segment_trees`, its edge cost and its wood mask are adapted
+// from Arbor (Copyright (C) 2026 Jean-Romain Roussel, r-lidar; GPL-3.0-or-later);
+// see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Tree-level processing: stem detection, DBH, segmentation, heights, crowns.
@@ -321,7 +324,9 @@ pub fn graph_nodes_masked(points: &[Point], heights: &[f64], p: &SegmentParams, 
 
 /// Assign points to the nearest stem by shortest path through a kNN graph
 /// (multi-source Dijkstra from stem seeds), after raycloudtools' `rayextract
-/// trees` (Devereux et al. 2026). Unreachable points get `-1`.
+/// trees` (Devereux et al. 2026) and Arbor (J.-R. Roussel, r-lidar), from
+/// whose source the edge cost and the outline of the steps are adapted.
+/// Unreachable points get `-1`.
 pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &SegmentParams) -> Vec<i64> {
     segment_trees_masked(points, heights, trees, p, None)
 }

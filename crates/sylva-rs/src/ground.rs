@@ -1,5 +1,9 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
+// `csf_ground_mask` follows the CSF authors' reference implementation (RAMM
+// laboratory, Beijing Normal University; GPL-2.0-or-later) and
+// `pmf_ground_mask` follows PCL's approximate progressive morphological filter
+// (BSD); see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Ground classification, DTM, height normalisation and CHM.

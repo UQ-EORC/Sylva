@@ -15,6 +15,15 @@ The PyPI *distribution* is `sylva-rs` but the *import* is `sylva`. An unrelated
 project already owns the name `sylva` on PyPI; it also installs a top-level
 `sylva` package, so the two cannot share an environment.
 
+## Before every release
+
+- Regenerate the licences of the compiled dependencies and commit the
+  result if it changed: `python scripts/third_party_licenses.py` (writes
+  `THIRD_PARTY_LICENSES.md`, which the wheels carry).
+- If code was written with another project's source as the reference since
+  the last release, check that `THIRD_PARTY_NOTICES.md` and the header of
+  the file say so, with that project's copyright and licence.
+
 ## One-time setup
 
 Both registries use trusted publishing (OpenID Connect from GitHub Actions), so

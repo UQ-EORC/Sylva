@@ -22,6 +22,10 @@ def wood_points(cloud: PointCloud, k: int = 20, threshold: float = 0.85,
     """Leaf / wood separation for one tree's points, returning the wood
     thinned to ``voxel_size``.
 
+    The stages and most defaults of the ``"passage"`` method are adapted
+    from the semantic segmentation of Arbor (J.-R. Roussel, r-lidar; see
+    ``THIRD_PARTY_NOTICES.md``).
+
     Two cues are combined. Local anisotropy -- planarity + linearity over
     ``k`` neighbours (and, with ``scale_radius`` > 0, again over that wider
     neighbourhood, the lower score counting: better leaf labels, but it

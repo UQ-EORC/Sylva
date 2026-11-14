@@ -196,6 +196,24 @@ The documentation is at [uq-eorc.github.io/Sylva](https://uq-eorc.github.io/Sylv
 
 Build the site with `pip install -e '.[docs]' && mkdocs serve`.
 
+## Acknowledgements
+
+Sylva builds on other people's software, and parts of it are adaptations of
+their code. The terrestrial tree segmentation and the quantitative structure
+models are adapted in part from [Arbor](https://github.com/r-lidar/arbor),
+and the airborne tree segmentation and area-based metrics from
+[lidR](https://github.com/r-lidar/lidR), both by Jean-Romain Roussel
+(r-lidar). The voxel module is a port of rayvoxel (Josh Rivory), which
+reimplements [AMAPVox](https://github.com/umr-amap/AMAPVox); other parts
+follow [raycloudtools](https://github.com/csiro-robotics/raycloudtools),
+GBSeparation, the CSF reference implementation, the Point Cloud Library and
+SciPy.
+[THIRD_PARTY_NOTICES.md](https://github.com/UQ-EORC/Sylva/blob/main/THIRD_PARTY_NOTICES.md)
+lists what was adapted from each, with their copyright and licence notices,
+and the
+[references](https://github.com/UQ-EORC/Sylva/blob/main/docs/references.md)
+give the methods to cite.
+
 ## Licence
 
 GNU General Public License v3.0 or later; see [LICENSE](LICENSE). Anything

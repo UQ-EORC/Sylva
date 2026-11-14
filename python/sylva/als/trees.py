@@ -5,8 +5,11 @@
 """Individual trees from airborne lidar: tree tops, crowns and labelled points.
 
 The functions are re-exported from :mod:`sylva.als` and follow the
-algorithms collected by Roussel et al. (2020), whose implementations are
-reproduced where the papers leave a detail open:
+algorithms collected in lidR (Roussel et al. 2020). The region growing of
+Dalponte and Coomes and the logic of the Li et al. segmentation are
+translated from lidR's source, and lidR's rules, parameter names and
+defaults are kept where the papers leave a detail open (see
+``THIRD_PARTY_NOTICES.md``):
 
 - :func:`locate_trees`: tree tops by the local maximum filter (``lmf``;
   Popescu and Wynne 2004) on a canopy height model or on points, with a
