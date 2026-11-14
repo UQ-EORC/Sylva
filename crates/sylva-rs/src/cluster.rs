@@ -53,6 +53,10 @@ struct EdgeCost<'a> {
 }
 
 impl EdgeCost<'_> {
+    /// Adapted from Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later): the edge cost
+    /// of `src/segment/GraphBuilder.cpp` and the constants of `src/api/arbor.h` (the
+    /// length power, `exp(0.046051 x degrees)` capped at 100, the wood / leaf
+    /// factors). Arbor looks the penalty up by rounded degree; this is continuous.
     #[inline]
     fn cost(&self, from: usize, to: usize) -> f64 {
         let d = crate::transform::sub(&self.points[to], &self.points[from]);

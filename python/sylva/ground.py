@@ -26,6 +26,9 @@ def classify_ground_csf(cloud: PointCloud, cloth_resolution: float = 0.5, rigidn
                         time_step: float = 0.65, return_mask: bool = False):
     """Classify ground with the Cloth Simulation Filter (Zhang et al. 2016).
 
+    The update scheme and constants follow the authors' reference
+    implementation (see ``THIRD_PARTY_NOTICES.md``).
+
     The cloud is turned upside down and a cloth is dropped onto it; points
     within ``class_threshold`` of the settled cloth are ground. The default
     for TLS plots; robust to understorey and moderate slopes.
@@ -72,6 +75,9 @@ def classify_ground_pmf(cloud: PointCloud, cell_size: float = 0.5, max_window: f
                         slope: float = 0.3, initial_distance: float = 0.15,
                         max_distance: float = 2.0, return_mask: bool = False):
     """Classify ground with the Progressive Morphological Filter (Zhang et al. 2003).
+
+    The parameters and the sequence of windows follow the approximate
+    filter of the Point Cloud Library (see ``THIRD_PARTY_NOTICES.md``).
 
     Opens a minimum-height grid with growing windows; points close to the
     opened surface are ground. Faster than CSF but less robust under dense

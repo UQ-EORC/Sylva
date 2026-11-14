@@ -352,6 +352,10 @@ pub fn segment_trees(points: &[Point], heights: &[f64], trees: &[Tree], p: &Segm
 /// graph and left unassigned (-1): pass the ground classification, and set
 /// `cut_above_ground` to 0, to label stems down to the last point above the
 /// ground rather than to a fixed height above it.
+///
+/// The outline of the steps (cut above the ground, thin, directed graph,
+/// multi-source shortest paths, nearest-node label transfer) is adapted from
+/// Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later), `src/segment/segment_instance_api.cpp`.
 pub fn segment_trees_masked(points: &[Point], heights: &[f64], trees: &[Tree], p: &SegmentParams, exclude: Option<&[bool]>) -> Vec<i64> {
     let task = crate::util::progress::start("segmenting trees", 3);
     let work_idx = graph_nodes_masked(points, heights, p, exclude);
@@ -434,6 +438,10 @@ impl FlatGrid {
 /// (at least 2 m). The seed nodes are those on the bark ring: distance from
 /// the stem axis within `seed_radius` of half the DBH (of the axis itself
 /// without `seed_ring`), at any height below `seed_height + 0.5`.
+///
+/// Seeding the trunk surface rather than its axis is the idea of the seed cage
+/// of Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later), `src/seed/SeedDetector_cage.cpp`; the
+/// implementation here (real nodes on the bark shell as free sources) is Sylva's.
 pub fn collect_seeds(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentParams) -> Seeds {
     let mut out = Seeds { seeds: Vec::new(), seed_tree: Vec::new(), seed_xy: Vec::new(), seed_scale: Vec::new() };
     if trees.is_empty() || work.is_empty() {
@@ -484,6 +492,8 @@ pub fn collect_seeds(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentPara
 /// each node most cheaply, -1 for nodes no seed reaches and for those the
 /// understorey claims. Nothing is thinned here.
 pub fn segment_nodes(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentParams) -> Vec<i64> {
+// The anisotropy wood mask (`(l3 - l1) / l3` above 0.9) is adapted from
+// Arbor, `src/utils/anisotopy.cpp`.
     let wood: Option<Vec<bool>> = if p.wood_costs {
         let (_, vals) = crate::filters::local_pca(work, p.wood_k);
         Some(vals.iter().map(|[l1, _, l3]| *l3 > 1e-14 && (l3 - l1) / l3 > p.wood_threshold).collect())

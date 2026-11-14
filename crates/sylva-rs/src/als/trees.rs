@@ -196,6 +196,9 @@ fn site_window(window: &Window, i: usize, h: f64) -> Result<f64> {
 /// lies in its window is higher; NaN cells take no part. Cell centre offsets
 /// are whole numbers of cells, so the windows do not depend on where the
 /// raster starts.
+///
+/// The rules follow the point filter of lidR (J.-R. Roussel et al.; GPL-3) (see
+/// [`local_maxima_points`]), applied to cells.
 pub fn local_maxima_raster(chm: &Raster, window: &Window, hmin: f64, shape: Shape) -> Result<Vec<usize>> {
     window.check()?;
     if let Window::PerSite(v) = window {
@@ -359,6 +362,10 @@ impl Buckets {
 /// points at or above `hmin` with no higher point in their window, in
 /// order of x, then y (then index). `h` is the height of each point; points
 /// with a non-finite coordinate or height take no part.
+///
+/// The rules (half-window `ws / 2`, strict comparison, candidates at or above
+/// `hmin`, an accepted maximum wins among equals) follow lidR (J.-R. Roussel et al.; GPL-3),
+/// `src/LAS.cpp` and `R/algorithm-itd.R`.
 pub fn local_maxima_points(xy: &[[f64; 2]], h: &[f64], window: &Window, hmin: f64, shape: Shape) -> Result<Vec<usize>> {
     window.check()?;
     if xy.len() != h.len() {
@@ -560,6 +567,9 @@ impl Dalponte {
 /// added, counting a cell each time it is claimed. Sweeps
 /// repeat until nothing grows. NaN cells are `-inf`. Returns an id per
 /// cell, 0 for none.
+///
+/// Translated from lidR (J.-R. Roussel et al.; GPL-3), `src/C_dalponte2016.cpp`
+/// (Copyright 2016 Jean-Romain Roussel).
 pub fn dalponte2016(chm: &Raster, seeds: &[u32], p: &Dalponte) -> Result<Vec<u32>> {
     p.check()?;
     if seeds.len() != chm.data.len() {
@@ -752,6 +762,10 @@ impl NearSet {
 /// when the highest point left is lower than `hmin`. Returns the tree of
 /// each point (1, 2, ... in the order found), 0 for none; the first point
 /// of each tree in that order is its top.
+///
+/// The decision logic, the local-maximum pre-pass and the `hmin` and `speed_up`
+/// additions are translated from lidR (J.-R. Roussel et al.; GPL-3), `src/LAS.cpp`;
+/// the spatial indexing and the tie-breaks are Sylva's.
 pub fn li2012(xy: &[[f64; 2]], h: &[f64], p: &Li2012) -> Result<Vec<u32>> {
     p.check()?;
     if xy.len() != h.len() {

@@ -135,6 +135,11 @@ pub struct WoodScores {
 }
 
 /// [`wood_mask`] with the anisotropy and passage share of every point.
+///
+/// The stages (path passage, assignment, high-likelihood components, medium
+/// likelihood with outlier removal, dilation) and most defaults are adapted
+/// from Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later),
+/// `src/segment/segment_semantic_api.cpp`.
 pub fn wood_scores(points: &[Point], p: &WoodParams) -> WoodScores {
     let n = points.len();
     if n == 0 {

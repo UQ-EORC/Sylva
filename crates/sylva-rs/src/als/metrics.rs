@@ -147,6 +147,9 @@ fn z_probs() -> impl Iterator<Item = (usize, f64)> {
 const I_PROBS: [(usize, f64); 5] = [(10, 0.1), (30, 0.3), (50, 0.5), (70, 0.7), (90, 0.9)];
 
 /// Names of the metrics, in the order [`compute`] gives them.
+///
+/// The set of metrics and their names are those of lidR (J.-R. Roussel et al.; GPL-3),
+/// `stdmetrics` in `R/metrics_stdmetrics.R`.
 pub fn metric_names(avail: Available, params: &MetricParams) -> Vec<String> {
     let mut v: Vec<String> = ["n", "zmax", "zmean", "zsd", "zskew", "zkurt", "zentropy", "pzabovezmean"].iter().map(|s| s.to_string()).collect();
     v.push(format!("pzabove{}", params.threshold));
@@ -248,6 +251,9 @@ fn interval_counts(z: &[f64], breaks: &[f64]) -> Vec<f64> {
 /// `ceil(zmax / by) * by`, divided by that of a uniform distribution over the
 /// same bins. NaN when `zmax < 2 by` or a height is negative. `z` sorted
 /// ascending.
+///
+/// Adapted from lidR (J.-R. Roussel et al.; GPL-3), `entropy` in
+/// `R/metrics_stdmetrics.R`.
 pub fn entropy(z: &[f64], by: f64) -> f64 {
     let (Some(&lo), Some(&zmax)) = (z.first(), z.last()) else { return f64::NAN };
     if zmax < 2.0 * by || lo < 0.0 {
@@ -264,6 +270,9 @@ pub fn entropy(z: &[f64], by: f64) -> f64 {
 
 /// Cumulative height deciles `zpcum1` .. `zpcum9`: percentage of the returns
 /// in `[0, zmax)` that lie in its lowest 1 .. 9 tenths. `z` sorted ascending.
+///
+/// Adapted from lidR (J.-R. Roussel et al.; GPL-3), `stdmetrics_z` in
+/// `R/metrics_stdmetrics.R`.
 fn zpcum(z: &[f64]) -> [f64; 9] {
     let zmax = *z.last().expect("non-empty");
     if zmax <= 0.0 {
@@ -288,6 +297,9 @@ fn percent(count: usize, n: usize) -> f64 {
 
 /// Every metric of [`metric_names`] for these returns (put in canonical
 /// order first). With no returns, `n` is 0 and everything else NaN.
+///
+/// The formulas follow lidR (J.-R. Roussel et al.; GPL-3), `stdmetrics_z`, `_i` and
+/// `_rn` in `R/metrics_stdmetrics.R`; the single sorted pass is Sylva's.
 pub fn compute(returns: &mut [Return], avail: Available, params: &MetricParams) -> Vec<f64> {
     let len = metric_count(avail);
     let n = returns.len();

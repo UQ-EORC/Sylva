@@ -67,6 +67,11 @@ impl Default for CsfParams {
 /// `cloth_resolution`, `class_threshold` or `time_step` that is not a
 /// finite number, with the first and last positive and the threshold not
 /// negative.
+///
+/// The update scheme and constants (gravity 0.2 x time step squared, damping
+/// 0.99, pinning on contact, the cloth-to-point distance test) follow the CSF
+/// authors' reference implementation (W. Zhang, J. Qi, P. Wan, H. Wang;
+/// Apache-2.0 as the CSF library, GPL-2.0-or-later in CloudCompare's qCSF).
 pub fn csf_ground_mask(points: &[Point], p: &CsfParams) -> Result<Vec<bool>> {
     let res = p.cloth_resolution;
     if !(res.is_finite() && res > 0.0) {
@@ -242,6 +247,9 @@ impl Default for PmfParams {
 /// `cell_size` or `max_window` that is not a positive, finite number;
 /// `slope`, `initial_distance` or `max_distance` that is negative or not
 /// finite; or no point with finite coordinates.
+///
+/// The parameters and the sequence of windows and thresholds follow the
+/// `ApproximateProgressiveMorphologicalFilter` of the Point Cloud Library (BSD).
 pub fn pmf_ground_mask(points: &[Point], p: &PmfParams) -> Result<Vec<bool>> {
     for (name, v, strict) in [("cell_size", p.cell_size, true), ("max_window", p.max_window, true), ("slope", p.slope, false), ("initial_distance", p.initial_distance, false), ("max_distance", p.max_distance, false)] {
         if !v.is_finite() || v < 0.0 || (strict && v == 0.0) {

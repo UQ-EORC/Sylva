@@ -135,6 +135,9 @@ def cloud_metrics(cloud: PointCloud, height=None, threshold: float = 2.0,
                   clamp_negative: bool = False) -> dict[str, float]:
     """The standard metrics of one cloud.
 
+    The set, its names and its formulas are adapted from lidR's
+    ``stdmetrics`` (Roussel et al. 2020; GPL-3).
+
     Parameters
     ----------
     cloud

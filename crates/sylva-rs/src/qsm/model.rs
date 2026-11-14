@@ -527,6 +527,12 @@ fn subgraph_components(graph: &Graph, members: &[usize]) -> Vec<usize> {
 /// Graph-based skeleton of a single tree: level sets of geodesic distance
 /// from the base, split into connected pieces (Verroust & Lazarus 2000;
 /// Xu et al. 2007).
+///
+/// The skeleton is adapted from Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later),
+/// `src/qsm/QSMbuilder.cpp`, `QSMbuilder_cluster.cpp` and
+/// `QSMbuilder_skeleton.cpp`: path-length shells clustered per shell, circle
+/// centres for well-populated clusters, and chains grown from the lowest
+/// centre to the nearest centre of a higher shell. The graph is Sylva's.
 pub fn skeletonize(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParams) -> Result<Skeleton> {
     if xyz.is_empty() {
         return Err(Error::invalid("empty cloud"));
@@ -689,6 +695,9 @@ pub fn skeletonize(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParams) -> R
 
 /// Order / branch labels and root-to-tip chains: at every node the child with
 /// the largest `key` continues its parent's axis, the rest start new axes.
+///
+/// The ordering (highest subtree top first, then subtree volume) is adapted
+/// from Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later), `src/qsm/QSMbuilder_architecture.cpp`.
 fn assign_axes(n_seg: usize, topo: &[usize], roots: &[usize], children: &[Vec<usize>], key: &[(f64, f64)]) -> (Vec<u32>, Vec<u32>, Vec<Vec<usize>>, Vec<usize>) {
     let mut order = vec![0u32; n_seg];
     let mut branch = vec![0u32; n_seg];
@@ -745,6 +754,12 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
 /// each section's radius then comes from the weighted circle fit of
 /// [`super::weighted::section_fit`], and an unmeasured leaf segment is pruned
 /// as foliage when its summed weight is below `prune_points`.
+///
+/// The stem taper prior, the pipe-model rule for unmeasured radii and the
+/// Taubin smoothing of centres and radii are adapted from
+/// Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later): `src/qsm/QSMbuilder_radius.cpp`,
+/// `QSMbuilder_pipemodel.cpp`, `QSMbuilder_smooth.cpp` and
+/// `src/fitting/fitting_polynomial.cpp` (marked where they occur below).
 pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, weights: Option<&[f64]>) -> Result<Qsm> {
     let n_seg = skel.centres.len();
     if n_seg == 0 {
@@ -770,6 +785,7 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
         stack.extend(children[s].iter().copied());
     }
 
+// (Adapted from Arbor, `src/qsm/QSMbuilder_smooth.cpp`.)
     // 1. Taubin-smooth centres along chains (Taubin 1995; lambda 0.5,
     // mu -0.53), with roots and tips pinned so the chain does not shrink.
     let pinned: Vec<bool> = (0..n_seg).map(|s| !parent_of.contains_key(&s) || children[s].is_empty()).collect();
@@ -947,6 +963,8 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
     } else {
         fits.iter().filter_map(|f| f.map(|(r, ..)| r)).fold(0.0, f64::max).max(p.apex_radius * 4.0)
     };
+// The conic stem prior and the quadratic fit that follows are adapted from
+// Arbor, `src/qsm/QSMbuilder_radius.cpp` and `src/fitting/fitting_polynomial.cpp`.
     let allo = |s: usize| -> f64 { p.apex_radius + (sub_len[s] / w0).clamp(0.0, 1.0).powf(1.1) * (r0 - p.apex_radius) };
     // Axes: at each node the child with the
     // highest subtree top continues the axis (ties: longest subtree); the
@@ -1088,6 +1106,8 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
         let s_a = sub_len[par];
         let sibs = &children[par];
         let measured = sibs.iter().filter(|&&c| fits[c].is_some()).count();
+// The fork test and the two radius rules below are adapted from Arbor,
+// `src/qsm/QSMbuilder_pipemodel.cpp`.
         let is_fork = sibs.len() - measured > 1 || measured > 0;
         let est = if !r_a.is_finite() || s_a <= 0.0 {
             p.apex_radius
@@ -1145,6 +1165,7 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
             }
         }
     }
+// (Adapted from Arbor, `src/qsm/QSMbuilder_smooth.cpp`.)
     // Taubin-smooth radii along each axis (lambda 0.5,
     // mu -0.7), ends pinned, floored at half the chain minimum.
     for chain in &chains {
@@ -1325,6 +1346,10 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
 /// replace that part by a straight vertical stump down to the base height,
 /// flaring 1 % per shell. Branches that hung off the removed part reattach
 /// to the stump top.
+///
+/// Adapted from Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later),
+/// `src/qsm/QSMbuilder_butt.cpp` and `QSMbuilder_prolongation.cpp` (window,
+/// lean limit and stump flare).
 fn straighten_butt(qsm: &mut Qsm, p: &QsmParams) {
     let cyl = &qsm.cylinders;
     let Some(root) = cyl.iter().position(|c| c.parent < 0 && c.branch_order == 0) else { return };
@@ -1398,6 +1423,10 @@ pub(super) const BINS: usize = 72;
 /// (area = 1/2 int r^2 dtheta = pi (c0^2 + 1/2 sum a_k^2 + b_k^2)). Medians
 /// rather than the outermost point per bin keep arm tips and noise from
 /// inflating the section.
+///
+/// The use of a Fourier contour for large sections and its thresholds follow
+/// Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later), `src/qsm/QSMbuilder_radius.cpp` and
+/// `src/fitting/fitting_fourier.cpp`; the numerics here are Sylva's.
 pub(super) fn fourier_area_radius(xy: &[[f64; 2]], cx: f64, cy: f64, min_filled: usize) -> Option<f64> {
     const HARMONICS: usize = 10;
     let mut bins: Vec<Vec<f64>> = vec![Vec::new(); BINS];

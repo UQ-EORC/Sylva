@@ -303,6 +303,10 @@ pub(crate) fn angular_coverage(xy: &[[f64; 2]], cx: f64, cy: f64) -> (f64, f64) 
 /// As [`angular_coverage`], with the arc allowed to run across up to `gap`
 /// empty bins in a row (the bins it crosses count towards its length; empty
 /// bins at either end do not).
+///
+/// The measure (36 ten-degree bins, longest occupied run with wrap-around) is
+/// adapted from Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later),
+/// `src/fitting/fitting_orbicular.cpp`; the bridging of empty bins is Sylva's.
 fn angular_coverage_bridged(xy: &[[f64; 2]], cx: f64, cy: f64, gap: usize) -> (f64, f64) {
     const BINS: usize = 36;
     let mut seen = [false; BINS];
