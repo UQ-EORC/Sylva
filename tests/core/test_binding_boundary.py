@@ -70,6 +70,8 @@ def test_masks_refuse_fortran_ordered_coordinates(xyz):
         lambda x, h, lab, t: _core.dbh_profile(x, h[:100], 2.5, 2.5, np.array([1.3])),
         lambda x, h, lab, t: _core.segment_trees(x, h[:100], t),
         lambda x, h, lab, t: _core.merge_branches(x, h[:100], t),
+        lambda x, h, lab, t: _core.merge_touching(x, h[:100], lab, t),
+        lambda x, h, lab, t: _core.merge_touching(x, h, lab[:100], t),
         lambda x, h, lab, t: _core.tree_heights(h, lab[:100], t),
         lambda x, h, lab, t: _core.tree_heights(h[:100], lab, t),
         lambda x, h, lab, t: _core.crown_metrics(x, h[:100], lab, 0),
@@ -77,7 +79,8 @@ def test_masks_refuse_fortran_ordered_coordinates(xyz):
         lambda x, h, lab, t: _core.crown_metrics_all(x, h[:100], lab),
         lambda x, h, lab, t: _core.crown_metrics_all(x, h, lab[:100]),
     ],
-    ids=["make_chm", "stem_root_support", "dbh_profile", "segment_trees", "merge_branches", "tree_heights-labels",
+    ids=["make_chm", "stem_root_support", "dbh_profile", "segment_trees", "merge_branches", "merge_touching-heights",
+         "merge_touching-labels", "tree_heights-labels",
          "tree_heights-heights", "crown_metrics-heights", "crown_metrics-labels", "crown_metrics_all-heights",
          "crown_metrics_all-labels"],
 )

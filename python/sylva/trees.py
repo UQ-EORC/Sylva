@@ -16,7 +16,7 @@ from .pointcloud import PointCloud
 __all__ = [
     "Tree", "fit_circle", "fit_circle_ransac", "detect_stems", "prune_trees", "basal_area",
     "dbh_profile",
-    "merge_branches", "segment_trees", "tree_heights", "crown_metrics", "crown_metrics_all",
+    "merge_branches", "segment_trees", "merge_touching", "tree_heights", "crown_metrics", "crown_metrics_all",
     "convex_hull_area", "crown_shape", "detect_buttress",
 ]
 
@@ -271,6 +271,99 @@ def prune_trees(trees: list[Tree], labels: np.ndarray, min_height: float = 3.0,
         t.extra = dict(trees[i].extra)
         out.append(t)
     return out, out_labels
+
+
+def merge_touching(cloud: PointCloud, labels: np.ndarray, trees: list[Tree], threshold: float = 0.1,
+                   voxel_size: float = 0.05, reach: float = 0.1, min_height: float = 0.5,
+                   min_top: float = 3.0, neighbours: int = 8,
+                   height_attr: str = "height") -> tuple[list[Tree], np.ndarray, np.ndarray]:
+    """Merge segmented trees that lie against a larger neighbour.
+
+    :func:`detect_stems` favours recall, so some candidates are not trees of
+    their own: a second circle on a wide trunk, a low fork, a whorl of
+    branches fitted as a stem. :func:`segment_trees` grows each like any
+    other stem and it comes away holding a piece of its parent's crown.
+    Such a piece lies against the parent along much of its extent, whereas
+    two separate trees touch only where their crowns meet.
+
+    The labelled points at or above ``min_height`` are thinned to one node
+    per ``voxel_size`` voxel. A node of one tree *touches* another tree when
+    one of its ``neighbours`` nearest nodes, no farther than ``reach``,
+    belongs to that tree. Of all pairs of trees, the one in which the largest
+    share of the smaller tree's nodes touch the larger is merged first, if
+    that share is at least ``threshold``; the merged tree keeps the larger
+    one's id, and its contacts with the other trees are those of both. This
+    repeats until no pair reaches the threshold.
+
+    Call it after :func:`segment_trees` and before :func:`tree_heights` and
+    :func:`prune_trees`, so that a merged piece adds to its tree's height
+    and point count:
+
+    >>> labels = trees.segment_trees(cloud, stems)                    # doctest: +SKIP
+    >>> stems, labels, _ = trees.merge_touching(cloud, labels, stems)  # doctest: +SKIP
+    >>> trees.tree_heights(cloud, labels, stems)                      # doctest: +SKIP
+    >>> stems, labels = trees.prune_trees(stems, labels)              # doctest: +SKIP
+
+    Measured as paired runs against the same pipeline without it, a
+    threshold of 0.1 removed spurious trees and lost none in any run on the
+    four reference plots of the tree benchmark, on two plots held out of all
+    tuning, on eight simulated plots and on the reference plots thinned to
+    5 cm; lower thresholds remove more and begin to merge real neighbours
+    (*Benchmarks > Tree detection*). On the coppiced reference plot, where
+    stems that share a stool are separate trees, none was merged at 0.1.
+
+    Parameters
+    ----------
+    cloud
+        The height-normalised cloud that was segmented.
+    labels
+        ``tree_id`` per point from :func:`segment_trees` (-1 unassigned).
+    trees
+        The stems the labels refer to.
+    threshold
+        Share (0 to 1) of the smaller tree's nodes that must touch the larger
+        for the two to be merged. 0 merges nothing.
+    voxel_size
+        Spacing of the thinned cloud the contact is measured on (m), so that
+        the share does not depend on the point density.
+    reach
+        Greatest distance (m) between two nodes that touch.
+    min_height
+        Points below this height above ground (m) are left out: near the
+        ground every tree keeps a disc of litter and grass about its stem
+        (``low_radius`` of :func:`segment_trees`), and neighbouring discs
+        touch whatever the trees do.
+    min_top
+        Two trees are merged only if the highest point of each is at least
+        this high (m above ground). Low clumps that touch a trunk are mostly
+        shrubs and saplings: left alone they are dropped by
+        :func:`prune_trees`, merged they would add understorey to the tree.
+        Keep it at the ``min_height`` you prune with.
+    neighbours
+        Nearest nodes examined about each node (count).
+    height_attr
+        Attribute holding heights.
+
+    Returns
+    -------
+    trees : list of Tree
+        The trees that remain, in their input order and otherwise unchanged
+        (the same objects; run :func:`tree_heights` to update ``height`` and
+        ``n_points``).
+    labels : numpy.ndarray
+        Labels with the points of every merged tree given the id of the
+        tree it joined.
+    merged_into : numpy.ndarray
+        For every input tree, the id it now belongs to (its own if it
+        remains).
+    """
+    h = np.ascontiguousarray(cloud.heights(height_attr), dtype=np.float64)
+    _, out, merged = _core.merge_touching(cloud.xyz, h, np.ascontiguousarray(labels, dtype=np.int64),
+                                          [t._to_core() for t in trees], float(threshold), float(voxel_size),
+                                          float(reach), float(min_height), int(neighbours), float(min_top))
+    merged = np.asarray(merged)
+    kept = [t for t, m in zip(trees, merged) if int(m) == t.tree_id]
+    return kept, out, merged
 
 
 def basal_area(trees, area: float, min_dbh: float = 0.0) -> float:

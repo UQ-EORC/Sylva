@@ -121,9 +121,9 @@ those read ESRI ASCII grids only.
 
 ### `trees`
 
-`sylva trees INPUT [-o CSV] [--min-dbh 0.05] [--min-height 3.0] [--min-slenderness 0] [--min-quality-short 0] [--short-slices 4] [--segment PATH] [--voxel 0.03] [--angle-rate 0.046]`
+`sylva trees INPUT [-o CSV] [--min-dbh 0.05] [--min-height 3.0] [--min-slenderness 0] [--min-quality-short 0] [--short-slices 4] [--segment PATH] [--voxel 0.03] [--angle-rate 0.046] [--merge-touching 0.1]`
 
-Runs detection, segmentation, heights, pruning and crown metrics on a
+Runs detection, segmentation, merging of touching trees, heights, pruning and crown metrics on a
 height-normalised cloud and writes one CSV row per tree: `tree_id`, `x`,
 `y`, `dbh`, `height`, quality columns and the crown metrics. Without `-o` the
 CSV is written beside the input as `<input>_trees.csv`; `-o -` prints it to
@@ -133,7 +133,11 @@ graph of a 2 cm plot and is what a plot of a few hundred million points
 needs to fit in memory. `--angle-rate` sets how much a sideways step costs
 in the segmentation; 0.023 divides crowns better on plots scanned densely
 from many positions, and the default is the safer choice for sparse or
-heavily occluded ones (see [Trees](trees.md)).
+heavily occluded ones (see [Trees](trees.md)). `--merge-touching` is the
+share of a tree's points that must lie within 10 cm of a larger neighbour
+for the two to be merged after segmentation: a stem that is really part of
+another tree holds a piece of that tree's crown and lies against it. Trees
+lower than `--min-height` are not merged. 0 turns the step off.
 `--min-slenderness 10` drops stems wider than 0.2 m that are less than ten
 times as tall as they are wide: understorey clumps and stumps fitted as
 stems, which in a savanna with dense regrowth can outnumber the trees.

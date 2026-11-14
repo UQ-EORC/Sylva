@@ -166,6 +166,9 @@ def _cmd_trees(args):
     _heights_warning(cloud, args.input)
     found = trees.detect_stems(cloud, min_radius=args.min_dbh / 2)
     labels = trees.segment_trees(cloud, found, voxel_size=args.voxel, angle_rate=args.angle_rate)
+    if args.merge_touching > 0:
+        found, labels, _ = trees.merge_touching(cloud, labels, found, threshold=args.merge_touching,
+                                                min_top=args.min_height)
     trees.tree_heights(cloud, labels, found)
     found, labels = trees.prune_trees(found, labels, min_height=args.min_height,
                                       min_slenderness=args.min_slenderness,
@@ -553,6 +556,10 @@ def main(argv=None):
                    help="rate of the segmentation's angle penalty per degree from vertical (the default makes "
                         "a horizontal step cost 63 times a vertical one; 0.023, 8 times, divides crowns "
                         "better on plots scanned densely from many positions)")
+    s.add_argument("--merge-touching", type=float, default=0.1, metavar="SHARE",
+                   help="after segmenting, merge a tree into a larger neighbour when at least this share of "
+                        "its points lies within 10 cm of it (a stem that is part of another tree holds a "
+                        "piece of that tree's crown); 0 turns the step off")
     s.set_defaults(func=_cmd_trees)
 
     s = sub.add_parser("chm", help="canopy height model from a height-normalised cloud", **fmt)

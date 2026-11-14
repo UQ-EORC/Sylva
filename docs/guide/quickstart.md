@@ -16,6 +16,7 @@ cloud = ground.normalize_height(cloud, dtm)        # adds height attribute
 
 stems = trees.detect_stems(cloud)                  # DBH from 1.3 m slices
 labels = trees.segment_trees(cloud, stems)         # tree_id per point
+stems, labels, _ = trees.merge_touching(cloud, labels, stems)   # stems that are part of another tree
 trees.tree_heights(cloud, labels, stems)
 stems, labels = trees.prune_trees(stems, labels)   # drop understorey clumps, merge duplicates
 crowns = trees.crown_metrics_all(cloud, labels)

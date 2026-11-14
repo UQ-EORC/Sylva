@@ -2,10 +2,12 @@
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Bindings for pruning tree lists, basal area and buttress detection.
+//! Bindings for pruning tree lists, merging trees that touch, basal area
+//! and buttress detection.
 //!
 //! Backs sylva.trees (also used by sylva.qsm.plot, sylva.als.tiles_trees and
-//! the CLI) with sylva_rs::trees::prune and sylva_rs::qsm::buttress_detect.
+//! the CLI) with sylva_rs::trees::prune, sylva_rs::trees::touch and
+//! sylva_rs::qsm::buttress_detect.
 //! Tree lists cross as lists of dicts via `crate::trees_from_py` and
 //! `crate::tree_to_py`, points as `(N, 3)` arrays, results as new arrays or
 //! dicts; core errors become ValueError via `crate::err`.
@@ -16,6 +18,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use sylva_rs::qsm::buttress_detect as bd;
 use sylva_rs::trees::prune as tp;
+use sylva_rs::trees::touch as tt;
 
 use crate::{err, tree_to_py, trees_from_py, xyz_from_py};
 
@@ -32,6 +35,26 @@ fn prune_trees<'py>(py: Python<'py>, trees_list: &Bound<'_, PyList>, labels: PyR
         list.append((*i, tree_to_py(py, tr)?))?;
     }
     Ok((list, lab.into_pyarray(py)))
+}
+
+/// Trees left after merging those that lie against a larger neighbour, the
+/// new labels, and for every input tree the id it now belongs to.
+#[pyfunction]
+#[pyo3(signature = (xyz, heights, labels, trees_list, threshold=0.1, voxel_size=0.05, reach=0.1, min_height=0.5, neighbours=8, min_top=3.0))]
+fn merge_touching<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, labels: PyReadonlyArray1<i64>, trees_list: &Bound<'_, PyList>, threshold: f64, voxel_size: f64, reach: f64, min_height: f64, neighbours: usize, min_top: f64) -> PyResult<(Bound<'py, PyList>, Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>)> {
+    let p = xyz_from_py(xyz)?;
+    let (h, l) = (crate::slice_from_py(&heights), crate::slice_from_py(&labels));
+    let (h, l) = (&*h, &*l);
+    crate::same_len("heights", h.len(), p.len())?;
+    crate::same_len("labels", l.len(), p.len())?;
+    let t = trees_from_py(trees_list)?;
+    let params = tt::TouchParams { threshold, voxel_size, reach, min_height, neighbours, min_top };
+    let (kept, lab, into) = py.detach(|| tt::merge_touching(&p, h, l, &t, &params)).map_err(err)?;
+    let list = PyList::empty(py);
+    for tr in &kept {
+        list.append(tree_to_py(py, tr)?)?;
+    }
+    Ok((list, lab.into_pyarray(py), into.into_pyarray(py)))
 }
 
 #[pyfunction]
@@ -68,7 +91,7 @@ fn detect_buttress<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: Py
 
 /// Adds this file's functions to the `_core` module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    for f in [wrap_pyfunction!(prune_trees, m)?, wrap_pyfunction!(basal_area, m)?, wrap_pyfunction!(count_ridges, m)?, wrap_pyfunction!(detect_buttress, m)?] {
+    for f in [wrap_pyfunction!(prune_trees, m)?, wrap_pyfunction!(merge_touching, m)?, wrap_pyfunction!(basal_area, m)?, wrap_pyfunction!(count_ridges, m)?, wrap_pyfunction!(detect_buttress, m)?] {
         m.add_function(f)?;
     }
     Ok(())

@@ -27,7 +27,9 @@ fraction of a voxel, with its points in another order, and rotated by 30°
 (next section). *Understorey taken* is the share of the points between 0.1
 and 2 m that lie on no reference tree and carry a tree label all the same
 (lower is better; [below](#what-the-scores-cannot-see)). The raycloudtools
-column is one run, scored the same way.
+column is one run, scored the same way. The table is without
+`trees.merge_touching`, which `sylva trees` runs after segmentation and
+which adds 0.001 to 0.007 to these figures ([below](#merging-trees-that-touch)).
 
 Earlier versions of this page gave one run with a 5 cm graph: 0.964, 0.591,
 0.864 and 0.594. Those figures reproduce exactly, and as four-run means the
@@ -275,6 +277,78 @@ both on the reference plots themselves:
   re-decide a band around the cheapest-path boundaries it did less harm
   the narrower the band (−0.12 to −0.02), and in the narrowest it still
   cost Robson Creek 0.020 in each of four runs.
+
+## Merging trees that touch
+
+`trees.merge_touching` runs after segmentation. Detection favours recall,
+and a candidate that is really part of another tree (a second circle on a
+wide trunk, a low fork, a whorl of branches fitted as a stem) is grown like
+any other stem and comes away with a piece of its parent's crown. The oracle
+test above put the ceiling of removing such stems at 0.02 to 0.05 F1; what
+was missing was a way to know them without the reference. Their piece of
+crown gives them away: it lies against the parent along much of its extent,
+where two separate trees touch only at the edge of their crowns. The step
+thins the labelled points above 0.5 m to 5 cm, takes for each pair of trees
+the share of the smaller one's points that have a point of the larger
+within 10 cm, and merges the smaller into the larger while that share
+reaches a threshold, largest share first. Only trees that reach 3 m take
+part.
+
+Each figure is F1 with trees under 3 m pruned, as paired runs against the
+same pipeline without the step:
+
+| Data (runs) | without | threshold 0.10 | 0.08 | 0.06 |
+|---|---|---|---|---|
+| Litchfield (7) | 0.976 | 0.977 | 0.977 | 0.977 |
+| Robson Creek (7) | 0.653 | 0.654 | 0.657 | 0.662 |
+| Wytham (7) | 0.852 | 0.859 | 0.860 | 0.862 |
+| Ofental (7) | 0.641 | 0.648 | 0.659 | 0.688 |
+| Gingin banksia woodland, 291 trees (2) | 0.671 | 0.691 | 0.704 | 0.722 |
+| Great Western Woodlands, 16 trees (2) | 0.660 | 0.675 | 0.682 | 0.682 |
+| the four reference plots thinned to 5 cm (mean, 3 each) | 0.765 | 0.768 | 0.769 | 0.773 |
+| eight simulated plots (mean) | 0.721 | 0.725 | 0.727 | 0.732 |
+| runs below the pipeline without it, of 52 | | none | 1 (one tree lost) | 1 (two trees lost) |
+
+At 0.10, the default, no run on any data set is below the same run
+without the step, and no reference tree is lost in any of them: the gain
+is spurious trees removed, 77.3 → 76.6 at Robson Creek, 18.9 → 16.1 at
+Wytham, 42.7 → 40.7 at Ofental and 194 → 174 at Gingin, by merging two to
+seven trees a plot. The trees found and the share of the understorey that
+trees take are unchanged in every one of the 28 reference runs, and the
+overlap of the found trees with the reference is the same or higher. The two woodland plots were never used to choose a
+setting. The step takes one to three seconds on these plots.
+
+Lower thresholds remove more (at 0.06, 12 of Ofental's 43 spurious trees
+and 46 of Gingin's 194) and begin to cost real trees where the sampling is
+coarse: on the Litchfield cloud thinned to 5 cm one run of three loses a
+tree at 0.08 and two at 0.06, one of them a tree whose stem had been
+followed through ten layers, merged into a neighbour 1.6 m away with which
+its crown interlocks. On clouds at 2 to 3 cm, 0.06 lost no tree in any run
+and is worth trying where spurious trees matter more than the last tree.
+
+Two things were learned on the way. Without the 3 m rule the step merged
+low clumps into the trees they stood against, which the tree scores did
+not see and the understorey figure did (+0.01 to +0.07 of the points below
+2 m on no reference tree); both trees of a pair must reach the height for
+it to stay where it was. And unlike `merge_branches`, which joins the
+stems of a coppice stool, this step left them apart: no Wytham tree was
+lost at any of the three thresholds at the plot's own density.
+
+The step adds to what `angle_rate` gains (above), since the two remove
+different spurious trees. On the same four runs of each reference plot and
+two of each woodland plot:
+
+| Plot | neither | `merge_touching` 0.10 | `angle_rate` 0.023 | both |
+|---|---|---|---|---|
+| Litchfield | 0.977 | 0.978 | 0.971 | 0.972 |
+| Robson Creek | 0.653 | 0.655 | 0.674 | 0.675 |
+| Wytham | 0.861 | 0.866 | 0.865 | 0.872 |
+| Ofental | 0.649 | 0.656 | 0.673 | 0.686 |
+| Gingin | 0.671 | 0.691 | 0.693 | 0.711 |
+| Great Western Woodlands | 0.660 | 0.675 | 0.690 | 0.698 |
+
+What `angle_rate` costs at Litchfield and on sparse clouds it costs with
+or without the step.
 
 ## What the October 2026 changes did
 

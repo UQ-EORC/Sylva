@@ -94,6 +94,58 @@ def test_angle_rate(normalized, tree_specs):
     assert (weak > 0).sum() > 0.9 * (base > 0).sum()
 
 
+def test_merge_touching_joins_a_piece_to_its_tree():
+    # Three vertical sheets of points 6 cm apart, 1 to 3.3 m above ground:
+    # tree 1, four more columns of the same sheet labelled as tree 2 (a
+    # second stem that took a piece of tree 1), and tree 3, as large as
+    # tree 1, whose edge column stands next to tree 1's other edge.
+    s = 0.06
+    z = 1.0 + s * np.arange(40)
+
+    def sheet(x0, columns, label):
+        x = x0 + s * np.arange(columns)
+        xx, zz = np.meshgrid(x, z, indexing="ij")
+        return np.column_stack([xx.ravel(), np.zeros(xx.size), zz.ravel()]), np.full(xx.size, label)
+
+    parts = [sheet(0.0, 34, 1), sheet(34 * s, 4, 2), sheet(-34 * s, 34, 3)]
+    xyz = np.vstack([p[0] for p in parts])
+    labels = np.concatenate([p[1] for p in parts])
+    cloud = PointCloud(xyz, {"height": xyz[:, 2].copy()})
+    stems = [trees.Tree(i, x, 0.0, 0.2) for i, x in [(1, 1.0), (2, 2.1), (3, -1.0)]]
+    stems[1].extra["note"] = "piece"
+    stems[2].extra["note"] = "neighbour"
+    # A quarter of the piece's points touch tree 1; one column in 34 of tree 3's.
+    kept, out, into = trees.merge_touching(cloud, labels, stems)
+    assert [t.tree_id for t in kept] == [1, 3]
+    assert kept[1] is stems[2] and kept[1].extra == {"note": "neighbour"}
+    assert into.tolist() == [1, 1, 3]
+    assert np.array_equal(out, np.where(labels == 2, 1, labels))
+    # The input is not changed, and a threshold of 0 or above every share merges nothing.
+    assert set(labels) == {1, 2, 3}
+    for threshold in (0.0, 0.9):
+        kept, out, into = trees.merge_touching(cloud, labels, stems, threshold=threshold)
+        assert len(kept) == 3 and np.array_equal(out, labels) and into.tolist() == [1, 2, 3]
+    # A piece that does not reach min_top is left for prune_trees.
+    kept, out, _ = trees.merge_touching(cloud, labels, stems, min_top=4.0)
+    assert len(kept) == 3 and np.array_equal(out, labels)
+    # Thinning makes the share independent of the point density.
+    dense = PointCloud(np.vstack([xyz, xyz + [0.0, 0.005, 0.0]]), {"height": np.tile(xyz[:, 2], 2)})
+    kept, _, _ = trees.merge_touching(dense, np.tile(labels, 2), stems)
+    assert [t.tree_id for t in kept] == [1, 3]
+    with pytest.raises(ValueError, match="one value per point"):
+        trees.merge_touching(cloud, labels[:10], stems)
+
+
+def test_merge_touching_leaves_separate_trees_alone(normalized, tree_specs):
+    # The well-separated trees of the test forest stay as they are.
+    stems = trees.detect_stems(normalized)
+    labels = trees.segment_trees(normalized, stems)
+    kept, out, into = trees.merge_touching(normalized, labels, stems)
+    assert len(kept) == len(stems) == len(tree_specs)
+    assert np.array_equal(out, labels)
+    assert into.tolist() == [t.tree_id for t in stems]
+
+
 def test_segment_leaves_low_vegetation(rng):
     # A litter / understorey layer reachable along the surface stays
     # unassigned beyond low_radius of the base; the stem base keeps its label.

@@ -79,6 +79,7 @@ series of heights (a taper curve). `trees.fit_circle` and
 ```python
 stems, merged_into = trees.merge_branches(cloud, stems)   # optional: drop limbs detected as stems
 labels = trees.segment_trees(cloud, stems)                # tree_id per point, -1 unassigned
+stems, labels, _ = trees.merge_touching(cloud, labels, stems)   # a stem that is part of another tree joins it
 trees.tree_heights(cloud, labels, stems, percentile=99)   # fills height and n_points
 stems, labels = trees.prune_trees(stems, labels, min_height=3.0)
 cloud = cloud.with_attrs(tree_id=labels.astype("int32"))
@@ -171,6 +172,24 @@ factors) is adapted.
   tree list does. The `low_height` rule is separate and always applies:
   below 0.5 m a tree keeps only what lies within `low_radius` of its stem.
   Numbers in *Benchmarks > Tree detection*.
+
+`merge_touching` looks at the trees once they are segmented. Detection
+favours recall, so some candidates are not trees of their own: a second
+circle on a wide trunk, a low fork, a whorl of branches fitted as a stem.
+Each is grown like any other stem and comes away holding a piece of its
+parent's crown, and that piece lies against the parent along much of its
+extent, where two separate trees touch only at the edge of their crowns.
+The step thins the labelled points above 0.5 m to 5 cm, counts for each
+pair of trees the share of the smaller one's points that have a point of
+the larger within 10 cm, and merges the smaller into the larger while that
+share is at least `threshold` (0.1), largest share first. Only trees that
+reach `min_top` (3 m) take part, so that a shrub against a trunk is
+dropped by pruning and not added to the tree. It takes a few seconds on a
+plot. Measured as paired runs it removed spurious trees and lost none on
+any data set it was tried on; a lower threshold removes more and begins to
+merge real neighbours (*Benchmarks > Tree detection*). Unlike
+`merge_branches` it left the stems of coppice stools apart. `sylva trees`
+runs it; `--merge-touching 0` turns it off.
 
 `prune_trees` removes candidates lower than `min_height` and merges stems
 closer than `merge_radius`. In conifer stands with many low branches,

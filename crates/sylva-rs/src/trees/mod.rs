@@ -9,6 +9,7 @@
 
 pub mod prune;
 pub mod stems;
+pub mod touch;
 
 use std::collections::HashMap;
 

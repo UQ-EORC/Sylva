@@ -92,6 +92,22 @@ def test_trees_takes_the_graph_voxel(tmp_path, capsys):
     assert out.startswith("tree_id,") and out.count("\n") >= 3
 
 
+def test_trees_merges_touching_trees_unless_told_not_to(tmp_path, capsys, monkeypatch):
+    # Two separate trees: the step runs by default and leaves them alone;
+    # --merge-touching 0 skips it.
+    src = tmp_path / "plot.laz"
+    io.write(_two_tree_plot(), src)
+    calls = []
+    real = cli.trees.merge_touching
+    monkeypatch.setattr(cli.trees, "merge_touching", lambda *a, **k: calls.append(k) or real(*a, **k))
+    cli.main(["trees", str(src), "-o", "-", "--min-height", "4"])
+    with_step = capsys.readouterr().out
+    assert calls == [{"threshold": 0.1, "min_top": 4.0}]
+    cli.main(["trees", str(src), "-o", "-", "--min-height", "4", "--merge-touching", "0"])
+    assert len(calls) == 1
+    assert capsys.readouterr().out == with_step and with_step.count("\n") == 3
+
+
 def test_qsm_plot_anchors_on_the_stems_csv(tmp_path, capsys):
     src = tmp_path / "plot.laz"
     io.write(_two_tree_plot(), src)
