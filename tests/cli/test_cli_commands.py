@@ -389,7 +389,7 @@ def test_qsm_shell_width_is_the_library_default(single_tree, tmp_path):
     src = tmp_path / "tree.ply"
     io.write(single_tree, src)
     run("qsm", src)
-    assert inspect.signature(qsm.build_qsm).parameters["bin_length"].default == 0.1
+    assert inspect.signature(qsm.build_qsm).parameters["bin_length"].default == 0.125
     qsm.build_qsm(io.read(src)).to_csv(tmp_path / "api.csv")
     assert (tmp_path / "tree_qsm.csv").read_text() == (tmp_path / "api.csv").read_text()
     run("qsm", src, tmp_path / "wide.csv", "--bin-length", 0.3)

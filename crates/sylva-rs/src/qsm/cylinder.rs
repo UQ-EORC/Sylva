@@ -55,7 +55,7 @@ fn axis_from_pca(xyz: &[Point]) -> Point {
 /// the axis would not change the cylinder at all, and a parameter that does
 /// nothing makes the solve ill-conditioned.
 fn perp_basis(axis: &Point) -> (Point, Point) {
-    let helper = if axis[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+    let helper = super::model::least_aligned(&axis);
     let u = normalize(&cross(axis, &helper));
     let v = cross(axis, &u);
     (u, v)

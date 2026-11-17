@@ -3,7 +3,7 @@
 ```python
 from sylva import qsm
 tree = cloud[labels == 7]                       # one segmented tree
-wood = qsm.wood_points(tree)                    # leaf/wood separation (anisotropy + path passage), thin to 2 cm
+wood = qsm.wood_points(tree)                    # leaf/wood separation (shortest paths + anisotropy), thin to 2 cm
 model = qsm.build_qsm(wood, base_xy=(t.x, t.y), max_radius=0.6 * t.dbh)
 print(model.summary())                          # volume, length, branch orders, DBH
 model.to_csv("tree7.csv")                       # cylinder table
@@ -12,45 +12,53 @@ model.to_ply("tree7.ply")                       # binary mesh, faces coloured by
 ```
 
 `wood_points` uses topology as well as local anisotropy, the path-frequency
-cue of [Vicari et al. (2019)](../references.md): shortest paths from the base over a kNN graph are traced to one
-target per 20 cm cell and every point that three or more of them run
-through is wood, so a sparsely scanned trunk -- neither planar nor linear
-at the neighbourhood scale, and dropped by the old filter -- is kept
-because every path to the crown crosses it. High-anisotropy points then
-survive in connected components that touch passage wood or are large,
-medium-likelihood points after outlier removal and only next to wood
-found already, and the result is dilated by 3 cm. On the harvest cohort
-this took the volume rRMSE from 23.9 to 22.3 % (r² 0.969 → 0.978). The
-medium step is what recovers bark on big occluded stems (DBH rRMSE 12 %
-against 17 % without it) but on small leafy crowns it pulls foliage in
-around the stem; pass `medium_threshold=1.0` to skip it for saplings.
+cue of [Vicari et al. (2019)](../references.md) measured as a length. Over
+the tree of shortest paths from the base on a kNN graph, the *support* of a
+point is the length of path from it to the farthest point whose path runs
+through it, and points that support at least 30 cm are wood. A leaf, or a
+bark point where a path ends, supports nothing; a sparsely scanned trunk,
+neither planar nor linear at the neighbourhood scale, is kept because the
+paths to the crown run up it. Being a length, the measure does not depend
+on how densely the tree was sampled. The graph joins the pieces of the
+cloud wherever two come within `max_edge` (1 m) of each other, so a trunk
+cut off from its crown by an occluded stretch still carries the crown's
+paths. From that wood the filter grows over the same graph, a step of at
+most 5 cm at a time, through the points whose neighbourhood is planar or
+linear (bark and branch surfaces), and then one step further whatever the
+neighbourhood, for twigs too thin to have a surface. Wood-like points the
+paths never reach (a leaf is planar too) stay out.
 
-The wood filter's stages and the cylinder stage described next (the
-skeleton, the stem taper prior, the pipe-model radii, the radius smoothing
-and the butt straightening) are adapted from the source of
-[Arbor](../references.md) (J.-R. Roussel, r-lidar).
-
-In the cylinder stage, points are binned into 10 cm geodesic
-shells from the base and clustered within each shell, the level-set skeleton
-of [Verroust and Lazarus (2000)](../references.md) and [Xu et al. (2007)](../references.md); cluster centres
-(circle-fitted where the section is dense) are chained greedily, each node
-linking to the nearest unplaced centre of a higher shell and stragglers to
-their nearest placed centre, then Taubin-smoothed ([Taubin 1995](../references.md)) with the ends pinned. A
-trunk that starts by wandering through buttress arms is cut at the first run
-of near-vertical cylinders and replaced by a straight stump. Axes are chosen
-by subtree top height, then reassigned by subtree volume once radii exist.
+In the cylinder stage, points are binned into 12.5 cm shells of path
+length from the base, over a graph that joins the cloud's pieces in the
+same way, and each shell is split into its connected pieces: the
+level-set skeleton of [Verroust and Lazarus (2000)](../references.md) and
+[Xu et al. (2007)](../references.md). A piece hangs from the nearest piece
+of a lower shell that its points' shortest paths come through. At each
+fork the child whose subtree holds the most points continues the axis.
 Each node's radius is a RANSAC circle in the plane perpendicular to the
-skeleton, refitted in a radius-relative band; thick sections seen all round
-take the equivalent-area radius of a Fourier contour instead, and fluted
-sections a circle cannot explain take that contour's area. On the stem a
-quadratic in subtree length through the accepted circles (or the tree
-allometry) replaces weak fits and fills gaps, non-increasing; everything
-unmeasured, branches included, comes from a pipe model ([Shinozaki et al.
-1964](../references.md)), tapering
-linearly with subtree length on straight runs and sharing the parent's
-cross-section by subtree length at every fork. At forks the children's
-summed cross-section is also held to at most `pipe_slack` times the parent's
-(Leonardo's rule, as in raycloudtools; [Devereux et al. 2026](../references.md)).
+skeleton, refitted in a radius-relative band and accepted when its points
+cover at least half the circle (`min_arc_deg`, 180°): a circle through a
+shorter arc runs wide. An accepted circle moves its node onto its centre,
+and the centres are smoothed towards their neighbours with the ends
+pinned.
+
+Each axis then gets a taper of its own, `r = k x^b`, fitted to its accepted
+sections by the median of pairwise slopes in log-log space (Theil–Sen), with
+`x` the length a node carries: the longest way from it to a tip, times the
+share of the cross-section that its length claimed at every fork on the way
+up. Sections more than `outlier_sigma` (3) robust standard deviations off
+their own axis's taper are set aside. Between the rest the axis is made
+non-increasing and its gaps are interpolated; below the lowest section the
+stem follows its taper, up to `butt_swell` times that section. Beyond the
+last section, and on an axis with none, the radius is in proportion to the
+length carried, from the last measured node or from the node the axis hangs
+from: at a fork each child keeps the share of its parent's cross-section
+that its length claims, the rule of raycloudtools
+([Lowe and Stepanas 2021](../references.md); [Devereux et al. 2026](../references.md))
+and the pipe model of [Shinozaki et al. 1964](../references.md). A measured
+DBH (`base_radius`) ties the stem's taper down when the stem has fewer than
+four sections. At forks the children's summed cross-section is also held to
+at most `pipe_slack` times the parent's (Leonardo's rule).
 
 Accuracy against felled trees and against raycloudtools is on the
 [QSM benchmark](../benchmarks/qsm.md) page.
@@ -61,7 +69,8 @@ Accuracy against felled trees and against raycloudtools is on the
 branch of 50 cylinders is 50 tubes with 100 caps inside it. With
 `contiguous=True` each branch is one continuous tube instead: consecutive
 cylinders share a ring, the ring frame is carried along the branch so the
-facets do not twist, and a shared ring takes the mean of the two radii.
+facets do not twist, and a shared ring has the radius of the cylinder that
+starts at it.
 
 ```python
 model.to_ply("tree.ply", contiguous=True)
@@ -69,7 +78,7 @@ model.to_ply("tree.ply", contiguous=True)
 
 The mesh is about half the size, and because nothing is double-covered it
 encloses the volume the cylinders describe (within a few per cent, from the
-averaged radii at the joints), which the per-cylinder mesh does not. Each
+taper between rings), which the per-cylinder mesh does not. Each
 branch is still its own closed surface pushed into its parent, not welded to
 it: welding them into a single solid would need a boolean union, which Sylva
 does not do.
@@ -200,7 +209,7 @@ plot = qsm.build_plot(cloud, labels, stems, wood=is_wood)
 plot = qsm.build_plot(cloud, labels, stems, wood="wood")       # attribute: 1 wood, 0 / -1 not
 
 # Weights in [0, 1]: each tree is fitted on all its points, weighted.
-_, confidence = leaves.classify_leaf_wood(cloud, method="passage", scale_radius=0.0,
+_, confidence = leaves.classify_leaf_wood(cloud, method="paths", scale_radius=0.0,
                                           return_scores=True)
 plot = qsm.build_plot(cloud, labels, stems, wood=confidence)
 model = qsm.build_qsm(cloud[labels == 7], weights=confidence[labels == 7])   # one tree
@@ -220,13 +229,15 @@ section use its confident points (weight at least 0.5), and a cylinder's
 exactly the unweighted model.
 
 `classify_leaf_wood(..., return_scores=True)` gives a confidence to use as the
-weight. For the passage filter it is 1 where the filter keeps the point and
+weight. For the path filter it is 1 where the filter keeps the point and
 0.4 times the point's anisotropy where it drops it, so dropped points count a
 little towards a circle but are never confident wood; for the graph-based
 labeller it is half the label plus half the share of the shell scales at
 which the point's piece was wood.
 
-On the destructive-harvest trees (the 73 with a cloud at hand; the
+Measured with version 1.1.0, whose wood filter and cylinder stage have since
+been replaced ("passage filter" below is that version's filter), on the
+destructive-harvest trees (the 73 with a cloud at hand; the
 [benchmark](../benchmarks/qsm.md) scores the 72 that every compared method
 reconstructed; the same slice DBH and settings for every input; volume bias and
 rRMSE, and per study bias / rRMSE):

@@ -16,10 +16,10 @@
 
 use crate::error::{Error, Result};
 use crate::filters::Rng;
-use crate::trees::stems::{angular_coverage, StemParams};
+use crate::trees::stems::{angular_extent, StemParams};
 use crate::Point;
 
-use super::model::{fit_cylinders_with, fourier_area_radius, power_mean_radius, scaled_to_spacing, skeletonize, Qsm, QsmParams, BINS};
+use super::model::{fit_cylinders_with, power_mean_radius, scaled_to_spacing, skeletonize, Qsm, QsmParams};
 
 /// Weight at or above which a point counts as confident wood: the pool
 /// RANSAC samples from, the points that set a section's arc and its
@@ -61,26 +61,26 @@ pub fn build_qsm_weighted(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParam
 /// Radius of one section from its points `xy` (in the section's plane) and
 /// their weights: the weighted counterpart of the circle fit in
 /// [`super::fit_cylinders`], returning the same `(radius, points, arc,
-/// inlier share)`.
+/// inlier share)` and the circle's centre in the section's plane.
 ///
 /// The section needs a summed weight of `fit_min_points`; the circle is the
 /// weighted RANSAC of [`ransac_circle_weighted`] refitted by weighted least
 /// squares on the points within the band; its inliers must carry a summed
 /// weight of `min_points` and a mean weight of `min_mean_weight`, and the
-/// share is the inliers' weight over the section's. The arc, the Fourier
-/// contour and the point count use the confident points only (weight at least
+/// share is the inliers' weight over the section's. The arc and the point
+/// count use the confident points only (weight at least
 /// [`CONFIDENT`]).
-pub(crate) fn section_fit(xy: &[[f64; 2]], w: &[f64], seed: u64, p: &QsmParams, cp: &StemParams) -> Option<(f64, usize, f64, f64)> {
+pub(crate) fn section_fit(xy: &[[f64; 2]], w: &[f64], seed: u64, p: &QsmParams, cp: &StemParams) -> (Option<(f64, usize, f64, f64)>, Option<[f64; 2]>) {
     let total_w: f64 = w.iter().sum();
     if total_w < p.fit_min_points as f64 {
-        return None;
+        return (None, None);
     }
     let confident: Vec<[f64; 2]> = xy.iter().zip(w).filter(|(_, &x)| x >= CONFIDENT).map(|(q, _)| *q).collect();
     if p.radius_power > 0.0 {
-        return power_mean_radius(&confident, p);
+        return (power_mean_radius(&confident, p), None);
     }
     let mut rng = Rng::new(seed);
-    let (cx0, cy0, r0, _) = ransac_circle_weighted(xy, w, cp, &mut rng)?;
+    let Some((cx0, cy0, r0, _)) = ransac_circle_weighted(xy, w, cp, &mut rng) else { return (None, None) };
     let band = p.ransac_threshold.max(p.relative_tolerance * r0);
     let within = |cx: f64, cy: f64, r: f64| -> (Vec<[f64; 2]>, Vec<f64>) { xy.iter().zip(w).filter(|(q, _)| ((q[0] - cx).hypot(q[1] - cy) - r).abs() <= band).map(|(q, &x)| (*q, x)).unzip() };
     let (bxy, bw) = within(cx0, cy0, r0);
@@ -88,34 +88,15 @@ pub(crate) fn section_fit(xy: &[[f64; 2]], w: &[f64], seed: u64, p: &QsmParams, 
     let (ixy, iw) = within(cx, cy, r);
     let w_in: f64 = iw.iter().sum();
     if w_in < p.min_points as f64 || w_in < p.min_mean_weight * ixy.len() as f64 {
-        return None;
+        return (None, None);
     }
     let rmse = (ixy.iter().zip(&iw).map(|(q, &x)| ((q[0] - cx).hypot(q[1] - cy) - r).powi(2) * x).sum::<f64>() / w_in).sqrt();
     let sure: Vec<[f64; 2]> = ixy.iter().zip(&iw).filter(|(_, &x)| x >= CONFIDENT).map(|(q, _)| *q).collect();
     let n_sure = sure.len();
-    let (_, arc) = angular_coverage(&sure, cx, cy);
+    let arc = angular_extent(&sure, cx, cy);
     let frac = w_in / total_w;
     let ok = arc >= p.min_arc_deg && rmse <= p.max_rmse.max(band) && frac >= p.min_inlier_fraction;
-    if ok && frac >= p.buttress_max_inlier_fraction {
-        if p.fourier_min_radius > 0.0 && r >= p.fourier_min_radius {
-            if let Some(req) = fourier_area_radius(&confident, cx, cy, BINS * 5 / 6) {
-                if req >= p.apex_radius && req <= p.max_radius {
-                    return Some((req, n_sure, arc, frac));
-                }
-            }
-        }
-        return Some((r, n_sure, arc, frac));
-    }
-    if p.buttress_equivalent_area && !confident.is_empty() {
-        let n = confident.len() as f64;
-        let (mx, my) = (confident.iter().map(|q| q[0]).sum::<f64>() / n, confident.iter().map(|q| q[1]).sum::<f64>() / n);
-        if let Some(req) = fourier_area_radius(&confident, mx, my, BINS * 5 / 6) {
-            if req >= p.apex_radius && req <= p.max_radius {
-                return Some((req, confident.len().min(p.fit_min_points), 0.0, frac.max(1e-3)));
-            }
-        }
-    }
-    ok.then_some((r, n_sure, arc, frac))
+    if ok { (Some((r, n_sure, arc, frac)), Some([cx, cy])) } else { (None, None) }
 }
 
 fn circumcircle(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Option<(f64, f64, f64)> {

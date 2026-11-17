@@ -578,7 +578,7 @@ def main(argv=None):
     s.add_argument("input", help="one tree's wood points")
     s.add_argument("output", nargs="?", default=None,
                    help="CSV of cylinders (default: <input>_qsm.csv beside the input)")
-    s.add_argument("--bin-length", type=float, default=0.1, help="geodesic shell width (m)")
+    s.add_argument("--bin-length", type=float, default=0.125, help="geodesic shell width (m)")
     s.set_defaults(func=_cmd_qsm)
 
     s = sub.add_parser("qsm-plot", help="build a QSM for every tree of a segmented cloud", **fmt)
@@ -595,7 +595,7 @@ def main(argv=None):
     s.add_argument("--mesh-format", choices=("ply", "obj"), default="ply",
                    help="format for --meshes")
     s.add_argument("--voxel", type=float, default=0.01, help="thin each tree to this spacing (m)")
-    s.add_argument("--bin-length", type=float, default=0.1, help="geodesic shell width (m)")
+    s.add_argument("--bin-length", type=float, default=0.125, help="geodesic shell width (m)")
     s.add_argument("--min-points", type=int, default=2000, help="skip trees with fewer points")
     s.add_argument("--buttress", action="store_true",
                    help="mesh a buttressed base and count it in the volume")

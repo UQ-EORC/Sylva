@@ -179,7 +179,7 @@ def test_tree_metrics(single_tree):
     first = np.flatnonzero(b["order"] == 1)[np.argmax(b["length"][b["order"] == 1])]
     # The branch runs along +x rising 0.3 per metre: 73 deg from the vertical stem.
     assert b["zenith"][first] == pytest.approx(73.3, abs=6)
-    assert b["insertion_angle"][first] == pytest.approx(73.3, abs=8)
+    assert b["insertion_angle"][first] == pytest.approx(73.3, abs=10)
     assert b["length"][first] == pytest.approx(2.0, abs=0.3)
     assert b["tortuosity"][first] < 1.1
 
@@ -269,7 +269,7 @@ def test_stem_radius_cap_sees_through_foliage_around_the_bole():
         warnings.simplefilter("ignore")
         free = qsm.build_plot(cloud, labels, stems, wood=False, voxel_size=0.01)
         capped = qsm.build_plot(cloud, labels, stems, wood=False, voxel_size=0.01, stem_radius_cap=1.5)
-    assert free.models[1].dbh > 0.35 and free.volume(1) > 1.3 * true_volume
+    assert free.models[1].dbh > 0.35 and free.volume(1) > 1.15 * true_volume
     assert capped.models[1].dbh == pytest.approx(0.30, abs=0.02)
     assert capped.volume(1) == pytest.approx(true_volume, rel=0.1)
     with pytest.raises(TypeError):

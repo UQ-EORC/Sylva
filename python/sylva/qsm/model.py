@@ -260,7 +260,8 @@ class QSM:
             cylinder: consecutive cylinders share a ring, so a branch has no
             caps inside it and its surface runs unbroken from base to tip.
             The ring frame is carried along the branch so the facets do not
-            twist, and a shared ring takes the mean of the two radii. Each
+            twist, and a shared ring has the radius of the cylinder that
+            starts at it. Each
             branch is still its own closed surface, pushed into its parent
             rather than welded to it, and the mesh is about half the size.
 
@@ -427,43 +428,38 @@ def skeletonize(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 
 
 
 def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.0,
-              bin_length: float = 0.1, min_points: int = 1, ransac_threshold: float = 0.02,
+              bin_length: float = 0.125, min_points: int = 1, ransac_threshold: float = 0.02,
               max_radius: float = 1.0, taper_limit: float = 1.1, max_rmse: float = 0.03,
-              smooth_steps: int = 10, apex_radius: float = 0.0025, min_arc_deg: float = 90.0,
-              min_inlier_fraction: float = 0.05, prune_points: int = 5, fit_min_points: int = 50,
-              crop_length: float = 0.0, butt_height: float = 0.6,
-              relative_tolerance: float = 0.08, base_radius: float = 0.0,
-              allometry_tolerance: float = 0.3, stem_radius_cap: float = 0.0,
-              buttress_equivalent_area: bool = True,
-              buttress_max_inlier_fraction: float = 0.3, pipe_slack: float = 1.2,
-              branch_min_inlier_fraction: float = 0.3, spacing_scale: float = 1.5,
-              radius_power: float = 0.0, power_above_spacing: float = 0.025,
-              sensor_noise: float = 0.02, cluster_eps: float = 0.1,
-              centre_fit_points: int = 100, radius_smooth_steps: int = 15,
-              butt_swell: float = 1.1, butt_vertical_run: int = 4,
-              butt_max_lean_deg: float = 50.0, chain_max_d: float = 0.1,
-              fourier_min_radius: float = 0.15, min_weight: float = 0.0,
+              centre_passes: int = 4, twig_radius: float = 0.002, min_arc_deg: float = 180.0,
+              min_inlier_fraction: float = 0.05, prune_points: int = 5, fit_min_points: int = 30,
+              crop_length: float = 0.0, relative_tolerance: float = 0.08, base_radius: float = 0.0,
+              outlier_sigma: float = 3.0, stem_radius_cap: float = 0.0, pipe_slack: float = 1.2,
+              spacing_scale: float = 1.5, radius_power: float = 0.0, power_above_spacing: float = 0.025,
+              sensor_noise: float = 0.02, butt_swell: float = 1.1, min_weight: float = 0.0,
               min_mean_weight: float = 0.5, weights=None) -> QSM:
     """Skeletonise then fit cylinders for a single segmented tree.
 
-    Skeleton nodes (geodesic bins of ``bin_length``) are Taubin-smoothed and
-    a RANSAC circle is fitted to each node's points in the plane
-    perpendicular to the skeleton; accepted fits need a contiguous arc of
-    ``min_arc_deg`` and ``min_inlier_fraction`` inliers. Radii are then
-    regularised along every root-to-tip path: an allometric prior anchored
-    on ``base_radius`` (pass the measured DBH / 2) replaces weak fits more
-    than ``allometry_tolerance`` away, chains are made non-increasing, gaps
-    are interpolated and unmeasured branches take the prior, a pipe model
-    (Shinozaki et al. 1964) that shares a parent's cross-section among its
-    children. Past 2.5 cm point spacing the radius is a power mean of the
+    The points are binned into shells of path length from the base over a
+    kNN graph that joins the pieces of the cloud lying within ``max_edge``
+    of each other, and each shell is split into its connected pieces, the
+    nodes of the skeleton. A RANSAC circle is fitted to each node's points
+    in the plane perpendicular to the skeleton; accepted fits need a
+    contiguous arc of ``min_arc_deg`` and ``min_inlier_fraction`` inliers,
+    and move the node onto the circle's centre. Each axis then gets a taper
+    of its own, ``r = k x^b``, fitted robustly (Theil-Sen) to its accepted
+    sections, with ``x`` the length a node carries: the longest way from it
+    to a tip, times the share of the cross-section its length claimed at
+    every fork on the way up (raycloudtools, Lowe and Stepanas 2021;
+    Devereux et al. 2026; the pipe model of Shinozaki et al. 1964). Sections
+    more than ``outlier_sigma`` robust deviations off the taper of their
+    own axis are set aside; the axis is made non-increasing between the
+    rest, and what is unmeasured follows the taper, or on an axis with no
+    sections the taper of the axis it hangs from. A measured DBH
+    (``base_radius``) ties the stem's taper down when the stem has few
+    sections. Past 2.5 cm point spacing the radius is a power mean of the
     distances to the axis, after raycloudtools (Devereux et al. 2026).
     Leafy tips shorter than ``crop_length`` are not reconstructed. Run
     :func:`wood_points` first on leafy trees.
-
-    The skeleton (path-length shells clustered and chained), the stem taper
-    prior, the pipe-model rule, the radius smoothing, the axis ordering and
-    the butt straightening are adapted from the source of Arbor (J.-R.
-    Roussel, r-lidar; see ``THIRD_PARTY_NOTICES.md``).
 
     Parameters
     ----------
@@ -490,33 +486,36 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
         are clamped.
     max_rmse
         Circle fits with a larger RMSE (m) are rejected.
-    smooth_steps
-        Smoothing passes over skeleton node positions.
-    apex_radius
-        Smallest tip radius (m).
+    centre_passes
+        Smoothing passes over the skeleton's node positions: each moves a
+        node half way to the mean of its neighbours.
+    twig_radius
+        Radius of a twig (m): what a tip is given, and the least any
+        cylinder has.
     min_arc_deg
         Contiguous arc a circle fit must cover (degrees).
-    min_inlier_fraction, branch_min_inlier_fraction
-        Inlier share a stem / branch circle needs.
+    min_inlier_fraction
+        Inlier share a circle needs.
     prune_points
         Unmeasured leaf segments with fewer points are pruned as foliage.
     fit_min_points
         Segments with fewer points take their radius from the taper model.
     crop_length
         Leafy tips with less subtree length (m) are not reconstructed.
-    butt_height
-        Below this height (m) only the largest component per shell is kept.
     relative_tolerance
         Refit band around the circle, as a fraction of its radius.
     base_radius
-        Breast-height radius (m) anchoring the taper prior; 0 estimates it.
-        Pass a field DBH / 2 when you have one.
-    allometry_tolerance
-        Weak fits further than this fraction from the prior are replaced.
+        Breast-height radius (m): the stem's taper is tied to it when the
+        stem has fewer than four sections of its own (always with
+        ``stem_radius_cap``). Pass a field DBH / 2 when you have one; 0 for
+        none.
+    outlier_sigma
+        Sections further than this many robust standard deviations (in
+        log radius) from the taper of their own axis are set aside.
     stem_radius_cap
-        With a ``base_radius``, anchor the taper prior on it and set aside
-        every main-stem circle wider than this many times it, strong or not;
-        the stem follows the prior there and those cylinders count as
+        With a ``base_radius``, tie the stem's taper to it and set aside
+        every main-stem circle wider than this many times it, however well
+        fitted; the stem follows the taper there and those cylinders count as
         unmeasured. For boles sheathed in foliage (epicormic regrowth after
         fire), whose circles fit the foliage rather than the bark; a stem is
         nowhere above breast height much wider than at it. 1.5 brought 12
@@ -525,29 +524,12 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
         2 % in volume. 0 (default)
         disables. :func:`build_plot` passes each tree's DBH / 2 as
         ``base_radius``.
-    buttress_equivalent_area, buttress_max_inlier_fraction
-        Use an equivalent-area radius where a circle explains fewer than
-        that share of a section's points (buttresses, fluting).
     pipe_slack
         Children's summed cross-section may exceed the parent's by this
         factor (pipe model); 0 disables.
-    cluster_eps
-        Clustering radius within a shell (m); 0 uses graph components.
-    centre_fit_points
-        Clusters with at least this many points get a circle-fitted centre.
-    radius_smooth_steps
-        Smoothing passes over radii along each axis.
     butt_swell
         Unmeasured stem nodes below the lowest fit may exceed it by this
         factor.
-    butt_vertical_run, butt_max_lean_deg
-        Replace the stem below the first run of this many cylinders within
-        ``butt_max_lean_deg`` of vertical by a vertical stump; 0 disables.
-    chain_max_d
-        Skeleton chaining radius (m).
-    fourier_min_radius
-        Sections at least this wide (m) and well covered use an
-        equivalent-area Fourier contour instead of a circle; 0 disables.
     min_weight
         With ``weights``: points with a lower weight are dropped before the
         graph is built. 0 (default) keeps every point.
@@ -563,8 +545,8 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
         the circle is refitted by weighted least squares, a section needs a
         summed weight of ``fit_min_points`` to be fitted, its inliers a summed
         weight of ``min_points`` and a mean weight of ``min_mean_weight``,
-        and the inlier share is a share of weight. The arc and the contour of
-        a section use its confident points (weight at least 0.5), and a
+        and the inlier share is a share of weight. The arc of
+        a section uses its confident points (weight at least 0.5), and a
         cylinder's ``n_points`` counts its confident inliers. Unmeasured leaf
         segments are pruned by summed weight (``prune_points``). Weights of
         one everywhere give exactly the unweighted model. None (default) fits
@@ -591,12 +573,9 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
         weights = _check_weights(weights, len(cloud))
     d = _core.build_qsm(cloud.xyz, None if base_xy is None else tuple(base_xy), k, max_edge,
                         bin_length, min_points, ransac_threshold, max_radius, taper_limit,
-                        max_rmse, smooth_steps, apex_radius, min_arc_deg, min_inlier_fraction,
-                        prune_points, fit_min_points, crop_length, butt_height,
-                        relative_tolerance, base_radius, allometry_tolerance, stem_radius_cap,
-                        buttress_equivalent_area, buttress_max_inlier_fraction, pipe_slack,
-                        branch_min_inlier_fraction, spacing_scale, radius_power, power_above_spacing, sensor_noise,
-                        cluster_eps, centre_fit_points,
-                        radius_smooth_steps, butt_swell, butt_vertical_run, butt_max_lean_deg, chain_max_d, fourier_min_radius,
-                        min_weight, min_mean_weight, weights=weights)
+                        max_rmse, centre_passes, twig_radius, min_arc_deg, min_inlier_fraction,
+                        prune_points, fit_min_points, crop_length, relative_tolerance, base_radius,
+                        outlier_sigma, stem_radius_cap, pipe_slack, spacing_scale, radius_power,
+                        power_above_spacing, sensor_noise, butt_swell, min_weight, min_mean_weight,
+                        weights=weights)
     return QSM(d["cylinders"])
