@@ -1,8 +1,5 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
-// The binned arc of a circle fit (`angular_coverage`) is adapted from Arbor
-// (Copyright (C) 2026 Jean-Romain Roussel, r-lidar; GPL-3.0-or-later);
-// see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Multi-slice stem detection.
@@ -58,11 +55,11 @@ pub struct StemParams {
     /// Fraction of the circumference that must be observed (a single scan sees ~0.5).
     pub min_coverage: f64,
     /// Longest contiguous arc (degrees) the inliers must cover; 0 disables.
-    /// Measured in 10-degree bins; a sparsely sampled circle may leave up to
-    /// two bins in a row empty without breaking the arc (as many as its
-    /// point count explains), a dense one none. 130-180 deg rejects short
-    /// arcs on merged multi-scan plots, and with them the stems seen from
-    /// one side only.
+    /// The arc runs from point to point while neighbours are within 15
+    /// degrees of each other, or within the wider gap a sparsely sampled
+    /// circle's point count explains (at most 35 degrees). A high value
+    /// rejects short arcs on merged multi-scan plots, and with them the
+    /// stems seen from one side only.
     pub min_arc_deg: f64,
     /// Largest RMS radial residual of its inliers a circle may have (m).
     pub max_circle_rmse: f64,
@@ -295,63 +292,95 @@ pub(crate) fn fit_circle_refined(xy: &[[f64; 2]]) -> Option<(f64, f64, f64)> {
     Some((cx + mx, cy + my, r))
 }
 
-/// `(fraction of 10-degree bins occupied, longest contiguous arc in degrees)`.
-pub(crate) fn angular_coverage(xy: &[[f64; 2]], cx: f64, cy: f64) -> (f64, f64) {
-    angular_coverage_bridged(xy, cx, cy, 0)
-}
+/// What a point at either end of an arc adds to it (degrees): a point stands
+/// for a sector of the circle, half of it on either side.
+const SECTOR: f64 = 10.0;
+/// Widest gap between neighbouring points that an arc runs across (degrees).
+const ARC_GAP: f64 = 15.0;
+/// Widest gap [`sampled_arc`] lets a sparse arc run across (degrees).
+const ARC_GAP_SPARSE: f64 = 35.0;
 
-/// As [`angular_coverage`], with the arc allowed to run across up to `gap`
-/// empty bins in a row (the bins it crosses count towards its length; empty
-/// bins at either end do not).
-///
-/// The measure (36 ten-degree bins, longest occupied run with wrap-around) is
-/// adapted from Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later),
-/// `src/fitting/fitting_orbicular.cpp`; the bridging of empty bins is Sylva's.
-fn angular_coverage_bridged(xy: &[[f64; 2]], cx: f64, cy: f64, gap: usize) -> (f64, f64) {
+/// Share of the 36 ten-degree bins about `(cx, cy)` that hold a point: the
+/// coverage of the stem detector, as its Python predecessor measured it.
+fn bin_coverage(xy: &[[f64; 2]], cx: f64, cy: f64) -> f64 {
     const BINS: usize = 36;
     let mut seen = [false; BINS];
     for p in xy {
         let a = (p[1] - cy).atan2(p[0] - cx);
-        let b = (((a + std::f64::consts::PI) / std::f64::consts::TAU) * BINS as f64) as usize % BINS;
-        seen[b] = true;
+        seen[(((a + std::f64::consts::PI) / std::f64::consts::TAU) * BINS as f64) as usize % BINS] = true;
     }
-    let occupied = seen.iter().filter(|&&s| s).count();
-    // Longest run around the circle (wrapping), from an occupied bin to an
-    // occupied bin.
-    let mut best = 0usize;
-    let mut run = 0usize; // length up to the last occupied bin
-    let mut empty = 0usize; // empty bins since then
-    for i in 0..2 * BINS {
-        if seen[i % BINS] {
-            run = if run > 0 && empty <= gap { run + empty + 1 } else { 1 };
-            empty = 0;
-            best = best.max(run.min(BINS));
+    seen.iter().filter(|&&s| s).count() as f64 / BINS as f64
+}
+
+/// The gaps between points that are neighbours in angle about `(cx, cy)`,
+/// in degrees, in order round the circle (the last one closes it).
+fn angular_gaps(xy: &[[f64; 2]], cx: f64, cy: f64) -> Vec<f64> {
+    let mut a: Vec<f64> = xy.iter().map(|p| (p[1] - cy).atan2(p[0] - cx).to_degrees()).collect();
+    a.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    (0..a.len()).map(|i| if i + 1 < a.len() { a[i + 1] - a[i] } else { a[0] + 360.0 - a[i] }).collect()
+}
+
+/// The longest arc, in degrees, for the gaps of [`angular_gaps`]: it runs
+/// from point to point while neighbours are no more than `max_gap` apart,
+/// and counts the half sector beyond the point at either end. Unlike a run
+/// of occupied bins it does not depend on where a grid of bins would fall.
+fn longest_arc(gaps: &[f64], max_gap: f64) -> f64 {
+    let n = gaps.len();
+    if n == 0 {
+        return 0.0;
+    }
+    let Some(first_break) = gaps.iter().position(|&g| g > max_gap) else {
+        return 360.0;
+    };
+    let (mut best, mut run) = (0.0f64, 0.0f64);
+    for k in 1..=n {
+        let g = gaps[(first_break + k) % n];
+        if g > max_gap {
+            best = best.max(run);
+            run = 0.0;
         } else {
-            empty += 1;
+            run += g;
         }
     }
-    (occupied as f64 / BINS as f64, best as f64 * 360.0 / BINS as f64)
+    (best + SECTOR).min(360.0)
+}
+
+/// `(share of ten-degree bins occupied, longest arc in degrees)` about
+/// `(cx, cy)`: the arc runs from point to point while neighbours are no more
+/// than 15 degrees apart (see [`longest_arc`]).
+pub(crate) fn angular_coverage(xy: &[[f64; 2]], cx: f64, cy: f64) -> (f64, f64) {
+    (bin_coverage(xy, cx, cy), longest_arc(&angular_gaps(xy, cx, cy), ARC_GAP))
+}
+
+/// The longest arc about `(cx, cy)`, in degrees, measured from its first
+/// point to its last (neighbours no more than 15 degrees apart) without the
+/// half sectors beyond them: the arc of a densely sampled section, as the
+/// cylinder models test it.
+pub(crate) fn angular_extent(xy: &[[f64; 2]], cx: f64, cy: f64) -> f64 {
+    let (_, arc) = angular_coverage(xy, cx, cy);
+    if arc >= 360.0 { 360.0 } else { (arc - SECTOR).max(0.0) }
 }
 
 /// [`angular_coverage`] for a circle whose points may be sparse: the arc
-/// runs across the empty bins that the sampling itself accounts for.
+/// runs across the gaps that the sampling itself accounts for.
 ///
-/// With `n` points in `m` occupied bins, a bin inside the observed arc is
-/// empty by chance with probability `exp(-n / m)`. The arc is carried over
-/// `g` empty bins in a row, with `g` the smallest count for which a longer
-/// chance gap is expected fewer than once in twenty circles
-/// (`m exp(-(g + 1) n / m) <= 0.05`), and never more than two. A densely
-/// sampled circle (about six points a bin or more) gets `g = 0`, the plain
-/// test.
+/// Points scattered along an arc at a mean spacing `d` leave gaps that are
+/// exponentially distributed, so the median gap is `d ln 2` and one of `n`
+/// gaps is wider than `G` with probability `exp(-G / d)`. The arc is carried
+/// over gaps up to the `G` for which a wider chance gap is expected fewer
+/// than once in twenty circles (`n exp(-G / d) <= 0.05`), no less than the 15
+/// degrees of the plain test and no more than 35. A densely sampled circle
+/// gets the plain test.
 fn sampled_arc(xy: &[[f64; 2]], cx: f64, cy: f64) -> (f64, f64) {
-    let (coverage, _) = angular_coverage(xy, cx, cy);
-    let occupied = (coverage * 36.0).round();
-    if occupied < 1.0 {
-        return (coverage, 0.0);
+    let gaps = angular_gaps(xy, cx, cy);
+    if gaps.is_empty() {
+        return (0.0, 0.0);
     }
-    let per_bin = xy.len() as f64 / occupied;
-    let gap = (((20.0 * occupied).ln() / per_bin).ceil() as usize).saturating_sub(1).min(2);
-    angular_coverage_bridged(xy, cx, cy, gap)
+    let mut sorted = gaps.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let spacing = sorted[sorted.len() / 2] / std::f64::consts::LN_2;
+    let reach = (spacing * (20.0 * gaps.len() as f64).ln()).clamp(ARC_GAP, ARC_GAP_SPARSE);
+    (bin_coverage(xy, cx, cy), longest_arc(&gaps, reach))
 }
 
 /// RANSAC circle scored by (`inliers * (1 - mean_residual / tol)`)
@@ -928,44 +957,71 @@ mod tests {
         (pts, h, stems)
     }
 
-    /// `n` points evenly over `arc_deg` of a unit circle, leaving out the
-    /// 10-degree bins listed in `holes`.
-    fn arc_points(arc_deg: f64, n: usize, holes: &[usize]) -> Vec<[f64; 2]> {
+    /// `n` points evenly over `arc_deg` of a unit circle, leaving out those
+    /// within `hole` degrees of its middle.
+    fn arc_points(arc_deg: f64, n: usize, hole: f64) -> Vec<[f64; 2]> {
         (0..n)
-            .map(|i| -180.0 + (i as f64 + 0.5) * arc_deg / n as f64)
-            .filter(|a| !holes.contains(&(((a + 180.0) / 10.0) as usize)))
+            .map(|i| (i as f64 + 0.5) * arc_deg / n as f64)
+            .filter(|a| (a - arc_deg / 2.0).abs() >= hole)
             .map(|a| [a.to_radians().cos(), a.to_radians().sin()])
             .collect()
     }
 
     #[test]
-    fn a_sparse_arc_runs_across_the_bins_its_sampling_leaves_empty() {
-        // Three points a bin over 200 degrees, two single bins empty: the
-        // plain test sees three short arcs, the sampled one the whole.
-        let xy = arc_points(200.0, 60, &[6, 13]);
-        assert_eq!(angular_coverage(&xy, 0.0, 0.0).1, 60.0);
-        assert_eq!(sampled_arc(&xy, 0.0, 0.0).1, 200.0);
-        // The occupied share of the circle is the same in both.
-        assert_eq!(sampled_arc(&xy, 0.0, 0.0).0, angular_coverage(&xy, 0.0, 0.0).0);
+    fn the_arc_runs_from_point_to_point() {
+        // Every degree over 120: 119 degrees from first to last, and the
+        // half sector beyond each end; twelve of the 36 bins hold points.
+        let (share, arc) = angular_coverage(&arc_points(120.0, 120, 0.0), 0.0, 0.0);
+        assert!((arc - 129.0).abs() < 1e-9 && (share - 12.0 / 36.0).abs() < 1e-12);
+        // All round, nothing breaks it.
+        assert_eq!(angular_coverage(&arc_points(360.0, 90, 0.0), 0.0, 0.0), (1.0, 360.0));
+        // One point covers its own sector and one bin.
+        assert_eq!(angular_coverage(&[[1.0, 0.0]], 0.0, 0.0), (1.0 / 36.0, 10.0));
+        // The arc of the same points turned by any angle is the same.
+        let turned: Vec<[f64; 2]> = arc_points(120.0, 120, 0.0).iter().map(|p| [p[0] * 0.8 - p[1] * 0.6, p[0] * 0.6 + p[1] * 0.8]).collect();
+        assert!((angular_coverage(&turned, 0.0, 0.0).1 - 129.0).abs() < 1e-9);
     }
 
     #[test]
-    fn a_dense_arc_is_broken_by_one_empty_bin() {
-        // Twenty points a bin: an empty bin is a real gap.
-        let xy = arc_points(200.0, 400, &[6]);
-        assert_eq!(sampled_arc(&xy, 0.0, 0.0).1, 130.0);
+    fn the_extent_leaves_out_the_end_sectors() {
+        assert!((angular_extent(&arc_points(120.0, 120, 0.0), 0.0, 0.0) - 119.0).abs() < 1e-9);
+        assert_eq!(angular_extent(&arc_points(360.0, 90, 0.0), 0.0, 0.0), 360.0);
+        assert_eq!(angular_extent(&[[1.0, 0.0]], 0.0, 0.0), 0.0);
+        assert_eq!(angular_extent(&[], 0.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn a_sparse_arc_runs_across_the_gaps_its_sampling_leaves() {
+        // A point every 10 degrees over 200, two missing in the middle (a
+        // gap of 30): the plain test sees two short arcs, the sampled one
+        // the whole.
+        let xy = arc_points(200.0, 20, 10.0);
+        assert!((angular_coverage(&xy, 0.0, 0.0).1 - 90.0).abs() < 1e-9);
+        assert!((sampled_arc(&xy, 0.0, 0.0).1 - 200.0).abs() < 1e-9);
+        // The share of the circle covered is that of the plain test: 18 sectors.
+        assert_eq!(sampled_arc(&xy, 0.0, 0.0).0, angular_coverage(&xy, 0.0, 0.0).0);
+        assert!((sampled_arc(&xy, 0.0, 0.0).0 - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_dense_arc_is_broken_by_a_gap() {
+        // Two points a degree: 20 degrees without any is a real gap.
+        let xy = arc_points(200.0, 400, 10.0);
+        assert!((sampled_arc(&xy, 0.0, 0.0).1 - 99.5).abs() < 1e-9);
         assert_eq!(sampled_arc(&xy, 0.0, 0.0), angular_coverage(&xy, 0.0, 0.0));
     }
 
     #[test]
     fn a_short_arc_stays_short_however_sparse() {
-        // Bridging joins occupied bins; it never extends an arc past its ends,
-        // and never crosses more than two empty bins.
-        let xy = arc_points(100.0, 20, &[]);
-        assert_eq!(sampled_arc(&xy, 0.0, 0.0).1, 100.0);
-        let mut two = arc_points(60.0, 12, &[]);
-        two.extend(arc_points(130.0, 26, &[]).into_iter().skip(18)); // bins 9..12, three empty bins away
-        assert_eq!(sampled_arc(&two, 0.0, 0.0).1, 60.0);
+        // Running across gaps joins points; it never extends an arc past the
+        // sectors of its end points, and never crosses a gap wider than 35
+        // degrees.
+        let xy = arc_points(100.0, 20, 0.0);
+        assert!((sampled_arc(&xy, 0.0, 0.0).1 - 105.0).abs() < 1e-9);
+        // Two arcs of 55 and 35 degrees with 45 degrees between them.
+        let mut two = arc_points(60.0, 12, 0.0);
+        two.extend(arc_points(140.0, 28, 0.0).into_iter().skip(20));
+        assert!((sampled_arc(&two, 0.0, 0.0).1 - 65.0).abs() < 1e-9);
         assert_eq!(sampled_arc(&[], 0.0, 0.0), (0.0, 0.0));
     }
 

@@ -163,9 +163,9 @@ def detect_stems(cloud: PointCloud, height_attr: str = "height", **params) -> li
     ``ransac_tolerance`` [0.02], ``max_circles_per_cluster`` [3],
     ``min_circle_inliers`` [10], ``min_coverage`` [0.12] (fraction of
     circumference seen; ~0.5 for single scans), ``min_arc_deg`` [0]
-    (longest contiguous arc of a circle's points, in 10-degree bins, carried
-    across up to two empty bins where the circle is too sparsely sampled to
-    fill them; 130 or more rejects short arcs on merged multi-scan plots,
+    (longest arc over which a circle's points lie within 15 degrees of
+    each other, or within the wider gap a sparsely sampled circle's point
+    count explains; a high value rejects short arcs on merged multi-scan plots,
     and with them the stems seen from one side only: see *Benchmarks > Tree
     detection* for what it costs on thinned clouds),
     ``max_circle_rmse`` [0.02], ``link_radius`` [0.2],
