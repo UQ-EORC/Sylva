@@ -128,7 +128,7 @@ def _rough_trunk_tree(rng):
     return trunk, branch, leaves
 
 
-def test_wood_points_passage_recovers_rough_trunk(rng):
+def test_wood_points_paths_recover_rough_trunk(rng):
     sylva = __import__("sylva")
     trunk, branch, leaves = _rough_trunk_tree(rng)
     pc = sylva.PointCloud(np.vstack([trunk, branch, leaves]))
@@ -137,10 +137,9 @@ def test_wood_points_passage_recovers_rough_trunk(rng):
         tree = __import__("scipy.spatial", fromlist=["cKDTree"]).cKDTree(cloud.xyz)
         return (tree.query(part)[0] < 1e-9).mean()
 
-    aniso = qsm.wood_points(pc, voxel_size=None, passage=False, medium_threshold=1.0,
-                            dilate_dist=0.0, component_min=1)
+    aniso = qsm.wood_points(pc, voxel_size=None, paths=False)
     default = qsm.wood_points(pc, voxel_size=None)
-    wide = qsm.wood_points(pc, voxel_size=None, assign_scale=0.03)
+    wide = qsm.wood_points(pc, voxel_size=None, reach_scale=0.03)
     # Rough bark is neither planar nor linear: anisotropy alone drops it. The
     # paths to the crown run through it, and a scaled reach takes the section.
     assert kept(aniso, trunk) < 0.3
@@ -149,7 +148,7 @@ def test_wood_points_passage_recovers_rough_trunk(rng):
     for wood in (default, wide):
         assert kept(wood, branch) > 0.95
         assert kept(wood, leaves) < 0.6
-    # The anisotropy-only result is what passage=False returns.
+    # The anisotropy-only result is what paths=False returns.
     assert kept(aniso, leaves) < 0.1
 
 

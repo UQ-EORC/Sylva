@@ -36,22 +36,22 @@ down every path to the base and to close neighbours. Judging a 10–100 cm
 *segment* rather than a 5 cm neighbourhood is what makes it work: over a few
 centimetres a leaf is as planar as bark.
 
-`method="passage"` is the QSM's own wood filter (path passage plus local
+`method="paths"` is the QSM's own wood filter (shortest paths plus local
 anisotropy, here with a second 10 cm scale). It keeps nearly all the wood and
-half the leaves with it, which is what a QSM wants (a cylinder fit suffers
+a third of the leaves with it, which is what a QSM wants (a cylinder fit suffers
 more from missing wood than from stray leaves) and the wrong trade for leaf
 work:
 
 | 30 manually labelled tropical trees (Van den Broeck et al. 2025) | accuracy | mIoU | wood recall / precision | leaf recall / precision |
 |---|---|---|---|---|
 | anisotropy only | 0.75 | 0.56 | 0.68 / 0.57 | 0.77 / 0.84 |
-| passage (the QSM filter) | 0.61 | 0.44 | 0.97 / 0.45 | 0.44 / 0.97 |
-| passage, two scales | 0.68 | 0.51 | 0.95 / 0.50 | 0.55 / 0.96 |
+| paths (the QSM filter) | 0.75 | 0.58 | 0.93 / 0.55 | 0.66 / 0.95 |
+| paths, two scales | 0.75 | 0.59 | 0.91 / 0.56 | 0.68 / 0.94 |
 | graph-based, 0.1–1 m shells | 0.80 | 0.66 | 0.93 / 0.64 | 0.73 / 0.96 |
 | **graph-based, 0.5–3 m shells (default for tall trees)** | **0.90** | **0.79** | 0.91 / 0.80 | 0.89 / 0.96 |
 
-As the QSM input the graph-based labels are worse (destructive-harvest volume
-rRMSE 26 % against 20 %), so `qsm.wood_points` keeps the passage filter;
+As the QSM input the graph-based labels were worse when last measured, with
+version 1.0.0 (destructive-harvest volume rRMSE 26 % against 20 %), so `qsm.wood_points` keeps the path filter;
 `wood_points(method="gbs")` is there to try. `return_scores=True` adds a
 wood confidence per point, a weight for `qsm.build_qsm(weights=)` (see
 [Wood labels and wood weights](qsm.md#wood-labels-and-wood-weights)).

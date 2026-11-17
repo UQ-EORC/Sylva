@@ -11,44 +11,39 @@ from ..pointcloud import PointCloud
 
 
 def wood_points(cloud: PointCloud, k: int = 20, threshold: float = 0.85,
-                voxel_size: float | None = 0.02, medium_threshold: float = 0.75,
-                scale_radius: float = 0.0, passage: bool = True, min_passage: int = 3,
-                target_res: float = 0.2,
-                graph_k: int = 10, max_edge: float = 1.0, base_height: float = 0.25,
-                assign_dist: float = 0.05, assign_scale: float = 0.0,
-                component_res: float = 0.05,
-                component_min: int = 200, sor_k: int = 50, sor_std: float = 1.0,
-                dilate_dist: float = 0.03, method: str = "passage") -> PointCloud:
+                voxel_size: float | None = 0.02,
+                scale_radius: float = 0.0, paths: bool = True, min_support: float = 0.3,
+                graph_k: int = 8, max_edge: float = 1.0, base_height: float = 0.25,
+                reach_scale: float = 0.0,
+                grow_reach: float = 0.05, grow_hops: int = 1,
+                method: str = "paths") -> PointCloud:
     """Leaf / wood separation for one tree's points, returning the wood
     thinned to ``voxel_size``.
 
-    The stages and most defaults of the ``"passage"`` method are adapted
-    from the semantic segmentation of Arbor (J.-R. Roussel, r-lidar; see
-    ``THIRD_PARTY_NOTICES.md``).
-
-    Two cues are combined. Local anisotropy -- planarity + linearity over
-    ``k`` neighbours (and, with ``scale_radius`` > 0, again over that wider
-    neighbourhood, the lower score counting: better leaf labels, but it
-    removes wood a QSM needs, see :func:`sylva.leaves.classify_leaf_wood`)
-    -- marks bark and branch surfaces
-    above ``threshold`` (high likelihood) and ``medium_threshold`` (kept
-    only after statistical outlier removal, ``sor_k`` / ``sor_std``, and
-    next to wood already found; set it at or above ``threshold`` to skip
-    the step, which on small leafy crowns pulls foliage in around the
-    stem). Topology recovers what anisotropy
-    misses (the path-frequency cue of Vicari et al. 2019): shortest paths
-    from the base over a kNN graph are traced to one target per
-    ``target_res`` cell, and any point that at least
-    ``min_passage`` of those paths run through is wood, with its neighbours
-    within ``assign_dist`` -- a roughly or thinly scanned trunk is neither
-    planar nor linear locally but every path to the crown crosses it. A
-    path follows one side of a stem, so this keeps the points on and beside
-    the paths rather than the whole section; ``assign_scale`` (try 0.03)
-    widens the reach with the share of the tree a point carries, up to that
-    fraction of the tree height on the trunk. High-likelihood points survive in connected
-    components (``component_res``) that touch passage wood or hold
-    ``component_min`` points; the result is dilated by ``dilate_dist`` for
-    thin branches. ``passage=False`` gives the anisotropy-only filter.
+    Two cues are combined. Topology finds the wood (the path-frequency cue
+    of Vicari et al. 2019, measured as a length): over the tree of shortest
+    paths from the base on a kNN graph, the *support* of a point is the
+    length of path from it to the farthest point whose path runs through
+    it, and a point that supports at least ``min_support`` is wood. A leaf,
+    or a bark point where a path ends, supports nothing; a point on a
+    branch supports the branch beyond it -- so a roughly or thinly scanned
+    trunk, neither planar nor linear locally, is kept because the paths to
+    the crown run up it. The graph joins the pieces of the cloud wherever
+    two come within ``max_edge`` of each other, so a trunk cut off from its
+    crown by an occluded stretch still carries the crown's paths.
+    ``reach_scale`` (try 0.03) also takes the points within that fraction
+    of a wood point's support, about a metre on a trunk that carries 30 m
+    and nothing on a twig. Local anisotropy
+    then completes it: from the wood the paths found, the filter grows over
+    the same graph, a step of at most ``grow_reach`` at a time, through
+    points whose planarity + linearity over ``k`` neighbours is above
+    ``threshold`` (bark and branch surfaces; with ``scale_radius`` > 0 the
+    lower of that and the score over the wider neighbourhood counts: better
+    leaf labels, but it removes wood a QSM needs, see
+    :func:`sylva.leaves.classify_leaf_wood`), and takes ``grow_hops`` steps
+    more whatever the anisotropy, for twigs too thin to have any.
+    ``paths=False`` leaves the paths out and keeps the points above
+    ``threshold`` alone.
 
     This filter is tuned to give a QSM what it needs (every stem and
     branch surface), not the most accurate leaf labels; for leaf area and
@@ -60,29 +55,25 @@ def wood_points(cloud: PointCloud, k: int = 20, threshold: float = 0.85,
         One segmented tree.
     k
         Neighbours for the anisotropy features.
-    threshold, medium_threshold
-        High- and medium-likelihood anisotropy cut-offs (0-1).
+    threshold
+        Anisotropy above which a point is wood-like (0-1).
     voxel_size
         Thin the input to this spacing (m) first; None or 0 keeps every
         point.
     scale_radius
         Second, wider feature scale (m); 0 disables.
-    passage, min_passage, target_res
-        Path-passage wood: enable, paths a point must carry, and target
-        cell size (m).
+    paths, min_support
+        Wood from the shortest paths: enable, and the length of path (m) a
+        point must support.
     graph_k, max_edge, base_height
         kNN graph neighbours, longest edge (m), and height (m) of the base
         region the paths start from.
-    assign_dist, assign_scale
-        Reach (m) around passage points, and its growth with the share of
-        the tree a point carries.
-    component_res, component_min
-        Connected-component cell size (m) and minimum size.
-    sor_k, sor_std
-        Statistical outlier removal for the medium-likelihood points.
-    dilate_dist
-        Final dilation (m).
-    method : {"passage", "gbs"}
+    reach_scale
+        Reach around a wood point as a fraction of its support; 0 for none.
+    grow_reach, grow_hops
+        Longest graph step (m) the wood grows across, and the steps taken
+        beyond it whatever the anisotropy.
+    method : {"paths", "gbs"}
         ``"gbs"`` uses the graph-based labeller of
         :func:`sylva.leaves.classify_leaf_wood` instead.
 
@@ -98,8 +89,7 @@ def wood_points(cloud: PointCloud, k: int = 20, threshold: float = 0.85,
         from ..leaves import classify_leaf_wood
 
         return thin[classify_leaf_wood(thin, voxel_size=0.0, method="gbs")]
-    mask = _core.wood_mask(thin.xyz, k, threshold, medium_threshold, scale_radius, graph_k, max_edge,
-                           base_height, target_res, min_passage, assign_dist, assign_scale,
-                           component_res,
-                           component_min, sor_k, sor_std, dilate_dist, passage)
+    mask = _core.wood_mask(thin.xyz, k, threshold, scale_radius, graph_k, max_edge,
+                           base_height, min_support, reach_scale,
+                           grow_reach, grow_hops, paths)
     return thin[mask]

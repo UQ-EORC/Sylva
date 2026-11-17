@@ -428,7 +428,7 @@ mod tests {
 
     #[test]
     fn classifier_scores_leave_the_labels_alone() {
-        use crate::leaves::{classify_leaf_wood, classify_leaf_wood_gbs, classify_leaf_wood_gbs_scores, classify_leaf_wood_scores, gbs_confidence, passage_confidence};
+        use crate::leaves::{classify_leaf_wood, classify_leaf_wood_gbs, classify_leaf_wood_gbs_scores, classify_leaf_wood_scores, gbs_confidence, path_confidence};
         use crate::pointcloud::Attr;
         let cloud = crate::synthetic::tree(0.0, 0.0, 0.4, 12.0, 0.0, 6, 4000, 9);
         let Some(Attr::U8(cls)) = cloud.attrs.get("classification") else { panic!() };
@@ -440,8 +440,8 @@ mod tests {
         let wp = crate::qsm::wood::WoodParams::default();
         let s = classify_leaf_wood_scores(&cloud.xyz, 0.02, &wp);
         assert_eq!(s.mask, classify_leaf_wood(&cloud.xyz, 0.02, &wp));
-        assert!(s.anisotropy.iter().chain(&s.passage).all(|v| (0.0..=1.0).contains(v)));
-        let c = passage_confidence(&s);
+        assert!(s.anisotropy.iter().chain(&s.support).all(|v| (0.0..=1.0).contains(v)));
+        let c = path_confidence(&s);
         assert!(c.iter().all(|v| (0.0..=1.0).contains(v)));
         assert!(mean(&c, true) > mean(&c, false) + 0.2);
         let gp = crate::qsm::wood::GbsParams::default();

@@ -190,7 +190,7 @@ pub fn classify_leaf_wood_gbs(points: &[Point], voxel_size: f64, params: &crate:
 pub fn classify_leaf_wood_scores(points: &[Point], voxel_size: f64, params: &WoodParams) -> crate::qsm::wood::WoodScores {
     let (thin, near) = thinned(points, voxel_size);
     let s = crate::qsm::wood::wood_scores(&thin, params);
-    crate::qsm::wood::WoodScores { mask: near.iter().map(|&j| s.mask[j]).collect(), anisotropy: near.iter().map(|&j| s.anisotropy[j]).collect(), passage: near.iter().map(|&j| s.passage[j]).collect() }
+    crate::qsm::wood::WoodScores { mask: near.iter().map(|&j| s.mask[j]).collect(), anisotropy: near.iter().map(|&j| s.anisotropy[j]).collect(), support: near.iter().map(|&j| s.support[j]).collect() }
 }
 
 /// [`classify_leaf_wood_gbs`] with the share of shell scales at which each
@@ -201,16 +201,16 @@ pub fn classify_leaf_wood_gbs_scores(points: &[Point], voxel_size: f64, params: 
     (near.iter().map(|&j| mask[j]).collect(), near.iter().map(|&j| votes[j]).collect())
 }
 
-/// Wood confidence in `[0, 1]` from the passage filter's cues: 1 where the
+/// Wood confidence in `[0, 1]` from the path filter's cues: 1 where the
 /// filter keeps the point, and `DROPPED_WEIGHT` times the anisotropy where it
 /// drops it, so a dropped point still counts a little towards a circle,
 /// in proportion to how planar or linear its neighbourhood is, but is
 /// never confident wood (below 0.5).
-pub fn passage_confidence(s: &crate::qsm::wood::WoodScores) -> Vec<f64> {
+pub fn path_confidence(s: &crate::qsm::wood::WoodScores) -> Vec<f64> {
     s.mask.iter().zip(&s.anisotropy).map(|(&m, &a)| if m { 1.0 } else { DROPPED_WEIGHT * a.clamp(0.0, 1.0) }).collect()
 }
 
-/// Largest weight [`passage_confidence`] gives a point the filter drops.
+/// Largest weight [`path_confidence`] gives a point the filter drops.
 pub const DROPPED_WEIGHT: f64 = 0.4;
 
 /// Wood confidence in `[0, 1]` from the graph-based labels: half for the

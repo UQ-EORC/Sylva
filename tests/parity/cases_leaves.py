@@ -61,8 +61,8 @@ def classify_leaf_wood():
            "gbs_intervals": leaves.classify_leaf_wood(short, intervals=[0.2, 0.4, 0.8]),
            "gbs_angle": leaves.classify_leaf_wood(tall, max_angle=0.3),
            "gbs_empty": leaves.classify_leaf_wood(np.zeros((0, 3))),
-           "passage": leaves.classify_leaf_wood(short, method="passage"),
-           "passage_threshold": leaves.classify_leaf_wood(short, method="passage", threshold=0.9, voxel_size=0.03)}
+           "paths": leaves.classify_leaf_wood(short, method="paths"),
+           "paths_threshold": leaves.classify_leaf_wood(short, method="paths", threshold=0.9, voxel_size=0.03)}
     try:
         leaves.classify_leaf_wood(short, method="nope")
     except ValueError as e:

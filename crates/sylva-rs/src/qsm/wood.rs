@@ -1,8 +1,5 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
-// The stages and defaults of the wood filter (`wood_scores`) are adapted from
-// Arbor (Copyright (C) 2026 Jean-Romain Roussel, r-lidar; GPL-3.0-or-later);
-// see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Leaf / wood separation for a single tree.
@@ -12,78 +9,66 @@
 //! is neither planar nor linear at the neighbourhood scale, and without it
 //! the QSM has no measurements on the very cylinders that carry the volume.
 //! The answer here is topological: every path from the base to any part of
-//! the crown runs through the trunk and the branches, so points that many
-//! shortest paths pass through are wood whatever their local shape (the
+//! the crown runs through the trunk and the branches, so points that
+//! shortest paths run on through are wood whatever their local shape (the
 //! path-frequency cue of Vicari et al. 2019).
 //!
-//! Steps: passage counting on a kNN graph from
-//! the base, with coarse target cells so the count does not depend on point
-//! density; neighbours of passage wood; high-likelihood anisotropy in
-//! connected components that are large or touch passage wood; medium
-//! likelihood only where it connects to wood already found; a final
-//! dilation for thin branches.
-
-use std::collections::HashSet;
+//! [`wood_scores`] measures that as a length: over the tree of shortest
+//! paths from the base, the *support* of a point is the length of path from
+//! it to the farthest point whose path runs through it. Points that support
+//! at least `min_support` are wood; the wood then grows over the graph
+//! through points whose neighbourhood is planar or linear.
+//!
+//! [`gbs_mask`] is the graph-based separation of Tian and Li (2022).
 
 use rayon::prelude::*;
 
-use crate::cluster::{connected_components, dijkstra, knn_graph, radius_graph};
-use crate::filters::{planarity_linearity, statistical_outlier_mask, voxel_downsample_indices};
+use crate::cluster::{connected_components, dijkstra, directed_knn_graph_bridged, knn_graph};
+use crate::filters::planarity_linearity;
 use crate::util::spatial::KdTree;
 use crate::Point;
 
 #[derive(Debug, Clone)]
 /// Settings of [`wood_mask`] and [`wood_scores`].
 pub struct WoodParams {
-    /// Neighbourhood for the anisotropy likelihood.
+    /// Neighbourhood for the anisotropy.
     pub k: usize,
-    /// Planarity + linearity above this is high wood likelihood.
-    pub high_threshold: f64,
-    /// ... and above this medium likelihood, kept only next to wood after
-    /// outlier removal. At or above `high_threshold` the step is off.
-    pub medium_threshold: f64,
+    /// Planarity + linearity above this is wood-like: the wood the paths
+    /// find grows through such points (without `paths`, they are the wood).
+    pub threshold: f64,
     /// Radius of the second, wider anisotropy neighbourhood (m): larger than a
     /// leaf, smaller than the spacing of branches. 0 (the default) uses `k`
-    /// neighbours only: the wider scale labels foliage far better (leaf recall
-    /// 0.1 -> 0.6 on synthetic leaf-on trees) but removes wood a QSM needs
-    /// (harvest volume rRMSE 19.9 -> 22.9 %), so `classify_leaf_wood` turns it
-    /// on and the QSM input filter does not.
+    /// neighbours only: the wider scale labels foliage better but removes
+    /// wood a QSM needs, so `classify_leaf_wood` turns it on and the QSM
+    /// input filter does not.
     pub scale_radius: f64,
-    /// kNN graph for the passage paths.
+    /// Neighbours of a point in the graph the paths run over.
     pub graph_k: usize,
-    /// Longest graph edge (m).
+    /// Longest graph edge (m); pieces of the cloud within this of each other
+    /// are joined.
     pub max_edge: f64,
-    /// Points within this height of the lowest point seed the paths.
+    /// Points within this height of the lowest point start the paths (m).
     pub base_height: f64,
-    /// Target cell size: one path per occupied cell.
-    pub target_res: f64,
-    /// A point crossed by at least this many target paths is wood.
-    pub min_passage: usize,
-    /// Neighbours of passage wood within this distance are wood too ...
-    pub assign_dist: f64,
-    /// ... plus this fraction of the tree height times the square root of
-    /// the share of target paths the point carries (0 for a fixed reach).
-    pub assign_scale: f64,
-    /// Connectivity resolution and minimum size of a free-standing
-    /// high-likelihood component.
-    pub component_res: f64,
-    /// Fewest points of a high-likelihood component kept when it touches no passage wood.
-    pub component_min: usize,
-    /// Statistical outlier removal on the medium-likelihood set before its
-    /// components are formed: scattered foliage goes, bark
-    /// patches stay.
-    pub sor_k: usize,
-    /// Standard-deviation multiplier of the outlier removal (a point is dropped past `mean + sor_std * std` of the neighbour distance).
-    pub sor_std: f64,
-    /// Final dilation radius.
-    pub dilate_dist: f64,
-    /// 0 disables the passage step (anisotropy only, the old behaviour).
-    pub passage: bool,
+    /// A point is wood when the paths through it run on at least this far
+    /// beyond it (m).
+    pub min_support: f64,
+    /// Points within this fraction of a wood point's support are wood too
+    /// (0, the default, for none): by the pipe model a stem is as thick as
+    /// what it carries is long, so the reach is a metre on a trunk that
+    /// supports 30 m at 0.03, and nothing on a twig.
+    pub reach_scale: f64,
+    /// Longest graph step the wood may grow across (m).
+    pub grow_reach: f64,
+    /// Graph steps taken beyond the grown wood whatever the anisotropy, for
+    /// twigs too thin to have any (count).
+    pub grow_hops: usize,
+    /// false leaves the paths out: the wood is then the wood-like points alone.
+    pub paths: bool,
 }
 
 impl Default for WoodParams {
     fn default() -> Self {
-        WoodParams { k: 20, high_threshold: 0.85, medium_threshold: 0.75, scale_radius: 0.0, graph_k: 10, max_edge: 1.0, base_height: 0.25, target_res: 0.2, min_passage: 3, assign_dist: 0.05, assign_scale: 0.0, component_res: 0.05, component_min: 200, sor_k: 50, sor_std: 1.0, dilate_dist: 0.03, passage: true }
+        WoodParams { k: 20, threshold: 0.85, scale_radius: 0.0, graph_k: 8, max_edge: 1.0, base_height: 0.25, min_support: 0.3, reach_scale: 0.0, grow_reach: 0.05, grow_hops: 1, paths: true }
     }
 }
 
@@ -113,7 +98,7 @@ fn anisotropy(points: &[Point], nbrs: &[(usize, f64)]) -> f64 {
     }
     let e = cov.symmetric_eigen().eigenvalues;
     let (lo, hi) = (e.min(), e.max());
-    if hi > 1e-14 { 1.0 - (lo / hi).max(0.0) } else { 0.0 }
+    if hi > 0.0 { (1.0 - lo / hi).clamp(0.0, 1.0) } else { 0.0 }
 }
 
 /// Per-point wood mask for one tree's points.
@@ -129,17 +114,16 @@ pub struct WoodScores {
     /// Local anisotropy, planarity + linearity (`1 - l_min / l_max`), in
     /// `[0, 1]`; the lower of the two scales with `scale_radius`.
     pub anisotropy: Vec<f64>,
-    /// Share of the target paths from the base that run through the point,
-    /// in `[0, 1]` (0 everywhere without the passage step).
-    pub passage: Vec<f64>,
+    /// Support of the point as a share of the longest path from the base,
+    /// in `[0, 1]` (0 everywhere without the paths).
+    pub support: Vec<f64>,
 }
 
-/// [`wood_mask`] with the anisotropy and passage share of every point.
+/// [`wood_mask`] with the anisotropy and the support of every point.
 ///
-/// The stages (path passage, assignment, high-likelihood components, medium
-/// likelihood with outlier removal, dilation) and most defaults are adapted
-/// from Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later),
-/// `src/segment/segment_semantic_api.cpp`.
+/// The wood is what the shortest paths from the base run on through (the
+/// path-frequency cue of Vicari et al. 2019, measured as a length), grown
+/// over the same graph through wood-like points.
 pub fn wood_scores(points: &[Point], p: &WoodParams) -> WoodScores {
     let n = points.len();
     if n == 0 {
@@ -161,11 +145,18 @@ pub fn wood_scores(points: &[Point], p: &WoodParams) -> WoodScores {
     let mut wood = vec![false; n];
     let mut share = vec![0.0; n];
 
-    // 1. Passage: shortest paths from the base; a point's passage count is
-    // the number of target cells whose path runs through it.
-    if p.passage && n > p.graph_k {
-        let graph = knn_graph(points, p.graph_k, p.max_edge);
-        // Seed from the lowest zone of the main component: an isolated clump
+    // 1. Support. Over the tree of shortest paths from the base, a point
+    // carries the points whose paths run through it, and its support is the
+    // length of path from it to the farthest of them. A leaf, or a bark
+    // point where a path ends, supports nothing; a point on a branch
+    // supports the branch beyond it. Being a length, the measure does not
+    // depend on how densely the tree was sampled.
+    if p.paths && n > p.graph_k {
+        // The graph joins its pieces wherever two come within `max_edge` of
+        // each other, so a trunk cut off from its crown by an occluded
+        // stretch still carries the crown's paths. An edge costs its length.
+        let graph = directed_knn_graph_bridged(points, p.graph_k, p.max_edge, 1.0, None);
+        // Start from the lowest zone of the main component: an isolated clump
         // of ground remnants below the trunk would otherwise start the paths
         // and nothing above it would count.
         let (_, comp) = connected_components(&graph);
@@ -173,104 +164,56 @@ pub fn wood_scores(points: &[Point], p: &WoodParams) -> WoodScores {
         let z0 = points.iter().zip(&comp).filter(|(_, &c)| c == main).map(|(q, _)| q[2]).fold(f64::INFINITY, f64::min);
         let sources: Vec<usize> = (0..n).filter(|&i| comp[i] == main && points[i][2] <= z0 + p.base_height).collect();
         let (dist, _, pred) = dijkstra(&graph, &sources);
-        let targets: HashSet<usize> = voxel_downsample_indices(points, p.target_res).into_iter().collect();
+        // Farthest first, so that every point is finished before the point
+        // its path goes on to.
         let mut order: Vec<usize> = (0..n).filter(|&i| dist[i].is_finite()).collect();
         order.sort_by(|&a, &b| dist[b].partial_cmp(&dist[a]).unwrap());
-        let mut passage = vec![0usize; n];
+        let mut far = dist.clone();
         for &i in &order {
-            if targets.contains(&i) {
-                passage[i] += 1;
-            }
             if pred[i] != usize::MAX {
-                passage[pred[i]] += passage[i];
+                far[pred[i]] = far[pred[i]].max(far[i]);
             }
         }
-        // Neighbours of a passage point are wood too. A path runs along one
-        // side of a stem, so on a thin or rough trunk a fixed reach keeps
-        // little more than the points the paths step on. `assign_scale` lets
-        // the reach grow with the share of the tree a point carries (by the
-        // pipe model a stem's cross-section scales with what it supports):
-        // at 0.03 the trunk reaches 3 % of the tree height across and a twig
-        // barely beyond `assign_dist`. It is off by default: on the harvest
-        // benchmark it improved bias and DBH but widened the volume scatter.
-        let z1 = points.iter().zip(&comp).filter(|(_, &c)| c == main).map(|(q, _)| q[2]).fold(f64::NEG_INFINITY, f64::max);
-        let height = (z1 - z0).max(0.0);
-        let n_targets = targets.len().max(1) as f64;
-        for (s, &c) in share.iter_mut().zip(&passage) {
-            *s = (c as f64 / n_targets).min(1.0);
-        }
-        let tree = KdTree::new(points);
-        let mut seed = vec![false; n];
-        for i in 0..n {
-            if passage[i] >= p.min_passage {
-                seed[i] = true;
-                let share = (passage[i] as f64 / n_targets).min(1.0);
-                let reach = p.assign_dist + p.assign_scale * height * share.sqrt();
-                for (j, _) in tree.within(&points[i], reach) {
-                    seed[j] = true;
+        let longest = order.first().map(|&i| dist[i]).unwrap_or(0.0).max(f64::MIN_POSITIVE);
+        let tree = (p.reach_scale > 0.0).then(|| KdTree::new(points));
+        for &i in &order {
+            let support = far[i] - dist[i];
+            share[i] = (support / longest).clamp(0.0, 1.0);
+            if support >= p.min_support {
+                wood[i] = true;
+                if let Some(tree) = &tree {
+                    for (j, _) in tree.within(&points[i], p.reach_scale * support) {
+                        wood[j] = true;
+                    }
                 }
             }
         }
-        wood = seed;
-    }
-
-    // 2. High likelihood: connected components (26-connectivity at
-    // `component_res`) that are large or contain passage wood.
-    let high: Vec<usize> = (0..n).filter(|&i| wood[i] || like[i] > p.high_threshold).collect();
-    wood = keep_components(points, &high, &wood, p.component_res, p.component_min, n);
-
-    // 3. Medium likelihood, only in components that already hold wood.
-    if p.medium_threshold < p.high_threshold {
-        let mut medium: Vec<usize> = (0..n).filter(|&i| wood[i] || like[i] > p.medium_threshold).collect();
-        if p.sor_k > 0 {
-            let sub: Vec<Point> = medium.iter().map(|&i| points[i]).collect();
-            let keep = statistical_outlier_mask(&sub, p.sor_k, p.sor_std);
-            medium = medium.iter().zip(&keep).filter(|(&i, &k)| k || wood[i]).map(|(&i, _)| i).collect();
-        }
-        wood = keep_components(points, &medium, &wood, p.component_res, usize::MAX, n);
-    }
-
-    // 4. Dilation for thin branches.
-    if p.dilate_dist > 0.0 {
-        let tree = KdTree::new(points);
-        let mut out = wood.clone();
-        for i in 0..n {
-            if wood[i] {
-                for (j, _) in tree.within(&points[i], p.dilate_dist) {
-                    out[j] = true;
+        // 2. Growth: from the wood the paths found, over the same graph,
+        // through points whose anisotropy is wood-like, a step of at most
+        // `grow_reach` at a time; then `grow_hops` steps more whatever the
+        // anisotropy, for twigs too thin to have any.
+        let mut front: Vec<usize> = (0..n).filter(|&i| wood[i]).collect();
+        while let Some(i) = front.pop() {
+            for (j, w) in graph.edges(i) {
+                if !wood[j] && w <= p.grow_reach && like[j] > p.threshold {
+                    wood[j] = true;
+                    front.push(j);
                 }
             }
         }
-        wood = out;
-    }
-    WoodScores { mask: wood, anisotropy: like, passage: share }
-}
-
-/// Components of `subset` (indices into `points`) under `res` connectivity;
-/// a component survives when it contains a point already in `wood` or has
-/// at least `min_size` points. Returns the new mask.
-fn keep_components(points: &[Point], subset: &[usize], wood: &[bool], res: f64, min_size: usize, n: usize) -> Vec<bool> {
-    let mut out = vec![false; n];
-    if subset.is_empty() {
-        return out;
-    }
-    let sub: Vec<Point> = subset.iter().map(|&i| points[i]).collect();
-    let graph = radius_graph(&sub, res * 3f64.sqrt());
-    let (count, label) = connected_components(&graph);
-    let mut size = vec![0usize; count];
-    let mut has_wood = vec![false; count];
-    for (k, &i) in subset.iter().enumerate() {
-        size[label[k]] += 1;
-        if wood[i] {
-            has_wood[label[k]] = true;
+        for _ in 0..p.grow_hops {
+            let add: Vec<usize> = (0..n).filter(|&i| wood[i]).flat_map(|i| graph.edges(i).filter(|&(j, w)| !wood[j] && w <= p.grow_reach).map(|(j, _)| j).collect::<Vec<_>>()).collect();
+            for j in add {
+                wood[j] = true;
+            }
+        }
+    } else {
+        // Without the paths: the wood-like points themselves.
+        for i in 0..n {
+            wood[i] = like[i] > p.threshold;
         }
     }
-    for (k, &i) in subset.iter().enumerate() {
-        if has_wood[label[k]] || size[label[k]] >= min_size {
-            out[i] = true;
-        }
-    }
-    out
+    WoodScores { mask: wood, anisotropy: like, support: share }
 }
 
 /// Graph-based leaf / wood separation after Tian & Li (2022, IEEE TGRS 60,

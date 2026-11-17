@@ -59,11 +59,11 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
     ``intervals``, ``max_angle``, ``linearity``, ``circle_error``,
     ``graph_k``, ``max_edge``, ``min_points``. On 30 manually labelled
     tropical trees (Van den Broeck et al. 2025) it scores accuracy 0.90 and
-    mIoU 0.79; the passage filter below scores 0.68 and 0.51.
+    mIoU 0.79; the path filter below scores 0.75 and 0.59.
 
-    ``method="passage"``:
+    ``method="paths"``:
 
-    The leaf/wood filter of :func:`sylva.qsm.wood_points` (path passage from
+    The leaf/wood filter of :func:`sylva.qsm.wood_points` (shortest paths from
     the base plus local anisotropy) runs on the cloud thinned to
     ``voxel_size``, here with a second anisotropy scale of 10 cm
     (``scale_radius``): a single leaf is as planar as bark over a few
@@ -74,7 +74,7 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
 
     ``return_scores=True`` adds a wood confidence in [0, 1] per point, a
     weight for :func:`sylva.qsm.build_qsm` (``weights=``) and
-    :func:`sylva.qsm.build_plot` (``wood=``). For ``"passage"`` it is 1
+    :func:`sylva.qsm.build_plot` (``wood=``). For ``"paths"`` it is 1
     where the filter keeps the point and 0.4 times the point's anisotropy
     (planarity + linearity) where it drops it: dropped points still count a
     little towards a circle but are never confident wood. For ``"gbs"`` it is
@@ -91,7 +91,7 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
     voxel_size
         Work on the cloud thinned to this spacing (m); every input point gets
         the label of its nearest thinned point. 0 uses every point.
-    method : {"gbs", "passage"}
+    method : {"gbs", "paths"}
         Classifier; see above.
     return_scores
         Also return the wood confidence per point (see above).
@@ -99,7 +99,7 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
         For ``"gbs"``: ``intervals`` (shell thicknesses, m), ``max_angle``
         (rad), ``linearity`` [0.9], ``circle_error`` [0.2, relative to the
         radius], ``graph_k`` [8], ``max_edge`` [1.0], ``base_height``
-        [0.25], ``min_points`` [10]. For ``"passage"``: the options of
+        [0.25], ``min_points`` [10]. For ``"paths"``: the options of
         :func:`sylva.qsm.wood_points`.
 
     Returns
@@ -123,10 +123,8 @@ def classify_leaf_wood(cloud: PointCloud, voxel_size: float = 0.02, method: str 
             mask, confidence, _ = _core.classify_leaf_wood_gbs_scores(_xyz(cloud), float(voxel_size), **wood_params)
             return mask, confidence
         return _core.classify_leaf_wood_gbs(_xyz(cloud), float(voxel_size), **wood_params)
-    if method != "passage":
-        raise ValueError("method must be 'passage' or 'gbs'")
-    if "threshold" in wood_params:
-        wood_params["high_threshold"] = wood_params.pop("threshold")
+    if method != "paths":
+        raise ValueError("method must be 'paths' or 'gbs'")
     if return_scores:
         mask, confidence, _, _ = _core.classify_leaf_wood_scores(_xyz(cloud), float(voxel_size), **wood_params)
         return mask, confidence

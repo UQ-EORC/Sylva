@@ -159,7 +159,7 @@ def test_stored_leaf_wood_is_reused_only_with_the_same_settings(store, tmp_path,
     tiles.classify_leaf_wood(st, cat, tmp_path / "c", name="lw", voxel_size=0.05, resume=True, workers=1)
     assert len(calls) == 3
     calls.clear()
-    tiles.classify_leaf_wood(st, cat, tmp_path / "d", name="lw", voxel_size=0.05, method="passage",
+    tiles.classify_leaf_wood(st, cat, tmp_path / "d", name="lw", voxel_size=0.05, method="paths",
                              resume=True, workers=1)
     assert len(calls) == 3
     # Only the trees asked for are classified; the others are written as -1.

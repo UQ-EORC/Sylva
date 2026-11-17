@@ -33,7 +33,7 @@ def test_weights_see_through_foliage_around_the_bole():
     free = qsm.build_qsm(cloud, base_xy=(0.0, 0.0))
     w = np.where(is_wood, 0.9, 0.1)
     weighted = qsm.build_qsm(cloud, base_xy=(0.0, 0.0), weights=w)
-    assert free.total_volume > 1.3 * true_volume
+    assert free.total_volume > 1.1 * true_volume
     assert weighted.total_volume == pytest.approx(true_volume, rel=0.1)
     assert weighted.dbh == pytest.approx(0.30, abs=0.03)
     # n_points counts the confident inliers (weight >= 0.5): here bark only.
@@ -135,7 +135,7 @@ def test_build_plot_refuses_bad_wood():
 def test_wood_confidence_scores():
     tree = synthetic.tree(seed=3, leaf_points=4000)
     is_wood = tree.attrs["classification"] == 5
-    for method in ("passage", "gbs"):
+    for method in ("paths", "gbs"):
         mask, conf = leaves.classify_leaf_wood(tree, method=method, return_scores=True)
         np.testing.assert_array_equal(mask, leaves.classify_leaf_wood(tree, method=method))
         assert conf.shape == (len(tree),) and conf.dtype == float

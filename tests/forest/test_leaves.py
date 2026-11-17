@@ -134,12 +134,13 @@ def test_classify_leaf_wood(single_tree):
     assert wood.shape == (len(cloud),) and wood.dtype == bool
     assert wood[:n].mean() > 0.9  # the stem and branch
     assert (~wood[n:]).mean() > 0.8  # the foliage
-    # The passage filter: over a few centimetres a leaf is as planar as bark, so
-    # one anisotropy scale finds almost no leaves and the second scale helps.
-    narrow = leaves.classify_leaf_wood(cloud, method="passage", scale_radius=0.0)
-    wide = leaves.classify_leaf_wood(cloud, method="passage")
+    # The path filter: over a few centimetres a leaf is as planar as bark, so
+    # one anisotropy scale lets the wood grow into the foliage and the second
+    # scale holds it back.
+    narrow = leaves.classify_leaf_wood(cloud, method="paths", scale_radius=0.0)
+    wide = leaves.classify_leaf_wood(cloud, method="paths")
     assert wide[:n].mean() > 0.9
-    assert (~narrow[n:]).mean() < (~wide[n:]).mean() - 0.2 < (~wood[n:]).mean()
+    assert (~narrow[n:]).mean() + 0.1 < (~wide[n:]).mean() < (~wood[n:]).mean()
     with pytest.raises(ValueError):
         leaves.classify_leaf_wood(cloud, method="nope")
     # The QSM input filter can use it too.

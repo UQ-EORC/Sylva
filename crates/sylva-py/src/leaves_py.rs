@@ -68,11 +68,11 @@ fn angles_from_py(bin_centres: PyReadonlyArray1<f64>, density: PyReadonlyArray1<
 // ------------------------------------------------------------ leaf / wood
 
 #[pyfunction]
-#[pyo3(signature = (xyz, voxel_size=0.02, k=20, high_threshold=0.85, medium_threshold=0.75, scale_radius=0.1, graph_k=10, max_edge=1.0, base_height=0.25, target_res=0.2, min_passage=3, assign_dist=0.05, assign_scale=0.0, component_res=0.05, component_min=200, sor_k=50, sor_std=1.0, dilate_dist=0.03, passage=true))]
+#[pyo3(signature = (xyz, voxel_size=0.02, k=20, threshold=0.85, scale_radius=0.1, graph_k=8, max_edge=1.0, base_height=0.25, min_support=0.3, reach_scale=0.0, grow_reach=0.05, grow_hops=1, paths=true))]
 #[allow(clippy::too_many_arguments)]
-fn classify_leaf_wood<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, k: usize, high_threshold: f64, medium_threshold: f64, scale_radius: f64, graph_k: usize, max_edge: f64, base_height: f64, target_res: f64, min_passage: usize, assign_dist: f64, assign_scale: f64, component_res: f64, component_min: usize, sor_k: usize, sor_std: f64, dilate_dist: f64, passage: bool) -> PyResult<Bound<'py, PyArray1<bool>>> {
+fn classify_leaf_wood<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, k: usize, threshold: f64, scale_radius: f64, graph_k: usize, max_edge: f64, base_height: f64, min_support: f64, reach_scale: f64, grow_reach: f64, grow_hops: usize, paths: bool) -> PyResult<Bound<'py, PyArray1<bool>>> {
     let p = xyz_from_py(xyz)?;
-    let params = qsm::wood::WoodParams { k, high_threshold, medium_threshold, scale_radius, graph_k, max_edge, base_height, target_res, min_passage, assign_dist, assign_scale, component_res, component_min, sor_k, sor_std, dilate_dist, passage };
+    let params = qsm::wood::WoodParams { k, threshold, scale_radius, graph_k, max_edge, base_height, min_support, reach_scale, grow_reach, grow_hops, paths };
     Ok(py.detach(|| leaves::classify_leaf_wood(&p, voxel_size, &params)).into_pyarray(py))
 }
 
@@ -95,19 +95,19 @@ type PassageScores<'py> = (Bound<'py, PyArray1<bool>>, Bound<'py, PyArray1<f64>>
 type GbsScores<'py> = (Bound<'py, PyArray1<bool>>, Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>);
 
 /// [`classify_leaf_wood`] with the per-point wood confidence and cues:
-/// `(mask, confidence, anisotropy, passage share)`.
+/// `(mask, confidence, anisotropy, support share)`.
 #[pyfunction]
-#[pyo3(signature = (xyz, voxel_size=0.02, k=20, high_threshold=0.85, medium_threshold=0.75, scale_radius=0.1, graph_k=10, max_edge=1.0, base_height=0.25, target_res=0.2, min_passage=3, assign_dist=0.05, assign_scale=0.0, component_res=0.05, component_min=200, sor_k=50, sor_std=1.0, dilate_dist=0.03, passage=true))]
+#[pyo3(signature = (xyz, voxel_size=0.02, k=20, threshold=0.85, scale_radius=0.1, graph_k=8, max_edge=1.0, base_height=0.25, min_support=0.3, reach_scale=0.0, grow_reach=0.05, grow_hops=1, paths=true))]
 #[allow(clippy::too_many_arguments)]
-fn classify_leaf_wood_scores<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, k: usize, high_threshold: f64, medium_threshold: f64, scale_radius: f64, graph_k: usize, max_edge: f64, base_height: f64, target_res: f64, min_passage: usize, assign_dist: f64, assign_scale: f64, component_res: f64, component_min: usize, sor_k: usize, sor_std: f64, dilate_dist: f64, passage: bool) -> PyResult<PassageScores<'py>> {
+fn classify_leaf_wood_scores<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, voxel_size: f64, k: usize, threshold: f64, scale_radius: f64, graph_k: usize, max_edge: f64, base_height: f64, min_support: f64, reach_scale: f64, grow_reach: f64, grow_hops: usize, paths: bool) -> PyResult<PassageScores<'py>> {
     let p = xyz_from_py(xyz)?;
-    let params = qsm::wood::WoodParams { k, high_threshold, medium_threshold, scale_radius, graph_k, max_edge, base_height, target_res, min_passage, assign_dist, assign_scale, component_res, component_min, sor_k, sor_std, dilate_dist, passage };
+    let params = qsm::wood::WoodParams { k, threshold, scale_radius, graph_k, max_edge, base_height, min_support, reach_scale, grow_reach, grow_hops, paths };
     let (s, conf) = py.detach(|| {
         let s = leaves::classify_leaf_wood_scores(&p, voxel_size, &params);
-        let conf = leaves::passage_confidence(&s);
+        let conf = leaves::path_confidence(&s);
         (s, conf)
     });
-    Ok((s.mask.into_pyarray(py), conf.into_pyarray(py), s.anisotropy.into_pyarray(py), s.passage.into_pyarray(py)))
+    Ok((s.mask.into_pyarray(py), conf.into_pyarray(py), s.anisotropy.into_pyarray(py), s.support.into_pyarray(py)))
 }
 
 /// [`classify_leaf_wood_gbs`] with the per-point wood confidence and the
