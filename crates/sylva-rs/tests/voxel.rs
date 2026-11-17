@@ -61,7 +61,7 @@ fn echo_weights_share_the_pulse() {
     let shots = down_shots(&[(0.5, 0.5, vec![6.5, 8.5])]); // echoes in k = 3 and k = 1
     let v = voxel::voxelize(&VoxelInputs::new(&shots), &params(([0.0; 3], [1.0, 1.0, 4.0]))).unwrap();
     // The second segment starts at the first echo, carrying half the pulse. The pulse
-    // entered that voxel once, whole: unlike rayvoxel, the half that travels on is not
+    // entered that voxel once, whole: the half that travels on is not
     // counted as entering it again.
     assert!((v.get_f(F::NumBeamsWeighted, 3) - 1.0).abs() < 1e-6);
     assert!((v.get_f(F::NumBeamsWeighted, 2) - 0.5).abs() < 1e-6);

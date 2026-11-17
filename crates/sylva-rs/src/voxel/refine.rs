@@ -1,7 +1,6 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
-// Adapted from rayvoxel (Josh Rivory, unpublished), a port of AMAPVox (UMR AMAP);
-// see THIRD_PARTY_NOTICES.md.
+// Follows AMAPVox (UMR AMAP); see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Flat-top canopy peaks and neighbour priors.
@@ -44,7 +43,7 @@ fn shells() -> [Vec<[i64; 3]>; 3] {
 /// of their neighbours' statistics: first the face neighbours, then edges,
 /// then corners, each scaled so that the voxel just reaches `min_rays`.
 ///
-/// Unlike rayvoxel, neighbours are always read from the grid as it was before
+/// Neighbours are always read from the grid as it was before
 /// any top-up, so the result does not depend on iteration order, and the grid
 /// is not padded: the outermost voxel layer is left as measured.
 pub(crate) fn apply_neighbour_priors(vox: &mut RayVoxels, min_rays: f32) {

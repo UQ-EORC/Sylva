@@ -10,7 +10,7 @@ downward echoes (`canopy.fit_ground_plane`). It is compared with:
 - **[pylidar-tls-canopy](../references.md)'s [Jupp et al.
   (2009)](../references.md) profiles** of the same scans (hinge
   PAI, pooled per plot and per scan);
-- **ray-traced 0.5 m voxel PAI** (raycloudtools `rayvoxel`, free-path-length
+- **ray-traced 0.5 m voxel PAI** (`sylva.voxels`, free-path-length
   attenuation, occlusion traced; not comparable in kind: voxels count all
   plant area, not the upward view);
 - **optical LAI** from digital cover (DCP) and hemispherical (DHP)

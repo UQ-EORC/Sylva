@@ -16,19 +16,13 @@ original.
 
 | From | What in Sylva |
 |---|---|
-| [Arbor](https://github.com/r-lidar/arbor) (J.-R. Roussel, r-lidar) | In `trees.segment_trees`: the edge cost of the graph (edge length to a power, the angle penalty and its constants, the wood / leaf factors) and the outline of the steps. In `qsm.build_qsm`: the skeleton, the stem taper prior, the pipe-model rule for unmeasured radii, the radius smoothing, the ordering of axes and the butt straightening. In `qsm.wood_points`: the stages and most defaults of the wood filter. |
 | [lidR](https://github.com/r-lidar/lidR) (J.-R. Roussel and contributors) | `als.dalponte2016` and the logic of `als.li2012` (translations of lidR's C++); the rules and defaults of the local maximum filter in `als.locate_trees`; the standard area-based metrics of `als.metrics` (`stdmetrics`: names, formulas, entropy, cumulative height percentages). |
 | [AMAPVox](https://github.com/umr-amap/AMAPVox) (UMR AMAP) | `sylva.voxels`: the ray-traced voxel grid follows AMAPVox, whose path-length and attenuation estimators, leaf angle distributions and laser specifications it uses. |
-| [raycloudtools](https://github.com/csiro-robotics/raycloudtools) (CSIRO) | `canopy.density_grid` and the power-mean section radius of `qsm.build_qsm`. |
+| [raycloudtools](https://github.com/csiro-robotics/raycloudtools) (CSIRO; [Lowe and Stepanas 2021](references.md), [Devereux et al. 2026](references.md)) | `canopy.density_grid` ([Lowe et al. 2021](references.md)); in `trees.segment_trees`, the form of the edge cost (edge length to a power over a power of the cosine of the bend), the lateral term and the per-tree scaling; in `qsm.build_qsm`, the power-mean section radius, radii in proportion to the length carried (a fork sharing its parent's cross-section by length) and the cap on a fork's summed cross-section. |
 | [GBSeparation](https://doi.org/10.5281/zenodo.6837613) (Tian and Li) | `leaves.classify_leaf_wood(method="gbs")`. |
 | The CSF reference implementation (Zhang, Qi, Wan and Wang) | The cloth update and constants of `ground.classify_ground_csf`. |
 | The [Point Cloud Library](https://pointclouds.org) | The parameters and window sequence of `ground.classify_ground_pmf`. |
 | [SciPy](https://github.com/scipy/scipy) | Two distance-transform routines used by the coregistration. |
-
-About 1,500 of Sylva's 116,000 lines carry an Arbor or lidR credit. They are
-a small share of the code and a large share of what three methods do: the
-division of a plot into trees, the reconstruction of a tree as cylinders,
-and the two airborne segmentations.
 
 ## Following another design, with its own code
 
@@ -37,9 +31,18 @@ and the two airborne segmentations.
   DTM, CHM, normalisation, retiling and trajectory code are Sylva's.
 - **`trees.segment_trees`** and **`trees.merge_branches`** take the
   least-cost-path approach of raycloudtools' `rayextract trees`
-  ([Devereux et al. 2026](references.md)), with its per-tree height scaling
-  and lateral term as options. Seeding the trunk surface rather than its
-  axis is Arbor's idea.
+  ([Lowe and Stepanas 2021](references.md);
+  [Devereux et al. 2026](references.md)), with its per-tree height scaling
+  and lateral term as options, and the form of its cost for bending a
+  path. Seeding the trunk surface rather than its axis is the idea of
+  [Arbor](https://github.com/r-lidar/arbor) (J.-R. Roussel, r-lidar).
+- **`qsm.build_qsm`** builds its skeleton from shells of path length
+  split into their connected pieces, the level-set skeleton of
+  [Verroust and Lazarus (2000)](references.md) and
+  [Xu et al. (2007)](references.md), and fits each axis's taper by the
+  Theil–Sen estimator ([Theil 1950](references.md); [Sen 1968](references.md)).
+  **`qsm.wood_points`** starts from the path-frequency cue of
+  [Vicari et al. (2019)](references.md).
 
 ## Implemented from published methods
 
@@ -61,14 +64,22 @@ pulse-centric `Shots` model comes from the authors' earlier canopy code.
 ## Written for Sylva
 
 - **Stem detection as it now stands** (`trees.detect_stems`): the bark
-  prefilter, the linking of circles across layers, and the arc test that
-  allows for sparse sampling.
-- **In the segmentation:** joining the graph's components where the cloud
-  joins them, seeding from the real points of the bark shell, the rule for
-  the ground layer, the understorey sources as implemented, and
-  `trees.merge_touching`.
-- **In the QSMs:** the weighted cylinder fit, the anchoring of every tree of
-  a plot on its measured DBH (`qsm.build_plot`), and the detection and
+  prefilter, the linking of circles across layers, and the arc of a circle
+  measured from point to point, with its allowance for sparse sampling
+  (the share of the circle covered is the earlier detector's).
+- **In the segmentation:** measuring an edge's bend from a direction
+  between the vertical and the arriving path, joining the graph's
+  components where the cloud joins them, seeding from the real points of
+  the bark shell, the rule for the ground layer, the understorey sources as
+  implemented, and `trees.merge_touching`.
+- **In the QSMs:** joining the pieces of a tree's cloud where they come
+  within reach of each other, the linking of the skeleton through the
+  points' shortest paths, the choice of axes by the points a subtree holds,
+  the length a node carries as the measure of each axis's taper, setting
+  aside sections off their own axis's taper, measuring the wood filter's
+  paths as the length of path a point supports and growing the wood through
+  wood-like points, the weighted cylinder fit, the anchoring of every tree
+  of a plot on its measured DBH (`qsm.build_plot`), and the detection and
   meshing of buttresses.
 - **Pulse data:** the Parquet format for pulses with their misses, and the
   resolution of multiple-time-around echoes in RIEGL scans.

@@ -12,7 +12,7 @@ Every file opens with the licence header, then a module comment, then the
 imports, then the code:
 
 ```rust
-//! Pulse traversal: the accumulation half of rayvoxel.   ← what this file is
+//! Pulse traversal: the accumulation half of the voxelisation.   ← what this file is
 
 use rayon::prelude::*;                                    ← imports
 

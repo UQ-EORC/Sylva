@@ -1,7 +1,6 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
-// Adapted from rayvoxel (Josh Rivory, unpublished), a port of AMAPVox (UMR AMAP);
-// see THIRD_PARTY_NOTICES.md.
+// Follows AMAPVox (UMR AMAP); see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! `.vox` voxel-space, plain text and per-tree inclination CSV writers.
@@ -33,7 +32,7 @@ fn real(v: f64) -> String {
 }
 
 impl RayVoxels {
-    /// Output columns after the voxel indices, in rayvoxel's order.
+    /// Output columns after the voxel indices, in their written order.
     ///
     /// A column is a name and a function from a voxel's index to its text, so
     /// the table is described here once and the writers simply walk it. The
@@ -42,7 +41,7 @@ impl RayVoxels {
     /// one list. Nothing is computed until a writer asks for a voxel, so the
     /// derived quantities cost nothing for a column that is not written.
     ///
-    /// The order is rayvoxel's, and some columns appear only when the trace
+    /// The order is fixed, and some columns appear only when the trace
     /// recorded them — leaf and wood counts, sub-voxel splits, the beam
     /// fields — so the header matches what is actually in the grid.
     pub(crate) fn columns(&self) -> Vec<Column<'_>> {
@@ -52,7 +51,7 @@ impl RayVoxels {
                 cols.push(($name.to_string(), Box::new($f)))
             };
         }
-        // Shorthands: a raw counter, and a raw sum formatted as rayvoxel does.
+        // Shorthands: a raw counter, and a raw sum in the written format.
         let int = |fld: I| move |i: usize| self.get_i(fld, i).to_string();
         let flt = |fld: F| move |i: usize| real(self.get_f(fld, i) as f64);
         let incl = self.predominant_tree.is_some();

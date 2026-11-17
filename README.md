@@ -25,7 +25,7 @@ for what was ported and from where.
 | `sylva.geo.masks` | point masks and crops by polygons (shapefile, GeoJSON, with holes), rasters, attribute expressions (`cloud.where("height > 2 & classification != 2")`) and distance to another cloud |
 | `sylva.trees` | RANSAC circle fitting, stem detection & DBH, basal area, taper profiles, graph-based tree segmentation, tree heights, crown metrics, crown shape (stacked-hull volume, asymmetry) |
 | `sylva.canopy` | voxel grids, contact-frequency PAD profiles, zenith-ring gap fraction, hinge/Miller LAI, ray-traced density grids from pulse data, Jupp gap-probability profiles with hinge / linear / weighted PAI, clumping index and canopy height, synthetic hemispherical photographs from pulses or points |
-| `sylva.voxels` | ray-traced voxels (port of raycloudtools `rayvoxel`): echo-weighted free / potential path lengths, FPL / PPL / transmittance / Bailey attenuation, analytic or estimated leaf-angle `G`, PAD / LAD / WAD, occlusion, sub-voxel exploration, QSM wood volume, `.vox` export, occlusion profiles and per-tree sampling (is the top real?) |
+| `sylva.voxels` | ray-traced voxels (after AMAPVox): echo-weighted free / potential path lengths, FPL / PPL / transmittance / Bailey attenuation, analytic or estimated leaf-angle `G`, PAD / LAD / WAD, occlusion, sub-voxel exploration, QSM wood volume, `.vox` export, occlusion profiles and per-tree sampling (is the top real?) |
 | `sylva.registration` | Kabsch, point-to-point / point-to-plane (trimmed) ICP, scan merging, overlay and stem cross-section plots to check a registration by eye |
 | `sylva.registration_report` | a self-contained HTML report on how well a set of scans agree: pair residuals, a map of the survey, the worst pairs up close |
 | `sylva.coreg` | marker-free coregistration of scan positions from the trees: terrain model, stem maps, global stem-map and reflector matching, robust point-to-plane ICP, pose graph with outlier rejection, recovery of stragglers, joint multi-view refinement, stem agreement report; tilted scans levelled with the scanner attitude; scanner `.PROJ` projects |
@@ -204,13 +204,14 @@ Build the site with `pip install -e '.[docs]' && mkdocs serve`.
 ## Acknowledgements
 
 Sylva builds on other people's software, and parts of it are adaptations of
-their code. The terrestrial tree segmentation and the quantitative structure
-models are adapted in part from [Arbor](https://github.com/r-lidar/arbor),
-and the airborne tree segmentation and area-based metrics from
-[lidR](https://github.com/r-lidar/lidR), both by Jean-Romain Roussel
-(r-lidar). The voxel module is a port of rayvoxel (Josh Rivory), which
-reimplements [AMAPVox](https://github.com/umr-amap/AMAPVox); other parts
-follow [raycloudtools](https://github.com/csiro-robotics/raycloudtools),
+their code. The airborne tree segmentation and area-based metrics are
+adapted from [lidR](https://github.com/r-lidar/lidR) by Jean-Romain Roussel
+(r-lidar), and the terrestrial tree segmentation takes the idea of seeding
+a tree from the surface of its trunk from his
+[Arbor](https://github.com/r-lidar/arbor). The voxel module follows
+[AMAPVox](https://github.com/umr-amap/AMAPVox); other parts
+follow [raycloudtools](https://github.com/csiro-robotics/raycloudtools)
+(Lowe and Stepanas 2021; Devereux et al. 2026),
 GBSeparation, the CSF reference implementation, the Point Cloud Library and
 SciPy.
 [THIRD_PARTY_NOTICES.md](https://github.com/UQ-EORC/Sylva/blob/main/THIRD_PARTY_NOTICES.md)

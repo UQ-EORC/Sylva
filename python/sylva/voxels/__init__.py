@@ -1,11 +1,11 @@
 # Sylva: LiDAR processing for forest ecology and remote sensing research.
 # Copyright (C) 2026 Tim Devereux, The University of Queensland.
-# Adapted from rayvoxel (Josh Rivory, unpublished); see THIRD_PARTY_NOTICES.md.
+# Follows AMAPVox (UMR AMAP); see THIRD_PARTY_NOTICES.md.
 # Free software under the GNU General Public License v3.0 or later;
 # see the LICENSE file. There is no warranty, to the extent permitted by law.
 """Ray-traced voxel grids with Beer-Lambert statistics.
 
-A port of ``rayvoxel`` (J. Rivory, unpublished), built on raycloudtools.
+The voxelisation of AMAPVox (UMR AMAP), built on raycloudtools.
 Every pulse is traced through the grid, and each voxel accumulates beam
 counts, potential and free path lengths, beam sections and mean beam angles.
 From these the attenuation coefficient is estimated by free path length
@@ -457,8 +457,7 @@ def ray_voxelize(
     foliage, leaf_classes, wood_classes, class_attr
         Per-echo codes (:data:`EXCLUDED`, :data:`PLANT`, :data:`LEAF`,
         :data:`WOOD`), or the ``class_attr`` codes that mean leaf and wood
-        (other codes below 3 are excluded, the rest are plant, as in
-        rayvoxel). With neither, every non-ground echo is plant.
+        (other codes below 3 are excluded, the rest are plant). With neither, every non-ground echo is plant.
     tree_attr
         Echo attribute grouping echoes into trees for the inclination
         distributions; all echoes are pooled as tree 0 when it is missing.

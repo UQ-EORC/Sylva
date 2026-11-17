@@ -947,7 +947,7 @@ NOTEBOOKS["09_voxels"] = [
 
 `sylva.voxels` traces every pulse through a voxel grid and estimates the
 attenuation coefficient λ of each voxel from how far pulses got, then plant area
-density as λ / G. It follows [Vincent et al. 2017](../references.md) and the rayvoxel tool; see the
+density as λ / G. It follows [Vincent et al. 2017](../references.md) and AMAPVox; see the
 [guide](../guide/voxels.md) for the estimators."""),
     SETUP + "\nfrom sylva import Shots, voxels",
     md("""## Tracing a real tile

@@ -1,7 +1,6 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
-// Adapted from rayvoxel (Josh Rivory, unpublished), a port of AMAPVox (UMR AMAP);
-// see THIRD_PARTY_NOTICES.md.
+// Follows AMAPVox (UMR AMAP); see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Inclination angle distributions from echo normals, per tree.
@@ -269,7 +268,7 @@ pub(crate) fn build(vox: &mut RayVoxels, echoes: EchoPoints) {
 /// Triangles between each echo and pairs of its same-class neighbours with
 /// all edges under `l_max`, binned by facet inclination with weight
 /// `area · sin θ`; `G` per facet is `|n_z|` (vertical mean beam direction,
-/// as in rayvoxel). Facets belong to the voxel of their first vertex.
+/// as in the voxel output). Facets belong to the voxel of their first vertex.
 /// Build the triangles the Bailey method measures, per tree.
 ///
 /// Every triple of mutually close points of the same class (all leaf or all

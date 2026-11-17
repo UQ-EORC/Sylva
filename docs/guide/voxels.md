@@ -1,7 +1,7 @@
 # Ray-traced voxels
 
-`sylva.voxels` is a port of `rayvoxel`, J. Rivory's unpublished
-ray-traced voxeliser built on raycloudtools, which follows the attenuation
+`sylva.voxels` is a ray-traced voxeliser following
+[AMAPVox](../references.md), built on raycloudtools, with the attenuation
 estimators of [Vincent et al. 2017](../references.md). Each pulse is traced through the grid voxel by
 voxel ([Amanatides & Woo 1987](../references.md)), twice: once whole, for
 beam counts and the potential path length (the full chord of every voxel it
@@ -71,10 +71,10 @@ only where a float32 result rounds the other way (last printed digit); neighbour
 before any top-up and leave the outer voxel layer alone instead of padding;
 without `tree_id` all echoes share one inclination distribution; echoes under
 the DTM surface are ground, not vegetation; `pad_fpl` pairs the plant hits with
-the free path of every vegetation segment (rayvoxel uses only the segments
-ending in an echo that is neither leaf nor wood); there is no NetCDF output
+the free path of every vegetation segment (not only the segments ending in
+an echo that is neither leaf nor wood); there is no NetCDF output
 or per-voxel class histogram, and grids too large for memory are traced block
-by block (below) rather than in rayvoxel's shards. Memory is about 0.25 kB per
+by block (below). Memory is about 0.25 kB per
 voxel while tracing.
 
 ## What the scan saw

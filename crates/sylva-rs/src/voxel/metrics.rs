@@ -1,7 +1,6 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
-// Adapted from rayvoxel (Josh Rivory, unpublished), a port of AMAPVox (UMR AMAP);
-// see THIRD_PARTY_NOTICES.md.
+// Follows AMAPVox (UMR AMAP); see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Per-voxel estimators: attenuation, projection functions, area densities.
@@ -39,7 +38,7 @@ pub enum Lad {
 }
 
 impl Lad {
-    /// From a name and up to two parameters, as rayvoxel's `--lad` / `--lad_params`.
+    /// From a name and up to two parameters (`--lad` / `--lad_params`).
     pub fn parse(name: &str, p: &[f64]) -> Result<Self> {
         let need = |n: usize| if p.len() < n { Err(Error::invalid(format!("LAD {name:?} needs {n} parameter(s)"))) } else { Ok(()) };
         Ok(match name {
@@ -64,7 +63,7 @@ impl Lad {
         })
     }
 
-    /// The rayvoxel `--lad` name.
+    /// The `--lad` name.
     pub fn name(&self) -> &'static str {
         match self {
             Lad::Spherical => "spherical",
@@ -534,8 +533,8 @@ impl RayVoxels {
                 // path); the beam-section bias term does not apply to it.
                 let class = |n: i32, fp: f32, g: f64| if g > 0.0 && fp as f64 > EPS { n as f64 / (fp as f64 * g) } else { 0.0 };
                 // Plant hits count every vegetation echo, so pair them with the free
-                // path of every vegetation segment (rayvoxel uses the unclassified
-                // ones only, which gives 0 for a fully leaf / wood labelled cloud).
+                // path of every vegetation segment (the unclassified ones alone would
+                // give 0 for a fully leaf / wood labelled cloud).
                 let plant_path = self.get_f(F::FreePathLengthPlant, idx) + self.get_f(F::FreePathLengthLeaf, idx) + self.get_f(F::FreePathLengthWood, idx);
                 out.pad = class(self.get_i(I::NumHitPlant, idx), plant_path, iad.g_plant);
                 out.lad = class(self.get_i(I::NumHitLeaf, idx), self.get_f(F::FreePathLengthLeaf, idx), iad.g_leaf);

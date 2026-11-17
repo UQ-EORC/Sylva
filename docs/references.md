@@ -110,8 +110,11 @@ RayExtract: A fast, scalable method for tree volume reconstruction from
 terrestrial laser scanning. *Remote Sensing of Environment*, *334*, 115162.
 <https://doi.org/10.1016/j.rse.2025.115162>
 In Sylva: raycloudtools' `rayextract trees`: the least-cost-path segmentation that
-`trees.segment_trees` and `trees.merge_branches` follow, and the power-mean
-section radius and Leonardo's rule at forks in [`sylva.qsm`](api/qsm.md); also
+`trees.segment_trees` and `trees.merge_branches` follow, with the form of its
+cost for bending a path (`bend_power`, `bend_floor`, `path_weight`), its
+lateral term (`gravity`) and its per-tree scaling (`height_prior`); and in
+[`sylva.qsm`](api/qsm.md) the power-mean section radius, the rule that gives
+unmeasured branches their radius and Leonardo's rule at forks; also
 the raycloudtools baseline of the [tree](benchmarks/trees.md) and
 [QSM](benchmarks/qsm.md) benchmarks.
 
@@ -336,11 +339,18 @@ Autonomous Systems*, *56*(11), 927–941.
 <https://doi.org/10.1016/j.robot.2008.08.005>
 In Sylva: `filters.statistical_outlier_removal`.
 
+Sen, P. K. (1968). Estimates of the regression coefficient based on
+Kendall's tau. *Journal of the American Statistical Association*, *63*(324),
+1379–1389. <https://doi.org/10.1080/01621459.1968.10480934>
+In Sylva: with Theil (1950), the robust taper of each axis in
+`qsm.build_qsm`.
+
 Shinozaki, K., Yoda, K., Hozumi, K., & Kira, T. (1964). A quantitative analysis
 of plant form, the pipe model theory: I. Basic analyses. *Japanese Journal of
 Ecology*, *14*(3), 97–105. <https://doi.org/10.18960/seitai.14.3_97>
-In Sylva: the pipe model that sets unmeasured branch radii in `qsm.build_qsm`,
-and the branch radii of `synthetic.tree_model`.
+In Sylva: the pipe model behind the length carried by each node of
+`qsm.build_qsm` (a fork sharing its parent's cross-section by length) and
+the branch radii of `synthetic.tree_model`.
 
 Smith, D. D., Sperry, J. S., Enquist, B. J., Savage, V. M., McCulloh, K. A., &
 Bentley, L. P. (2014). Deviation from symmetrically self-similar branching in
@@ -353,7 +363,13 @@ Taubin, G. (1995). A signal processing approach to fair surface design. In
 *Proceedings of the 22nd Annual Conference on Computer Graphics and Interactive
 Techniques (SIGGRAPH '95)* (pp. 351–358). ACM.
 <https://doi.org/10.1145/218380.218473>
-In Sylva: smoothing of QSM skeleton nodes and radii, and of buttress meshes.
+In Sylva: smoothing of buttress meshes.
+
+Theil, H. (1950). A rank-invariant method of linear and polynomial
+regression analysis. *Proceedings of the Royal Netherlands Academy of
+Sciences*, *53*, 386–392, 521–525, 1397–1412.
+In Sylva: with Sen (1968), the robust taper of each axis in
+`qsm.build_qsm`.
 
 Tian, Z., & Li, S. (2022). Graph-based leaf–wood separation method for
 individual trees using terrestrial lidar point clouds. *IEEE Transactions on
@@ -383,7 +399,8 @@ Vicari, M. B., Disney, M., Wilkes, P., Burt, A., Calders, K., & Woodgate, W.
 (2019). Leaf and wood classification framework for terrestrial LiDAR point
 clouds. *Methods in Ecology and Evolution*, *10*(5), 680–694.
 <https://doi.org/10.1111/2041-210X.13144>
-In Sylva: the path-frequency cue of `qsm.wood_points`.
+In Sylva: the path-frequency cue that `qsm.wood_points` starts from,
+measured as the length of path a point supports.
 
 Vicari, M. B., Pisek, J., & Disney, M. (2019). New estimates of leaf angle
 distribution from terrestrial LiDAR: Comparison with measured and modelled
@@ -581,14 +598,16 @@ its sample files are used in the tests.
 Lowe, T. D., & Stepanas, K. (2021). RayCloudTools: A concise interface for
 analysis and manipulation of ray clouds. *IEEE Access*, *9*, 79712–79724.
 <https://doi.org/10.1109/ACCESS.2021.3084954>
-In Sylva: ray clouds, which Sylva reads and writes, and `rayextract trees`, which it
-follows and is benchmarked against:
+In Sylva: raycloudtools itself: ray clouds, which Sylva reads and writes, and
+the library whose `rayextract trees` (Devereux et al. 2026) the tree
+segmentation and the cylinder models follow in the places listed in
+`THIRD_PARTY_NOTICES.md`, and against which they are benchmarked:
 <https://github.com/csiro-robotics/raycloudtools>.
 
 AMAPVox (UMR AMAP): voxelisation of lidar data, the reference implementation
 of the attenuation estimators: <https://github.com/umr-amap/AMAPVox>.
-[`sylva.voxels`](api/voxels.md) is a port of rayvoxel, J. Rivory's unpublished
-reimplementation of AMAPVox on raycloudtools; see `THIRD_PARTY_NOTICES.md`. Its
+[`sylva.voxels`](api/voxels.md) follows AMAPVox, built on raycloudtools; see
+`THIRD_PARTY_NOTICES.md`. Its
 estimators are documented in Vincent, G., Pimont, F., & Verley, P. (2021). *A
 note on PAD/LAD estimators implemented in AMAPVox 1.7*. DataSuds.
 <https://doi.org/10.23708/1AJNMP>
@@ -606,15 +625,9 @@ In Sylva: the reference implementation (CC BY 4.0) that
 Arbor (J.-R. Roussel, r-lidar): semantic and instance segmentation and
 quantitative structure models for mobile and terrestrial laser scanning
 [Computer software, GPL-3.0-or-later]. <https://github.com/r-lidar/arbor>.
-In Sylva: the reference implementation that parts of `sylva.trees` and
-`sylva.qsm` are adapted from. In `trees.segment_trees`, the directed edge
-cost (edge length to a power, the angle penalty and its constants, the wood
-/ leaf factors of `wood_costs`), the outline of the steps and the idea of
-seeding the trunk surface (`seed_ring`); in `qsm.build_qsm`, the skeleton,
-the stem taper prior, the pipe-model rule for unmeasured radii, the radius
-smoothing, the axis ordering and the butt straightening; in
-`qsm.wood_points`, the stages and most defaults of the filter. The copyright
-and licence notice is in `THIRD_PARTY_NOTICES.md`.
+In Sylva: the idea of seeding a tree from the surface of its trunk rather
+than from its axis (`seed_ring` of `trees.segment_trees`). The copyright and
+licence notice is in `THIRD_PARTY_NOTICES.md`.
 
 Virtanen, P., Gommers, R., Oliphant, T. E., Haberland, M., Reddy, T.,
 Cournapeau, D., Burovski, E., Peterson, P., Weckesser, W., Bright, J., van der

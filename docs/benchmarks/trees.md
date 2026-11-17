@@ -19,7 +19,10 @@ and reference labels as kept beside the harvest benchmark (the `basis`
 arrays): ground by PMF (the protocol's choice; `sylva ground` defaults to
 CSF) on a 5 cm thinning with windows of up to 17 m, a 0.5 m DTM, stems
 detected and trees segmented with the defaults (a 3 cm graph), pruned at
-3 m and at 5 m.
+3 m and at 5 m. The edge cost of the segmentation and the arc test of the
+stem detection were replaced after version 1.1.0; on the same four runs
+the present code scores 0.977, 0.665, 0.856 and 0.671, which is the same
+within the run-to-run range ([below](#the-edge-cost-after-version-110)).
 
 Each sylva figure is the **mean of four runs** of the same plot, with the
 range in brackets: the plot as it is, with the thinning grid moved by a
@@ -190,8 +193,13 @@ of PMF: no difference beyond the run-to-run range.
 
 ## The angle penalty and how well the plot is sampled
 
-The cost of an edge rises with its angle from vertical as
-`exp(angle_rate × degrees)`. The rate has been 0.046 since the method was
+This section is about the edge cost of versions up to 1.1.0, which the
+[present cost](#the-edge-cost-after-version-110) replaced; `angle_rate`
+is no longer a setting. What it found, that the best cost depends on how
+completely the trees are sampled, holds for the present cost too.
+
+In those versions the cost of an edge rose with its angle from vertical as
+`exp(angle_rate × degrees)`. The rate had been 0.046 since the method was
 written (a horizontal step costs 63 times a vertical one). Measured in
 November 2026 with paired runs, the best rate turns out to depend on how
 completely the trees are sampled:
@@ -231,7 +239,7 @@ term can no longer tell a tree's own gap from the gap to its neighbour,
 and the preference for what stands above the stem is what is left to hold
 a tree together.
 
-So the default is unchanged, and `angle_rate` is a setting: 0.023 for
+So the default was left unchanged, and `angle_rate` made a setting: 0.023 for
 plots scanned from many positions and kept at 2 to 5 cm, where it gained
 up to 0.03 and lost nothing beyond the run-to-run range; the default for
 sparse, coarse or heavily occluded clouds. Raising `power` behaves the same way (10 in place of 6:
@@ -277,6 +285,66 @@ both on the reference plots themselves:
   re-decide a band around the cheapest-path boundaries it did less harm
   the narrower the band (−0.12 to −0.02), and in the narrowest it still
   cost Robson Creek 0.020 in each of four runs.
+
+## The edge cost after version 1.1.0
+
+After version 1.1.0 the edge cost (the angle penalty of the section above)
+and the arc of a stem circle (until then counted in ten-degree bins) were
+replaced. An edge of length `d` now costs
+`d ** power / max(bend_floor, cos) ** bend_power`, the cosine being that of
+the angle between the edge and a direction that is the vertical turned by
+`path_weight` towards the way the path arrived: the form of raycloudtools'
+cost for bending a path ([Lowe and Stepanas 2021](../references.md);
+[Devereux et al. 2026](../references.md)), which measures from the path
+alone. The arc runs from point to point while
+neighbours are within 15° of each other, each point standing for a sector
+of 10°.
+
+The defaults are `bend_power=4`, `bend_floor=0.4` and `path_weight=0.3`: a
+turn across costs at most 39 times going straight on. F1 with trees under
+3 m pruned:
+
+| Data | version 1.1.0 | present default | `bend_power=2, bend_floor=0.3` |
+|---|---|---|---|
+| Litchfield (4 runs) | 0.977 | 0.977 | 0.969 |
+| Robson Creek (4 runs) | 0.653 | 0.665 | 0.679 |
+| Wytham (4 runs) | 0.861 | 0.856 | 0.859 |
+| Ofental (4 runs) | 0.649 | 0.671 | 0.698 |
+| Gingin banksia woodland (2 runs) | 0.671 | 0.674 | 0.685 |
+| Great Western Woodlands (2 runs) | 0.660 | 0.652 | 0.690 |
+| the four reference plots thinned to 5 cm (mean, 3 runs each) | 0.765 | 0.775 | 0.778 |
+| the same thinned to 8 cm, graph at 8 cm | 0.612 | 0.609 | 0.600 |
+| eight simulated plots, five scan positions each | 0.721 | 0.719 | 0.706 |
+
+Over seven paired runs of each reference plot the present default differs
+from version 1.1.0 by +0.008 on average (+0.001 at Litchfield, +0.010 at
+Robson Creek, +0.001 at Wytham and +0.021 at Ofental), with three more trees
+found and six fewer spurious trees a run; on the 5 cm thinnings by +0.010,
+on the 8 cm thinnings by −0.002 and on the simulated plots by −0.002. The
+understorey taken is unchanged. A floor of 0.355, which reproduces the 63-fold
+penalty of version 1.1.0, changes nothing anywhere; 0.45 gains as much on the
+reference plots and loses 0.009 on the simulated ones.
+
+The gentler cost of the last column (a turn costs at most 11 times) does
+what the lower `angle_rate` did, for the same reason: it gains where trees
+are sampled completely (+0.02 on the reference plots, with 18 fewer
+spurious trees a run, and on both woodland plots) and loses where crowns
+are in pieces (−0.017 on the simulated plots, −0.005 at 8 cm). It is a
+setting, not the default.
+
+Following the path alone, as raycloudtools does (`path_weight=1` with no
+floor), was measured with a prototype before the defaults were fixed:
++0.023 on the reference plots and +0.05 at Gingin, −0.09 on the thinned
+clouds and −0.06 on the simulated plots. Where a tree is in pieces, the
+direction of a path that has just jumped a gap says little, and the
+vertical is what is left to hold the tree together.
+
+A first version also took the covered share of the circle from the gaps
+between points. It halved the stem candidates on the thinned clouds (F1
+−0.05 at 5 cm and −0.22 at 8 cm) while leaving the native clouds where
+they were: a stem slice of a dozen points has no two neighbours within
+15°. The covered share is the detector's own measure, the share of
+ten-degree bins that hold a point, and is unchanged.
 
 ## Merging trees that touch
 
@@ -334,8 +402,8 @@ it to stay where it was. And unlike `merge_branches`, which joins the
 stems of a coppice stool, this step left them apart: no Wytham tree was
 lost at any of the three thresholds at the plot's own density.
 
-The step adds to what `angle_rate` gains (above), since the two remove
-different spurious trees. On the same four runs of each reference plot and
+With the edge cost of version 1.1.0, the step added to what `angle_rate`
+gained (above), since the two remove different spurious trees. On the same four runs of each reference plot and
 two of each woodland plot:
 
 | Plot | neither | `merge_touching` 0.10 | `angle_rate` 0.023 | both |
@@ -433,7 +501,8 @@ went 0.514 → 0.563 at Robson Creek, 0.636 → 0.660 at Ofental and
 0.581 → 0.588 at Wytham, and Litchfield did not change. On the test splits,
 scored once with the setting fixed, it gave 0.479 → 0.494, 0.682 → 0.788,
 0.707 → 0.726 and 0.964 → 0.964. Settings that did not help on the validation
-areas: `gravity`, `wood_costs` (better at Ofental only), a weaker or no
+areas: `gravity`, `wood_costs` (wood and leaf factors on the edge cost, an option
+up to version 1.1.0; better at Ofental only), a weaker or no
 `height_prior`, and two forms of a crown-size prior from stem allometry
 (crown radius proportional to DBH, applied to every path or only to points
 two trees compete for), which truncated real crowns or fragmented trees.

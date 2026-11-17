@@ -8,31 +8,11 @@ Sylva follows without copying code are credited in `docs/references.md`.
 
 ## Arbor (r-lidar)
 
-Parts of Sylva's terrestrial tree segmentation and of its quantitative
-structure models were written with the source code of Arbor as the
-reference and are adaptations of it, translated into Rust and modified
-(September to November 2026):
-
-- `crates/sylva-rs/src/cluster.rs`: the directed edge cost of the tree
-  segmentation graph (`EdgeCost::cost`, `ANGLE_RATE`): edge length raised to
-  a power, the angle penalty `exp(0.046051 x degrees)` capped at 100, and
-  the wood / leaf cost factors 0.1, 20 and 1000 (Arbor
-  `src/segment/GraphBuilder.cpp`, `src/api/arbor.h`).
-- `crates/sylva-rs/src/trees/mod.rs`: the outline of `segment_trees` (cut
-  above the ground, decimate, directed graph, multi-source shortest paths,
-  nearest-node label transfer) and the anisotropy wood mask (Arbor
-  `src/segment/segment_instance_api.cpp`, `src/utils/anisotopy.cpp`). The
-  idea of seeding the trunk surface comes from Arbor's seed cage
-  (`src/seed/SeedDetector_cage.cpp`).
-- `crates/sylva-rs/src/trees/stems.rs`: the arc of a circle fit measured in
-  36 ten-degree bins (Arbor `src/fitting/fitting_orbicular.cpp`).
-- `crates/sylva-rs/src/qsm/model.rs`: the skeleton (path-length shells
-  clustered per shell, circle centres, chain growing), the stem taper
-  prior, the pipe-model rule for unmeasured radii, the radius smoothing, the
-  ordering of axes, the butt straightening and the thresholds of the
-  section fits (Arbor `src/qsm/QSMbuilder*.cpp`, `src/fitting/`).
-- `crates/sylva-rs/src/qsm/wood.rs`: the stages and most defaults of the
-  wood filter `wood_scores` (Arbor `src/segment/segment_semantic_api.cpp`).
+Sylva's terrestrial tree segmentation seeds each tree from the surface of
+its trunk rather than from its axis, an idea taken from Arbor
+(`src/seed/SeedDetector_cage.cpp`); the code is Sylva's. The tree
+segmentation and the quantitative structure models were written with
+Arbor's source at hand, and its notice is reproduced here.
 
 Arbor, <https://github.com/r-lidar/arbor>:
 
@@ -157,11 +137,10 @@ ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## AMAPVox, through rayvoxel
+## AMAPVox
 
-`crates/sylva-rs/src/voxel/` and `python/sylva/voxels.py` are a port of
-rayvoxel, an unpublished tool by Josh Rivory that reimplements AMAPVox on
-raycloudtools functions. What AMAPVox contributes (the path length and
+`crates/sylva-rs/src/voxel/` and `python/sylva/voxels/` follow AMAPVox, built
+on raycloudtools functions. What AMAPVox contributes (the path length and
 attenuation estimators, the leaf angle distributions and the laser
 specifications) is the work of UMR AMAP (botAnique et Modélisation de
 l'Architecture des Plantes et des végétations), AMAPVox,
@@ -176,8 +155,27 @@ licence instead (<https://cecill.info>). Sylva relies on the licence file. Estim
 ## raycloudtools (CSIRO)
 
 Sylva follows raycloudtools (<https://github.com/csiro-robotics/raycloudtools>)
-in `canopy.density_grid` (its `DensityGrid` estimator) and in the power-mean
-section radius of `qsm.build_qsm` (`raytrees.cpp`). The raycloudtools licence:
+in the places listed below, with its source as the reference. raycloudtools
+is described in Lowe, T., & Stepanas, K. (2021), RayCloudTools: A concise
+interface for analysis and manipulation of ray clouds, *IEEE Access*, *9*,
+79712–79724, <https://doi.org/10.1109/ACCESS.2021.3084954>, and its tree
+extraction in Devereux et al. (2026), *Remote Sensing of Environment*,
+*334*, 115162, <https://doi.org/10.1016/j.rse.2025.115162>.
+
+- `crates/sylva-rs/src/canopy/`: `canopy.density_grid` (its `DensityGrid`
+  estimator; Lowe et al. 2021).
+- `crates/sylva-rs/src/cluster.rs`: the form of the edge cost of the tree
+  segmentation graph, edge length to a power divided by a power of the
+  cosine of the bend (`Bend`), and the lateral term and per-tree scaling
+  of the shortest-path search (`dijkstra_gravity`, `dijkstra_scaled`);
+  raycloudtools `raylib/extraction/raysegment.cpp`.
+- `crates/sylva-rs/src/qsm/model.rs`: the power-mean section radius, the
+  rule that gives unmeasured segments their radius (in proportion to the
+  length they carry, a fork sharing its parent's cross-section) and the
+  cap on the children's summed cross-section at a fork
+  (`raylib/extraction/raytrees.cpp`).
+
+The raycloudtools licence:
 
 ```text
 CSIRO Open Source Software Licence Agreement (variation of the BSD / MIT License)

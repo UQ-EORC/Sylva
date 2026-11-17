@@ -187,7 +187,7 @@ impl Shots {
     ///
     /// When `number_of_returns` and a pulse key (`beam_id`, else `gps_time`)
     /// are present, the returns of a pulse are joined into one multi-echo
-    /// shot wherever they sit in the file, as rayvoxel does; otherwise every
+    /// shot wherever they sit in the file; otherwise every
     /// point is its own shot.
     pub fn from_ray_cloud(cloud: &PointCloud) -> Result<Shots> {
         let triple = |a: &str, b: &str, c: &str| Some((cloud.attr_f64(a)?, cloud.attr_f64(b)?, cloud.attr_f64(c)?));

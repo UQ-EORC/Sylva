@@ -1,10 +1,9 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
-// Adapted from rayvoxel (Josh Rivory, unpublished), a port of AMAPVox (UMR AMAP);
-// see THIRD_PARTY_NOTICES.md.
+// Follows AMAPVox (UMR AMAP); see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
-//! Pulse traversal: the accumulation half of rayvoxel (`VoxelProcessor`).
+//! Pulse traversal: the accumulation half of the voxelisation.
 
 use std::collections::{BTreeMap, HashMap};
 use std::f64::consts::PI;

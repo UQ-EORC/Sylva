@@ -1,13 +1,12 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
-// Adapted from rayvoxel (Josh Rivory, unpublished), a port of AMAPVox (UMR AMAP);
-// see THIRD_PARTY_NOTICES.md.
+// Follows AMAPVox (UMR AMAP); see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
 //! Ray-traced voxel grid with Beer–Lambert statistics (Vincent et al. 2017).
 //!
-//! A port of `rayvoxel` (J. Rivory, unpublished), a reimplementation of the
-//! method of Vincent et al. (2017) on raycloudtools, working on [`Shots`] instead of ray-cloud files. Every pulse is
+//! The voxelisation of AMAPVox (UMR AMAP), the method of Vincent et al.
+//! (2017), built on raycloudtools, working on [`Shots`] instead of ray-cloud files. Every pulse is
 //! traced through the grid twice: once unweighted (beam counts, potential
 //! path length, sub-voxel exploration) and once per echo segment with the
 //! fraction of the beam still travelling (free path length, beam sections,
@@ -63,7 +62,7 @@ pub enum WeightMethod {
 }
 
 impl WeightMethod {
-    /// A method from its rayvoxel name: `equal`, `full`, `first`, `relative` or `strongest`.
+    /// A method from its name: `equal`, `full`, `first`, `relative` or `strongest`.
     pub fn parse(s: &str) -> Result<Self> {
         Ok(match s {
             "equal" => WeightMethod::Equal,
@@ -127,7 +126,7 @@ pub struct BeamSpec {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-/// Options of a ray-traced voxelisation (the defaults are rayvoxel's).
+/// Options of a ray-traced voxelisation.
 pub struct VoxelParams {
     /// Voxel edge (m).
     pub voxel_size: f64,
@@ -230,7 +229,7 @@ impl<'a> VoxelInputs<'a> {
     }
 }
 
-/// Per-voxel `f32` accumulators. Names follow the rayvoxel output columns.
+/// Per-voxel `f32` accumulators. Names follow the output columns.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum F {
@@ -310,7 +309,7 @@ impl F {
         F::BsFreePath, F::BsEffectiveFreePath, F::BsEffFreePathHits, F::PplMissWl, F::HitsWeighted,
     ];
 
-    /// The rayvoxel output column name.
+    /// The output column name.
     pub fn name(&self) -> &'static str {
         match self {
             F::NumBeamsWeighted => "num_beams_weighted",
@@ -355,11 +354,11 @@ pub enum I {
     NumBeams,
     /// Occlusion rays (traced beyond a pulse's last echo) through the voxel; column `num_beams_occluded`.
     NumRaysOccluded,
-    /// Pulse segments crossing the voxel that end in a ground echo or in no echo at all (rayvoxel's unbounded rays).
+    /// Pulse segments crossing the voxel that end in a ground echo or in no echo at all (unbounded rays).
     NumUnboundRays,
     /// Pulses (count) that crossed the voxel without ending in it, on their way to a non-ground
     /// echo beyond. Pulses that cross it on their way to a ground echo or to no echo at all are
-    /// not counted here (they are rayvoxel's unbounded rays, see `NumUnboundRays`), although
+    /// not counted here (they are unbounded rays, see `NumUnboundRays`), although
     /// their chords are in `SumMissDelta`.
     NumMissRays,
     /// Echoes in the voxel with the leaf class.
@@ -379,7 +378,7 @@ impl I {
         I::NumHitWood, I::NumHitPlant,
     ];
 
-    /// The rayvoxel output column name.
+    /// The output column name.
     pub fn name(&self) -> &'static str {
         match self {
             I::NumHits => "num_hits",
@@ -499,7 +498,7 @@ impl RayVoxels {
 }
 
 /// Ground echoes by height: at most `max_above` over the terrain, as
-/// rayvoxel's `--dtm_filter_distance`, but echoes under the DTM surface count
+/// a DTM filter distance, but echoes under the DTM surface count
 /// as ground too rather than as vegetation.
 pub fn ground_mask_from_dtm(shots: &Shots, dtm: &Raster, max_above: f64) -> Vec<bool> {
     shots.echo_xyz().iter().map(|p| p[2] - dtm.sample(p[0], p[1]) <= max_above).collect()
@@ -699,7 +698,7 @@ pub struct EchoLabels {
     /// Without a `ground_class`: echoes at most this far above the DTM are ground.
     pub ground_distance: f64,
     /// Codes that mean leaf / wood. With either given, other codes below 3
-    /// are excluded and the rest are plant (as rayvoxel).
+    /// are excluded and the rest are plant.
     pub leaf_classes: Vec<i64>,
     /// Codes that mean wood (see `leaf_classes`).
     pub wood_classes: Vec<i64>,
