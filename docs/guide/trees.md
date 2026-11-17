@@ -99,37 +99,35 @@ multi-stemmed stands.
 
 `segment_trees` grows every tree from its stem over a kNN graph by least-cost
 paths, after raycloudtools' `rayextract trees`
-([Devereux et al. 2026](../references.md)) and
-[Arbor](../references.md) (J.-R. Roussel, r-lidar), from whose source the
-edge cost below (the length power, the angle penalty and the wood / leaf
-factors) is adapted.
+([Lowe and Stepanas 2021](../references.md);
+[Devereux et al. 2026](../references.md)), whose cost for bending a path
+the edges carry.
 
-- **Cost.** Climbing is cheap, while horizontal and downward steps are
-  expensive, so paths go up through a tree rather than across the
-  understorey.
-- **`angle_rate`** is how steeply that cost rises with an edge's angle from
-  vertical: the factor is `exp(angle_rate × degrees)`, capped at 100. The
-  default, 0.046, makes a horizontal step cost 63 times a vertical one. On
-  plots scanned densely from many positions, where every tree is a
-  connected surface from its base to its twigs, that is more than is
-  needed: travelling out along a branch becomes so dear that a tree
-  standing underneath takes the outer part of it through a small vertical
-  gap. `angle_rate=0.023` (a horizontal step costs 8 times a vertical one)
-  raised F1 by 0.01 to 0.03 on five of the six real plots it was tried on
-  at their native point spacing, with about a tenth fewer spurious trees,
-  and left the sixth, an open savanna already at 0.98, where it was; 0.012
-  (3 times) gains more on those and loses on coarser clouds. The default
-  stays where it is because the gain depends on the sampling. On clouds
-  thinned to 8 cm the gain at 0.023 is gone, and on simulated plots
-  scanned from five positions, where crowns are in pieces and a path must
-  jump from one to the next, it costs 0.01: there the stronger preference
-  for what stands above the stem is what keeps a tree together. Numbers in
-  *Benchmarks > Tree detection*.
+- **Cost.** An edge of length `d` costs `d ** power / max(bend_floor, cos)
+  ** bend_power`, with `cos` the cosine of the angle between the edge and a
+  reference direction. Going on in that direction is cheap and turning
+  across or back is dear, at most `1 / bend_floor ** bend_power` times as
+  dear (39 times at the defaults), so paths go up through a tree rather
+  than across the understorey.
+- **`path_weight`** sets the reference direction: the vertical, turned by
+  that share towards the direction in which the path arrived. At 0 every
+  edge is judged against the vertical alone; at 1 against the path alone,
+  as in raycloudtools, so that a path which has turned out along a branch
+  travels on along it cheaply. The default, 0.3, keeps most of the
+  preference for what stands above the stem, which is what holds a tree
+  together where crowns are in pieces (sparse or heavily occluded clouds),
+  and lets a branch keep its outer part against a tree standing under it.
+- **`bend_power`, `bend_floor`** set how fast and how far the cost rises.
+  On plots scanned densely from many positions, where every tree is a
+  connected surface from its base to its twigs, a gentler cost
+  (`bend_power=2, bend_floor=0.3`: a turn costs at most 11 times) divides
+  crowns better; on simulated plots scanned from five positions it costs a
+  little. Numbers in *Benchmarks > Tree detection*.
 - **Seeds.** Each stem is seeded along its whole bark shell, from the
   ground to half a metre above `seed_height`, so the trunk belongs to its
   tree at no cost instead of being grown into from breast height against
-  the angle penalty.
-- **The ground.** Points within `cut_above_ground` (0.1 m, the noise band
+  the bend cost.
+- **The ground.** Points within `ground_clearance` (0.1 m, the noise band
   of a terrain model) of the ground stay out of the graph and unlabelled;
   a stem is labelled to within a hand of the ground. With a ground
   classification, `ground="classification"` keeps out what the classifier
@@ -148,8 +146,6 @@ factors) is adapted.
   standing free is costed by its own height; under a closed canopy every
   stem, sapling or dominant, is costed by the canopy's, and the prior
   separates little.
-- **`wood_costs=True`** stops foliage from bridging neighbouring crowns. It is
-  slower.
 - **`voxel_size`** (3 cm) sets the graph resolution, on a grid anchored at
   the cloud's minimum corner in whole metres. Labels are copied to
   every point. The graph is what segmentation costs in memory: about 60

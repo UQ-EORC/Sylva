@@ -1,7 +1,6 @@
 // Sylva: LiDAR processing for forest ecology and remote sensing research.
 // Copyright (C) 2026 Tim Devereux, The University of Queensland.
-// The directed edge cost (`EdgeCost`, `ANGLE_RATE`) is adapted from Arbor
-// (Copyright (C) 2026 Jean-Romain Roussel, r-lidar; GPL-3.0-or-later);
+// The bend cost of the directed graph (`Bend`) follows raycloudtools (CSIRO);
 // see THIRD_PARTY_NOTICES.md.
 // Free software under the GNU General Public License v3.0 or later;
 // see the LICENSE file. There is no warranty, to the extent permitted by law.
@@ -37,45 +36,85 @@ pub struct Graph<'a> {
     cost: Option<EdgeCost<'a>>,
 }
 
-/// The default rate of the angle penalty of [`directed_knn_graph`], per
-/// degree from vertical: `exp(rate * deg)` is 100 at 100 degrees and 63 for
-/// a horizontal edge.
-pub const ANGLE_RATE: f64 = 0.046051;
+/// How a directed graph costs a change of direction, after the shortest
+/// paths of raycloudtools' `rayextract trees` (Lowe and Stepanas 2021;
+/// Devereux et al. 2026; `raysegment.cpp`), where
+/// an edge costs its squared length over the squared cosine of the angle it
+/// makes with the path that arrives at its start.
+///
+/// An edge of length `d` costs `d^power / max(floor, cos(phi))^self.power`
+/// (`power` the graph's length exponent), with `phi` the angle between the
+/// edge and a reference direction: the vertical, turned by `path_weight`
+/// towards the direction the path arrived in (0 is the vertical alone, 1
+/// the path's direction alone, as in raycloudtools). An edge along the
+/// reference direction is not penalised; `floor` bounds the factor for
+/// edges across or against it at `1 / floor^power`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Bend {
+    /// Exponent on the cosine of the bend (raycloudtools: 2).
+    pub power: f64,
+    /// Smallest cosine counted, which caps the factor (0-1).
+    pub floor: f64,
+    /// Share of the path's own direction in the reference direction (0-1).
+    pub path_weight: f64,
+}
 
-/// The direction-dependent edge cost of [`directed_knn_graph_wood`].
+impl Default for Bend {
+    /// Sideways and downward edges cost at most 39 times an upward one:
+    /// measured at least as good as Sylva 1.1's cost on dense, thinned and
+    /// simulated plots alike.
+    fn default() -> Self {
+        Bend { power: 4.0, floor: 0.4, path_weight: 0.3 }
+    }
+}
+
+/// The edge cost of a directed graph, computed from the node positions.
 #[derive(Debug, Clone)]
 struct EdgeCost<'a> {
     points: &'a [Point],
     power: f64,
-    /// Rate of the angle penalty per degree from vertical; 0 for none.
-    angle_rate: f64,
-    wood: Option<&'a [bool]>,
+    bend: Option<Bend>,
 }
 
+const UP: [f64; 3] = [0.0, 0.0, 1.0];
+
 impl EdgeCost<'_> {
-    /// Adapted from Arbor (J.-R. Roussel, r-lidar; GPL-3.0-or-later): the edge cost
-    /// of `src/segment/GraphBuilder.cpp` and the constants of `src/api/arbor.h` (the
-    /// length power, `exp(0.046051 x degrees)` capped at 100, the wood / leaf
-    /// factors). Arbor looks the penalty up by rounded degree; this is continuous.
+    /// The cost of the edge `from -> to` when the reference direction at
+    /// `from` is the unit vector `dir`.
     #[inline]
-    fn cost(&self, from: usize, to: usize) -> f64 {
+    fn cost(&self, from: usize, to: usize, dir: &[f64; 3]) -> f64 {
         let d = crate::transform::sub(&self.points[to], &self.points[from]);
         let len = crate::transform::norm(&d).max(1e-12);
-        let mut c = len.powf(self.power);
-        if self.angle_rate > 0.0 {
-            let cos_theta = (d[2] / len).clamp(-1.0, 1.0);
-            let deg = cos_theta.acos().to_degrees();
-            c *= (self.angle_rate * deg).exp().min(100.0);
+        let c = len.powf(self.power);
+        match self.bend {
+            Some(b) => {
+                let cos = ((d[0] * dir[0] + d[1] * dir[1] + d[2] * dir[2]) / len).max(b.floor);
+                c / cos.powf(b.power)
+            }
+            None => c,
         }
-        if let Some(w) = self.wood {
-            c *= match (w[from], w[to]) {
-                (true, true) => 0.1,
-                (false, false) => 20.0,
-                (true, false) => 1000.0,
-                (false, true) => 1.0,
-            };
+    }
+
+    /// The reference direction at node `i` given the search's predecessors:
+    /// the vertical, turned towards the direction from `i`'s grandparent
+    /// (or parent) to `i` by the bend's `path_weight`.
+    #[inline]
+    fn direction(&self, i: usize, pred: &[usize]) -> [f64; 3] {
+        let Some(b) = self.bend else { return UP };
+        let p = pred[i];
+        if b.path_weight <= 0.0 || p == usize::MAX {
+            return UP;
         }
-        c
+        let from = if pred[p] != usize::MAX { pred[p] } else { p };
+        let d = crate::transform::sub(&self.points[i], &self.points[from]);
+        let len = crate::transform::norm(&d);
+        if len < 1e-12 {
+            return UP;
+        }
+        let w = b.path_weight.min(1.0);
+        let v = [w * d[0] / len, w * d[1] / len, w * d[2] / len + (1.0 - w)];
+        let n = crate::transform::norm(&v);
+        if n < 1e-12 { UP } else { [v[0] / n, v[1] / n, v[2] / n] }
     }
 }
 
@@ -97,13 +136,15 @@ impl<'a> Graph<'a> {
     #[inline]
     fn weight(&self, i: usize, e: usize) -> f64 {
         match &self.cost {
-            Some(c) => c.cost(i, self.neighbors[e] as usize),
+            Some(c) => c.cost(i, self.neighbors[e] as usize, &UP),
             None => self.weights[e],
         }
     }
 
     /// The edges leaving node `i` as `(neighbour, weight)` pairs, the weight stored
-    /// or computed from the positions as the graph was built.
+    /// or computed from the positions as the graph was built (for a graph
+    /// with a [`Bend`], taken against the vertical: a shortest-path search
+    /// uses the direction its path arrived in).
     pub fn edges(&self, i: usize) -> impl Iterator<Item = (usize, f64)> + '_ {
         let (a, b) = (self.offsets[i], self.offsets[i + 1]);
         (a..b).map(move |e| (self.neighbors[e] as usize, self.weight(i, e)))
@@ -564,51 +605,34 @@ fn check_graph(n: usize, k: usize, stored_weights: bool) -> crate::error::Result
     )
 }
 
-/// Directed kNN graph with a direction-dependent cost:
-/// `cost(from -> to) = d^power * penalty(angle from vertical)`, where the
-/// penalty is `min(exp(0.046051 * deg), 100)` -- travelling up is free,
-/// horizontal costs x63 and downward x100 -- so shortest paths from stem
-/// seeds climb through the tree rather than leaking across the ground.
-/// The neighbour set is symmetrised so the graph is connected both ways.
-pub fn directed_knn_graph(points: &[Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool) -> Graph<'_> {
-    directed_knn_graph_wood(points, k, max_distance, power, angle_penalty, None)
-}
-
-/// [`directed_knn_graph`] with wood / leaf cost factors when a per-node
-/// `wood` mask is given: wood->wood x0.1, leaf->leaf x20, wood->leaf x1000,
-/// leaf->wood x1. Paths run along the woody skeleton and may enter it from
-/// foliage, but almost never leave it, so foliage cannot bridge two trees.
+/// Directed kNN graph whose cost depends on direction:
+/// `cost(from -> to) = d^power`, divided with a [`Bend`] by a power of the
+/// cosine of the angle the edge makes with the vertical and the arriving
+/// path, so that shortest paths from stem seeds climb through a tree and do
+/// not leak across the ground. The neighbour set is symmetrised so the
+/// graph is connected both ways.
 ///
-/// The graph borrows `points` (and `wood`): edge costs are computed from
-/// them as the edges are walked, not stored.
-pub fn directed_knn_graph_wood<'a>(points: &'a [Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&'a [bool]>) -> Graph<'a> {
-    directed_knn_graph_full(points, k, max_distance, power, angle_penalty, wood, false)
+/// The graph borrows `points`: edge costs are computed from them as the
+/// edges are walked, not stored.
+pub fn directed_knn_graph(points: &[Point], k: usize, max_distance: f64, power: f64, bend: Option<Bend>) -> Graph<'_> {
+    directed_knn_graph_full(points, k, max_distance, power, bend, false)
 }
 
-/// [`directed_knn_graph_wood`] with its components joined wherever two come
+/// [`directed_knn_graph`] with its components joined wherever two come
 /// within `max_distance` of each other (see `bridges`), so that connectivity
 /// is that of the cloud at `max_distance` and not of the thinning.
-pub fn directed_knn_graph_bridged<'a>(points: &'a [Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&'a [bool]>) -> Graph<'a> {
-    directed_knn_graph_full(points, k, max_distance, power, angle_penalty, wood, true)
+pub fn directed_knn_graph_bridged(points: &[Point], k: usize, max_distance: f64, power: f64, bend: Option<Bend>) -> Graph<'_> {
+    directed_knn_graph_full(points, k, max_distance, power, bend, true)
 }
 
-/// [`directed_knn_graph_wood`] (or, with `bridge`,
-/// [`directed_knn_graph_bridged`]) with the angle penalty's rate given:
-/// the penalty is `min(exp(angle_rate * deg), 100)` for an edge `deg`
-/// degrees from vertical, so [`ANGLE_RATE`] is the usual one, a smaller
-/// rate makes sideways and downward steps cheaper, and 0 is no penalty.
-pub fn directed_knn_graph_rate<'a>(points: &'a [Point], k: usize, max_distance: f64, power: f64, angle_rate: f64, wood: Option<&'a [bool]>, bridge: bool) -> Graph<'a> {
+fn directed_knn_graph_full(points: &[Point], k: usize, max_distance: f64, power: f64, bend: Option<Bend>, bridge: bool) -> Graph<'_> {
     if let Err(e) = check_graph(points.len(), k, false) {
         // The callers of this one cannot carry an error; refusing loudly is
         // still better than the machine going down.
         panic!("{e}");
     }
     let (offsets, neighbors) = Graph::symmetric_knn_csr(points, k, max_distance, bridge);
-    Graph { offsets, neighbors, weights: Vec::new(), xy: Vec::new(), cost: Some(EdgeCost { points, power, angle_rate: angle_rate.max(0.0), wood }) }
-}
-
-fn directed_knn_graph_full<'a>(points: &'a [Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&'a [bool]>, bridge: bool) -> Graph<'a> {
-    directed_knn_graph_rate(points, k, max_distance, power, if angle_penalty { ANGLE_RATE } else { 0.0 }, wood, bridge)
+    Graph { offsets, neighbors, weights: Vec::new(), xy: Vec::new(), cost: Some(EdgeCost { points, power, bend }) }
 }
 
 /// Symmetric k-nearest-neighbour graph; edges longer than `max_distance` are dropped.
@@ -834,7 +858,19 @@ pub fn dijkstra_scaled(graph: &Graph, sources: &[usize], seed_xy: Option<&[[f64;
                 scale *= ss[src[i]];
             }
         }
-        for (j, w) in graph.edges(i) {
+        // With a bend that follows the path, an edge's cost depends on how
+        // the search arrived at `i`, which is settled once `i` is taken off
+        // the heap.
+        let dir = match &graph.cost {
+            Some(c) => c.direction(i, &pred),
+            None => UP,
+        };
+        for e in graph.offsets[i]..graph.offsets[i + 1] {
+            let j = graph.neighbors[e] as usize;
+            let w = match &graph.cost {
+                Some(c) => c.cost(i, j, &dir),
+                None => graph.weights[e],
+            };
             let nd = d + w * scale;
             if nd < dist[j] {
                 dist[j] = nd;
@@ -854,7 +890,7 @@ mod tests {
 
     /// The graph as it was built before the flat CSR: a vector per node,
     /// symmetrised, sorted and deduplicated, with the costs stored.
-    fn reference(points: &[Point], k: usize, max_distance: f64, power: f64, angle_penalty: bool, wood: Option<&[bool]>) -> Graph<'static> {
+    fn reference(points: &[Point], k: usize, max_distance: f64, power: f64, bend: Option<Bend>) -> Graph<'static> {
         let tree = KdTree::new(points);
         let mut adj: Vec<Vec<u32>> = points.iter().enumerate().map(|(i, p)| tree.knn(p, k + 1).into_iter().filter(|&(j, d)| j != i && d <= max_distance).map(|(j, _)| j as u32).collect()).collect();
         let mut extra: Vec<Vec<u32>> = vec![Vec::new(); points.len()];
@@ -868,8 +904,8 @@ mod tests {
             list.sort_unstable();
             list.dedup();
         }
-        let cost = EdgeCost { points, power, angle_rate: if angle_penalty { ANGLE_RATE } else { 0.0 }, wood };
-        let weighted: Vec<Vec<(u32, f64)>> = adj.into_iter().enumerate().map(|(i, list)| list.into_iter().map(|j| (j, cost.cost(i, j as usize))).collect()).collect();
+        let cost = EdgeCost { points, power, bend };
+        let weighted: Vec<Vec<(u32, f64)>> = adj.into_iter().enumerate().map(|(i, list)| list.into_iter().map(|j| (j, cost.cost(i, j as usize, &UP))).collect()).collect();
         let mut g = graph_from_directed(weighted);
         g.xy = points.iter().map(|p| [p[0], p[1]]).collect();
         g
@@ -909,21 +945,22 @@ mod tests {
     fn flat_csr_matches_the_vector_build() {
         for (seed, coincident, max_edge) in [(1, false, 1.0), (2, true, 1.0), (3, false, 0.3), (4, true, 0.05)] {
             let pts = cloud(400, seed, coincident);
-            let wood: Vec<bool> = pts.iter().map(|p| p[2] > 3.0).collect();
-            for w in [None, Some(wood.as_slice())] {
-                let g = directed_knn_graph_wood(&pts, 6, max_edge, 6.0, true, w);
-                same(&g, &reference(&pts, 6, max_edge, 6.0, true, w));
-            }
-            let g = directed_knn_graph(&pts, 10, max_edge, 3.0, false);
-            same(&g, &reference(&pts, 10, max_edge, 3.0, false, None));
+            // A bend against the vertical alone is a cost per edge, which
+            // a stored graph can hold.
+            let vertical = Some(Bend { path_weight: 0.0, ..Bend::default() });
+            let g = directed_knn_graph(&pts, 6, max_edge, 6.0, vertical);
+            same(&g, &reference(&pts, 6, max_edge, 6.0, vertical));
+            let g = directed_knn_graph(&pts, 10, max_edge, 3.0, None);
+            same(&g, &reference(&pts, 10, max_edge, 3.0, None));
         }
     }
 
     #[test]
     fn paths_are_those_of_the_stored_graph() {
         let pts = cloud(600, 9, true);
-        let g = directed_knn_graph(&pts, 6, 1.0, 6.0, true);
-        let r = reference(&pts, 6, 1.0, 6.0, true, None);
+        let vertical = Some(Bend { path_weight: 0.0, ..Bend::default() });
+        let g = directed_knn_graph(&pts, 6, 1.0, 6.0, vertical);
+        let r = reference(&pts, 6, 1.0, 6.0, vertical);
         let sources = [0usize, 7, 123];
         let xy = [[pts[0][0], pts[0][1]], [pts[7][0], pts[7][1]], [pts[123][0], pts[123][1]]];
         let scale = [0.5, 1.0, 0.25];
@@ -942,12 +979,12 @@ mod tests {
         // 1 m it has one, within 0.5 m still two.
         let mut pts: Vec<Point> = (0..200).map(|i| [0.0, 0.0, i as f64 * 0.02]).collect();
         pts.extend((0..200).map(|i| [0.8, 0.0, i as f64 * 0.02]));
-        let plain = directed_knn_graph(&pts, 6, 1.0, 6.0, true);
+        let plain = directed_knn_graph(&pts, 6, 1.0, 6.0, Some(Bend::default()));
         assert_eq!(connected_components(&plain).0, 2);
-        let bridged = directed_knn_graph_bridged(&pts, 6, 1.0, 6.0, true, None);
+        let bridged = directed_knn_graph_bridged(&pts, 6, 1.0, 6.0, Some(Bend::default()));
         assert_eq!(connected_components(&bridged).0, 1);
         assert_eq!(bridged.neighbors.len(), plain.neighbors.len() + 2);
-        let apart = directed_knn_graph_bridged(&pts, 6, 0.5, 6.0, true, None);
+        let apart = directed_knn_graph_bridged(&pts, 6, 0.5, 6.0, Some(Bend::default()));
         assert_eq!(connected_components(&apart).0, 2);
         // A chain of four clumps joins in passes, and a lone far point stays apart.
         let mut chain: Vec<Point> = Vec::new();
@@ -955,11 +992,11 @@ mod tests {
             chain.extend((0..50).map(|i| [c as f64 * 0.9, 0.0, i as f64 * 0.01]));
         }
         chain.push([10.0, 10.0, 0.0]);
-        assert_eq!(connected_components(&directed_knn_graph_bridged(&chain, 6, 1.0, 6.0, true, None)).0, 2);
+        assert_eq!(connected_components(&directed_knn_graph_bridged(&chain, 6, 1.0, 6.0, Some(Bend::default()))).0, 2);
         // Bridging an already connected graph adds nothing.
         let dense = cloud(300, 4, false);
-        let same = directed_knn_graph_bridged(&dense, 6, 1.0, 6.0, true, None);
-        let base = directed_knn_graph(&dense, 6, 1.0, 6.0, true);
+        let same = directed_knn_graph_bridged(&dense, 6, 1.0, 6.0, Some(Bend::default()));
+        let base = directed_knn_graph(&dense, 6, 1.0, 6.0, Some(Bend::default()));
         assert_eq!(connected_components(&base).0, 1);
         assert_eq!(same.neighbors, base.neighbors);
     }
@@ -1001,36 +1038,59 @@ mod tests {
     }
 
     #[test]
-    fn the_angle_rate_sets_what_a_sideways_step_costs() {
+    fn the_bend_sets_what_a_turn_costs() {
         // Two points 0.1 m apart, side by side and one above the other.
         let side: [Point; 2] = [[0.0, 0.0, 0.0], [0.1, 0.0, 0.0]];
         let up: [Point; 2] = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.1]];
-        let cost = |points: &[Point], rate: f64, from: usize, to: usize| EdgeCost { points, power: 2.0, angle_rate: rate, wood: None }.cost(from, to);
+        let bend = Bend { power: 2.0, floor: 0.25, path_weight: 1.0 };
+        let cost = |points: &[Point], from: usize, to: usize, dir: [f64; 3]| EdgeCost { points, power: 2.0, bend: Some(bend) }.cost(from, to, &dir);
         let base = 0.01;
         let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-9;
-        assert!(close(cost(&up, ANGLE_RATE, 0, 1), base)); // climbing is free
-        assert!(close(cost(&side, ANGLE_RATE, 0, 1), base * (ANGLE_RATE * 90.0).exp())); // about 63
-        assert!((cost(&side, ANGLE_RATE, 0, 1) / base - 63.1).abs() < 0.1);
-        assert!(close(cost(&up, ANGLE_RATE, 1, 0), base * 100.0)); // straight down: the cap
-        assert!(close(cost(&side, 0.023, 0, 1), base * (0.023f64 * 90.0).exp())); // about 8
-        assert!(close(cost(&side, 0.0, 0, 1), base)); // no penalty
-        // The constructors that take a switch use the default rate, or none.
-        let mut rng = Rng::new(5);
-        let mut u = || (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
-        let pts: Vec<Point> = (0..300).map(|_| [u(), u(), u()]).collect();
-        for (on, rate) in [(true, ANGLE_RATE), (false, 0.0)] {
-            let a = directed_knn_graph_bridged(&pts, 6, 0.5, 6.0, on, None);
-            let b = directed_knn_graph_rate(&pts, 6, 0.5, 6.0, rate, None, true);
-            assert_eq!(dijkstra(&a, &[0]).0, dijkstra(&b, &[0]).0);
-        }
+        assert!(close(cost(&up, 0, 1, UP), base)); // along the reference direction: free
+        assert!(close(cost(&side, 0, 1, UP), base * 16.0)); // across it: the floor, 1 / 0.25^2
+        assert!(close(cost(&up, 1, 0, UP), base * 16.0)); // against it: the floor too
+        assert!(close(cost(&side, 0, 1, [1.0, 0.0, 0.0]), base)); // a path already heading sideways goes on freely
+        let diag = [std::f64::consts::FRAC_1_SQRT_2, 0.0, std::f64::consts::FRAC_1_SQRT_2];
+        assert!(close(cost(&up, 0, 1, diag), base * 2.0)); // 45 degrees off: 1 / cos^2
+        // Without a bend the cost is the length term alone.
+        assert!(close(EdgeCost { points: &side, power: 2.0, bend: None }.cost(0, 1, &UP), base));
+        // The reference direction: up at a source, the path's with weight 1,
+        // between the two otherwise.
+        let chain: [Point; 3] = [[0.0, 0.0, 0.0], [0.1, 0.0, 0.0], [0.2, 0.0, 0.0]];
+        let pred = [usize::MAX, 0, 1];
+        let c = EdgeCost { points: &chain, power: 2.0, bend: Some(bend) };
+        assert_eq!(c.direction(0, &pred), UP);
+        assert!(close(c.direction(2, &pred)[0], 1.0));
+        let half = EdgeCost { points: &chain, power: 2.0, bend: Some(Bend { path_weight: 0.5, ..bend }) }.direction(2, &pred);
+        assert!(close(half[0], half[2]) && half[1] == 0.0);
+        assert_eq!(EdgeCost { points: &chain, power: 2.0, bend: Some(Bend { path_weight: 0.0, ..bend }) }.direction(2, &pred), UP);
+    }
+
+    #[test]
+    fn a_search_that_follows_its_path_runs_along_a_branch() {
+        // A stem to z = 1 and a horizontal branch from its top. Against the
+        // vertical alone every step along the branch is a sideways one;
+        // a search that follows its path pays for the turn and then goes on
+        // at the cost of going straight.
+        let mut pts: Vec<Point> = (0..=10).map(|k| [0.0, 0.0, 0.1 * k as f64]).collect();
+        pts.extend((1..=20).map(|k| [0.1 * k as f64, 0.0, 1.0]));
+        let far = pts.len() - 1;
+        let reach = |path_weight: f64| {
+            let g = directed_knn_graph(&pts, 2, 0.15, 2.0, Some(Bend { power: 2.0, floor: 0.25, path_weight }));
+            dijkstra(&g, &[0]).0[far]
+        };
+        let stem = 10.0 * 0.01;
+        assert!((reach(0.0) - (stem + 20.0 * 0.01 * 16.0)).abs() < 1e-9);
+        // the turn at the floor, one step at 45 degrees (1 / cos^2 = 2), then 18 straight on
+        assert!((reach(1.0) - (stem + 0.01 * 16.0 + 0.01 * 2.0 + 18.0 * 0.01)).abs() < 1e-9);
     }
 
     #[test]
     fn empty_and_tiny_graphs() {
-        let g = directed_knn_graph(&[], 6, 1.0, 6.0, true);
+        let g = directed_knn_graph(&[], 6, 1.0, 6.0, Some(Bend::default()));
         assert_eq!(g.n(), 0);
         let one = [[0.0, 0.0, 0.0]];
-        let g = directed_knn_graph(&one, 6, 1.0, 6.0, true);
+        let g = directed_knn_graph(&one, 6, 1.0, 6.0, Some(Bend::default()));
         assert_eq!(g.n(), 1);
         assert_eq!(g.edges(0).count(), 0);
     }

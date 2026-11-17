@@ -121,7 +121,7 @@ those read ESRI ASCII grids only.
 
 ### `trees`
 
-`sylva trees INPUT [-o CSV] [--min-dbh 0.05] [--min-height 3.0] [--min-slenderness 0] [--min-quality-short 0] [--short-slices 4] [--segment PATH] [--voxel 0.03] [--angle-rate 0.046] [--merge-touching 0.1]`
+`sylva trees INPUT [-o CSV] [--min-dbh 0.05] [--min-height 3.0] [--min-slenderness 0] [--min-quality-short 0] [--short-slices 4] [--segment PATH] [--voxel 0.03] [--merge-touching 0.1]`
 
 Runs detection, segmentation, merging of touching trees, heights, pruning and crown metrics on a
 height-normalised cloud and writes one CSV row per tree: `tree_id`, `x`,
@@ -130,10 +130,7 @@ CSV is written beside the input as `<input>_trees.csv`; `-o -` prints it to
 stdout. The header is written even when no tree is found. `--segment`
 writes the cloud with a `tree_id` attribute and every attribute of the input. `--voxel` is the thinning of the segmentation graph: 0.05 m halves the
 graph of a 2 cm plot and is what a plot of a few hundred million points
-needs to fit in memory. `--angle-rate` sets how much a sideways step costs
-in the segmentation; 0.023 divides crowns better on plots scanned densely
-from many positions, and the default is the safer choice for sparse or
-heavily occluded ones (see [Trees](trees.md)). `--merge-touching` is the
+needs to fit in memory. `--merge-touching` is the
 share of a tree's points that must lie within 10 cm of a larger neighbour
 for the two to be merged after segmentation: a stem that is really part of
 another tree holds a piece of that tree's crown and lies against it. Trees

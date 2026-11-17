@@ -12,7 +12,7 @@
 //! catalogue of height-normalised tiles, holding a few tiles at a time:
 //!
 //! 1. The graph nodes of the whole plot (the points above
-//!    `cut_above_ground`, thinned to the first point of each voxel of one
+//!    `ground_clearance`, thinned to the first point of each voxel of one
 //!    global grid, in catalogue order) are found tile by tile and kept in
 //!    scratch files. They are the nodes [`trees::segment_trees`] builds its
 //!    graph on for the whole cloud when its grid has the same corner
@@ -542,17 +542,17 @@ pub fn segment_trees(cat: &Catalog, stems: &[Tree], out_dir: &Path, format: Opti
     }
     let scratch = Scratch::new(out_dir, ".sylva-segment")?;
     let seg_origin = s.segment.voxel_origin.expect("checked");
-    let nodes = build_nodes(cat, &scratch.0.join("nodes"), &s.height_attr, s.segment.voxel_size.max(0.0), s.segment.cut_above_ground, seg_origin, workers, &counts)?;
+    let nodes = build_nodes(cat, &scratch.0.join("nodes"), &s.height_attr, s.segment.voxel_size.max(0.0), s.segment.ground_clearance, seg_origin, workers, &counts)?;
 
     // Branches, on their own graph (its own voxel size and cut).
     let (survivors, input_index): (Vec<Tree>, Vec<usize>) = match &s.merge {
         Some(m) if !stems.is_empty() => {
-            let same = m.graph.voxel_size == s.segment.voxel_size && m.graph.cut_above_ground == s.segment.cut_above_ground && m.graph.voxel_origin == s.segment.voxel_origin;
+            let same = m.graph.voxel_size == s.segment.voxel_size && m.graph.ground_clearance == s.segment.ground_clearance && m.graph.voxel_origin == s.segment.voxel_origin;
             let own_nodes;
             let mn = if same {
                 &nodes
             } else {
-                own_nodes = build_nodes(cat, &scratch.0.join("merge_nodes"), &s.height_attr, m.graph.voxel_size.max(0.0), m.graph.cut_above_ground, m.graph.voxel_origin.expect("checked"), workers, &counts)?;
+                own_nodes = build_nodes(cat, &scratch.0.join("merge_nodes"), &s.height_attr, m.graph.voxel_size.max(0.0), m.graph.ground_clearance, m.graph.voxel_origin.expect("checked"), workers, &counts)?;
                 &own_nodes
             };
             let parent = merge_parents(cat, mn, stems, m, &cores, s.buffer, workers, &counts)?;

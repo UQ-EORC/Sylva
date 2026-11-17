@@ -131,7 +131,7 @@ def segment_trees(catalog: Catalog, stems: list[Tree], out: str | Path, height_a
     ``attribute`` (-1 for none). Tree ids are those the whole-plot sequence
     gives, unique over the plot.
 
-    The graph is built on the points above ``cut_above_ground`` thinned to
+    The graph is built on the points above ``ground_clearance`` thinned to
     one per voxel of a grid with a corner at ``voxel_origin``, found tile by
     tile exactly as in the whole cloud. With a buffer wider than the largest
     crown (every tree that competes with a tile's trees for points then has

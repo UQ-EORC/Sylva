@@ -165,7 +165,7 @@ def _cmd_trees(args):
     cloud = io.read(args.input, attrs=["height"] if las else None)
     _heights_warning(cloud, args.input)
     found = trees.detect_stems(cloud, min_radius=args.min_dbh / 2)
-    labels = trees.segment_trees(cloud, found, voxel_size=args.voxel, angle_rate=args.angle_rate)
+    labels = trees.segment_trees(cloud, found, voxel_size=args.voxel)
     if args.merge_touching > 0:
         found, labels, _ = trees.merge_touching(cloud, labels, found, threshold=args.merge_touching,
                                                 min_top=args.min_height)
@@ -552,10 +552,6 @@ def main(argv=None):
                         "beside the input)")
     s.add_argument("--voxel", type=float, default=0.03,
                    help="voxel size of the segmentation graph (m); 0.05 halves a 2 cm plot's graph")
-    s.add_argument("--angle-rate", type=float, default=0.046051,
-                   help="rate of the segmentation's angle penalty per degree from vertical (the default makes "
-                        "a horizontal step cost 63 times a vertical one; 0.023, 8 times, divides crowns "
-                        "better on plots scanned densely from many positions)")
     s.add_argument("--merge-touching", type=float, default=0.1, metavar="SHARE",
                    help="after segmenting, merge a tree into a larger neighbour when at least this share of "
                         "its points lies within 10 cm of it (a stem that is part of another tree holds a "

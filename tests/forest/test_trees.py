@@ -81,17 +81,18 @@ def test_dbh_profile(normalized, tree_specs):
     assert np.allclose(prof[:, 1], dbh, atol=0.01)
 
 
-def test_angle_rate(normalized, tree_specs):
+def test_bend_settings(normalized, tree_specs):
     stems = trees.detect_stems(normalized)
     base = trees.segment_trees(normalized, stems)
-    # The default rate is the one the penalty always had.
-    assert np.array_equal(base, trees.segment_trees(normalized, stems, angle_rate=0.046051))
-    # No rate is no penalty.
-    assert np.array_equal(trees.segment_trees(normalized, stems, angle_rate=0.0),
-                          trees.segment_trees(normalized, stems, angle_penalty=False))
-    # A weaker penalty still labels the trees.
-    weak = trees.segment_trees(normalized, stems, angle_rate=0.012)
-    assert (weak > 0).sum() > 0.9 * (base > 0).sum()
+    # The defaults are the ones named in the signature.
+    assert np.array_equal(base, trees.segment_trees(normalized, stems, bend_power=4.0, bend_floor=0.4, path_weight=0.3))
+    # A floor of 1 leaves no bend factor, as switching the penalty off does.
+    assert np.array_equal(trees.segment_trees(normalized, stems, bend_floor=1.0),
+                          trees.segment_trees(normalized, stems, bend_cost=False))
+    # A gentler factor, and one that follows the path alone, still label the trees.
+    for kw in ({"bend_power": 2.0, "bend_floor": 0.3}, {"path_weight": 1.0}):
+        other = trees.segment_trees(normalized, stems, **kw)
+        assert (other > 0).sum() > 0.9 * (base > 0).sum()
 
 
 def test_merge_touching_joins_a_piece_to_its_tree():

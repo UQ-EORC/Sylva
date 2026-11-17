@@ -55,20 +55,19 @@ fn graph_params(mut p: SegmentParams, d: &Bound<'_, PyDict>, what: &str) -> PyRe
             "seed_radius" => p.seed_radius = v.extract()?,
             "seed_ring" => p.seed_ring = v.extract()?,
             "power" => p.power = v.extract()?,
-            "angle_penalty" => p.angle_penalty = v.extract()?,
-            "cut_above_ground" => p.cut_above_ground = v.extract()?,
+            "bend_cost" => p.bend_cost = v.extract()?,
+            "ground_clearance" => p.ground_clearance = v.extract()?,
             "voxel_origin" => p.voxel_origin = origin(&v)?,
             _ if what == "merge" => return Err(PyValueError::new_err(format!("unknown merge_branches parameter {key:?}"))),
             "gravity" => p.gravity = v.extract()?,
-            "angle_rate" => p.angle_rate = v.extract()?,
+            "bend_power" => p.bend_power = v.extract()?,
+            "bend_floor" => p.bend_floor = v.extract()?,
+            "path_weight" => p.path_weight = v.extract()?,
             "height_prior" => p.height_prior = v.extract()?,
             "height_prior_radius" => p.height_prior_radius = v.extract()?,
             "height_prior_power" => p.height_prior_power = v.extract()?,
             "low_height" => p.low_height = v.extract()?,
             "low_radius" => p.low_radius = v.extract()?,
-            "wood_costs" => p.wood_costs = v.extract()?,
-            "wood_k" => p.wood_k = v.extract()?,
-            "wood_threshold" => p.wood_threshold = v.extract()?,
             "understorey_height" => p.understorey_height = v.extract()?,
             "understorey_band" => p.understorey_band = v.extract()?,
             _ => return Err(PyValueError::new_err(format!("unknown segment_trees parameter {key:?}"))),
@@ -80,7 +79,7 @@ fn graph_params(mut p: SegmentParams, d: &Bound<'_, PyDict>, what: &str) -> PyRe
 /// Merge settings from a dict of `trees.merge_branches` keywords, with its
 /// defaults (those of the `merge_branches` binding).
 fn merge_settings(d: &Bound<'_, PyDict>) -> PyResult<MergeSettings> {
-    let graph = SegmentParams { k: 10, max_edge: 1.0, voxel_size: 0.1, seed_height: 1.5, seed_radius: 0.5, seed_ring: true, power: 3.0, angle_penalty: true, gravity: 0.0, cut_above_ground: 0.25, height_prior: false, height_prior_radius: 1.5, low_height: 0.5, low_radius: 1.0, wood_costs: false, wood_k: 20, wood_threshold: 0.9, voxel_origin: Some([0.0; 3]), ..Default::default() };
+    let graph = SegmentParams { k: 10, max_edge: 1.0, voxel_size: 0.1, seed_height: 1.5, seed_radius: 0.5, seed_ring: true, power: 3.0, bend_cost: true, gravity: 0.0, ground_clearance: 0.25, height_prior: false, height_prior_radius: 1.5, low_height: 0.5, low_radius: 1.0, voxel_origin: Some([0.0; 3]), ..Default::default() };
     let mut m = MergeSettings { graph, ground_height: 0.5, trunk_scale: 1.5, trunk_min: 0.15, search_radius: 6.0 };
     let rest = PyDict::new(d.py());
     for (k, v) in d.iter() {

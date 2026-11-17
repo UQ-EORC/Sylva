@@ -444,26 +444,27 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
                   k: int = 6, max_edge: float = 1.0, voxel_size: float = 0.03,
                   seed_height: float = 1.5, seed_radius: float = 0.25, seed_ring: bool = True,
                   power: float = 6.0,
-                  angle_penalty: bool = True, gravity: float = 0.0,
-                  cut_above_ground: float | None = None, height_prior: bool = True,
+                  bend_cost: bool = True, gravity: float = 0.0,
+                  ground_clearance: float | None = None, height_prior: bool = True,
                   height_prior_radius: float = 1.5, height_prior_power: float = 1.0,
                   low_height: float = 0.5,
-                  low_radius: float = 1.0, wood_costs: bool = False,
-                  wood_k: int = 20, wood_threshold: float = 0.9, understorey_height: float = 0.0,
+                  low_radius: float = 1.0, understorey_height: float = 0.0,
                   understorey_band: float = 0.5, voxel_origin=None,
                   ground: str | np.ndarray | None = None, bridge: bool = True,
-                  angle_rate: float = 0.046051) -> np.ndarray:
+                  bend_power: float = 4.0, bend_floor: float = 0.4,
+                  path_weight: float = 0.3) -> np.ndarray:
     """Assign each point to a stem by least-cost path through a directed kNN
     graph (multi-source Dijkstra from stem seeds), after raycloudtools'
-    ``rayextract trees`` (Devereux et al. 2026) and Arbor (J.-R. Roussel,
-    r-lidar), whose edge cost this is: the length power, the angle penalty
-    and its constants, and the wood / leaf factors are adapted from Arbor's
-    source (see ``THIRD_PARTY_NOTICES.md``).
+    ``rayextract trees`` (Devereux et al. 2026), whose bend cost the edges
+    carry.
 
-    The edge cost is ``d ** power`` times an angle penalty
-    ``min(exp(angle_rate * deg_from_vertical), 100)`` -- at the default
-    rate climbing is free, horizontal edges cost x63 and downward ones
-    x100 -- so paths run up
+    An edge of length ``d`` costs ``d ** power / max(bend_floor, cos) **
+    bend_power``, ``cos`` being the cosine of the angle between the edge and
+    a reference direction: the vertical, turned by ``path_weight`` towards
+    the direction the path arrived in. Going on upward, or on along a branch
+    the path already follows, is cheap; turning across or back costs up to
+    ``1 / bend_floor ** bend_power`` times as much (39 at the defaults) --
+    so paths run up
     through a tree instead of leaking across the ground or understorey.
     ``gravity`` adds raycloudtools' term ``1 + g * lateral**2`` from the seed
     (0.3 favours vertical trees). ``height_prior`` scales each tree's costs
@@ -472,10 +473,7 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
     vegetation over the stem (the 95th percentile of the node heights within
     ``height_prior_radius``), not of the tree itself, which is not known
     until the plot is segmented: under a closed canopy every stem, however
-    small, competes as a tree of canopy height. ``wood_costs`` classifies
-    graph nodes as wood by local anisotropy and applies class factors
-    (wood->wood x0.1, leaf->leaf x20, wood->leaf x1000) so foliage cannot
-    bridge neighbouring trees. Points below ``cut_above_ground`` and
+    small, competes as a tree of canopy height. Points below ``ground_clearance`` and
     unreachable points get ``-1``, and so do points below ``low_height``
     further than ``low_radius`` (or 1.5 DBH) from their tree's base: ground
     remnants, litter and understorey reached along the surface would
@@ -513,24 +511,23 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
         crowns. 6 was chosen on the validation areas of the Cherlet et al.
         (2026) benchmark, where it raised F1 over the earlier 4 on every plot
         with interlocking crowns (see *Benchmarks > Tree detection*).
-    angle_penalty
-        Apply the angle factor above.
-    angle_rate
-        Rate of the angle factor per degree from vertical: an edge costs
-        ``min(exp(angle_rate * deg), 100)`` times its length term. 0.046, the
-        default, makes a horizontal step cost 63 times a vertical one; 0.023
-        makes it 8 times and 0.012 three times; 0 is no penalty. A lower
-        rate lets a tree keep the outer parts of its branches against trees
-        standing under them: 0.023 raised F1 by 0.01 to 0.03 on five of six
-        real plots scanned densely from many positions and left the sixth
-        unchanged. The default is the safer one on sparse or heavily
-        occluded clouds, where crowns are in pieces: 0.012 lowers F1 on
-        clouds thinned to 5 cm or more, and both lower it on simulated
-        plots scanned from five positions (see *Benchmarks > Tree
-        detection*).
+    bend_cost
+        Apply the bend factor above; without it an edge costs its length
+        term alone.
+    bend_power, bend_floor, path_weight
+        The bend factor, ``1 / max(bend_floor, cos) ** bend_power``, and the
+        share of the arriving path's direction in the direction ``cos`` is
+        measured from (0 is the vertical alone; 1 the path alone, as in
+        raycloudtools). The defaults segment dense, thinned and simulated
+        plots alike. On plots scanned densely from many positions a gentler
+        factor divides crowns better: ``bend_power=2, bend_floor=0.3``
+        raised F1 on the reference plots by 0.02 and on their 5 cm
+        thinnings by 0.014, and lowered it by 0.017 on simulated plots
+        scanned from five positions and by 0.005 on 8 cm thinnings (see
+        *Benchmarks > Tree detection*).
     gravity
         Lateral-distance term; 0 disables it.
-    cut_above_ground
+    ground_clearance
         Points below this height (m) are left unassigned and kept out of
         the graph. None is 0.1 m, the noise band of a terrain model, so the
         ground surface stays out while a stem is labelled to within a hand
@@ -545,13 +542,10 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
     low_height, low_radius
         Near-ground points farther than ``low_radius`` from their stem are
         unassigned.
-    wood_costs, wood_k, wood_threshold
-        Enable wood/leaf edge factors; ``wood_k`` neighbours and
-        ``wood_threshold`` anisotropy classify nodes.
     understorey_height, understorey_band
         Let the understorey compete, after raycloudtools, where every point's
         path runs to the ground and small plants keep their own. Graph nodes
-        up to ``understorey_band`` above ``cut_above_ground`` and more than
+        up to ``understorey_band`` above ``ground_clearance`` and more than
         ``max(low_radius, 1.5 DBH)`` from every stem become extra sources,
         with path costs scaled as for a tree ``understorey_height`` tall
         (with ``height_prior``). Grass, shrubs and saplings around a stem go
@@ -573,7 +567,7 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
         height: ``"classification"`` takes the points classified as ground
         (ASPRS class 2, as :func:`sylva.ground.classify_ground_csf` writes
         them), or give a boolean mask with one value per point. None leaves
-        the ground to ``cut_above_ground`` alone.
+        the ground to ``ground_clearance`` alone.
     bridge
         Join the graph's components wherever two come within ``max_edge`` of
         each other, so that a crown reaches its trunk through sparsely
@@ -609,16 +603,16 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
         exclude = np.ascontiguousarray(np.asarray(ground, dtype=bool))
         if exclude.shape != (len(cloud),):
             raise ValueError(f"ground mask has shape {exclude.shape}, expected ({len(cloud)},)")
-    if cut_above_ground is None:
-        cut_above_ground = 0.0 if exclude is not None else 0.1
+    if ground_clearance is None:
+        ground_clearance = 0.0 if exclude is not None else 0.1
     return _core.segment_trees(cloud.xyz, h, [t._to_core() for t in trees], k, max_edge,
-                               voxel_size, seed_height, seed_radius, seed_ring, power, angle_penalty,
-                               gravity, cut_above_ground, height_prior, height_prior_radius,
+                               voxel_size, seed_height, seed_radius, seed_ring, power, bend_cost,
+                               gravity, ground_clearance, height_prior, height_prior_radius,
                                height_prior_power,
-                               low_height, low_radius, wood_costs, wood_k, wood_threshold,
+                               low_height, low_radius,
                                understorey_height, understorey_band,
                                None if voxel_origin is None else tuple(float(v) for v in voxel_origin),
-                               exclude, bool(bridge), float(angle_rate))
+                               exclude, bool(bridge), float(bend_power), float(bend_floor), float(path_weight))
 
 
 def merge_branches(cloud: PointCloud, trees: list[Tree], height_attr: str = "height",

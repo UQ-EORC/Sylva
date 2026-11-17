@@ -194,7 +194,7 @@ print([(t.tree_id, t.height) for t in same] == [(t.tree_id, t.height) for t in t
 (`whole_h` is `heights.read()`.) How it works:
 
 1. **Graph nodes.** The segmentation builds its graph on the points above
-   `cut_above_ground`, thinned to the first point of each `voxel_size`
+   `ground_clearance`, thinned to the first point of each `voxel_size`
    voxel. Tiled, the voxels are those of one grid with a corner at
    `voxel_origin` (`(0, 0, 0)` by default), and the first point of each is
    found tile by tile in catalogue order, as the tiled voxel thinning finds
