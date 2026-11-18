@@ -70,6 +70,7 @@ fn graph_params(mut p: SegmentParams, d: &Bound<'_, PyDict>, what: &str) -> PyRe
             "low_radius" => p.low_radius = v.extract()?,
             "understorey_height" => p.understorey_height = v.extract()?,
             "understorey_band" => p.understorey_band = v.extract()?,
+            "max_reach" => p.max_reach = v.extract()?,
             _ => return Err(PyValueError::new_err(format!("unknown segment_trees parameter {key:?}"))),
         }
     }

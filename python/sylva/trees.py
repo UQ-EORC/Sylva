@@ -452,7 +452,7 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
                   understorey_band: float = 0.5, voxel_origin=None,
                   ground: str | np.ndarray | None = None, bridge: bool = True,
                   bend_power: float = 4.0, bend_floor: float = 0.4,
-                  path_weight: float = 0.3) -> np.ndarray:
+                  path_weight: float = 0.3, max_reach: float = 0.0) -> np.ndarray:
     """Assign each point to a stem by least-cost path through a directed kNN
     graph (multi-source Dijkstra from stem seeds), after raycloudtools'
     ``rayextract trees`` (Devereux et al. 2026), whose bend cost the edges
@@ -574,6 +574,14 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
         sampled branches whatever points the thinning kept. Off, the labels
         of trees of 5 to 10 m depended on which point survived each voxel
         (see *Benchmarks > Tree detection*).
+    max_reach
+        Farthest a tree reaches from its stem (m, horizontal): its paths do
+        not enter graph nodes beyond it, and what lies farther from every
+        stem is left unassigned. Without it a tree takes all the vegetation
+        joined to it, however far: shrubs with no stem of their own on open
+        plots and, on a plot cut from a larger scan, the vegetation past the
+        outermost stems, which make crowns of tens of metres. Set it to the
+        widest crown radius the stand can have. 0, the default, is no limit.
 
     Returns
     -------
@@ -605,6 +613,9 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
             raise ValueError(f"ground mask has shape {exclude.shape}, expected ({len(cloud)},)")
     if ground_clearance is None:
         ground_clearance = 0.0 if exclude is not None else 0.1
+    max_reach = float(max_reach)
+    if not (np.isfinite(max_reach) and max_reach >= 0):
+        raise ValueError(f"max_reach must be a non-negative number of metres (0 for no limit), got {max_reach}")
     return _core.segment_trees(cloud.xyz, h, [t._to_core() for t in trees], k, max_edge,
                                voxel_size, seed_height, seed_radius, seed_ring, power, bend_cost,
                                gravity, ground_clearance, height_prior, height_prior_radius,
@@ -612,7 +623,8 @@ def segment_trees(cloud: PointCloud, trees: list[Tree], height_attr: str = "heig
                                low_height, low_radius,
                                understorey_height, understorey_band,
                                None if voxel_origin is None else tuple(float(v) for v in voxel_origin),
-                               exclude, bool(bridge), float(bend_power), float(bend_floor), float(path_weight))
+                               exclude, bool(bridge), float(bend_power), float(bend_floor), float(path_weight),
+                               max_reach)
 
 
 def merge_branches(cloud: PointCloud, trees: list[Tree], height_attr: str = "height",

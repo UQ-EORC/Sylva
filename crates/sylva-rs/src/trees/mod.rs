@@ -12,7 +12,7 @@ use std::collections::HashMap;
 
 use rayon::prelude::*;
 
-use crate::cluster::{dijkstra_gravity, dijkstra_scaled, directed_knn_graph, directed_knn_graph_bridged, Bend};
+use crate::cluster::{dijkstra_gravity, dijkstra_reach, directed_knn_graph, directed_knn_graph_bridged, Bend};
 use crate::error::{Error, Result};
 use crate::filters::Rng;
 use crate::util::spatial::first_in_voxel;
@@ -293,6 +293,14 @@ pub struct SegmentParams {
     /// sampled branches whatever points the thinning kept
     /// (`crate::cluster::directed_knn_graph_bridged`).
     pub bridge: bool,
+    /// Farthest a tree reaches from its stem (m, horizontal): its paths do
+    /// not enter nodes beyond it, so what lies farther from every stem stays
+    /// unassigned. Without it a tree claims all the vegetation connected to
+    /// it, however far: on open plots shrubs with no stem of their own and,
+    /// on a plot cut from a larger scan, the vegetation past the outermost
+    /// stems, which then make crowns of tens of metres. Set it to the
+    /// widest crown radius the stand can have; 0 (the default) is no limit.
+    pub max_reach: f64,
 }
 
 impl SegmentParams {
@@ -313,7 +321,7 @@ impl SegmentParams {
 
 impl Default for SegmentParams {
     fn default() -> Self {
-        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.03, seed_height: 1.5, seed_radius: 0.25, power: 6.0, bend_cost: true, bend_power: 4.0, bend_floor: 0.4, path_weight: 0.3, gravity: 0.0, ground_clearance: 0.1, seed_ring: true, height_prior: true, height_prior_radius: 1.5, height_prior_power: 1.0, low_height: 0.5, low_radius: 1.0, understorey_height: 0.0, understorey_band: 0.5, voxel_origin: None, bridge: true }
+        SegmentParams { k: 6, max_edge: 1.0, voxel_size: 0.03, seed_height: 1.5, seed_radius: 0.25, power: 6.0, bend_cost: true, bend_power: 4.0, bend_floor: 0.4, path_weight: 0.3, gravity: 0.0, ground_clearance: 0.1, seed_ring: true, height_prior: true, height_prior_radius: 1.5, height_prior_power: 1.0, low_height: 0.5, low_radius: 1.0, understorey_height: 0.0, understorey_band: 0.5, voxel_origin: None, bridge: true, max_reach: 0.0 }
     }
 }
 
@@ -517,7 +525,9 @@ pub fn segment_nodes(work: &[Point], hw: &[f64], trees: &[Tree], p: &SegmentPara
             }
         }
     }
-    let (dist, src, _) = dijkstra_scaled(&graph, &seeds, Some(&seed_xy), p.gravity, if p.height_prior { Some(&seed_scale) } else { None });
+    // The stems' reach; the understorey sources have none.
+    let reach: Option<Vec<f64>> = (p.max_reach > 0.0).then(|| seed_tree.iter().map(|&t| if t >= 0 { p.max_reach } else { f64::INFINITY }).collect());
+    let (dist, src, _) = dijkstra_reach(&graph, &seeds, Some(&seed_xy), p.gravity, if p.height_prior { Some(&seed_scale) } else { None }, reach.as_deref());
     (0..work.len()).map(|i| if dist[i].is_finite() { seed_tree[src[i]] } else { -1 }).collect()
 }
 
@@ -1044,6 +1054,26 @@ mod seed_and_height_tests {
         let labelled_below_cut = labels_low.iter().zip(&pts).filter(|(&l, q)| l >= 0 && q[2] < 0.25).count();
         assert!(labelled_below_cut > 0);
         assert!(labels_low.iter().zip(&ground).all(|(&l, &g)| !g || l == -1));
+    }
+
+    #[test]
+    fn a_reach_keeps_every_tree_within_it() {
+        // A cube of points joined everywhere: without a reach the nine trees
+        // share all of it, with one each keeps to its disc.
+        let (pts, hw, trees) = forest(20_000, 31);
+        let p = SegmentParams { voxel_size: 0.05, ..Default::default() };
+        let free = segment_trees(&pts, &hw, &trees, &p);
+        let at: std::collections::HashMap<i64, (f64, f64)> = trees.iter().map(|t| (t.tree_id, (t.x, t.y))).collect();
+        let far = |labels: &[i64]| labels.iter().zip(&pts).filter(|(l, _)| **l >= 0).map(|(l, q)| { let (x, y) = at[l]; (q[0] - x).hypot(q[1] - y) }).fold(0.0, f64::max);
+        assert!(far(&free) > 4.0, "{}", far(&free));
+        let reach = 2.5;
+        let held = segment_trees(&pts, &hw, &trees, &SegmentParams { max_reach: reach, ..p.clone() });
+        // A point takes its nearest node's label: it lies at most a voxel diagonal past the node.
+        assert!(far(&held) <= reach + 0.05 * 3f64.sqrt() + 1e-9, "{}", far(&held));
+        assert!(held.iter().filter(|&&l| l >= 0).count() > 1000);
+        assert!(held.iter().filter(|&&l| l < 0).count() > free.iter().filter(|&&l| l < 0).count());
+        // A reach no tree comes near is no limit.
+        assert_eq!(segment_trees(&pts, &hw, &trees, &SegmentParams { max_reach: 1e6, ..p.clone() }), free);
     }
 
     #[test]

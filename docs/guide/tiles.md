@@ -215,7 +215,10 @@ print([(t.tree_id, t.height) for t in same] == [(t.tree_id, t.height) for t in t
    trees' nodes come within `edge_margin` (2 m) of the edge of its buffer,
    where the plot goes on, is segmented again with a buffer twice as wide,
    up to `max_buffer`; trees still at the edge are named in a warning and
-   flagged `crown_at_edge` in `Tree.extra`.
+   flagged `crown_at_edge` in `Tree.extra`. With `max_reach` (the farthest
+   a tree reaches from its stem) the buffer widens no further than twice
+   the reach plus `edge_margin`: that band holds the tile's trees and every
+   stem that can contest their nodes.
 4. **Points.** Every point takes the label of its nearest node, tile by
    tile. The nearest node of a point is its own voxel's or closer, so the
    nodes within one voxel diagonal of the tile hold it.
@@ -521,7 +524,13 @@ the whole cloud whatever the tile holds.
   lowest point unless given `voxel_origin`. Its labels also depend on the
   buffer being wider than the largest crown; a crown that reaches the
   buffer's edge is read again wider, and reported when `max_buffer` is not
-  enough. Nearest-neighbour ties in the graph (a node's neighbours, a
+  enough. Without `max_reach` a tree takes all the vegetation joined to it:
+  on an open plot (shrubs with no stem of their own) or a plot cut from a
+  larger scan (vegetation past the outermost stems) its labels can run tens
+  of metres from the stem, and tiles are read again out to `max_buffer` for
+  crowns no tree has. On a 1 ha mulga plot of trees under 9 m, labels ran
+  up to 62 m from their stems. Set `max_reach` to the widest crown radius
+  the stand can have; what lies farther from every stem stays unassigned. Nearest-neighbour ties in the graph (a node's neighbours, a
   point's nearest node) could in principle go another way than in the
   whole cloud; none did on the 223 million points of the Tumbarumba plot.
 - Tiled segmentation is slower than on one cloud (about four times on

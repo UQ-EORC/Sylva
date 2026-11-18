@@ -26,7 +26,9 @@
 //!    nodes come within `edge_margin` of the buffer's edge may have been cut
 //!    short or lost a contest it would win in the whole plot; the tile is run
 //!    again with a buffer twice as wide, up to `max_buffer`, and trees still
-//!    at the edge are reported.
+//!    at the edge are reported. With [`SegmentParams::max_reach`] the buffer
+//!    widens no further than twice the reach plus `edge_margin`, which holds
+//!    the tile's trees and every stem that can contest their nodes.
 //! 4. Every point takes the label of its nearest node ([`trees::label_points`]),
 //!    tile by tile: the nearest node lies in the point's own voxel or closer,
 //!    so a buffer of one voxel diagonal holds it.
@@ -297,7 +299,8 @@ pub struct TreeTiling {
     pub prune: Option<PruneParams>,
     /// Band read around each tile (m); wider than the largest crown.
     pub buffer: f64,
-    /// Widest band a tile is read again with when a crown reaches the edge.
+    /// Widest band a tile is read again with when a crown reaches the edge
+    /// (with `segment.max_reach`, at most twice the reach plus `edge_margin`).
     pub max_buffer: f64,
     /// A tree whose nodes come this close (m) to the edge of the band, where
     /// the catalogue goes on, counts as reaching it.
@@ -345,6 +348,9 @@ fn check_settings(s: &TreeTiling) -> Result<()> {
     for g in grids {
         if g.voxel_origin.is_none_or(|o| o.iter().any(|v| !v.is_finite())) {
             return Err(Error::invalid("tiled segmentation needs a finite voxel_origin, shared by the tiles"));
+        }
+        if !(g.max_reach.is_finite() && g.max_reach >= 0.0) {
+            return Err(Error::invalid(format!("max_reach must be a non-negative number of metres (0 for no limit), got {}", g.max_reach)));
         }
         if g.voxel_size.is_nan() || g.voxel_size < 0.0 || g.k == 0 {
             return Err(Error::invalid(format!("voxel_size must be non-negative and k positive, got {} and {}", g.voxel_size, g.k)));
@@ -408,6 +414,11 @@ fn segment_tile(cat: &Catalog, nodes: &Nodes, ci: usize, cores: &[[f64; 4]], ste
     let g = on_nodes(&s.segment);
     let reach = stem_reach(stems, &s.segment);
     let own: HashSet<i64> = (0..stems.len()).filter(|&i| owners[i] == ci).map(|i| stems[i].tree_id).collect();
+    // With a reach, the tile's trees lie within it of the core, and every
+    // stem that can claim one of their nodes within twice it: a band of
+    // twice the reach (and the edge margin) holds them all, and nothing at
+    // its edge, labelled or not, can belong to the tile's trees.
+    let widest = if g.max_reach > 0.0 { s.max_buffer.min((2.0 * g.max_reach + s.edge_margin).max(s.buffer)) } else { s.max_buffer };
     let mut b = s.buffer;
     loop {
         let outer = grow(&cores[ci], b);
@@ -428,8 +439,8 @@ fn segment_tile(cat: &Catalog, nodes: &Nodes, ci: usize, cores: &[[f64; 4]], ste
         // bridge to the rest of its tree, leaves the buffer: in the whole
         // plot it would be labelled and compete, so the tile is not settled.
         let loose_edge = labels.iter().zip(&pts).zip(&h).any(|((&l, p), &hh)| l < 0 && hh > g.low_height && margin(&outer, &open, p) < s.edge_margin);
-        if (!edge.is_empty() || loose_edge) && b < s.max_buffer {
-            b = (b.max(s.edge_margin) * 2.0).min(s.max_buffer);
+        if (!edge.is_empty() || loose_edge) && b < widest {
+            b = (b.max(s.edge_margin) * 2.0).min(widest);
             counts.rereads.fetch_add(1, Ordering::Relaxed);
             continue;
         }
@@ -1055,6 +1066,50 @@ mod tests {
                 assert_eq!(t.len(), e.n_points);
             }
         }
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_reach_bounds_the_buffer_and_keeps_the_whole_cloud_labels() {
+        let d = tmp("reach");
+        let (mut cloud, stems) = forest();
+        // A shrub layer with no stems, joined across the plot: its nodes stay
+        // unlabelled at every buffer's edge.
+        let mut rng = crate::util::nprandom::Generator::new(11);
+        let u = rng.uniform_n(0.0, 1.0, 60_000);
+        let n0 = cloud.len();
+        let shrub: Vec<Point> = (0..20_000).map(|i| [30.0 * u[3 * i], 30.0 * u[3 * i + 1], 0.6 + 1.4 * u[3 * i + 2]]).collect();
+        let mut c = PointCloud::new(cloud.xyz.iter().copied().chain(shrub).collect());
+        c.attrs.insert("height".into(), Attr::F64(c.xyz.iter().map(|p| p[2]).collect()));
+        c.attrs.insert("pid".into(), Attr::I64((0..c.len() as i64).collect()));
+        assert!(c.len() > n0);
+        cloud = c;
+        let (cat, whole) = tiled(&cloud, &d.join("in"), 10.0);
+        let h = whole.heights("height");
+        let free = SegmentParams { voxel_size: 0.1, voxel_origin: Some([0.0; 3]), ..Default::default() };
+        let held = SegmentParams { max_reach: 4.0, ..free.clone() };
+        let run = |seg: &SegmentParams, max_buffer: f64, name: &str| {
+            let s = TreeTiling { segment: seg.clone(), buffer: 8.0, max_buffer, ..Default::default() };
+            segment_trees(&cat, &stems, &d.join(name), None, &s, 2).unwrap()
+        };
+        // Without a reach the shrubs send tiles out to max_buffer; with one,
+        // no further than twice the reach and the margin (10 m here).
+        let a = run(&free, 40.0, "free");
+        assert!(a.info.rereads > 0);
+        let b = run(&held, 40.0, "held");
+        let capped = run(&free, 10.0, "capped");
+        assert!(b.info.max_points < a.info.max_points, "{} {}", b.info.max_points, a.info.max_points);
+        assert!(b.info.max_points <= capped.info.max_points, "{} {}", b.info.max_points, capped.info.max_points);
+        assert!(b.at_edge.is_empty(), "{:?}", b.at_edge);
+        // The labels are those of the whole cloud with the same reach.
+        let labels = trees::segment_trees(&whole.xyz, &h, &stems, &held);
+        let back = merge_clouds(b.paths.iter().map(|p| crate::io::read(p).unwrap()).collect());
+        let mut want = whole.clone();
+        want.attrs.insert("tree_id".into(), Attr::I64(labels));
+        assert_eq!(by_pid(&back, "tree_id"), by_pid(&want, "tree_id"));
+        // A reach must be a number of metres.
+        let bad = TreeTiling { segment: SegmentParams { max_reach: -1.0, ..free.clone() }, ..Default::default() };
+        assert!(segment_trees(&cat, &stems, &d.join("bad"), None, &bad, 1).is_err());
         let _ = fs::remove_dir_all(&d);
     }
 

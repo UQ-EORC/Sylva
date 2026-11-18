@@ -828,6 +828,14 @@ pub fn dijkstra_gravity(graph: &Graph, sources: &[usize], seed_xy: Option<&[[f64
 /// (`source_scale[source]`), raycloudtools' `score /= node.radius`: giving
 /// taller trees a smaller scale lets them win contested crown points.
 pub fn dijkstra_scaled(graph: &Graph, sources: &[usize], seed_xy: Option<&[[f64; 2]]>, gravity: f64, source_scale: Option<&[f64]>) -> (Vec<f64>, Vec<usize>, Vec<usize>) {
+    dijkstra_reach(graph, sources, seed_xy, gravity, source_scale, None)
+}
+
+/// [`dijkstra_scaled`] with a horizontal reach per source: a path from source
+/// `s` does not enter a node farther than `reach[s]` (m, horizontal) from
+/// `seed_xy[s]`, so every node a source claims lies within its reach. An
+/// infinite reach is no limit; without `seed_xy` the reach is ignored.
+pub fn dijkstra_reach(graph: &Graph, sources: &[usize], seed_xy: Option<&[[f64; 2]]>, gravity: f64, source_scale: Option<&[f64]>, reach: Option<&[f64]>) -> (Vec<f64>, Vec<usize>, Vec<usize>) {
     let n = graph.n();
     let mut dist = vec![f64::INFINITY; n];
     let mut src = vec![usize::MAX; n];
@@ -865,8 +873,20 @@ pub fn dijkstra_scaled(graph: &Graph, sources: &[usize], seed_xy: Option<&[[f64;
             Some(c) => c.direction(i, &pred),
             None => UP,
         };
+        // The reach of the path's source, squared, and its stem.
+        let bound = match (seed_xy, reach) {
+            (Some(sxy), Some(r)) if src[i] != usize::MAX && r[src[i]].is_finite() => Some((sxy[src[i]], r[src[i]] * r[src[i]])),
+            _ => None,
+        };
         for e in graph.offsets[i]..graph.offsets[i + 1] {
             let j = graph.neighbors[e] as usize;
+            if let Some((s, r2)) = bound {
+                let q = graph.position(j);
+                let (dx, dy) = (q[0] - s[0], q[1] - s[1]);
+                if dx * dx + dy * dy > r2 {
+                    continue;
+                }
+            }
             let w = match &graph.cost {
                 Some(c) => c.cost(i, j, &dir),
                 None => graph.weights[e],

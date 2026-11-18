@@ -1572,9 +1572,9 @@ fn dbh_profile<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRead
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, heights, trees_list, k=6, max_edge=1.0, voxel_size=0.03, seed_height=1.5, seed_radius=0.25, seed_ring=true, power=6.0, bend_cost=true, gravity=0.0, ground_clearance=0.1, height_prior=true, height_prior_radius=1.5, height_prior_power=1.0, low_height=0.5, low_radius=1.0, understorey_height=0.0, understorey_band=0.5, voxel_origin=None, exclude=None, bridge=true, bend_power=4.0, bend_floor=0.4, path_weight=0.3))]
+#[pyo3(signature = (xyz, heights, trees_list, k=6, max_edge=1.0, voxel_size=0.03, seed_height=1.5, seed_radius=0.25, seed_ring=true, power=6.0, bend_cost=true, gravity=0.0, ground_clearance=0.1, height_prior=true, height_prior_radius=1.5, height_prior_power=1.0, low_height=0.5, low_radius=1.0, understorey_height=0.0, understorey_band=0.5, voxel_origin=None, exclude=None, bridge=true, bend_power=4.0, bend_floor=0.4, path_weight=0.3, max_reach=0.0))]
 #[allow(clippy::too_many_arguments)]
-fn segment_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, trees_list: &Bound<'_, PyList>, k: usize, max_edge: f64, voxel_size: f64, seed_height: f64, seed_radius: f64, seed_ring: bool, power: f64, bend_cost: bool, gravity: f64, ground_clearance: f64, height_prior: bool, height_prior_radius: f64, height_prior_power: f64, low_height: f64, low_radius: f64, understorey_height: f64, understorey_band: f64, voxel_origin: Option<(f64, f64, f64)>, exclude: Option<PyReadonlyArray1<bool>>, bridge: bool, bend_power: f64, bend_floor: f64, path_weight: f64) -> PyResult<Bound<'py, PyArray1<i64>>> {
+fn segment_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyReadonlyArray1<f64>, trees_list: &Bound<'_, PyList>, k: usize, max_edge: f64, voxel_size: f64, seed_height: f64, seed_radius: f64, seed_ring: bool, power: f64, bend_cost: bool, gravity: f64, ground_clearance: f64, height_prior: bool, height_prior_radius: f64, height_prior_power: f64, low_height: f64, low_radius: f64, understorey_height: f64, understorey_band: f64, voxel_origin: Option<(f64, f64, f64)>, exclude: Option<PyReadonlyArray1<bool>>, bridge: bool, bend_power: f64, bend_floor: f64, path_weight: f64, max_reach: f64) -> PyResult<Bound<'py, PyArray1<i64>>> {
     let p = xyz_ref_from_py(&xyz)?;
     let h = slice_from_py(&heights);
     let (p, h) = (&*p, &*h);
@@ -1585,7 +1585,7 @@ fn segment_trees<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, heights: PyRe
         return Err(PyValueError::new_err("exclude must have one value per point"));
     }
     let t = trees_from_py(trees_list)?;
-    let params = trees::SegmentParams { k, max_edge, voxel_size, seed_height, seed_radius, seed_ring, power, bend_cost, bend_power, bend_floor, path_weight, gravity, ground_clearance, height_prior, height_prior_radius, height_prior_power, low_height, low_radius, understorey_height, understorey_band, voxel_origin: voxel_origin.map(|o| [o.0, o.1, o.2]), bridge };
+    let params = trees::SegmentParams { k, max_edge, voxel_size, seed_height, seed_radius, seed_ring, power, bend_cost, bend_power, bend_floor, path_weight, gravity, ground_clearance, height_prior, height_prior_radius, height_prior_power, low_height, low_radius, understorey_height, understorey_band, voxel_origin: voxel_origin.map(|o| [o.0, o.1, o.2]), bridge, max_reach };
     Ok(detach_interruptible(py, || trees::segment_trees_masked(p, h, &t, &params, ex))?.into_pyarray(py))
 }
 
