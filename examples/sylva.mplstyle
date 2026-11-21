@@ -1,0 +1,42 @@
+# Figure style shared by the example notebooks: plt.style.use("sylva.mplstyle").
+#
+# Widths: 6 in for a single panel (the default below), 10 in for a row of two
+# to four panels, 5.5 in for a single plan-view map. Stored outputs are PNGs at
+# 90 dpi, which keeps the notebooks small.
+#
+# Colours: categories take the Okabe-Ito palette (Okabe and Ito 2008) in a
+# fixed order, C0 to C7; magnitudes take viridis; signed differences take
+# RdBu_r, centred on zero with symmetric limits. The notebooks' setup cell
+# names the colours of ground, wood, leaves and grass, and a palette for
+# arbitrary labels such as tree ids.
+
+figure.figsize: 6, 4
+figure.dpi: 90
+savefig.dpi: 150
+figure.constrained_layout.use: True
+figure.constrained_layout.wspace: 0.05
+figure.titlesize: 11
+
+font.size: 10
+axes.titlesize: 10.5
+axes.labelsize: 10
+xtick.labelsize: 9
+ytick.labelsize: 9
+legend.fontsize: 8.5
+legend.framealpha: 0.9
+legend.edgecolor: 0.8
+legend.markerscale: 1.0
+
+axes.linewidth: 0.8
+axes.spines.top: False
+axes.spines.right: False
+axes.grid: False
+axes.titlepad: 5
+axes.prop_cycle: cycler('color', ['0072B2', 'E69F00', '009E73', 'D55E00', 'CC79A7', '56B4E9', 'F0E442', '000000'])
+
+lines.linewidth: 1.5
+lines.markersize: 4
+errorbar.capsize: 2
+
+image.cmap: viridis
+image.interpolation: nearest
