@@ -270,7 +270,7 @@ labels, though more accurate as labels, drop wood the QSM needs.
 ## How fine does the cloud have to be?
 
 Fine enough that every geodesic shell holds points on the stem surface. With
-roughly 1 cm spacing the default 0.1 m shells do; a cloud thinned to 3-5 cm
+roughly 1 cm spacing the default 12.5 cm shells do; a cloud thinned to 3-5 cm
 leaves most of them with too few points, and those cylinders take their
 radius from the taper and pipe-model priors instead of the data. That is not
 a small error: on a 21 m savanna tree whose stem the points put at 0.17 m

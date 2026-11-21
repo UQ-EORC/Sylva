@@ -160,7 +160,7 @@ every point above the ground surface.
 
 ### `qsm`
 
-`sylva qsm INPUT OUTPUT [--bin-length 0.1]`: builds a cylinder model of one
+`sylva qsm INPUT OUTPUT [--bin-length 0.125]`: builds a cylinder model of one
 tree (ideally its wood points), writes the cylinders as CSV and prints the
 summary. The shell width is that of `qsm.build_qsm` and `qsm-plot`.
 
@@ -177,7 +177,7 @@ segmented cloud (one that carries a `tree_id` attribute, as `sylva trees
 | `--meshes DIR` | none | also write a surface mesh per tree, fused with its buttress |
 | `--mesh-format ply\|obj` | `ply` | format for `--meshes` |
 | `--voxel M` | 0.01 | thin each tree to this spacing first |
-| `--bin-length M` | 0.1 | geodesic shell width |
+| `--bin-length M` | 0.125 | geodesic shell width |
 | `--min-points N` | 2000 | skip trees with fewer points |
 | `--buttress` | off | mesh a flanged base and count it in the volume |
 | `--no-wood` | off | skip the leaf/wood filter (the cloud is wood already) |
@@ -310,6 +310,7 @@ sylva tiles-filter tiles/ clean/ [--method sor|ror] [--k 8] [--std-ratio 2] [--r
                    [--min-neighbors 4] [--classify]
 sylva tiles-features tiles/ features/ [--feature normals|shape] [--k 12|20]
 sylva tiles-stems normalised/ stems.csv [--height-attribute height] [--min-arc 0]
+sylva tiles-plot scans/*.laz run/ [--riscan] [--transforms sop.npy] [--tile-size 10] [--voxel 0.02]
 ```
 
 `tiles-from-scans` takes the scans in order (with `--transforms`, a `.npy`
@@ -318,9 +319,12 @@ grid, with a `scan_id` attribute. `tiles-filter` removes noise (or
 classifies it 7 with `--classify`); `--method sor` is CloudCompare's
 statistical filter with its global threshold. `tiles-features` adds
 `normal_x`, `normal_y`, `normal_z` or `planarity` and `linearity` to every
-point; `tiles-stems` writes the stems as a CSV table. Each prints the most
-points it held at once. They take `--pattern`, `--buffer` (1 m, or 2 m for
-`tiles-stems`; `tiles-thin` needs none) and `--workers`.
+point; `tiles-stems` writes the stems as a CSV table; `tiles-plot` runs the
+[plot pipeline](tiles.md) on the scans in one command, resuming an
+interrupted run. Each prints the most points it held at once. All take
+`--workers`; `tiles-thin`, `tiles-filter`, `tiles-features` and
+`tiles-stems` take `--pattern` and `--buffer` (1 m, 2 m for `tiles-stems`),
+`tiles-plot` takes `--buffer` (20 m) and `tiles-from-scans` neither.
 
 ### TLS and ALS together: `fusion-register`, `fusion-trees`, `fusion-upscale`
 

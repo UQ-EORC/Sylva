@@ -326,8 +326,9 @@ In Sylva: the catalogue of tiles processed in buffered chunks that
 [`sylva.als`](api/als.md) follows, and the reference its DTMs and CHMs were
 checked against. Code adapted from lidR's source
 (<https://github.com/r-lidar/lidR>, GPL-3): the region growing
-`als.dalponte2016`, the decision logic of `als.li2012` and the rules of the
-local maximum filter in `als.locate_trees`, with lidR's parameter names and
+`segment_crowns(method="dalponte2016")`, the decision logic of `als.li2012`
+and the rules of the local maximum filter in `als.locate_trees`, with lidR's
+parameter names and
 defaults; and in [`sylva.als.metrics`](api/als_metrics.md) the entropy
 index, the cumulative height percentages and the set, names and formulas of
 the standard metrics (`stdmetrics`). The copyright and licence notice is in

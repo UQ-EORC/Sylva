@@ -16,7 +16,7 @@ original.
 
 | From | What in Sylva |
 |---|---|
-| [lidR](https://github.com/r-lidar/lidR) (J.-R. Roussel and contributors) | `als.dalponte2016` and the logic of `als.li2012` (translations of lidR's C++); the rules and defaults of the local maximum filter in `als.locate_trees`; the standard area-based metrics of `als.metrics` (`stdmetrics`: names, formulas, entropy, cumulative height percentages). |
+| [lidR](https://github.com/r-lidar/lidR) (J.-R. Roussel and contributors) | `segment_crowns(method="dalponte2016")` and the logic of `als.li2012` (translations of lidR's C++); the rules and defaults of the local maximum filter in `als.locate_trees`; the standard area-based metrics of `als.metrics` (`stdmetrics`: names, formulas, entropy, cumulative height percentages). |
 | [AMAPVox](https://github.com/umr-amap/AMAPVox) (UMR AMAP) | `sylva.voxels`: the ray-traced voxel grid follows AMAPVox, whose path-length and attenuation estimators, leaf angle distributions and laser specifications it uses. |
 | [raycloudtools](https://github.com/csiro-robotics/raycloudtools) (CSIRO; [Lowe and Stepanas 2021](references.md), [Devereux et al. 2026](references.md)) | `canopy.density_grid` ([Lowe et al. 2021](references.md)); in `trees.segment_trees`, the form of the edge cost (edge length to a power over a power of the cosine of the bend), the lateral term and the per-tree scaling; in `qsm.build_qsm`, the power-mean section radius, radii in proportion to the length carried (a fork sharing its parent's cross-section by length) and the cap on a fork's summed cross-section. |
 | [GBSeparation](https://doi.org/10.5281/zenodo.6837613) (Tian and Li) | `leaves.classify_leaf_wood(method="gbs")`. |
