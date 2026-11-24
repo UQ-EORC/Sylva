@@ -42,7 +42,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # uv builds the extension through maturin and installs the dev extras
       # (pytest, ruff, scipy, matplotlib) from the lockfile.
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.4.0
         with:
           version: "0.13"
           enable-cache: true
