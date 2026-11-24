@@ -28,15 +28,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v10
         with:
-          python-version: "3.12"
+          version: "0.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
       # The API reference is read from the sources and the notebooks carry
-      # their outputs, so the Rust extension does not have to be built here.
-      - run: pip install "mkdocs>=1.6,<2" mkdocs-material "mkdocstrings[python]" mkdocs-jupyter
-      - run: mkdocs build --strict
+      # their outputs, so the Rust extension does not have to be built here:
+      # --no-install-project keeps the project itself out of the venv.
+      - run: uv sync --python 3.12 --extra docs --no-install-project
+      - run: uv run mkdocs build --strict
       # Every push to main publishes; a pull request only builds. A manual
       # run builds too, and publishes when asked - which is how to republish
       # without a docs change.
       - if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
-        run: mkdocs gh-deploy --force
+        run: uv run mkdocs gh-deploy --force

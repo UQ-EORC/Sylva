@@ -113,26 +113,27 @@ cargo install sylva-cli          # the sylva command
 
 ### From source
 
-For development, or to build the extension yourself. A conda environment keeps
-the Python, the Rust toolchain and the C linker together:
+For development, or to build the extension yourself. The Python side is
+managed by [uv](https://docs.astral.sh/uv/); a conda environment only
+supplies what uv cannot install, the Rust toolchain and the C linker:
 
 ```bash
 git clone https://github.com/UQ-EORC/Sylva.git
 cd Sylva
-conda create -n sylva -c conda-forge python=3.12 rust maturin c-compiler
+conda create -n sylva -c conda-forge rust c-compiler
 conda activate sylva
-maturin develop --release        # builds the Rust core into the environment
+uv sync --extra dev              # venv + Sylva + the dev extras (pytest, ruff, ...)
 ```
 
 `c-compiler` matters: `rustc` links through a program called `cc`, which
 conda's `rust` package does not provide, so without it the build stops at
-``error: linker `cc` not found``. The repository's `environment.yml` has the
-same list plus the test and notebook extras (`conda env create -f
+``error: linker `cc` not found``. The repository's `environment.yml` has
+the same toolchain plus Python and maturin (`conda env create -f
 environment.yml`).
 
-Without conda, any Python >= 3.10 with a Rust toolchain (`rustup`), a system
-C compiler (`gcc`, `build-essential`, or Xcode's command line tools) and
-`pip install maturin` does the same job.
+Without conda, uv provides the Python too; a Rust toolchain (`rustup`) and a
+system C compiler (`gcc`, `build-essential`, or Xcode's command line tools)
+are all the build needs, and `uv sync --extra dev` does the rest.
 
 ## A first look
 

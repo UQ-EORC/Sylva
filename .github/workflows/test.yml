@@ -40,13 +40,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
+      # uv builds the extension through maturin and installs the dev extras
+      # (pytest, ruff, scipy, matplotlib) from the lockfile.
+      - uses: astral-sh/setup-uv@v10
         with:
-          python-version: ${{ matrix.python }}
+          version: "0.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - run: uv sync --python ${{ matrix.python }} --extra dev
       - run: |
-          python -m venv .venv && . .venv/bin/activate
-          pip install maturin pytest numpy scipy matplotlib   # what the tests import
-          maturin develop --release
           # The parity recordings are bit-level guards for the machine that
           # made them (see release.yml); every other test runs.
-          pytest -q --ignore=tests/test_parity.py
+          uv run pytest -q --ignore=tests/test_parity.py

@@ -1,13 +1,14 @@
-# conda env create -f environment.yml && conda activate sylva && maturin develop --release
+# Toolchain env for uv: uv cannot install a Rust toolchain or a C compiler,
+# so this provides them. Keep it to the toolchain: every Python dependency
+# comes from uv (uv.lock), so do not add packages like numpy or pytest here.
+#
+#   conda env create -f environment.yml && conda activate sylva
+#   uv sync --extra dev
 name: sylva
 channels:
   - conda-forge
 dependencies:
-  - python=3.12
+  - python=3.12       # optional: uv uses it for the venv, or downloads its own
   - rust
   - c-compiler        # rustc links through `cc`; conda's rust does not bring one
-  - maturin
-  - numpy>=1.24
-  - pytest
-  - matplotlib        # the example notebooks
-  - jupyterlab
+  - maturin           # for `maturin develop --release` iteration

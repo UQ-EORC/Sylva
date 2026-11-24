@@ -1,0 +1,19 @@
+# uv configuration for Sylva. Full reference: https://docs.astral.sh/uv/settings/
+
+# Sylva is a package (the pyproject.toml build-system says so), so `uv sync`
+# builds the Rust core through maturin and installs it into the venv.
+# Typical workflow:
+#   uv sync --extra dev     # venv + Sylva + pytest, ruff, scipy, matplotlib
+#   uv run pytest
+#   uv run ruff check .
+# The Rust toolchain is not uv's to manage; install it separately.
+
+# Use uv's managed CPython (3.12, matching environment.yml) instead of a
+# system interpreter. requires-python still allows 3.10-3.14.
+python-preference = "managed"
+
+# Constrain transitive dependencies without editing pyproject.toml, e.g.:
+# constraint-dependencies = ["numpy<2"]
+#
+# Use a package index other than PyPI, e.g.:
+# index-url = "https://pypi.org/simple"

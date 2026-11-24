@@ -15,14 +15,19 @@ scripts/            the type-stub generator, the MTA model trainer, a plot pipel
 
 ## Build and test
 
+uv manages the Python side; it needs `cargo` and a C compiler on the PATH
+(conda's `rust` and `c-compiler`, or rustup — see the [install guide](install.md)):
+
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e '.[dev]'          # maturin, pytest, ruff, and scipy / matplotlib for the tests
-maturin develop --release
-python scripts/gen_core_stub.py   # refresh python/sylva/_core.pyi after changing a binding
-pytest
+uv sync --extra dev              # .venv: Sylva built through maturin, pytest, ruff, scipy / matplotlib
+uv run python scripts/gen_core_stub.py   # refresh python/sylva/_core.pyi after changing a binding
+uv run pytest
 cargo test -p sylva-rs
 ```
+
+`uv sync` installs Sylva editable, so Python changes are picked up at once;
+Rust changes need a rebuild — `uv run maturin develop --release` for a fast
+release build, or simply re-run `uv sync`.
 
 The compiled module `sylva._core` carries no type information of its own, so
 `python/sylva/_core.pyi` records every binding's signature for editors and
@@ -44,9 +49,9 @@ function does without taking up the language.
 ## Documentation
 
 ```bash
-pip install -e '.[docs]'     # or: pip install mkdocs-material 'mkdocstrings[python]' mkdocs-jupyter
-mkdocs serve                 # live preview at http://127.0.0.1:8000
-mkdocs build --strict        # what CI runs
+uv sync --extra docs           # mkdocs-material, mkdocstrings, mkdocs-jupyter
+uv run mkdocs serve            # live preview at http://127.0.0.1:8000
+uv run mkdocs build --strict   # what CI runs
 ```
 
 The API reference is generated from the docstrings in `python/sylva`, so the

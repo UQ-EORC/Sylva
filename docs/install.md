@@ -14,27 +14,32 @@ installed in the same environment.
 
 ## From source
 
-A conda environment carries the Python, the Rust toolchain and the C linker
-together, so the core builds with nothing installed system-wide:
+Development uses [uv](https://docs.astral.sh/uv/), which builds the Rust core
+through maturin and installs Sylva editable into a `.venv`. uv cannot install
+a Rust toolchain or a C compiler, so a conda environment supplies those, and
+nothing else needs to be installed system-wide:
 
 ```bash
-conda create -n sylva -c conda-forge python=3.12 rust maturin c-compiler
+conda create -n sylva -c conda-forge rust c-compiler
 conda activate sylva
-maturin develop --release        # builds the Rust core into the environment
+uv sync --extra dev        # venv + Sylva + the dev extras (pytest, ruff, ...)
+uv run pytest
 ```
 
-Or from the environment file in the repository, which adds pytest and the
-notebook extras:
+Or from the environment file in the repository, which adds the Python
+interpreter and maturin (the latter for `maturin develop --release`
+iteration):
 
 ```bash
 conda env create -f environment.yml
 conda activate sylva
-maturin develop --release
+uv sync --extra dev
 ```
 
-`maturin develop` puts an editable install in the active environment: Python
-changes are picked up at once, Rust changes after re-running it. `pip install
--e .` builds the same way through maturin.
+`uv sync` installs Sylva editable: Python changes are picked up at once,
+Rust changes after re-running it. The tools run from the venv with
+`uv run pytest`, `uv run ruff check .` and `uv run mkdocs serve` (the docs
+extras need `uv sync --extra docs`).
 
 !!! warning "`error: linker `cc` not found`"
     `rustc` hands the final link to a program called `cc`. Conda's `rust`
@@ -45,10 +50,10 @@ changes are picked up at once, Rust changes after re-running it. `pip install
     to match. On a machine that already has a system compiler the build
     works without it, which is why it is easy to miss.
 
-Without conda, any Python >= 3.10 with a Rust toolchain from
+Without conda, uv provides the Python too: a Rust toolchain from
 [rustup](https://rustup.rs), a system C compiler (`gcc` or `build-essential`
-on Linux, the Xcode command line tools on macOS) and `pip install maturin`
-does the same job, in a virtual environment of your choice.
+on Linux, the Xcode command line tools on macOS) and `uv sync --extra dev`
+are all that is needed.
 
 Reading RIEGL `.rxp` files needs RiVLib's `libscanifc` (proprietary; download
 from RIEGL). Point `RIVLIB_PATH` at the extracted directory or pass

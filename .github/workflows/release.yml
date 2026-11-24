@@ -25,9 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v10
         with:
-          python-version: "3.12"
+          version: "0.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
       - name: Versions agree with the tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -37,14 +39,12 @@ jobs:
           test "$tag" = "$cargo_v" && test "$tag" = "$py_v" || { echo "tag $tag, Cargo $cargo_v, pyproject $py_v"; exit 1; }
       - run: cargo test --release -p sylva-rs
       - run: |
-          python -m venv .venv && . .venv/bin/activate
-          pip install maturin pytest numpy scipy matplotlib   # what the tests import
-          maturin develop --release
+          uv sync --python 3.12 --extra dev
           # The parity recordings are bit-level guards for the machine that made
           # them: another CPU or C library shifts the last digits, and the
           # coregistration's accept/reject decisions can follow. Every other
           # test runs.
-          pytest -q --ignore=tests/test_parity.py
+          uv run pytest -q --ignore=tests/test_parity.py
 
   wheels:
     needs: test
@@ -69,28 +69,25 @@ jobs:
           args: --release --out dist
       # The wheel itself is what users get, so it is installed and run here,
       # on the platform it was built for, at both ends of the Python range
-      # the abi3 tag claims. Every runner in the matrix is native.
-      - uses: actions/setup-python@v5
+      # the abi3 tag claims. Every runner in the matrix is native; uv
+      # downloads a standalone CPython for each end.
+      - uses: astral-sh/setup-uv@v10
         with:
-          python-version: "3.10"
+          version: "0.13"
+          enable-cache: true
       - name: Wheel on the oldest Python (3.10)
         shell: bash
         run: |
-          python -m venv "$RUNNER_TEMP/venv-oldest"
+          uv venv --python 3.10 "$RUNNER_TEMP/venv-oldest"
           py="$RUNNER_TEMP/venv-oldest/bin/python"; [ -x "$py" ] || py="$RUNNER_TEMP/venv-oldest/Scripts/python.exe"
-          "$py" -m pip install --quiet --upgrade pip
-          "$py" -m pip install --quiet dist/*.whl
+          uv pip install --python "$py" --quiet dist/*.whl
           (cd "$RUNNER_TEMP" && "$py" "$GITHUB_WORKSPACE/.github/scripts/wheel_smoke.py")
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
       - name: Wheel on the newest Python (3.14)
         shell: bash
         run: |
-          python -m venv "$RUNNER_TEMP/venv-newest"
+          uv venv --python 3.14 "$RUNNER_TEMP/venv-newest"
           py="$RUNNER_TEMP/venv-newest/bin/python"; [ -x "$py" ] || py="$RUNNER_TEMP/venv-newest/Scripts/python.exe"
-          "$py" -m pip install --quiet --upgrade pip
-          "$py" -m pip install --quiet dist/*.whl
+          uv pip install --python "$py" --quiet dist/*.whl
           (cd "$RUNNER_TEMP" && "$py" "$GITHUB_WORKSPACE/.github/scripts/wheel_smoke.py")
       # The whole suite against the installed wheel. It gates the release on
       # x86-64 Linux, where it is known to pass; on the other platforms it
@@ -101,7 +98,7 @@ jobs:
         continue-on-error: ${{ matrix.target != 'x86_64-unknown-linux-gnu' }}
         run: |
           py="$RUNNER_TEMP/venv-newest/bin/python"; [ -x "$py" ] || py="$RUNNER_TEMP/venv-newest/Scripts/python.exe"
-          "$py" -m pip install --quiet pytest scipy matplotlib
+          uv pip install --python "$py" --quiet pytest scipy matplotlib
           "$py" -m pytest -q --ignore=tests/test_parity.py
       - uses: actions/upload-artifact@v4
         with:
