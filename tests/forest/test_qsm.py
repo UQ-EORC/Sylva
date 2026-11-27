@@ -510,3 +510,34 @@ def test_build_plot_anchors_each_model_on_its_stem_dbh():
     plot = qsm.build_plot(tree, labels, [stem], voxel_size=0.0, wood=False)
     alone = qsm.build_qsm(tree, base_xy=(0.0, 0.0), base_radius=0.12)
     np.testing.assert_allclose(plot.models[0].cylinders, alone.cylinders)
+
+
+def test_foliage_on_a_branch_is_not_measured():
+    """A circle counts only when its points lie on it as the stem's do: a
+    clump with no surface is left to the priors (``min_snr``, ``noise_ratio``)."""
+    rng = np.random.default_rng(4)
+    n = 20000
+    t, r = rng.uniform(0, 2 * np.pi, n), 0.1 + rng.uniform(-0.004, 0.004, n)
+    stem = np.c_[r * np.cos(t), r * np.sin(t), rng.uniform(0, 6, n)]
+    m = 6000
+    t, r = rng.uniform(0, 2 * np.pi, m), 0.08 * np.sqrt(rng.uniform(0, 1, m))
+    clump = np.c_[0.1 + rng.uniform(0, 1.5, m), r * np.cos(t), 3.0 + r * np.sin(t)]
+    cloud = PointCloud(np.vstack([stem, clump]))
+
+    def measured(model, branch):
+        on = (model.column("branch_order") > 0) == branch
+        return int(((model.column("n_points") > 0) & on).sum())
+
+    model = qsm.build_qsm(cloud, base_xy=(0.0, 0.0), spacing_scale=0.0)
+    assert measured(model, branch=False) > 30
+    assert measured(model, branch=True) == 0
+    assert abs(model.dbh - 0.2) < 0.01
+    # Without the two tests the clump's circles count and the branch is as
+    # thick as the clump.
+    loose = qsm.build_qsm(cloud, base_xy=(0.0, 0.0), spacing_scale=0.0, min_snr=0.0, noise_ratio=0.0)
+    assert measured(loose, branch=True) > 0
+    assert loose.branch_volume > 3 * model.branch_volume
+    # build_plot hands the two settings on.
+    labels = np.zeros(len(cloud), int)
+    plot = qsm.build_plot(cloud, labels, wood=False, voxel_size=0.0, spacing_scale=0.0, min_snr=0.0, noise_ratio=0.0)
+    assert np.isclose(plot.models[0].total_volume, loose.total_volume)

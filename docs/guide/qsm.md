@@ -42,6 +42,25 @@ shorter arc runs wide. An accepted circle moves its node onto its centre,
 and the centres are smoothed towards their neighbours with the ends
 pinned.
 
+A circle must also stand clear of the noise. Wood is a surface, so the
+points of a branch lie on its circle to within the scan's noise; the points
+of a leaf cluster, or of several twigs that fell into one section, are
+spread across theirs. Two tests follow from that, both on the *scatter* of
+a section, the root mean square distance of its points from the circle:
+
+- the radius is at least `min_snr` (5) times the scatter, or the ring is
+  not resolved: with 5 mm of scatter, radii under 2.5 cm are left to the
+  taper;
+- on a branch, the scatter is at most `noise_ratio` (1.4) times the median
+  scatter on the tree's own stem, which is the scan's noise as that tree
+  shows it (range noise, registration and bark together). The stem needs
+  four sections for the test to apply.
+
+A section also needs `fit_min_points` (30) points, at any point spacing.
+Without these tests a few wide circles around foliage set the radius of
+every unmeasured node beyond them, and a leafy branch comes out several
+times too thick.
+
 Each axis then gets a taper of its own, `r = k x^b`, fitted to its accepted
 sections by the median of pairwise slopes in log-log space (Theil–Sen), with
 `x` the length a node carries: the longest way from it to a tip, times the
@@ -58,7 +77,8 @@ that its length claims, the rule of raycloudtools
 and the pipe model of [Shinozaki et al. 1964](../references.md). A measured
 DBH (`base_radius`) ties the stem's taper down when the stem has fewer than
 four sections. At forks the children's summed cross-section is also held to
-at most `pipe_slack` times the parent's (Leonardo's rule).
+at most `pipe_slack` times the parent's (Leonardo's rule); the excess is
+taken from the unmeasured children, and a measured child keeps its radius.
 
 Accuracy against felled trees and against raycloudtools is on the
 [QSM benchmark](../benchmarks/qsm.md) page.
@@ -119,7 +139,8 @@ b["order"], b["length"], b["base_radius"], b["insertion_angle"], b["zenith"]
   priors. It is a quality flag for the model itself.
 
 Against the 20 synthetic trees with exact wood meshes (simulated leaf-off
-scans, eight positions):
+scans, eight positions; measured with version 1.1.0, before the cylinder
+stage was rewritten):
 
 | metric | median error | rRMSE |
 |---|---|---|
@@ -223,8 +244,8 @@ circle by the summed weight of its inliers rather than their number, the
 circle is refitted by weighted least squares, a section needs a summed
 weight of `fit_min_points` to be fitted, and a circle whose inliers have a
 mean weight below `min_mean_weight` (0.5) is not a measurement, so the
-section takes its radius from the priors. The arc and the contour of a
-section use its confident points (weight at least 0.5), and a cylinder's
+section takes its radius from the priors. The arc of a
+section uses its confident points (weight at least 0.5), and a cylinder's
 `n_points` counts its confident inliers. Weights of one everywhere give
 exactly the unweighted model.
 
@@ -269,51 +290,47 @@ labels, though more accurate as labels, drop wood the QSM needs.
 
 ## How fine does the cloud have to be?
 
-Fine enough that every geodesic shell holds points on the stem surface. With
-roughly 1 cm spacing the default 12.5 cm shells do; a cloud thinned to 3-5 cm
-leaves most of them with too few points, and those cylinders take their
-radius from the taper and pipe-model priors instead of the data. That is not
-a small error: on a 21 m savanna tree whose stem the points put at 0.17 m
-radius,
+Fine enough that the rings are resolved. A radius is measured where a
+section holds 30 points on a circle at least five times wider than their
+scatter about it, so the finer the cloud and the lower its noise, the
+thinner the branches that are measured; everything else takes its radius
+from the taper of its axis and from the length it carries. On a cloud
+thinned to a few centimetres the stem and the main limbs are still
+measured and the crown is not.
 
-| cloud | DBH | volume | of the model fitted to points |
-|---|---|---|---|
-| full resolution (~1 cm) | 0.34 m | 1.92 m³ | most |
-| thinned to 5 cm | 1.10 m | 9.76 m³ | 0.8 % of its length |
+Two settings follow the cloud's median point spacing (`spacing_scale`, 0 to
+switch it off): the circle band is at least 1.5 spacings and the shells at
+least four spacings long. Past 2.5 cm spacing the radius is a power mean of
+the distances to the section axis instead of a circle fit (`radius_power`,
+after raycloudtools' `rayextract trees`;
+[Devereux et al. 2026](../references.md)), which reads a stem seen from one
+side where a circle needs half the ring. It is judged by the same two
+tests, with the scatter taken about the least-squares circle through the
+points.
 
-and over that plot the total came to 96 m³ against 36 m³ for the same trees
-at full resolution. Widening the shells does not rescue it: `bin_length=0.3`
-fixes that tree but merges the saplings, and the plot total goes up again.
+The 72 destructively harvested trees of the [benchmark](../benchmarks/qsm.md),
+with each cloud thinned before the wood filter:
 
-Sylva now sets those from the cloud rather than assuming: the circle band,
-the shell length and `fit_min_points` are scaled to the median spacing
-(`spacing_scale`, 0 to switch it off), and past 2.5 cm spacing the radius
-comes from a power mean of the distances to the section axis instead of a
-circle fit (`radius_power`, after raycloudtools' `rayextract trees`;
-[Devereux et al. 2026](../references.md)). That is a different failure
-mode on purpose: a low power mean is dominated by the near points, so a
-section that caught foliage reads slightly small rather than wildly large,
-and nothing has to lie inside a band for it to work at all.
+| thinned to | volume bias | rRMSE | CCC | DBH rRMSE |
+|---|---|---|---|---|
+| 2 cm (the benchmark) | −2.7 % | 18.4 % | 0.991 | 11.8 % |
+| 3 cm | −3.0 % | 23.1 % | 0.985 | 12.7 % |
+| 5 cm | −6.5 % | 22.0 % | 0.987 | 12.7 % |
 
-Against the exact volumes of 8 synthetic trees, as the same cloud is thinned:
+Those are large trees, whose volume is mostly trunk. On eight simulated
+leafy trees of 9 to 30 m (`synthetic.tree_model`, scanned from three
+positions with 5 mm of range noise), the total volume is within 6 % (rRMSE)
+of the exact one at 1 cm and within 19 to 27 % at 3 to 5 cm, where it reads
+low (median 0.85 to 0.96 of the truth): the unmeasured branches are filled
+in thinner than they are. Version 2.0.0 lacked the two noise tests and
+lowered the point count with the spacing, and on the thinned harvest clouds
+came out 40 % (3 cm) and 118 % (5 cm) above the harvested volume.
 
-| spacing | median volume error | IQR | worst tree |
-|---|---|---|---|
-| ~1 cm | −5.6 % | −7..+1 | +8.0 % |
-| 2 cm | −3.7 % | −6..0 | −6.8 % |
-| 5 cm | +9.5 % | +4..+14 | +21.1 % |
-| 8 cm | +0.2 % | −4..+4 | +14.5 % |
-
-Before this, the same trees at 5 cm had one tree at **+418 %** and at 8 cm one
-at −99 %. The savanna tree above goes from 1.10 m DBH and 9.76 m³ to 0.343 m
-and 2.29 m³, against 0.338 m and 1.88 m³ at full resolution.
-
-It is still better to fit on the full-resolution points, where the bias is
-smallest, but a thinned cloud now degrades gently instead of
-inventing stems. `build_plot` warns when the median model was hardly fitted
-at all, and `measured_length` (with `measured_volume`) in `PlotQSMs.table`
-reports it per tree: values near 1 mean the cylinders follow the points,
-values near 0 mean they follow the priors.
+It is still better to fit on the full-resolution points. `build_plot` warns
+when the median model was hardly fitted at all, and `measured_length` (with
+`measured_volume`) in `PlotQSMs.table` reports it per tree: values near 1
+mean the cylinders follow the points, values near 0 mean they follow the
+priors.
 
 ## Buttresses
 
@@ -396,7 +413,8 @@ rather than being welded into a single shell: a boolean union of a flanged base
 and a few thousand tubes is not something a triangle mesh survives cleanly, and
 the seam at the top plane is where the two volumes already meet.
 
-On the 15 Cameroon harvest trees it detects as buttressed, the QSM alone has a
+On the 15 Cameroon harvest trees it detects as buttressed, the QSM of version
+1.1.0 alone has a
 −10.1 % volume bias against the felled volume. With the buttress mesh below
 the top, the bias is +2.3 % (RMSE 18.1 % and 17.7 %). Whether the published
 felled volumes include the stump below the cut is not recorded, so treat this

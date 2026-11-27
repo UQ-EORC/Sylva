@@ -138,7 +138,7 @@ output tables and filter on them:
 | Output | Reference | Result | Page |
 |---|---|---|---|
 | Tree detection and segmentation | 4 manually segmented plots | F1 0.57–0.96 | [Trees](../benchmarks/trees.md) |
-| QSM volume | 72 destructively harvested trees | bias −3.8 %, rRMSE 19.9 %, CCC 0.989 | [QSMs](../benchmarks/qsm.md) |
+| QSM volume | 72 destructively harvested trees | bias −2.7 %, rRMSE 18.4 %, CCC 0.991 | [QSMs](../benchmarks/qsm.md) |
 | Tree metrics | 20 simulated trees with exact meshes | height −2 %, DBH −1 %, crown area −3 %, branch zenith 3° | [QSMs](../benchmarks/qsm.md) |
 | Leaf/wood labels | 30 manually labelled tropical trees | accuracy 0.90, mIoU 0.79 | [Leaves](leaves.md) |
 | PAI (gap profile) | pylidar on TERN plots; hemispherical photos | within 4 % where unsaturated; r = 0.96 | [Canopy](../benchmarks/canopy.md) |

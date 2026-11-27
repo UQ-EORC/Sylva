@@ -604,7 +604,7 @@ ax[0].set(title="All echoes, by true class", ylabel="z (m)")
 ax[1].set(title="Points kept by wood_points,\\nby true class")
 fig.suptitle("A 60 cm slice through the stem")
 ax[1].legend(markerscale=12, loc="upper left", bbox_to_anchor=(1.0, 1.0));""",
-    md("""`wood_points` keeps nearly every wood echo, but most of what it keeps
+    md("""`wood_points` keeps most of the wood echoes, but half of what it keeps
 are leaf echoes close to the twigs: this tree's planophile leaves sit along
 its terminal branches, and from a few metres away a twig with its leaves
 looks like a thicker branch.
@@ -635,14 +635,15 @@ table["total"] = table.sum(axis=1)
 print(f"DBH: model {model.dbh:.3f} m, truth {truth.dbh:.3f} m; "
       f"fitted to points: {model.metrics()['measured_volume_fraction']:.0%} of the volume")
 table.round(0).astype(int).rename_axis("wood volume (L)")""",
-    md("""The stem comes within 6 to 10 % of the truth either way, and the DBH
-within 4 mm; even on the true wood echoes the model is a little too wide,
-since the beam footprint and mixed pixels widen what a scan sees. The
-first-order branches show where the larger error comes from: fitted to the
-true wood echoes they are 12 % over, fitted to the points `wood_points` kept
-60 % over, because the leaf echoes along the twigs make the branches look
-thicker. The finer orders come out close to the truth, in part because the
-model's taper and pipe-model priors fill in what the scans did not resolve.
+    md("""The stem comes within 1 to 2 % of the truth either way, and the DBH
+within 3 mm. The first-order branches are within 9 % on the true wood echoes
+and within 1 % on the points `wood_points` kept: the leaf echoes along the
+twigs do not thicken them, because a circle counts as a measurement only
+when its points lie on it as tightly as the stem's points lie on theirs
+(`min_snr`, `noise_ratio`), and a twig wrapped in leaves does not. The finer
+orders come out at a fifth to a half of the truth. Twigs too thin for the
+scan to resolve take their radius from the length they carry, which on this
+tree is too little; they hold 8 % of the wood, so the total is 3 to 6 % low.
 Side by side:"""),
     """\
 from matplotlib.collections import PolyCollection
@@ -718,12 +719,12 @@ print(f"QSM:       DBH {real.dbh:.3f} m, stem {real.stem_volume:.2f} m3, total {
 m = real.metrics()
 print(f"fitted to points: {m['measured_volume_fraction']:.0%} of the volume, "
       f"{m['measured_length_fraction']:.0%} of the length")""",
-    md("""Two lessons. The DBHs agree (0.316 m against 0.319 m), because breast
+    md("""Two lessons. The DBHs agree (0.316 m against 0.309 m), because breast
 height is where the stem is best sampled. The two fractions differ widely:
-nearly two thirds of the volume lies in the trunk and the main limbs, which
-were fitted to points, but only 4 % of the length was, so the finer branches
-come from the taper and pipe-model priors. The stem volume is supported by
-the data here; a third of the total volume, and the branch length, are not. The height cut keeps the
+45 % of the volume lies in the parts of the trunk and the main limbs that
+were fitted to points, but only 3 % of the length was, so the branches
+come from the taper and pipe-model priors. The stem is supported by
+the data here; more than half of the total volume, and the branch length, are not. The height cut keeps the
 grass layer out of the base fit; on this tree it changes little, but tussocks
 against a trunk can widen the base cylinder. Volumes are validated against felled
 trees in [Benchmarks](../benchmarks/qsm.md), on single-tree clouds two orders
@@ -1919,11 +1920,14 @@ print(f"lost branches: {qc.lost['status'].tolist()}, volume {1000 * qc.lost['vol
 print(f"volume change {1000 * qc.change:.1f} L, of which trusted {1000 * qc.trusted_change:.1f} "
       f"± {1000 * qc.trusted_sigma:.1f} L")""",
     md("""The lost limb is found, and the later grid confirms that its space was
-seen and is empty, so it is `lost` rather than `unobserved`. Only a small
-share of the limb's length was fitted to points in epoch 1, however; the
-rest of its radius came from the QSM's priors, so its volume is not counted
-as trusted change. The trusted change is the stem growth, which the taper
-increment measures to within its stated uncertainty."""),
+seen and is empty, so it is `lost` rather than `unobserved`. None of the
+limb's length was fitted to points in epoch 1, however: it is too thin for
+these scans to resolve, its radius came from the QSM's priors, which read it
+thin, and so its volume is not counted as trusted change. Two more branches
+of the earlier model have no counterpart in the later one although the later
+pulses still found returns in their space (`present`): differences between
+two skeletons, not change. The trusted change is the stem growth, which the
+taper increment measures to within its stated uncertainty."""),
     """\
 fig, ax = plt.subplots(1, 2, figsize=(10, 4.8), gridspec_kw={"width_ratios": [1, 1.2]})
 lost_ids = set(qc.lost["id"].tolist())
@@ -2732,8 +2736,9 @@ measured volume for these trees here: the [QSM guide](../guide/qsm.md#buttresses
 and the [benchmark](../benchmarks/qsm.md) score buttress meshes against felled
 trees."""),
     """\
-plain = qsm.build_qsm(tree, base_xy=b["centre"])                                    # cylinders from the ground up
-stem = qsm.build_qsm(tree[tree.attrs["height"] > base.top], base_xy=b["centre"])   # the stem and crown above the flanges
+wood = qsm.wood_points(tree)                                                         # leaves and the litter around the base left out
+plain = qsm.build_qsm(wood, base_xy=b["centre"])                                    # cylinders from the ground up
+stem = qsm.build_qsm(wood[wood.attrs["height"] > base.top], base_xy=b["centre"])   # the stem and crown above the flanges
 cyl_below = plain.total_volume - plain.volume_above(base.top_z)
 print(f"DBH at 1.3 m: {plain.dbh:.2f} m from cylinders fitted from the ground, {stem.dbh:.2f} m on the round stem")
 print(f"wood below {base.top:.1f} m: {cyl_below:.2f} m3 from the cylinders, {base.volume:.2f} m3 from the mesh "

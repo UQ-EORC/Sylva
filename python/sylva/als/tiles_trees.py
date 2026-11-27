@@ -682,8 +682,8 @@ def build_qsms(store, stems=None, voxel_size: float = 0.01, wood: bool = True,
         if share < 0.1:
             warnings.warn(
                 f"only {share:.0%} of the median model's length was fitted to points: "
-                f"the cloud may be too sparse for bin_length={params.get('bin_length', 0.1)} m. "
-                "Radii then come from the priors and run large; check measured_length in the table.",
+                f"the cloud may be too sparse for bin_length={params.get('bin_length', 0.125)} m. "
+                "Radii then come from the priors, not from the points; check measured_length in the table.",
                 stacklevel=2)
     return out
 

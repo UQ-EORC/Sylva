@@ -19,11 +19,11 @@ use crate::filters::Rng;
 use crate::trees::stems::{angular_extent, StemParams};
 use crate::Point;
 
-use super::model::{fit_cylinders_with, power_mean_radius, scaled_to_spacing, skeletonize, Qsm, QsmParams};
+use super::model::{fit_cylinders_with, power_mean_radius, scaled_to_spacing, skeletonize, Qsm, QsmParams, Section};
 
 /// Weight at or above which a point counts as confident wood: the pool
-/// RANSAC samples from, the points that set a section's arc and its
-/// contour, and the points `n_points` counts.
+/// RANSAC samples from, the points that set a section's arc, and the
+/// points `n_points` counts.
 pub const CONFIDENT: f64 = 0.5;
 
 /// Per-point weights must be one per point, finite and in `[0, 1]`.
@@ -60,17 +60,18 @@ pub fn build_qsm_weighted(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParam
 
 /// Radius of one section from its points `xy` (in the section's plane) and
 /// their weights: the weighted counterpart of the circle fit in
-/// [`super::fit_cylinders`], returning the same `(radius, points, arc,
-/// inlier share)` and the circle's centre in the section's plane.
+/// [`super::fit_cylinders`], returning the same [`Section`] and the
+/// circle's centre in the section's plane.
 ///
 /// The section needs a summed weight of `fit_min_points`; the circle is the
 /// weighted RANSAC of [`ransac_circle_weighted`] refitted by weighted least
 /// squares on the points within the band; its inliers must carry a summed
 /// weight of `min_points` and a mean weight of `min_mean_weight`, and the
-/// share is the inliers' weight over the section's. The arc and the point
-/// count use the confident points only (weight at least
-/// [`CONFIDENT`]).
-pub(crate) fn section_fit(xy: &[[f64; 2]], w: &[f64], seed: u64, p: &QsmParams, cp: &StemParams) -> (Option<(f64, usize, f64, f64)>, Option<[f64; 2]>) {
+/// share is the inliers' weight over the section's. The scatter is the
+/// weighted root mean square distance of the inliers from the circle, and
+/// the radius must be `min_snr` times it. The arc and the point count use
+/// the confident points only (weight at least [`CONFIDENT`]).
+pub(crate) fn section_fit(xy: &[[f64; 2]], w: &[f64], seed: u64, p: &QsmParams, cp: &StemParams) -> (Option<Section>, Option<[f64; 2]>) {
     let total_w: f64 = w.iter().sum();
     if total_w < p.fit_min_points as f64 {
         return (None, None);
@@ -95,8 +96,8 @@ pub(crate) fn section_fit(xy: &[[f64; 2]], w: &[f64], seed: u64, p: &QsmParams, 
     let n_sure = sure.len();
     let arc = angular_extent(&sure, cx, cy);
     let frac = w_in / total_w;
-    let ok = arc >= p.min_arc_deg && rmse <= p.max_rmse.max(band) && frac >= p.min_inlier_fraction;
-    if ok { (Some((r, n_sure, arc, frac)), Some([cx, cy])) } else { (None, None) }
+    let ok = arc >= p.min_arc_deg && rmse <= p.max_rmse.max(band) && frac >= p.min_inlier_fraction && r >= p.min_snr * rmse;
+    if ok { (Some(Section { radius: r, points: n_sure, arc, scatter: rmse }), Some([cx, cy])) } else { (None, None) }
 }
 
 fn circumcircle(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Option<(f64, f64, f64)> {

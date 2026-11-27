@@ -1737,11 +1737,11 @@ fn qsm_from_rows(rows: PyReadonlyArray2<f64>) -> PyResult<qsm::Qsm> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, base_xy=None, k=15, max_edge=1.0, bin_length=0.125, min_points=1, ransac_threshold=0.02, max_radius=1.0, taper_limit=1.1, max_rmse=0.03, centre_passes=4, twig_radius=0.002, min_arc_deg=180.0, min_inlier_fraction=0.05, prune_points=5, fit_min_points=30, crop_length=0.0, relative_tolerance=0.08, base_radius=0.0, outlier_sigma=3.0, stem_radius_cap=0.0, pipe_slack=1.2, spacing_scale=1.5, radius_power=0.0, power_above_spacing=0.025, sensor_noise=0.02, butt_swell=1.1, min_weight=0.0, min_mean_weight=0.5, weights=None))]
+#[pyo3(signature = (xyz, base_xy=None, k=15, max_edge=1.0, bin_length=0.125, min_points=1, ransac_threshold=0.02, max_radius=1.0, taper_limit=1.1, max_rmse=0.03, centre_passes=4, twig_radius=0.002, min_arc_deg=180.0, min_inlier_fraction=0.05, prune_points=5, fit_min_points=30, crop_length=0.0, relative_tolerance=0.08, base_radius=0.0, outlier_sigma=3.0, stem_radius_cap=0.0, pipe_slack=1.2, spacing_scale=1.5, radius_power=0.0, power_above_spacing=0.025, sensor_noise=0.02, butt_swell=1.1, min_weight=0.0, min_mean_weight=0.5, min_snr=5.0, noise_ratio=1.4, weights=None))]
 #[allow(clippy::too_many_arguments)]
-fn build_qsm<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, base_xy: Option<(f64, f64)>, k: usize, max_edge: f64, bin_length: f64, min_points: usize, ransac_threshold: f64, max_radius: f64, taper_limit: f64, max_rmse: f64, centre_passes: usize, twig_radius: f64, min_arc_deg: f64, min_inlier_fraction: f64, prune_points: usize, fit_min_points: usize, crop_length: f64, relative_tolerance: f64, base_radius: f64, outlier_sigma: f64, stem_radius_cap: f64, pipe_slack: f64, spacing_scale: f64, radius_power: f64, power_above_spacing: f64, sensor_noise: f64, butt_swell: f64, min_weight: f64, min_mean_weight: f64, weights: Option<PyReadonlyArray1<f64>>) -> PyResult<Bound<'py, PyDict>> {
+fn build_qsm<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, base_xy: Option<(f64, f64)>, k: usize, max_edge: f64, bin_length: f64, min_points: usize, ransac_threshold: f64, max_radius: f64, taper_limit: f64, max_rmse: f64, centre_passes: usize, twig_radius: f64, min_arc_deg: f64, min_inlier_fraction: f64, prune_points: usize, fit_min_points: usize, crop_length: f64, relative_tolerance: f64, base_radius: f64, outlier_sigma: f64, stem_radius_cap: f64, pipe_slack: f64, spacing_scale: f64, radius_power: f64, power_above_spacing: f64, sensor_noise: f64, butt_swell: f64, min_weight: f64, min_mean_weight: f64, min_snr: f64, noise_ratio: f64, weights: Option<PyReadonlyArray1<f64>>) -> PyResult<Bound<'py, PyDict>> {
     let p = xyz_from_py(xyz)?;
-    let params = qsm::QsmParams { k, max_edge, bin_length, min_points, ransac_threshold, max_radius, taper_limit, max_rmse, centre_passes, twig_radius, min_arc_deg, min_inlier_fraction, prune_points, fit_min_points, crop_length, relative_tolerance, base_radius, outlier_sigma, stem_radius_cap, pipe_slack, spacing_scale, radius_power, power_above_spacing, sensor_noise, butt_swell, min_weight, min_mean_weight };
+    let params = qsm::QsmParams { k, max_edge, bin_length, min_points, ransac_threshold, max_radius, taper_limit, max_rmse, centre_passes, twig_radius, min_arc_deg, min_inlier_fraction, prune_points, fit_min_points, crop_length, relative_tolerance, base_radius, outlier_sigma, stem_radius_cap, pipe_slack, spacing_scale, radius_power, power_above_spacing, sensor_noise, butt_swell, min_weight, min_mean_weight, min_snr, noise_ratio };
     let weights = weights.map(|w| w.as_array().to_vec());
     let base_xy = base_xy.map(|b| [b.0, b.1]);
     let q = detach_interruptible(py, || match &weights { Some(w) => qsm::build_qsm_weighted(&p, base_xy, &params, w), None => qsm::build_qsm(&p, base_xy, &params) })?.map_err(err)?;
@@ -1749,7 +1749,7 @@ fn build_qsm<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, base_xy: Option<(
 }
 
 #[pyfunction]
-#[pyo3(signature = (xyz, base_xy=None, k=15, max_edge=1.0, bin_length=0.1))]
+#[pyo3(signature = (xyz, base_xy=None, k=15, max_edge=1.0, bin_length=0.125))]
 fn skeletonize<'py>(py: Python<'py>, xyz: PyReadonlyArray2<f64>, base_xy: Option<(f64, f64)>, k: usize, max_edge: f64, bin_length: f64) -> PyResult<Bound<'py, PyDict>> {
     let p = xyz_from_py(xyz)?;
     let params = qsm::QsmParams { k, max_edge, bin_length, ..Default::default() };

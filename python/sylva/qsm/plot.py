@@ -232,10 +232,9 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
     above it.
 
     A QSM needs points on the stem surface: with roughly 1 cm spacing the
-    default 0.1 m shells hold plenty, but a cloud thinned to 3-5 cm leaves
-    most shells with too few, and those cylinders take their radius from the
-    taper and pipe-model priors instead. That runs large - on one 20 m
-    savanna tree, 0.34 m DBH at full resolution against 1.10 m at 5 cm - so
+    default 0.125 m shells hold plenty, but on a cloud thinned to 3-5 cm
+    only the stem and the main limbs are resolved, and the other cylinders
+    take their radius from the taper and pipe-model priors instead. So
     ``build_plot`` warns when the median model was hardly fitted at all, and
     ``measured_length`` in :meth:`PlotQSMs.table` says so per tree.
     """
@@ -264,13 +263,13 @@ def build_plot(cloud: PointCloud, labels, stems=None, voxel_size: float = 0.01,
     share = d["median_measured_length"]
     if share is not None:
         # A model whose cylinders were never fitted to points is the taper and
-        # pipe-model priors talking, and those inflate. The usual cause is a
-        # cloud too sparse for the shell width.
+        # pipe-model priors talking. The usual cause is a cloud too sparse
+        # for the shell width.
         if share < 0.1:
             warnings.warn(
                 f"only {share:.0%} of the median model's length was fitted to points: "
-                f"the cloud may be too sparse for bin_length={params.get('bin_length', 0.1)} m. "
-                "Radii then come from the priors and run large; check measured_length in the table.",
+                f"the cloud may be too sparse for bin_length={params.get('bin_length', 0.125)} m. "
+                "Radii then come from the priors, not from the points; check measured_length in the table.",
                 stacklevel=2,
             )
     return out

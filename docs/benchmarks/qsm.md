@@ -11,12 +11,21 @@ reconstruction ([Devereux et al. 2026](../references.md)):
 | method | volume bias | rRMSE | CCC | DBH bias / rRMSE |
 |---|---|---|---|---|
 | rayextract | −11.8 % | 48.6 % | 0.920 | −23 % / 29 % |
-| sylva | +0.1 % | 25.6 % | 0.982 | −3 % / 12 % |
+| sylva | −2.7 % | 18.4 % | 0.991 | −3 % / 12 % |
 
-The sylva row is the present code. Version 1.1.0, before the cylinder
-stage and the wood filter were rewritten, scores −2.0 % / 24.1 % / 0.984
-and +2 % / 12 % in the same run, and the median absolute log ratio of
-modelled to harvested volume is 0.121 against 0.123. The remaining scatter
+The sylva row is the present code: by study, +0.3 % / 13.2 % on the 40
+Cameroon trees (Momo Takoudjou), −9.0 % / 23.6 % on the 28 of Peru, Guyana
+and Indonesia (Gonzalez de Tanago) and +11.3 % / 15.6 % on the 4 of Burt et
+al. Version 2.0.0, which did not yet test a section's circle against the
+scan's noise, scores +0.1 % / 25.6 % / 0.982, and version 1.1.0, before the
+cylinder stage and the wood filter were rewritten, −2.0 % / 24.1 % / 0.984
+and +2 % / 12 % in the same run. The median absolute log ratio of modelled
+to harvested volume is 0.120 (2.0.0: 0.121; 1.1.0: 0.123). With the clouds
+thinned to 3 and 5 cm the volume rRMSE is 23.1 % and 22.0 %
+([QSM guide](../guide/qsm.md#how-fine-does-the-cloud-have-to-be)). The
+settings of the noise tests were chosen on simulated trees before these
+trees were scored, and the result moves little with them: `min_snr` from 3
+to 6 and `noise_ratio` from 1.2 to 2 give 18.2 to 18.5 %. The remaining scatter
 is mostly in co-dominant Peruvian trees whose second limb is barely
 sampled, where the radius of an unmeasured limb has to be inferred from
 the length it carries. For single trees, never cap or anchor stem radii on

@@ -145,10 +145,9 @@ pub struct PlotModels {
 /// thinned tree's points between 0.5 and 1.5 m above ground (all its points
 /// if 20 or fewer are there). A finite, positive stem DBH anchors the model's
 /// base radius (`base_radius = dbh / 2`) unless `p.qsm.base_radius` is set:
-/// without an anchor, a tree with too few good stem circles takes its taper
-/// prior from its widest fitted circle, which on a small tree with a leafy
-/// crown is often foliage, and the thin stem was then replaced by a trunk of
-/// up to a metre.
+/// without an anchor, a stem with fewer than four sections takes the level
+/// of its taper from those sections alone, which on a small tree with a
+/// leafy crown can be circles around foliage.
 pub fn build_plot(points: &[Point], labels: &[i64], heights: Option<&[f64]>, stems: &[(i64, [f64; 2], f64)], p: &PlotParams) -> Result<PlotModels> {
     build_plot_with(points, labels, heights, stems, p, None)
 }

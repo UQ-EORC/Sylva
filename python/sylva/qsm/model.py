@@ -400,7 +400,7 @@ def fit_cylinder_ransac(xyz: np.ndarray, threshold: float = 0.02, iterations: in
 
 
 def skeletonize(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.0,
-                bin_length: float = 0.1) -> dict:
+                bin_length: float = 0.125) -> dict:
     """Graph skeleton of one tree, the first stage of :func:`build_qsm`.
 
     Parameters
@@ -436,7 +436,8 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
               outlier_sigma: float = 3.0, stem_radius_cap: float = 0.0, pipe_slack: float = 1.2,
               spacing_scale: float = 1.5, radius_power: float = 0.0, power_above_spacing: float = 0.025,
               sensor_noise: float = 0.02, butt_swell: float = 1.1, min_weight: float = 0.0,
-              min_mean_weight: float = 0.5, weights=None) -> QSM:
+              min_mean_weight: float = 0.5, min_snr: float = 5.0, noise_ratio: float = 1.4,
+              weights=None) -> QSM:
     """Skeletonise then fit cylinders for a single segmented tree.
 
     The points are binned into shells of path length from the base over a
@@ -445,16 +446,25 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
     nodes of the skeleton. A RANSAC circle is fitted to each node's points
     in the plane perpendicular to the skeleton; accepted fits need a
     contiguous arc of ``min_arc_deg`` and ``min_inlier_fraction`` inliers,
-    and move the node onto the circle's centre. Each axis then gets a taper
+    and move the node onto the circle's centre. A circle must also stand
+    clear of the noise. Wood is a surface, so its points lie on their circle
+    to within the scan's noise, while the points of foliage, or of several
+    twigs taken as one section, are spread across theirs: the radius has to
+    be at least ``min_snr`` times the scatter of the points about the
+    circle, and on a branch that scatter no more than ``noise_ratio`` times
+    the scatter on the tree's own stem. Each axis then gets a taper
     of its own, ``r = k x^b``, fitted robustly (Theil-Sen) to its accepted
     sections, with ``x`` the length a node carries: the longest way from it
     to a tip, times the share of the cross-section its length claimed at
     every fork on the way up (raycloudtools, Lowe and Stepanas 2021;
     Devereux et al. 2026; the pipe model of Shinozaki et al. 1964). Sections
     more than ``outlier_sigma`` robust deviations off the taper of their
-    own axis are set aside; the axis is made non-increasing between the
-    rest, and what is unmeasured follows the taper, or on an axis with no
-    sections the taper of the axis it hangs from. A measured DBH
+    own axis are set aside, and the axis is made non-increasing between the
+    rest. Below its lowest section the stem follows its taper (up to
+    ``butt_swell`` times that section); beyond an axis's last section, and
+    on an axis with none, the radius is in proportion to the length
+    carried, from the last measured node or from the node the axis hangs
+    from. A measured DBH
     (``base_radius``) ties the stem's taper down when the stem has few
     sections. Past 2.5 cm point spacing the radius is a power mean of the
     distances to the axis, after raycloudtools (Devereux et al. 2026).
@@ -466,7 +476,9 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
     cloud
         One segmented tree, ideally wood only (:func:`wood_points`), in
         metres with z up. 1-2 cm spacing is enough; denser input is slower
-        without being more accurate.
+        without being more accurate. Leave out the ground and the litter
+        around the base (the wood filter does): the skeleton follows them
+        outwards and they are modelled as branches.
     base_xy
         Stem position (e.g. ``(tree.x, tree.y)``); the lowest points if None.
     k, max_edge
@@ -482,8 +494,8 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
     max_radius
         Upper limit on any radius (m); set from the measured DBH.
     taper_limit
-        A child may be at most this times its parent's radius; wider fits
-        are clamped.
+        A node wider than this times the node it hangs from takes that
+        node's radius.
     max_rmse
         Circle fits with a larger RMSE (m) are rejected.
     centre_passes
@@ -500,6 +512,8 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
         Unmeasured leaf segments with fewer points are pruned as foliage.
     fit_min_points
         Segments with fewer points take their radius from the taper model.
+        The count holds at every point spacing: the shells widen with the
+        spacing, so a ring wide enough to be resolved still holds as many.
     crop_length
         Leafy tips with less subtree length (m) are not reconstructed.
     relative_tolerance
@@ -526,7 +540,24 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
         ``base_radius``.
     pipe_slack
         Children's summed cross-section may exceed the parent's by this
-        factor (pipe model); 0 disables.
+        factor (pipe model); the excess is taken from the unmeasured
+        children, and a measured child keeps its radius. 0 disables.
+    spacing_scale
+        Scale the circle band and the shell length to the cloud's median
+        point spacing: the band is at least this many spacings and the
+        shells at least four. Neither is made tighter than given. 0 leaves
+        the given values alone.
+    radius_power
+        Take each section's radius from a power mean of its points'
+        distances to the axis, ``(mean d^q)^(1/q)``, instead of a circle
+        fit; 0 (default) fits circles.
+    power_above_spacing
+        Point spacing (m) at or above which the power mean (``q = 0.25``)
+        takes over from the circle fit when ``radius_power`` is 0 and
+        ``spacing_scale`` is on; 0 never switches.
+    sensor_noise
+        Not used: a power-mean radius is judged by ``min_snr`` and
+        ``noise_ratio``, like a circle. Kept so that existing calls work.
     butt_swell
         Unmeasured stem nodes below the lowest fit may exceed it by this
         factor.
@@ -536,6 +567,17 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
     min_mean_weight
         With ``weights``: a circle whose inliers have a lower mean weight is
         not a measurement, and the section takes its radius from the priors.
+    min_snr
+        A section is a measurement when its radius is at least this many
+        times the scatter of its points about their circle (the root mean
+        square of their distances from it): a thinner ring is not resolved
+        from the noise. With 5 mm of scatter the default, 5, leaves radii
+        under 2.5 cm to the taper. 0 disables.
+    noise_ratio
+        A branch section is a measurement when the scatter of its points is
+        at most this many times the median scatter on the tree's own stem,
+        the scan's noise as this tree shows it. Applies when the stem has
+        at least four sections. 0 disables.
     weights
         Wood weight per point in [0, 1], for example a wood confidence
         (:func:`sylva.leaves.classify_leaf_wood` with ``return_scores=True``). Every point with at least
@@ -564,8 +606,8 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
 
     Notes
     -----
-    On 72 destructively harvested trees volume has -3.8 % bias and
-    19.9 % rRMSE (*Benchmarks > QSMs*). On simulated trees the deficit is
+    On 72 destructively harvested trees volume has -2.7 % bias and
+    18.4 % rRMSE (*Benchmarks > QSMs*). On simulated trees the deficit is
     in twigs: about a third of the twig length is recovered, so
     ``measured_length_fraction`` is low even when volume is good.
     """
@@ -577,5 +619,5 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
                         prune_points, fit_min_points, crop_length, relative_tolerance, base_radius,
                         outlier_sigma, stem_radius_cap, pipe_slack, spacing_scale, radius_power,
                         power_above_spacing, sensor_noise, butt_swell, min_weight, min_mean_weight,
-                        weights=weights)
+                        min_snr, noise_ratio, weights=weights)
     return QSM(d["cylinders"])
