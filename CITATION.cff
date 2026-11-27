@@ -22,11 +22,14 @@ authors:
   - given-names: Stuart
     family-names: Phinn
     affiliation: The University of Queensland
-doi: 10.5281/zenodo.24298514
+doi: 10.5281/zenodo.24582228
 identifiers:
   - type: doi
     value: 10.5281/zenodo.23718985
     description: The concept DOI, resolving to the latest version
+  - type: doi
+    value: 10.5281/zenodo.24582228
+    description: Version 2.1.0
   - type: doi
     value: 10.5281/zenodo.24298514
     description: Version 2.0.0
