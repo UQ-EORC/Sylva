@@ -430,13 +430,14 @@ def skeletonize(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 
 def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.0,
               bin_length: float = 0.125, min_points: int = 1, ransac_threshold: float = 0.02,
               max_radius: float = 1.0, taper_limit: float = 1.1, max_rmse: float = 0.03,
-              centre_passes: int = 4, twig_radius: float = 0.002, min_arc_deg: float = 180.0,
+              centre_passes: int = 4, twig_radius: float = 0.002, min_arc_deg: float = 0.0,
               min_inlier_fraction: float = 0.05, prune_points: int = 5, fit_min_points: int = 30,
               crop_length: float = 0.0, relative_tolerance: float = 0.08, base_radius: float = 0.0,
               outlier_sigma: float = 3.0, stem_radius_cap: float = 0.0, pipe_slack: float = 1.2,
               spacing_scale: float = 1.5, radius_power: float = 0.0, power_above_spacing: float = 0.025,
               sensor_noise: float = 0.02, butt_swell: float = 1.1, min_weight: float = 0.0,
               min_mean_weight: float = 0.5, min_snr: float = 5.0, noise_ratio: float = 1.4,
+              place_axes: bool = True, width_slack: float = 1.5, pipe_excess: float = 3.0,
               weights=None) -> QSM:
     """Skeletonise then fit cylinders for a single segmented tree.
 
@@ -444,30 +445,86 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
     kNN graph that joins the pieces of the cloud lying within ``max_edge``
     of each other, and each shell is split into its connected pieces, the
     nodes of the skeleton. A RANSAC circle is fitted to each node's points
-    in the plane perpendicular to the skeleton; accepted fits need a
-    contiguous arc of ``min_arc_deg`` and ``min_inlier_fraction`` inliers,
-    and move the node onto the circle's centre. A circle must also stand
-    clear of the noise. Wood is a surface, so its points lie on their circle
-    to within the scan's noise, while the points of foliage, or of several
-    twigs taken as one section, are spread across theirs: the radius has to
-    be at least ``min_snr`` times the scatter of the points about the
-    circle, and on a branch that scatter no more than ``noise_ratio`` times
-    the scatter on the tree's own stem. Each axis then gets a taper
-    of its own, ``r = k x^b``, fitted robustly (Theil-Sen) to its accepted
-    sections, with ``x`` the length a node carries: the longest way from it
-    to a tip, times the share of the cross-section its length claimed at
-    every fork on the way up (raycloudtools, Lowe and Stepanas 2021;
-    Devereux et al. 2026; the pipe model of Shinozaki et al. 1964). Sections
-    more than ``outlier_sigma`` robust deviations off the taper of their
-    own axis are set aside, and the axis is made non-increasing between the
-    rest. Below its lowest section the stem follows its taper (up to
-    ``butt_swell`` times that section); beyond an axis's last section, and
-    on an axis with none, the radius is in proportion to the length
-    carried, from the last measured node or from the node the axis hangs
-    from. A measured DBH
-    (``base_radius``) ties the stem's taper down when the stem has few
-    sections. Past 2.5 cm point spacing the radius is a power mean of the
-    distances to the axis, after raycloudtools (Devereux et al. 2026).
+    in the plane perpendicular to the skeleton, and is a measurement when it
+    stands clear of the noise. Wood is a surface, so its points lie on their
+    circle to within the scan's noise, while the points of foliage, or of
+    several twigs taken as one section, are spread across theirs. The
+    scatter of a section is the larger of two figures: the root mean square
+    distance from the circle of the points within its band, and 1.4826
+    times the median distance of *all* the section's points from it, which
+    is the same for a clean ring and far larger when the ring holds under
+    half the points. The radius has to be at least ``min_snr`` times that
+    scatter, and on a branch the scatter of the band no more than
+    ``noise_ratio`` times the scatter on the tree's own stem.
+
+    How much of the circle the points have to cover follows from the same
+    noise. A circle through an arc is fixed by the arc's chord and its rise
+    above the chord, and the noise acts on the rise: an error ``e`` in it
+    moves the radius by ``e (1 + cos(a/2)) / (2 (1 - cos(a/2)))`` for an arc
+    of angle ``a``, half the error for a half circle, 1.1 times it for 135
+    degrees, 2.9 times for 90. So below a half circle ``min_snr`` is
+    multiplied by that factor relative to the half circle (2.2 at 135
+    degrees, 5.8 at 90, 14 at 60): a thick limb seen from below is measured
+    from the part of its ring that the scanner saw, and a twig is not.
+
+    Each axis then gets a taper of its own, ``r = k x^b``, fitted robustly
+    (Theil-Sen) to its accepted sections, with ``x`` the longest way from
+    the node to a tip times the share of the cross-section its length
+    claimed at every fork on the way up (raycloudtools, Lowe and Stepanas
+    2021; Devereux et al. 2026). Sections more than ``outlier_sigma`` robust
+    deviations off the taper of their own axis are set aside, and the axis
+    is made non-increasing between the rest. Below its lowest section the
+    stem follows its taper (up to ``butt_swell`` times that section). A
+    measured DBH (``base_radius``) ties the stem's taper down when the stem
+    has few sections.
+
+    What is not measured takes its radius from what it carries. The *load*
+    of a node is the length of branch beyond it, its own cylinder included,
+    and beyond an axis's last section, or on an axis with none, the
+    cross-section *area* is in proportion to the load, from the last
+    measured node or from the node the axis hangs from:
+    ``r = r0 sqrt(load / load0)``. This is the pipe model (Shinozaki et al.
+    1964) with the foliage a branch feeds taken as spread evenly along the
+    wood beyond it. Areas then add up at every fork, as Leonardo's rule has
+    them, and a branch thins towards its tip as the square root of what is
+    left of it. A radius in proportion to length, which versions up to 2.1
+    used, gives a side branch a fifth to a half of its true radius on trees
+    whose radii are known (*Benchmarks > QSMs*).
+
+    Two checks use the same load and the points themselves. A section on an
+    axis with fewer than four sections has no taper to be judged by, and is
+    set aside when its radius is more than ``pipe_excess`` times what its
+    load gives it from the nearest section kept on the way to the root:
+    foliage that sleeves a twig makes a ring like a branch's, and only what
+    the twig carries tells them apart. And no unmeasured radius is more than
+    ``width_slack`` times the width of its section's points,
+    ``sqrt(2 (v - noise^2))`` with ``v`` their largest variance across the
+    axis, which is the radius of a branch seen from one side or from all
+    round, and more than it where leaves or twigs share the section. It
+    takes no fit and holds down to a radius of twice the noise.
+
+    Past 2.5 cm point spacing the radius is a power mean of the distances
+    to the centre of the least-squares circle through the section (after
+    raycloudtools, Devereux et al. 2026), where that circle passes the same
+    tests as a fitted one; a section without such a circle is unmeasured.
+
+    Positions come last (``place_axes``). The mean of a node's points is not
+    the centre of its section: of a ring seen from one side it lies up to a
+    radius towards the scanner. A node with an accepted circle sits on the
+    circle's centre. Every other node wide enough to be resolved (a radius
+    of ``min_snr`` times the stem's scatter) has a radius by then, from its
+    axis, and a ring of known radius is located by far less of an arc than
+    one whose radius is unknown too: its centre is the point that puts the
+    most of its points on a circle of that radius, taken when the arc they
+    cover rises clear of the band they are counted in. A resolved node with
+    neither lies between the nearest placed nodes of its axis, no further
+    from the mean of its points than its radius. Each resolved node then
+    moves onto a line fitted through the nodes within two radii of it along
+    the axis, because an axis does not bend within its own width while the
+    centres of neighbouring sections err independently. Below its lowest
+    accepted section the stem is the straight line through the sections
+    above it, each node at its own height: the shells there follow root
+    flare and what is left of the ground, not the stem.
     Leafy tips shorter than ``crop_length`` are not reconstructed. Run
     :func:`wood_points` first on leafy trees.
 
@@ -505,7 +562,9 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
         Radius of a twig (m): what a tip is given, and the least any
         cylinder has.
     min_arc_deg
-        Contiguous arc a circle fit must cover (degrees).
+        A floor on the contiguous arc a section's points must cover
+        (degrees), on top of the test against the noise. 0 (default) leaves
+        the arc to that test; 180 is the rule of versions up to 2.1.
     min_inlier_fraction
         Inlier share a circle needs.
     prune_points
@@ -569,15 +628,33 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
         not a measurement, and the section takes its radius from the priors.
     min_snr
         A section is a measurement when its radius is at least this many
-        times the scatter of its points about their circle (the root mean
-        square of their distances from it): a thinner ring is not resolved
-        from the noise. With 5 mm of scatter the default, 5, leaves radii
-        under 2.5 cm to the taper. 0 disables.
+        times the scatter of its points about their circle, and more for an
+        arc under half the circle (see above): a thinner ring is not
+        resolved from the noise. With 5 mm of scatter the default, 5, leaves
+        radii under 2.5 cm to the taper, under 5.6 cm for a ring seen over
+        135 degrees and under 15 cm over 90. 0 disables, and then
+        ``min_arc_deg`` is the only test of the arc.
     noise_ratio
         A branch section is a measurement when the scatter of its points is
         at most this many times the median scatter on the tree's own stem,
         the scan's noise as this tree shows it. Applies when the stem has
         at least four sections. 0 disables.
+    place_axes
+        Place the nodes whose own circle was not accepted from their points
+        with the radius held, straighten each axis over its own width and
+        run the stem straight below its lowest accepted section (see
+        above). False leaves those nodes at the smoothed mean of their
+        points, as versions up to 2.1 did.
+    width_slack
+        An unmeasured radius is at most this many times the width of its
+        section's points (see above), where the section holds
+        ``fit_min_points``. At 1.5 a branch seen over 100 degrees or more
+        of its ring is never cut. 0 disables.
+    pipe_excess
+        A section on an axis with fewer than four sections is set aside when
+        its radius is more than this many times what the length of branch
+        it carries gives it from the nearest section kept on the way to the
+        root. 0 disables.
     weights
         Wood weight per point in [0, 1], for example a wood confidence
         (:func:`sylva.leaves.classify_leaf_wood` with ``return_scores=True``). Every point with at least
@@ -606,10 +683,12 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
 
     Notes
     -----
-    On 72 destructively harvested trees volume has -2.7 % bias and
-    18.4 % rRMSE (*Benchmarks > QSMs*). On simulated trees the deficit is
-    in twigs: about a third of the twig length is recovered, so
-    ``measured_length_fraction`` is low even when volume is good.
+    On 72 destructively harvested tropical trees volume has +0.5 % bias and
+    16.8 % rRMSE, and on 91 more from Belgium and Guyana that played no
+    part in any choice, -5 % and 11 %, and +10 % and 32 % (*Benchmarks >
+    QSMs*). About a third of the twig length of a simulated tree is
+    recovered, so ``measured_length_fraction`` is low even when volume is
+    good.
     """
     if weights is not None:
         weights = _check_weights(weights, len(cloud))
@@ -619,5 +698,6 @@ def build_qsm(cloud: PointCloud, base_xy=None, k: int = 15, max_edge: float = 1.
                         prune_points, fit_min_points, crop_length, relative_tolerance, base_radius,
                         outlier_sigma, stem_radius_cap, pipe_slack, spacing_scale, radius_power,
                         power_above_spacing, sensor_noise, butt_swell, min_weight, min_mean_weight,
-                        min_snr, noise_ratio, weights=weights)
+                        min_snr, noise_ratio, place_axes, width_slack, pipe_excess,
+                        weights=weights)
     return QSM(d["cylinders"])

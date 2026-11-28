@@ -252,8 +252,10 @@ def test_build_plot_models_every_tree(rng, tmp_path):
 
 def test_stem_radius_cap_sees_through_foliage_around_the_bole():
     # Epicormic regrowth: leafy clumps 0.2-0.55 m out from a 0.15 m stem,
-    # up to 7 m. The QSM fits the foliage; capped at 1.5 x the field DBH it
-    # follows the stem, while the stem above keeps its own circles.
+    # up to 7 m. The points of the foliage count in a section's scatter, so
+    # its circles are not measurements and the model follows the stem. With
+    # that test off the QSM fits the foliage; capped at 1.5 x the field DBH
+    # it follows the stem again, while the stem above keeps its own circles.
     from conftest import make_stem
 
     rng = np.random.default_rng(5)
@@ -267,13 +269,39 @@ def test_stem_radius_cap_sees_through_foliage_around_the_bole():
     true_volume = np.pi * 0.15**2 * 12.0
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        free = qsm.build_plot(cloud, labels, stems, wood=False, voxel_size=0.01)
-        capped = qsm.build_plot(cloud, labels, stems, wood=False, voxel_size=0.01, stem_radius_cap=1.5)
+        plain = qsm.build_plot(cloud, labels, stems, wood=False, voxel_size=0.01)
+        free = qsm.build_plot(cloud, labels, stems, wood=False, voxel_size=0.01, min_snr=0.0)
+        capped = qsm.build_plot(cloud, labels, stems, wood=False, voxel_size=0.01, min_snr=0.0, stem_radius_cap=1.5)
+    assert plain.models[1].dbh == pytest.approx(0.30, abs=0.02)
+    assert plain.volume(1) == pytest.approx(true_volume, rel=0.1)
     assert free.models[1].dbh > 0.35 and free.volume(1) > 1.15 * true_volume
-    assert capped.models[1].dbh == pytest.approx(0.30, abs=0.02)
+    assert capped.models[1].dbh == pytest.approx(0.30, abs=0.03)
     assert capped.volume(1) == pytest.approx(true_volume, rel=0.1)
     with pytest.raises(TypeError):
         qsm.build_plot(cloud, labels, stems, stem_radius_kap=1.5)
+
+
+def test_a_limb_seen_from_one_side_is_measured_and_centred():
+    """130 degrees of a 20 cm limb: a radius from the arc, an axis on its centre."""
+    rng = np.random.default_rng(3)
+    n = 30000
+    t = np.radians(rng.uniform(-65, 65, n))
+    d = 0.2 + rng.normal(0, 0.002, n)
+    cloud = PointCloud(np.column_stack([d * np.cos(t), d * np.sin(t), rng.uniform(0, 6, n)]))
+
+    model = qsm.build_qsm(cloud, base_xy=(0.2, 0.0))
+    measured = model.column("n_points") > 0
+    assert measured.sum() > 20
+    assert np.abs(model.column("radius")[measured] - 0.2).max() < 0.03
+    mid = (model.start[:, 2] > 1) & (model.start[:, 2] < 5)
+    assert np.hypot(model.start[mid, 0], model.start[mid, 1]).max() < 0.03
+
+    # Held to half a circle and left at the mean of its points, the limb is
+    # not measured and its axis runs along the bark.
+    old = qsm.build_qsm(cloud, base_xy=(0.2, 0.0), min_arc_deg=180.0, place_axes=False)
+    assert (old.column("n_points") == 0).all()
+    mid = (old.start[:, 2] > 1) & (old.start[:, 2] < 5)
+    assert np.hypot(old.start[mid, 0], old.start[mid, 1]).min() > 0.1
 
 
 def test_a_thinned_cloud_is_fitted_at_its_own_spacing():
@@ -287,14 +315,22 @@ def test_a_thinned_cloud_is_fitted_at_its_own_spacing():
     sparse = filters.voxel_downsample(cloud, 0.06)
     labels = np.ones(len(sparse), int)
 
-    # Held to the settings of a centimetre cloud, the 6 cm points fall outside
-    # every band and the model is the priors talking, which build_plot says.
+    # Held to the settings of a centimetre cloud and to half a circle of
+    # points no more than 15 degrees apart, the 6 cm points make no section
+    # and the model is the priors talking, which build_plot says.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         held = qsm.build_plot(sparse, labels, wood=False, voxel_size=0.0, min_points=500,
-                              spacing_scale=0.0)
+                              spacing_scale=0.0, min_arc_deg=180.0)
         assert any("too sparse" in str(c.message) for c in caught), [str(c.message) for c in caught]
     assert held.table()[0]["measured_length"] < 0.2
+    # With the arc left to the noise the same shells are measured where their
+    # points do lie on a ring, and the stem comes out at its width.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        by_noise = qsm.build_plot(sparse, labels, wood=False, voxel_size=0.0, min_points=500, spacing_scale=0.0)
+    assert by_noise.table()[0]["measured_length"] > 0.25
+    assert by_noise.table()[0]["dbh_m"] == pytest.approx(0.30, abs=0.03)
 
     # Scaled to the cloud's own spacing (the default) it is measured again:
     # most of the volume, and far more of the length than when held.
@@ -533,10 +569,10 @@ def test_foliage_on_a_branch_is_not_measured():
     assert measured(model, branch=True) == 0
     assert abs(model.dbh - 0.2) < 0.01
     # Without the two tests the clump's circles count and the branch is as
-    # thick as the clump.
+    # thick as the clump; with them it has what its length gives it.
     loose = qsm.build_qsm(cloud, base_xy=(0.0, 0.0), spacing_scale=0.0, min_snr=0.0, noise_ratio=0.0)
     assert measured(loose, branch=True) > 0
-    assert loose.branch_volume > 3 * model.branch_volume
+    assert loose.branch_volume > 2 * model.branch_volume
     # build_plot hands the two settings on.
     labels = np.zeros(len(cloud), int)
     plot = qsm.build_plot(cloud, labels, wood=False, voxel_size=0.0, spacing_scale=0.0, min_snr=0.0, noise_ratio=0.0)

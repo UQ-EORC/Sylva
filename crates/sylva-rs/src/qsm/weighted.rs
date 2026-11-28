@@ -19,7 +19,7 @@ use crate::filters::Rng;
 use crate::trees::stems::{angular_extent, StemParams};
 use crate::Point;
 
-use super::model::{fit_cylinders_with, power_mean_radius, scaled_to_spacing, skeletonize, Qsm, QsmParams, Section};
+use super::model::{arc_factor, fit_cylinders_with, power_mean_radius, scaled_to_spacing, skeletonize, spread_about, Qsm, QsmParams, Section};
 
 /// Weight at or above which a point counts as confident wood: the pool
 /// RANSAC samples from, the points that set a section's arc, and the
@@ -68,8 +68,10 @@ pub fn build_qsm_weighted(xyz: &[Point], base_xy: Option<[f64; 2]>, p: &QsmParam
 /// squares on the points within the band; its inliers must carry a summed
 /// weight of `min_points` and a mean weight of `min_mean_weight`, and the
 /// share is the inliers' weight over the section's. The scatter is the
-/// weighted root mean square distance of the inliers from the circle, and
-/// the radius must be `min_snr` times it. The arc and the point count use
+/// larger of the weighted root mean square distance of the inliers from the
+/// circle and the spread of all the confident points about it, and the
+/// radius must be `min_snr` times it, and more for an arc under half the
+/// circle, as in the unweighted fit. The arc and the point count use
 /// the confident points only (weight at least [`CONFIDENT`]).
 pub(crate) fn section_fit(xy: &[[f64; 2]], w: &[f64], seed: u64, p: &QsmParams, cp: &StemParams) -> (Option<Section>, Option<[f64; 2]>) {
     let total_w: f64 = w.iter().sum();
@@ -78,7 +80,7 @@ pub(crate) fn section_fit(xy: &[[f64; 2]], w: &[f64], seed: u64, p: &QsmParams, 
     }
     let confident: Vec<[f64; 2]> = xy.iter().zip(w).filter(|(_, &x)| x >= CONFIDENT).map(|(q, _)| *q).collect();
     if p.radius_power > 0.0 {
-        return (power_mean_radius(&confident, p), None);
+        return power_mean_radius(&confident, p);
     }
     let mut rng = Rng::new(seed);
     let Some((cx0, cy0, r0, _)) = ransac_circle_weighted(xy, w, cp, &mut rng) else { return (None, None) };
@@ -96,8 +98,9 @@ pub(crate) fn section_fit(xy: &[[f64; 2]], w: &[f64], seed: u64, p: &QsmParams, 
     let n_sure = sure.len();
     let arc = angular_extent(&sure, cx, cy);
     let frac = w_in / total_w;
-    let ok = arc >= p.min_arc_deg && rmse <= p.max_rmse.max(band) && frac >= p.min_inlier_fraction && r >= p.min_snr * rmse;
-    if ok { (Some(Section { radius: r, points: n_sure, arc, scatter: rmse }), Some([cx, cy])) } else { (None, None) }
+    let spread = spread_about(&confident, cx, cy, r);
+    let ok = arc >= p.min_arc_deg && rmse <= p.max_rmse.max(band) && frac >= p.min_inlier_fraction && r >= p.min_snr * rmse.max(spread) * arc_factor(arc);
+    if ok { (Some(Section { radius: r, points: n_sure, arc, scatter: rmse, spread }), Some([cx, cy])) } else { (None, None) }
 }
 
 fn circumcircle(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Option<(f64, f64, f64)> {

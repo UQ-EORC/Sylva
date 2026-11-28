@@ -169,10 +169,11 @@ extraction in Devereux et al. (2026), *Remote Sensing of Environment*,
   cosine of the bend (`Bend`), and the lateral term and per-tree scaling
   of the shortest-path search (`dijkstra_gravity`, `dijkstra_scaled`);
   raycloudtools `raylib/extraction/raysegment.cpp`.
-- `crates/sylva-rs/src/qsm/model.rs`: the power-mean section radius, the
-  rule that gives unmeasured segments their radius (in proportion to the
-  length they carry, a fork sharing its parent's cross-section) and the
-  cap on the children's summed cross-section at a fork
+- `crates/sylva-rs/src/qsm/model.rs`: the power-mean section radius, taken
+  about the centre of a circle through the section; the length against
+  which each axis's taper is fitted (the longest way to a tip, a fork
+  sharing its parent's cross-section by length); and the cap on the
+  children's summed cross-section at a fork
   (`raylib/extraction/raytrees.cpp`).
 
 The raycloudtools licence:

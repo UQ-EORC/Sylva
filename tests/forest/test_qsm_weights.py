@@ -30,9 +30,14 @@ def test_unit_weights_give_the_unweighted_model(single_tree):
 
 def test_weights_see_through_foliage_around_the_bole():
     cloud, is_wood, true_volume = _sheathed_stem()
-    free = qsm.build_qsm(cloud, base_xy=(0.0, 0.0))
+    # The foliage counts in a section's scatter, so the model already
+    # follows the bole; with that test off it fits the foliage, and the
+    # weights see through it.
+    plain = qsm.build_qsm(cloud, base_xy=(0.0, 0.0))
+    free = qsm.build_qsm(cloud, base_xy=(0.0, 0.0), min_snr=0.0)
     w = np.where(is_wood, 0.9, 0.1)
-    weighted = qsm.build_qsm(cloud, base_xy=(0.0, 0.0), weights=w)
+    weighted = qsm.build_qsm(cloud, base_xy=(0.0, 0.0), weights=w, min_snr=0.0)
+    assert plain.total_volume == pytest.approx(true_volume, rel=0.1)
     assert free.total_volume > 1.1 * true_volume
     assert weighted.total_volume == pytest.approx(true_volume, rel=0.1)
     assert weighted.dbh == pytest.approx(0.30, abs=0.03)

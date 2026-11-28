@@ -113,8 +113,10 @@ In Sylva: raycloudtools' `rayextract trees`: the least-cost-path segmentation th
 `trees.segment_trees` and `trees.merge_branches` follow, with the form of its
 cost for bending a path (`bend_power`, `bend_floor`, `path_weight`), its
 lateral term (`gravity`) and its per-tree scaling (`height_prior`); and in
-[`sylva.qsm`](api/qsm.md) the power-mean section radius, the rule that gives
-unmeasured branches their radius and Leonardo's rule at forks; also
+[`sylva.qsm`](api/qsm.md) the power-mean section radius about the centre of
+a circle through the section, the length against which each axis's taper is
+fitted (a fork sharing its cross-section by length) and Leonardo's rule at
+forks; also
 the raycloudtools baseline of the [tree](benchmarks/trees.md) and
 [QSM](benchmarks/qsm.md) benchmarks.
 
@@ -162,6 +164,14 @@ Pattern Analysis and Machine Intelligence*, *28*(11), 1768–1783.
 <https://doi.org/10.1109/TPAMI.2006.233>
 In Sylva: not used. A random-walk assignment of points to stems was
 prototyped and rejected (*Benchmarks > Tree detection*).
+
+Hackenberg, J., & Bontemps, J.-D. (2023). Improving quantitative structure
+models with filters based on allometric scaling theory. *Applied Geomatics*,
+*15*(4), 1019–1029. <https://doi.org/10.1007/s12518-023-00537-4>
+In Sylva: the growth length of SimpleForest, the length of branch a cylinder
+carries, to a power of which SimpleForest fits a tree's radii.
+`qsm.build_qsm` takes the same quantity as the load of a node and gives
+unmeasured wood a cross-section area in proportion to it.
 
 Hofton, M. A., Minster, J. B., & Blair, J. B. (2000). Decomposition of laser
 altimeter waveforms. *IEEE Transactions on Geoscience and Remote Sensing*,
@@ -349,9 +359,9 @@ In Sylva: with Theil (1950), the robust taper of each axis in
 Shinozaki, K., Yoda, K., Hozumi, K., & Kira, T. (1964). A quantitative analysis
 of plant form, the pipe model theory: I. Basic analyses. *Japanese Journal of
 Ecology*, *14*(3), 97–105. <https://doi.org/10.18960/seitai.14.3_97>
-In Sylva: the pipe model behind the length carried by each node of
-`qsm.build_qsm` (a fork sharing its parent's cross-section by length) and
-the branch radii of `synthetic.tree_model`.
+In Sylva: the pipe model behind the radii of unmeasured wood in
+`qsm.build_qsm` (a cross-section area in proportion to the length of branch
+carried) and the branch radii of `synthetic.tree_model`.
 
 Smith, D. D., Sperry, J. S., Enquist, B. J., Savage, V. M., McCulloh, K. A., &
 Bentley, L. P. (2014). Deviation from symmetrically self-similar branching in
@@ -504,9 +514,9 @@ Culvenor, D., Avitabile, V., Disney, M., Armston, J., & Kaasalainen, M. (2015).
 Nondestructive estimates of above-ground biomass using terrestrial laser
 scanning. *Methods in Ecology and Evolution*, *6*(2), 198–208.
 <https://doi.org/10.1111/2041-210X.12301>
-In Sylva: part of the destructive-harvest reference set; its trees are not
-in the scored cohort of the QSM benchmark, which uses Momo Takoudjou,
-Gonzalez de Tanago and Burt.
+In Sylva: 34 felled eucalypts whose clouds were used, with simulated trees,
+to choose the rule for unmeasured radii of `qsm.build_qsm`; reported on the
+[QSM benchmark](benchmarks/qsm.md) page as a development set.
 
 Calders, K., Verbeeck, H., Burt, A., Origo, N., Nightingale, J., Malhi, Y.,
 Wilkes, P., Raumonen, P., Bunce, R., & Disney, M. (2022). *Terrestrial
@@ -528,6 +538,13 @@ Remote Sensing*, *231*, 230–247. <https://doi.org/10.1016/j.isprsjprs.2025.10.
 In Sylva: the evaluation protocol and published baselines of the
 [tree detection benchmark](benchmarks/trees.md).
 
+Demol, M., Calders, K., Verbeeck, H., & Gielen, B. (2021). Forest above-ground
+volume assessments with terrestrial laser scanning: A ground-truth validation
+experiment in temperate, managed forests. *Annals of Botany*, *128*(6),
+805–819. <https://doi.org/10.1093/aob/mcab110>
+In Sylva: 65 felled trees from Belgium in the [QSM benchmark](benchmarks/qsm.md),
+which played no part in any choice of method or setting.
+
 Demol, M., Gielen, B., & Verbeeck, H. (2021). *QSMs, point cloud and harvest
 data from a destructive forest biomass experiment in Belgium using terrestrial
 laser scanning* [Data set]. Zenodo. <https://doi.org/10.5281/zenodo.4557401>
@@ -542,6 +559,13 @@ In Sylva: felled tropical trees in the QSM benchmark.
 Hackenberg, J. (2021). *Hackenberg et al 2021* [Data set]. Zenodo.
 <https://doi.org/10.5281/zenodo.5131717>
 In Sylva: SimpleForest clouds, QSMs and reference table.
+
+Lau, A., Calders, K., Bartholomeus, H., Martius, C., Raumonen, P., Herold, M.,
+Vicari, M., Sukhdeo, H., Singh, J., & Goodman, R. C. (2019). Tree biomass
+equations from terrestrial LiDAR: A case study in Guyana. *Forests*, *10*(6),
+527. <https://doi.org/10.3390/f10060527>
+In Sylva: 26 felled trees from Guyana in the [QSM benchmark](benchmarks/qsm.md),
+which played no part in any choice of method or setting.
 
 Momo Takoudjou, S., Ploton, P., Sonké, B., Hackenberg, J., Griffon, S., de
 Coligny, F., Kamdem, N. G., Libalah, M., Mofack, G. I., Le Moguédec, G.,

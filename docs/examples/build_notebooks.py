@@ -635,15 +635,18 @@ table["total"] = table.sum(axis=1)
 print(f"DBH: model {model.dbh:.3f} m, truth {truth.dbh:.3f} m; "
       f"fitted to points: {model.metrics()['measured_volume_fraction']:.0%} of the volume")
 table.round(0).astype(int).rename_axis("wood volume (L)")""",
-    md("""The stem comes within 1 to 2 % of the truth either way, and the DBH
-within 3 mm. The first-order branches are within 9 % on the true wood echoes
-and within 1 % on the points `wood_points` kept: the leaf echoes along the
-twigs do not thicken them, because a circle counts as a measurement only
-when its points lie on it as tightly as the stem's points lie on theirs
-(`min_snr`, `noise_ratio`), and a twig wrapped in leaves does not. The finer
-orders come out at a fifth to a half of the truth. Twigs too thin for the
-scan to resolve take their radius from the length they carry, which on this
-tree is too little; they hold 8 % of the wood, so the total is 3 to 6 % low.
+    md("""The stem comes within 2 % of the truth either way, and the DBH
+within 3 mm. On the true wood echoes the first-order branches are 13 % high,
+the second order 11 % low and the total within 1 %. Twigs too thin for the
+scan to resolve take a cross-section area in proportion to the length of
+branch they carry (the pipe model), which gets the second order right and
+the finest wood, 2 % of the tree, at half to three quarters of its volume.
+On the points `wood_points` kept, the first-order branches come out 45 %
+high: a circle counts as a measurement only when its points lie on it as
+tightly as the stem's lie on theirs (`min_snr`, `noise_ratio`), so the leaf
+echoes along the twigs are not measured as wood, but they do widen the
+sections they sit in, and the width of a section's points is the ceiling on
+an unmeasured radius. The total is 4 % high.
 Side by side:"""),
     """\
 from matplotlib.collections import PolyCollection
@@ -719,12 +722,12 @@ print(f"QSM:       DBH {real.dbh:.3f} m, stem {real.stem_volume:.2f} m3, total {
 m = real.metrics()
 print(f"fitted to points: {m['measured_volume_fraction']:.0%} of the volume, "
       f"{m['measured_length_fraction']:.0%} of the length")""",
-    md("""Two lessons. The DBHs agree (0.316 m against 0.309 m), because breast
-height is where the stem is best sampled. The two fractions differ widely:
-45 % of the volume lies in the parts of the trunk and the main limbs that
-were fitted to points, but only 3 % of the length was, so the branches
-come from the taper and pipe-model priors. The stem is supported by
-the data here; more than half of the total volume, and the branch length, are not. The height cut keeps the
+    md("""Two lessons. The DBHs agree (0.316 m against 0.310 m), because breast
+height is where the stem is best sampled. Little else is measured: 18 % of
+the volume lies in sections of the trunk that were fitted to points, and
+1 % of the length, so the rest of the stem is interpolated between those
+sections and the branches come from the pipe-model prior. On a tile this
+sparse the model is a sketch of the tree, not a measurement of it. The height cut keeps the
 grass layer out of the base fit; on this tree it changes little, but tussocks
 against a trunk can widen the base cylinder. Volumes are validated against felled
 trees in [Benchmarks](../benchmarks/qsm.md), on single-tree clouds two orders
@@ -1922,8 +1925,9 @@ print(f"volume change {1000 * qc.change:.1f} L, of which trusted {1000 * qc.trus
     md("""The lost limb is found, and the later grid confirms that its space was
 seen and is empty, so it is `lost` rather than `unobserved`. None of the
 limb's length was fitted to points in epoch 1, however: it is too thin for
-these scans to resolve, its radius came from the QSM's priors, which read it
-thin, and so its volume is not counted as trusted change. Two more branches
+these scans to resolve, its radius came from the QSM's priors (which put
+its volume within a tenth of the true one here), and so its volume is not
+counted as trusted change. Two more branches
 of the earlier model have no counterpart in the later one although the later
 pulses still found returns in their space (`present`): differences between
 two skeletons, not change. The trusted change is the stem growth, which the

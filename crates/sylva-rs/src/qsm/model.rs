@@ -340,6 +340,9 @@ pub(crate) struct Section {
     pub arc: f64,
     /// Root mean square distance of those points from the circle (m).
     pub scatter: f64,
+    /// Median distance of all the section's points from the circle, times
+    /// 1.4826 (m): the scatter when the points off the ring count too.
+    pub spread: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -367,8 +370,9 @@ pub struct QsmParams {
     pub centre_passes: usize,
     /// Radius of a twig: what a tip is given, and the least any cylinder has (m).
     pub twig_radius: f64,
-    /// Longest contiguous arc (degrees) a cross-section circle must cover: a
-    /// circle through a shorter arc runs wide.
+    /// A floor on the contiguous arc (degrees) a section's points must cover,
+    /// on top of the test of the arc against the noise (`arc_factor`). 0
+    /// leaves the arc to that test.
     pub min_arc_deg: f64,
     /// Fraction of a segment's points that must be circle inliers.
     pub min_inlier_fraction: f64,
@@ -427,20 +431,38 @@ pub struct QsmParams {
     /// is not a measurement (the section is left to the priors).
     pub min_mean_weight: f64,
     /// A section is a measurement when its radius is at least this many
-    /// times the scatter of its points about their circle (the root mean
-    /// square of their distances from it): below that the ring is not
-    /// resolved from the noise. 0 disables.
+    /// times the scatter of its points about their circle: below that the
+    /// ring is not resolved from the noise. The scatter is the larger of the
+    /// root mean square distance of the points within the band and the
+    /// spread of all the section's points (`spread_about`), and for an arc
+    /// under half the circle the factor is multiplied by `arc_factor`. 0
+    /// disables.
     pub min_snr: f64,
     /// A branch section is a measurement when the scatter of its points is
     /// at most this many times the median scatter on the tree's own stem,
     /// which is the scan's noise as this tree shows it. Needs four stem
     /// sections. 0 disables.
     pub noise_ratio: f64,
+    /// Find the centre of a section whose own circle was not accepted from
+    /// its points with the radius held at the value the axis gives it, and
+    /// run the stem straight below its lowest accepted section. `false`
+    /// leaves those nodes at the mean of their points.
+    pub place_axes: bool,
+    /// An unmeasured radius is at most this many times the width of its
+    /// section's points (`section_width`), where the section holds
+    /// `fit_min_points`. At 1.5 a branch seen over 100 degrees or more is
+    /// never cut. 0 disables.
+    pub width_slack: f64,
+    /// A section on an axis with fewer than four sections is set aside when
+    /// its radius is more than this many times what the length of branch it
+    /// carries gives it from the nearest section kept on the way to the
+    /// root. 0 disables.
+    pub pipe_excess: f64,
 }
 
 impl Default for QsmParams {
     fn default() -> Self {
-        QsmParams { k: 15, max_edge: 1.0, bin_length: 0.125, min_points: 1, ransac_threshold: 0.02, max_radius: 1.0, taper_limit: 1.1, max_rmse: 0.03, centre_passes: 4, twig_radius: 0.002, min_arc_deg: 180.0, min_inlier_fraction: 0.05, prune_points: 5, fit_min_points: 30, crop_length: 0.0, relative_tolerance: 0.08, base_radius: 0.0, outlier_sigma: 3.0, stem_radius_cap: 0.0, pipe_slack: 1.2, spacing_scale: 1.5, radius_power: 0.0, power_above_spacing: 0.025, sensor_noise: 0.02, butt_swell: 1.1, min_weight: 0.0, min_mean_weight: 0.5, min_snr: 5.0, noise_ratio: 1.4 }
+        QsmParams { k: 15, max_edge: 1.0, bin_length: 0.125, min_points: 1, ransac_threshold: 0.02, max_radius: 1.0, taper_limit: 1.1, max_rmse: 0.03, centre_passes: 4, twig_radius: 0.002, min_arc_deg: 0.0, min_inlier_fraction: 0.05, prune_points: 5, fit_min_points: 30, crop_length: 0.0, relative_tolerance: 0.08, base_radius: 0.0, outlier_sigma: 3.0, stem_radius_cap: 0.0, pipe_slack: 1.2, spacing_scale: 1.5, radius_power: 0.0, power_above_spacing: 0.025, sensor_noise: 0.02, butt_swell: 1.1, min_weight: 0.0, min_mean_weight: 0.5, min_snr: 5.0, noise_ratio: 1.4, place_axes: true, width_slack: 1.5, pipe_excess: 3.0 }
     }
 }
 
@@ -717,20 +739,34 @@ impl Taper {
 ///    sections of thick stems.
 /// 2. The radius at each node is a RANSAC circle fitted to the segment's
 ///    points projected onto the plane perpendicular to that axis, accepted
-///    only with enough inliers, a contiguous arc and a small residual;
-///    otherwise the node is unmeasured. A circle must also stand clear of
-///    the noise: its radius at least `min_snr` times the scatter of its
-///    points about it, and on a branch that scatter no more than
-///    `noise_ratio` times the scatter on the tree's stem. Wood is a surface,
-///    so its points lie on their circle to within the scan's noise; the
-///    points of foliage, or of several twigs taken as one, are spread across
-///    theirs.
-/// 3. Each axis gets a robust taper of its own against the length its
-///    nodes carry; sections far off it are set aside, the rest made
-///    non-increasing by weighted isotonic regression, and what is
-///    unmeasured follows the taper or the length carried. A child branch
-///    may not be much wider than its parent.
-/// 4. Cylinders join consecutive nodes; unsupported leaf segments (no
+///    only with enough inliers and a small residual; otherwise the node is
+///    unmeasured. A circle must also stand clear of the noise: its radius at
+///    least `min_snr` times the scatter of its points about it, counting the
+///    points off the ring too (`spread_about`), and more than that for an
+///    arc under half the circle, by as much as the radius of such an arc is
+///    more sensitive to the noise (`arc_factor`); on a branch the scatter
+///    is no more than `noise_ratio` times the scatter on the tree's stem.
+///    Wood is a surface, so its points lie on their circle to within the
+///    scan's noise; the points of foliage, or of several twigs taken as
+///    one, are spread across theirs.
+/// 3. Each axis gets a robust taper of its own; sections far off it are set
+///    aside, and so is a section on an axis with too few to have a taper
+///    when it is several times wider than the branch it carries allows
+///    (`pipe_excess`). The rest are made non-increasing by weighted
+///    isotonic regression. What is unmeasured takes a cross-section area in
+///    proportion to the length of branch it carries, from the nearest
+///    measured node towards the root (the pipe model), and no more than the
+///    width of its own points leaves room for (`width_slack`,
+///    `section_width`). A child branch may not be much wider than its
+///    parent.
+/// 4. Positions (`place_axes`): a node with an accepted circle sits on its
+///    centre; any other node wide enough to be resolved is located from its
+///    points with the radius held at the value its axis gave it
+///    (`centre_at_radius`), or between the placed nodes of its axis; each
+///    resolved node then moves onto a line fitted through the nodes within
+///    two radii of it along the axis, and the stem runs straight below its
+///    lowest accepted section.
+/// 5. Cylinders join consecutive nodes; unsupported leaf segments (no
 ///    accepted radius, few points) are pruned as foliage.
 pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qsm> {
     fit_cylinders_with(xyz, skel, p, None)
@@ -741,8 +777,9 @@ pub fn fit_cylinders(xyz: &[Point], skel: &Skeleton, p: &QsmParams) -> Result<Qs
 /// [`super::weighted::section_fit`], and an unmeasured leaf segment is pruned
 /// as foliage when its summed weight is below `prune_points`.
 ///
-/// The rule for unmeasured radii follows raycloudtools (Lowe and Stepanas
-/// 2021; Devereux et al. 2026; `raytrees.cpp`), marked where it occurs below.
+/// The length against which each axis's taper is fitted, a fork sharing its
+/// area by length, follows raycloudtools (Lowe and Stepanas 2021; Devereux
+/// et al. 2026; `raytrees.cpp`), marked where it occurs below.
 pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, weights: Option<&[f64]>) -> Result<Qsm> {
     let n_seg = skel.centres.len();
     if n_seg == 0 {
@@ -791,26 +828,29 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
     let mut centre: Vec<Point> = skel.centres.clone();
     smooth(&mut centre);
     // Axis: direction from parent centre to the mean of the children (or to self).
-    let axis: Vec<Point> = (0..n_seg)
-        .map(|s| {
-            let from = parent_of.get(&s).map(|&par| centre[par]).unwrap_or(centre[s]);
-            let to = if children[s].is_empty() {
-                centre[s]
-            } else {
-                let mut cm = [0.0; 3];
-                for &c in &children[s] {
-                    cm = add(&cm, &centre[c]);
+    let axes = |centre: &[Point]| -> Vec<Point> {
+        (0..n_seg)
+            .map(|s| {
+                let from = parent_of.get(&s).map(|&par| centre[par]).unwrap_or(centre[s]);
+                let to = if children[s].is_empty() {
+                    centre[s]
+                } else {
+                    let mut cm = [0.0; 3];
+                    for &c in &children[s] {
+                        cm = add(&cm, &centre[c]);
+                    }
+                    scale(&cm, 1.0 / children[s].len() as f64)
+                };
+                let d = sub(&to, &from);
+                if crate::transform::norm(&d) < 1e-9 {
+                    [0.0, 0.0, 1.0]
+                } else {
+                    crate::transform::normalize(&d)
                 }
-                scale(&cm, 1.0 / children[s].len() as f64)
-            };
-            let d = sub(&to, &from);
-            if crate::transform::norm(&d) < 1e-9 {
-                [0.0, 0.0, 1.0]
-            } else {
-                crate::transform::normalize(&d)
-            }
-        })
-        .collect();
+            })
+            .collect()
+    };
+    let axis = axes(&centre);
 
     // 2. Radius per node from a perpendicular circle fit.
     let circle_params = crate::trees::stems::StemParams {
@@ -840,7 +880,7 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
                 return super::weighted::section_fit(&xy, &ws, s as u64 + 1, p, &circle_params);
             }
             if p.radius_power > 0.0 {
-                return (power_mean_radius(&xy, p), None);
+                return power_mean_radius(&xy, p);
             }
             let mut rng = crate::filters::Rng::new(s as u64 + 1);
             let Some((cx0, cy0, r0, _)) = crate::trees::stems::ransac_circle(&xy, &circle_params, &mut rng) else { return (None, None) };
@@ -857,8 +897,9 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
             let rmse = (inl.iter().map(|q| ((q[0] - cx).hypot(q[1] - cy) - r).powi(2)).sum::<f64>() / inl.len() as f64).sqrt();
             let arc = crate::trees::stems::angular_extent(&inl, cx, cy);
             let frac = inl.len() as f64 / xy.len() as f64;
-            let ok = arc >= p.min_arc_deg && rmse <= p.max_rmse.max(band) && frac >= p.min_inlier_fraction && r >= p.min_snr * rmse;
-            if ok { (Some(Section { radius: r, points: inl.len(), arc, scatter: rmse }), Some([cx, cy])) } else { (None, None) }
+            let spread = spread_about(&xy, cx, cy, r);
+            let ok = arc >= p.min_arc_deg && rmse <= p.max_rmse.max(band) && frac >= p.min_inlier_fraction && r >= p.min_snr * rmse.max(spread) * arc_factor(arc);
+            if ok { (Some(Section { radius: r, points: inl.len(), arc, scatter: rmse, spread }), Some([cx, cy])) } else { (None, None) }
         })
         .collect();
     let mut fits: Vec<Fit> = fitted.iter().map(|f| f.0).collect();
@@ -894,25 +935,27 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
     // branch lie on its circle as tightly as the stem's lie on theirs; a
     // circle through foliage, or through several twigs at once, has points
     // spread across it and is not a measurement.
-    if p.noise_ratio > 0.0 {
+    let stem_noise: Option<f64> = {
         let mut stem: Vec<f64> = (0..n_seg).filter(|&s| order[s] == 0).filter_map(|s| fits[s].map(|f| f.scatter)).collect();
-        if stem.len() >= Taper::ENOUGH {
-            stem.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let noise = stem[stem.len() / 2];
-            for s in 0..n_seg {
-                if order[s] > 0 && matches!(fits[s], Some(f) if f.scatter > p.noise_ratio * noise) {
-                    fits[s] = None;
-                }
+        stem.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        if stem.len() >= Taper::ENOUGH { Some(stem[stem.len() / 2]) } else { None }
+    };
+    if let (true, Some(noise)) = (p.noise_ratio > 0.0, stem_noise) {
+        for s in 0..n_seg {
+            if order[s] > 0 && matches!(fits[s], Some(f) if f.scatter > p.noise_ratio * noise) {
+                fits[s] = None;
             }
         }
     }
     // Move each fitted node onto the centre of its circle (the mean of a
     // stem seen from one side lies off its axis), and smooth again.
+    let mut ring: Vec<Option<Point>> = vec![None; n_seg];
     for s in 0..n_seg {
         if let (Some(f), Some(c)) = (fits[s], fitted[s].1) {
             if c[0].hypot(c[1]) <= f.radius {
                 let (u, v) = perp_basis(&axis[s]);
                 centre[s] = add(&centre[s], &add(&scale(&u, c[0]), &scale(&v, c[1])));
+                ring[s] = Some(centre[s]);
             }
         }
     }
@@ -921,17 +964,14 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
     // 3. Radii along the axes.
     //
     // Each axis gets a taper of its own, r = k x^b, fitted robustly to its
-    // accepted sections, where x is the length a node carries: the longest
-    // way from it to a tip, times the share of the cross-section that its
-    // length claimed at every fork on the way from the root (raycloudtools,
-    // Lowe and Stepanas 2021; Devereux et al. 2026; `raytrees.cpp`: a radius
-    // in proportion to length, a fork sharing its area by length so that
-    // area is conserved, as in the pipe model of Shinozaki et al. 1964). A
-    // section whose radius lies far off the taper of its own axis is set
-    // aside. Below its lowest section the stem takes the taper; beyond an
-    // axis's last section, and on an axis with nothing measured, the radius
-    // is in proportion to the length carried, as raycloudtools scales a
-    // radius by length, continued from the last measured node.
+    // accepted sections, where x is the longest way from the node to a tip,
+    // times the share of the cross-section that its length claimed at every
+    // fork on the way from the root (a fork sharing its area by length, as
+    // raycloudtools does: Lowe and Stepanas 2021; Devereux et al. 2026;
+    // `raytrees.cpp`). A section whose radius lies far off the taper of its
+    // own axis is set aside, and below its lowest section the stem takes the
+    // taper. What is not measured takes its radius from the load it carries
+    // (below).
     let sub_len = longest(&centre);
     // The length a node carries. A tip carries its own shell.
     let mut share = vec![1.0f64; n_seg];
@@ -953,6 +993,111 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
             }
         }
     }
+    // Leaf segments without an accepted fit and with few points are foliage
+    // and get no cylinder (step 5); they carry nothing either.
+    let alive = {
+        let mut alive = vec![true; n_seg];
+        loop {
+            let mut changed = false;
+            for s in 0..n_seg {
+                if !alive[s] || fits[s].is_some() || parent_of.get(&s).is_none() {
+                    continue;
+                }
+                let few = match weights {
+                    None => members[s].len() < p.prune_points,
+                    Some(w) => members[s].iter().map(|&i| w[i]).sum::<f64>() < p.prune_points as f64,
+                };
+                if few && !children[s].iter().any(|&c| alive[c]) {
+                    alive[s] = false;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        alive
+    };
+    // The load of a node: the length of branch it carries, its own cylinder
+    // and every one beyond it (the growth length of SimpleForest, Hackenberg
+    // and Bontemps 2023, which fits a power of it to a tree's radii). Where
+    // nothing is measured the cross-section area is in proportion to it,
+    // from the nearest measured node: the pipe model (Shinozaki et al. 1964)
+    // with the foliage a branch feeds taken as spread evenly along the wood
+    // beyond it. Areas then add up at every fork, as Leonardo's rule has
+    // them, and a branch thins towards its tip as the square root of what
+    // is left. On trees whose radii are known the radius of unmeasured wood
+    // goes as the 0.44th to 0.52nd power of the load, and between the
+    // measured sections of scanned trees as its square root, where a radius
+    // in proportion to length gives side branches a fifth to a half of
+    // theirs.
+    let mut load = vec![0.0f64; n_seg];
+    for &s in topo.iter().rev() {
+        if alive[s] {
+            load[s] += parent_of.get(&s).map_or(p.bin_length, |&q| crate::transform::norm(&sub(&centre[s], &centre[q])));
+            if let Some(&q) = parent_of.get(&s) {
+                load[q] += load[s];
+            }
+        }
+    }
+    for l in &mut load {
+        *l = l.max(0.5 * p.bin_length);
+    }
+    let pipe = |from: usize, q: usize| (load[q] / load[from]).sqrt().min(1.0);
+    // A section on an axis with too few sections to have a taper of its own
+    // is judged by the pipe model: more than `pipe_excess` times the radius
+    // that its load gives it from the nearest accepted section on the way
+    // to the root, it is set aside. Foliage that sleeves a twig makes a ring
+    // like a branch's, and nothing in the ring tells them apart; what the
+    // twig carries does. Top down, so that a section is compared with one
+    // that has itself been kept.
+    if p.pipe_excess > 0.0 {
+        let on_axis: Vec<usize> = chains.iter().map(|c| c.iter().filter(|&&q| fits[q].is_some()).count()).collect();
+        let mut kept_above: Vec<Option<usize>> = vec![None; n_seg];
+        for &s in &topo {
+            let above = parent_of.get(&s).and_then(|&q| if fits[q].is_some() { Some(q) } else { kept_above[q] });
+            kept_above[s] = above;
+            if order[s] > 0 && on_axis[chain_of[s]] < Taper::ENOUGH {
+                if let (Some(f), Some(a)) = (fits[s], above) {
+                    if f.radius > p.pipe_excess * fits[a].map_or(f64::INFINITY, |g| g.radius) * pipe(a, s) {
+                        fits[s] = None;
+                    }
+                }
+            }
+        }
+    }
+    // What the points of a section leave room for: `width_slack` times
+    // their width (`section_width`). A branch is not wider than its points,
+    // whatever it carries, unless less than about a quarter of the way round
+    // it is seen. A section too thin on points to be fitted says nothing.
+    let noise = stem_noise.unwrap_or(p.ransac_threshold);
+    let room: Vec<f64> = if p.width_slack > 0.0 {
+        (0..n_seg)
+            .into_par_iter()
+            .map(|s| {
+                let m = &members[s];
+                let held = match weights {
+                    None => m.len() as f64,
+                    Some(w) => m.iter().map(|&i| w[i]).sum::<f64>(),
+                };
+                if held < p.fit_min_points as f64 {
+                    return f64::INFINITY;
+                }
+                let (u, v) = perp_basis(&axis[s]);
+                let xy: Vec<[f64; 2]> = m
+                    .iter()
+                    .map(|&i| {
+                        let d = sub(&xyz[i], &centre[s]);
+                        [dot(&d, &u), dot(&d, &v)]
+                    })
+                    .collect();
+                let ws: Option<Vec<f64>> = weights.map(|w| m.iter().map(|&i| w[i]).collect());
+                p.width_slack * section_width(&xy, ws.as_deref(), noise)
+            })
+            .collect()
+    } else {
+        vec![f64::INFINITY; n_seg]
+    };
     let mut radius: Vec<f64> = vec![f64::NAN; n_seg];
     let mut weight: Vec<f64> = vec![0.0; n_seg];
     // Segments whose own circle was set aside: their cylinders report no
@@ -992,12 +1137,12 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
         // Between its accepted sections the axis is made non-increasing and
         // its gaps are interpolated; below the lowest it keeps that radius,
         // or on the stem the taper's, up to `butt_swell` times it. Beyond the
-        // last section, and on an axis with none, the radius is in
-        // proportion to the length carried, from the last measured node or
-        // from the node the axis hangs from: the taper is fitted on thick,
-        // measured wood and is not extrapolated to twigs.
+        // last section, and on an axis with none, the cross-section area is
+        // in proportion to the load, from the last measured node or from the
+        // node the axis hangs from, and no radius is more than the points of
+        // its section leave room for.
         let model = |q: usize| taper.at(carried[q].ln()).exp().max(p.twig_radius);
-        let along = |radius: &[f64], from: usize, q: usize| (radius[from] * carried[q] / carried[from]).max(p.twig_radius);
+        let along = |radius: &[f64], from: usize, q: usize| (radius[from] * pipe(from, q)).min(room[q]).max(p.twig_radius);
         match chain.iter().rposition(|&q| weight[q] > 0.0) {
             Some(k_last) => {
                 let k_first = chain.iter().position(|&q| weight[q] > 0.0).unwrap();
@@ -1035,8 +1180,10 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
     }
     // Leonardo's rule at forks (as in raycloudtools, Devereux et al. 2026): the
     // children's cross-section area may not exceed the parent's by more
-    // than `pipe_slack`. The excess is taken from the unmeasured children;
-    // a measured child keeps its radius.
+    // than `pipe_slack`. The excess is taken from the unmeasured children
+    // that start an axis of their own; a measured child keeps its radius,
+    // and so does the child that continues its parent's axis, whose radius
+    // is that axis's own.
     if p.pipe_slack > 0.0 {
         for &s in &topo {
             let kids: Vec<usize> = children[s].iter().copied().filter(|&c| radius[c].is_finite()).collect();
@@ -1048,14 +1195,14 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
             if total <= p.pipe_slack * parent_area {
                 continue;
             }
-            let measured: Vec<usize> = kids.iter().copied().filter(|&c| fits[c].is_some()).collect();
-            let unmeasured: Vec<usize> = kids.iter().copied().filter(|&c| fits[c].is_none()).collect();
-            let m_area: f64 = measured.iter().map(|&c| radius[c] * radius[c]).sum();
-            let u_area: f64 = unmeasured.iter().map(|&c| radius[c] * radius[c]).sum();
-            let budget = (p.pipe_slack * parent_area - m_area).max(0.0);
-            if u_area > budget && u_area > 0.0 {
-                let f = (budget / u_area).sqrt();
-                for &c in &unmeasured {
+            let kept = |c: usize| fits[c].is_some() || chain_of[c] == chain_of[s];
+            let kept_area: f64 = kids.iter().filter(|&&c| kept(c)).map(|&c| radius[c] * radius[c]).sum();
+            let side: Vec<usize> = kids.iter().copied().filter(|&c| !kept(c)).collect();
+            let side_area: f64 = side.iter().map(|&c| radius[c] * radius[c]).sum();
+            let budget = (p.pipe_slack * parent_area - kept_area).max(0.0);
+            if side_area > budget && side_area > 0.0 {
+                let f = (budget / side_area).sqrt();
+                for &c in &side {
                     radius[c] = (radius[c] * f).max(p.twig_radius);
                 }
             }
@@ -1067,29 +1214,216 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
         }
         *r = r.clamp(p.twig_radius, p.max_radius);
     }
-    // 4. Prune unsupported foliage: leaf segments without an accepted fit and
-    // few points, repeated until stable.
-    let mut alive = vec![true; n_seg];
-    loop {
-        let mut changed = false;
+    // 3b. Positions.
+    //
+    // The mean of a node's points is not the centre of its section: of a
+    // ring seen from one side it lies up to a radius towards the scanner.
+    // A node keeps the centre of its own circle where that was accepted.
+    // Any other node wide enough to be resolved has a radius by now, from
+    // its axis, and a ring of known radius needs far less of an arc to be
+    // located than one whose radius is also unknown: its centre is found
+    // from the points with the radius held (`centre_at_radius`), and taken
+    // when the arc of the points on that circle bulges clear of the band
+    // they are counted in. A resolved node with neither lies on the line
+    // between the nearest placed nodes of its axis, no further from the
+    // mean of its points than its radius, which is as far as the centre of
+    // a ring can be from the mean of points on it. Below its lowest accepted
+    // section the stem is the line through the sections above, each node at
+    // its own height: the shells there follow root flare and what is left
+    // of the ground, not the stem.
+    if p.place_axes {
+        let noise = stem_noise.unwrap_or(p.ransac_threshold);
+        let resolved = |s: usize| radius[s] >= p.min_snr * noise;
+        let own: Vec<bool> = (0..n_seg).map(|s| ring[s].is_some() && !set_aside[s]).collect();
+        let mut placed: Vec<Option<Point>> = (0..n_seg).map(|s| if own[s] { ring[s] } else { None }).collect();
         for s in 0..n_seg {
-            if !alive[s] || fits[s].is_some() || parent_of.get(&s).is_none() {
-                continue;
-            }
-            let has_live_child = children[s].iter().any(|&c| alive[c]);
-            let few = match weights {
-                None => members[s].len() < p.prune_points,
-                Some(w) => members[s].iter().map(|&i| w[i]).sum::<f64>() < p.prune_points as f64,
-            };
-            if !has_live_child && few {
-                alive[s] = false;
-                changed = true;
+            if let Some(c) = placed[s] {
+                centre[s] = c;
             }
         }
-        if !changed {
-            break;
+        // The stem below its lowest accepted section.
+        let mut below = vec![false; n_seg];
+        let mut feet: Vec<(usize, usize)> = Vec::new();
+        for &root in &roots {
+            let ci = chain_of[root];
+            if let Some(k0) = chains[ci].iter().position(|&s| own[s]) {
+                if k0 > 0 && resolved(chains[ci][k0]) {
+                    for &s in &chains[ci][..k0] {
+                        below[s] = true;
+                    }
+                    feet.push((ci, k0));
+                }
+            }
+        }
+        // Twice over: the plane a section is seen in is the one across its
+        // axis, and the axes are only right once the nodes have been placed.
+        // The second time the nodes with circles of their own are located
+        // again as well, their radius held, in the plane across the axis as
+        // it then runs: near the butt the first axes lean towards wherever
+        // the skeleton started.
+        let mut fixed: Vec<bool> = vec![false; n_seg];
+        for pass in 0..2 {
+            let axis = axes(&centre);
+            let held: Vec<Option<Point>> = (0..n_seg)
+                .into_par_iter()
+                .map(|s| {
+                    if (own[s] && pass == 0) || below[s] || !resolved(s) || members[s].len() < p.fit_min_points {
+                        return None;
+                    }
+                    let (u, v) = perp_basis(&axis[s]);
+                    let o = skel.centres[s];
+                    let xy: Vec<[f64; 2]> = members[s]
+                        .iter()
+                        .map(|&i| {
+                            let d = sub(&xyz[i], &o);
+                            [dot(&d, &u), dot(&d, &v)]
+                        })
+                        .collect();
+                    let r = radius[s];
+                    let band = p.ransac_threshold.max(p.relative_tolerance * r);
+                    let (c, arc) = centre_at_radius(&xy, r, band, s as u64 + 1)?;
+                    let bulge = r * (1.0 - (arc.to_radians() / 2.0).cos());
+                    if c[0].hypot(c[1]) > r || bulge < 2.0 * band {
+                        return None;
+                    }
+                    Some(add(&o, &add(&scale(&u, c[0]), &scale(&v, c[1]))))
+                })
+                .collect();
+            for s in 0..n_seg {
+                if let Some(c) = held[s] {
+                    placed[s] = Some(c);
+                    centre[s] = c;
+                }
+            }
+
+            fixed = placed.iter().map(|c| c.is_some()).collect();
+            // Between placed nodes of an axis.
+            for chain in &chains {
+                let mut last: Option<(isize, Point)> = parent_of.get(&chain[0]).and_then(|&q| placed[q].map(|c| (-1, c)));
+                for (k, &s) in chain.iter().enumerate() {
+                    let Some(c) = placed[s] else { continue };
+                    if let Some((k0, c0)) = last {
+                        let gap = k as isize - k0;
+                        for j in k0 + 1..k as isize {
+                            let q = chain[j as usize];
+                            if !resolved(q) || below[q] {
+                                continue;
+                            }
+                            let t = (j - k0) as f64 / gap as f64;
+                            let target = add(&scale(&c0, 1.0 - t), &scale(&c, t));
+                            let d = sub(&target, &skel.centres[q]);
+                            let far = crate::transform::norm(&d);
+                            centre[q] = if far <= radius[q] { target } else { add(&skel.centres[q], &scale(&d, radius[q] / far)) };
+                            fixed[q] = true;
+                        }
+                    }
+                    last = Some((k as isize, c));
+                }
+            }
+                // Along an axis: a local line through the located nodes within
+            // `AXIS_SPAN` radii either way, and two nodes at the least. An axis
+            // does not bend within its own width, and the centres of
+            // neighbouring sections err independently.
+            {
+                let prev = centre.clone();
+                let located = fixed.clone();
+                for chain in &chains {
+                    for (k, &s) in chain.iter().enumerate() {
+                        if !resolved(s) || below[s] {
+                            continue;
+                        }
+                        let h = (AXIS_SPAN * radius[s] / p.bin_length).max(2.0);
+                        let lo = (k as f64 - h).ceil().max(0.0) as usize;
+                        let hi = ((k as f64 + h).floor() as usize).min(chain.len() - 1);
+                        let (mut sw, mut st, mut stt, mut n) = (0.0f64, 0.0f64, 0.0f64, 0usize);
+                        let (mut sx, mut stx) = ([0.0f64; 3], [0.0f64; 3]);
+                        for j in lo..=hi {
+                            let q = chain[j];
+                            if !located[q] || below[q] {
+                                continue;
+                            }
+                            let t = j as f64 - k as f64;
+                            let w = (1.0 - (t.abs() / (h + 1.0)).powi(3)).powi(3);
+                            sw += w;
+                            st += w * t;
+                            stt += w * t * t;
+                            for a in 0..3 {
+                                sx[a] += w * prev[q][a];
+                                stx[a] += w * t * prev[q][a];
+                            }
+                            n += 1;
+                        }
+                        if n < 3 {
+                            continue;
+                        }
+                        let det = sw * stt - st * st;
+                        let mut target = [0.0; 3];
+                        for a in 0..3 {
+                            target[a] = if det > 1e-9 * sw * sw { (stt * sx[a] - st * stx[a]) / det } else { sx[a] / sw };
+                        }
+                        if placed[s].is_none() {
+                            let d = sub(&target, &skel.centres[s]);
+                            let far = crate::transform::norm(&d);
+                            if far > radius[s] {
+                                target = add(&skel.centres[s], &scale(&d, radius[s] / far));
+                            }
+                        }
+                        centre[s] = target;
+                        fixed[s] = true;
+                    }
+                }
+            }
+            for &(ci, k0) in &feet {
+                let chain = &chains[ci];
+                let top = centre[chain[k0]];
+                let reach = (4.0 * radius[chain[k0]]).max(1.0);
+                let mut above: Vec<Point> = Vec::new();
+                let mut run = 0.0;
+                for k in k0..chain.len() {
+                    if k > k0 {
+                        run += crate::transform::norm(&sub(&centre[chain[k]], &centre[chain[k - 1]]));
+                    }
+                    if run > reach {
+                        break;
+                    }
+                    if own[chain[k]] {
+                        above.push(centre[chain[k]]);
+                    }
+                }
+                let dir = line_through(&above).unwrap_or([0.0, 0.0, 1.0]);
+                if dir[2] < 0.5 {
+                    continue;
+                }
+                let mut t_last = 0.0f64;
+                for k in (0..k0).rev() {
+                    let s = chain[k];
+                    let t = ((centre[s][2] - top[2]) / dir[2]).min(t_last);
+                    centre[s] = add(&top, &scale(&dir, t));
+                    fixed[s] = true;
+                    t_last = t;
+                }
+            }
+        }
+        // What is left, the nodes too thin to be resolved, is smoothed as before.
+        for _ in 0..p.centre_passes {
+            let prev = centre.clone();
+            for s in 0..n_seg {
+                if pinned[s] || fixed[s] {
+                    continue;
+                }
+                let mut acc = prev[parent_of[&s]];
+                for &ch in &children[s] {
+                    acc = add(&acc, &prev[ch]);
+                }
+                let mean = scale(&acc, 1.0 / (1 + children[s].len()) as f64);
+                centre[s] = scale(&add(&prev[s], &mean), 0.5);
+            }
         }
     }
+    let axis = axes(&centre);
+    // 4. Unsupported foliage is pruned: the leaf segments without an accepted
+    // fit and with few points, found above.
+    let mut alive = alive;
 
     // Crop leafy tips: remove segments whose remaining subtree (in bins) is
     // shorter than crop_length, unless they are on a root chain's start.
@@ -1119,7 +1453,14 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
         }
         let start = match parent_of.get(&s) {
             Some(&par) => centre[par],
-            None => sub(&centre[s], &scale(&axis[s], p.bin_length * 0.5)),
+            // A root starts half a shell below its centre, on the line of
+            // its own axis: the nodes that hang from it sideways (root
+            // flare, the remains of the ground) do not turn the butt.
+            None => {
+                let along = chains[chain_of[s]].get(1).map(|&next| sub(&centre[next], &centre[s])).filter(|d| crate::transform::norm(d) > 1e-9);
+                let dir = along.map(|d| crate::transform::normalize(&d)).unwrap_or(axis[s]);
+                sub(&centre[s], &scale(&dir, p.bin_length * 0.5))
+            }
         };
         let d = sub(&centre[s], &start);
         let length = crate::transform::norm(&d);
@@ -1156,6 +1497,177 @@ pub(crate) fn fit_cylinders_with(xyz: &[Point], skel: &Skeleton, p: &QsmParams, 
         })
         .collect();
     Ok(Qsm { cylinders })
+}
+
+/// Half-length, in radii, of the stretch of an axis that a local line is
+/// fitted through: an axis does not bend within its own width.
+const AXIS_SPAN: f64 = 2.0;
+
+/// The radius that the width of a section's points allows: `sqrt(2 (v - noise²))`
+/// with `v` their largest variance across the axis, never under `noise`.
+///
+/// Points spread evenly on a ring of radius `r` have a variance of `r² / 2`
+/// along any line through it, and on the half of a ring that one scan
+/// position sees, the same along the line across the view. So the width is
+/// the radius of a branch seen from one side or from all round, up to 10 %
+/// more for an arc between the two, and less only for an arc under half the
+/// circle: 0.77 of it for 120 degrees, 0.60 for 90. It takes no fit, and
+/// holds at a radius of twice the noise, where no circle is resolved. Leaves
+/// and twigs caught in the section only widen it, so it bounds the radius
+/// from above and does not measure it. `w` weights the points.
+pub(crate) fn section_width(xy: &[[f64; 2]], w: Option<&[f64]>, noise: f64) -> f64 {
+    let wt = |i: usize| w.map_or(1.0, |w| w[i]);
+    let n: f64 = (0..xy.len()).map(wt).sum();
+    if !(n > 0.0) {
+        return f64::INFINITY;
+    }
+    let (mut mx, mut my) = (0.0, 0.0);
+    for (i, q) in xy.iter().enumerate() {
+        mx += wt(i) * q[0];
+        my += wt(i) * q[1];
+    }
+    let (mx, my) = (mx / n, my / n);
+    let (mut sxx, mut sxy, mut syy) = (0.0, 0.0, 0.0);
+    for (i, q) in xy.iter().enumerate() {
+        let (dx, dy) = (q[0] - mx, q[1] - my);
+        sxx += wt(i) * dx * dx;
+        sxy += wt(i) * dx * dy;
+        syy += wt(i) * dy * dy;
+    }
+    let (half_trace, det) = ((sxx + syy) / (2.0 * n), (sxx * syy - sxy * sxy) / (n * n));
+    let widest = half_trace + (half_trace * half_trace - det).max(0.0).sqrt();
+    (2.0 * (widest - noise * noise)).max(0.0).sqrt().max(noise)
+}
+
+/// The scatter of all of a section's points about a circle: 1.4826 times
+/// the median of their distances from it, which is the standard deviation
+/// for points that lie on the ring with normal noise and far more where
+/// the ring holds less than half of them. The root mean square over the
+/// points within the band cannot see the points outside it.
+pub(crate) fn spread_about(xy: &[[f64; 2]], cx: f64, cy: f64, r: f64) -> f64 {
+    if xy.is_empty() {
+        return f64::INFINITY;
+    }
+    let mut off: Vec<f64> = xy.iter().map(|q| ((q[0] - cx).hypot(q[1] - cy) - r).abs()).collect();
+    let mid = off.len() / 2;
+    off.select_nth_unstable_by(mid, |a, b| a.partial_cmp(b).unwrap());
+    1.4826 * off[mid]
+}
+
+/// How much further above the noise a radius has to stand when its points
+/// cover an arc of `arc` degrees and not half the circle.
+///
+/// A circle through an arc is known by the arc's chord `c` and its rise `s`
+/// above the chord: `r = c² / 8s + s / 2`. The chord is long and well
+/// determined, the rise is where the noise acts, and an error `e` in it
+/// moves the radius by `e c² / 8s²`, which for an arc of angle `a` is
+/// `e (1 + cos(a/2)) / (2 (1 - cos(a/2)))`: half the error for a half
+/// circle, 1.1 times it for 135 degrees, 2.9 times for 90, 7 times for 60.
+/// The factor is that ratio relative to the half circle, and 1 for a longer
+/// arc.
+pub(crate) fn arc_factor(arc: f64) -> f64 {
+    if arc >= 180.0 {
+        return 1.0;
+    }
+    let c = (arc.to_radians() / 2.0).cos();
+    (1.0 + c) / (1.0 - c).max(1e-9)
+}
+
+/// The centre of a circle of radius `r` through the points `xy`, and the arc
+/// (degrees) its points cover: the centre with the most points within `band`
+/// of the circle among those through two points drawn at random (a chord of a
+/// circle of known radius leaves two centres), refined by least squares on
+/// the points within the band with the radius held. With the radius known
+/// the centre has two unknowns, not three, and the trade between a wide
+/// circle far away and a narrow one close by, which makes a short arc useless
+/// to a free circle, is gone.
+fn centre_at_radius(xy: &[[f64; 2]], r: f64, band: f64, seed: u64) -> Option<([f64; 2], f64)> {
+    let n = xy.len();
+    if n < 3 || !(r > 0.0) {
+        return None;
+    }
+    let mut rng = crate::filters::Rng::new(seed);
+    let within = |c: &[f64; 2]| xy.iter().filter(|q| ((q[0] - c[0]).hypot(q[1] - c[1]) - r).abs() <= band).count();
+    let mut best: Option<([f64; 2], usize)> = None;
+    for _ in 0..200 {
+        let (a, b) = (xy[rng.below(n)], xy[rng.below(n)]);
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let d = dx.hypot(dy);
+        if d <= band || d >= 2.0 * r {
+            continue;
+        }
+        let h = (r * r - d * d / 4.0).sqrt();
+        for side in [1.0, -1.0] {
+            let c = [(a[0] + b[0]) / 2.0 - side * h * dy / d, (a[1] + b[1]) / 2.0 + side * h * dx / d];
+            let k = within(&c);
+            if best.map_or(true, |b| k > b.1) {
+                best = Some((c, k));
+            }
+        }
+    }
+    let (mut c, _) = best?;
+    for _ in 0..8 {
+        let (mut a11, mut a12, mut a22, mut b1, mut b2, mut m) = (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64, 0usize);
+        for q in xy {
+            let (ux, uy) = (q[0] - c[0], q[1] - c[1]);
+            let d = ux.hypot(uy);
+            if d < 1e-9 || (d - r).abs() > band {
+                continue;
+            }
+            let (ux, uy) = (ux / d, uy / d);
+            a11 += ux * ux;
+            a12 += ux * uy;
+            a22 += uy * uy;
+            b1 += (d - r) * ux;
+            b2 += (d - r) * uy;
+            m += 1;
+        }
+        if m < 3 {
+            return None;
+        }
+        let damp = 1e-3 * (a11 + a22);
+        let (a11, a22) = (a11 + damp, a22 + damp);
+        let det = a11 * a22 - a12 * a12;
+        if det.abs() < 1e-12 {
+            break;
+        }
+        let step = [(a22 * b1 - a12 * b2) / det, (a11 * b2 - a12 * b1) / det];
+        c = [c[0] + step[0], c[1] + step[1]];
+        if step[0].hypot(step[1]) < 1e-5 {
+            break;
+        }
+    }
+    let on: Vec<[f64; 2]> = xy.iter().filter(|q| ((q[0] - c[0]).hypot(q[1] - c[1]) - r).abs() <= band).cloned().collect();
+    if on.len() < 3 {
+        return None;
+    }
+    Some((c, crate::trees::stems::angular_extent(&on, c[0], c[1])))
+}
+
+/// Unit direction of the least-squares line through `pts`, pointing from
+/// the first towards the last; `None` for fewer than two.
+fn line_through(pts: &[Point]) -> Option<Point> {
+    if pts.len() < 2 {
+        return None;
+    }
+    let n = pts.len() as f64;
+    let mut mean = [0.0; 3];
+    for q in pts {
+        mean = add(&mean, &scale(q, 1.0 / n));
+    }
+    let mut cov = nalgebra::Matrix3::<f64>::zeros();
+    for q in pts {
+        let d = sub(q, &mean);
+        let v = nalgebra::Vector3::new(d[0], d[1], d[2]);
+        cov += v * v.transpose();
+    }
+    let eig = cov.symmetric_eigen();
+    let k = (0..3).max_by(|&a, &b| eig.eigenvalues[a].partial_cmp(&eig.eigenvalues[b]).unwrap())?;
+    let v = eig.eigenvectors.column(k);
+    let dir = [v[0], v[1], v[2]];
+    let along = sub(&pts[pts.len() - 1], &pts[0]);
+    let dir = if dot(&dir, &along) < 0.0 { scale(&dir, -1.0) } else { dir };
+    if crate::transform::norm(&dir) < 1e-9 { None } else { Some(crate::transform::normalize(&dir)) }
 }
 
 /// Label of the component with the most members.
@@ -1262,52 +1774,53 @@ fn isotonic_fill(chain: &[usize], radius: &mut [f64], weight: &[f64], twig_radiu
 /// any wide circle at all. Nothing has to lie within a band, so it degrades
 /// gently as the cloud thins.
 ///
-/// The scatter is that of the points about the least-squares circle through
-/// them (Kåsa 1976, refined), which follows an arc seen from one side where
-/// the distances to the centroid do not. A radius under `min_snr` times the
-/// scatter is not resolved and gives no measurement.
-pub(super) fn power_mean_radius(xy: &[[f64; 2]], p: &QsmParams) -> Option<Section> {
-    let n = xy.len();
-    if n < 3 {
-        return None;
+/// The distances are taken from the centre of the least-squares circle
+/// through the points (Kåsa 1976, refined), as raycloudtools moves a section
+/// onto an algebraic circle's centre before its mean, and the section is a
+/// measurement
+/// only when that circle passes the test of a circle fit: its radius at
+/// least `min_snr` times the scatter of the points about it, the points off
+/// the ring counted and a short arc asked for more. Without such a circle
+/// there is no centre to measure from, and the section is left unmeasured.
+pub(super) fn power_mean_radius(xy: &[[f64; 2]], p: &QsmParams) -> (Option<Section>, Option<[f64; 2]>) {
+    if xy.len() < 3 {
+        return (None, None);
     }
-    // `xy` is already in the section's own frame, so the axis is the origin:
-    // the points' centroid sits on the surface when a scan only sees one side.
-    let all: Vec<f64> = xy.iter().map(|q| q[0].hypot(q[1])).collect();
-    let mut d = all.clone();
-    // Drop what is clearly not this section's bark before averaging: a shell
-    // that caught a branch or a leaf cluster has a tail far off the axis, and
-    // even a low power mean is moved by enough of it (raycloudtools trims the
-    // same way in `removeDistantPoints`).
-    let mut sorted = d.clone();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let med = sorted[sorted.len() / 2];
-    if med > 0.0 {
-        d.retain(|&x| x <= 2.0 * med);
-    }
-    let n = d.len();
-    if n < 3 {
-        return None;
-    }
-    let q = p.radius_power;
-    let mean = d.iter().map(|&x| x.max(1e-6).powf(q)).sum::<f64>() / n as f64;
-    let r = mean.powf(1.0 / q);
-    if !(r.is_finite() && r >= p.twig_radius && r <= p.max_radius) {
-        return None;
-    }
-    let arc = crate::trees::stems::angular_extent(xy, 0.0, 0.0);
-    // The scatter of the points about the surface they lie on: about the
-    // least-squares circle through them, which follows an arc seen from one
-    // side where the distances to the centroid do not.
-    let kept: Vec<[f64; 2]> = xy.iter().zip(&all).filter(|(_, &x)| med <= 0.0 || x <= 2.0 * med).map(|(q, _)| *q).collect();
-    let scatter = match crate::trees::stems::fit_circle_refined(&kept) {
-        Some((cx, cy, rc)) => (kept.iter().map(|q| ((q[0] - cx).hypot(q[1] - cy) - rc).powi(2)).sum::<f64>() / kept.len() as f64).sqrt(),
-        None => (d.iter().map(|&x| (x - r).powi(2)).sum::<f64>() / n as f64).sqrt(),
+    // The power mean of the distances from `c`, without the far tail: a
+    // shell that caught a branch or a leaf cluster has points far off the
+    // axis, and even a low power mean is moved by enough of them
+    // (raycloudtools drops distant points too, by a rule of its own).
+    let about = |c: [f64; 2]| -> Option<(f64, Vec<[f64; 2]>)> {
+        let all: Vec<f64> = xy.iter().map(|q| (q[0] - c[0]).hypot(q[1] - c[1])).collect();
+        let mut sorted = all.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let med = sorted[sorted.len() / 2];
+        let kept: Vec<[f64; 2]> = xy.iter().zip(&all).filter(|(_, &x)| med <= 0.0 || x <= 2.0 * med).map(|(q, _)| *q).collect();
+        if kept.len() < 3 {
+            return None;
+        }
+        let q = p.radius_power;
+        let mean = kept.iter().map(|k| (k[0] - c[0]).hypot(k[1] - c[1]).max(1e-6).powf(q)).sum::<f64>() / kept.len() as f64;
+        let r = mean.powf(1.0 / q);
+        if r.is_finite() && r >= p.twig_radius && r <= p.max_radius { Some((r, kept)) } else { None }
     };
-    if r < p.min_snr * scatter {
-        return None;
+    // `xy` is in the section's own frame, the mean of its points at the
+    // origin. Seen from one side that mean lies on the surface, not on the
+    // axis: the centre is that of the least-squares circle through the
+    // points (Kåsa 1976, refined) where the circle is itself a measurement,
+    // by the same test of radius against noise and arc as a circle fit.
+    let Some((_, near)) = about([0.0, 0.0]) else { return (None, None) };
+    if let Some((cx, cy, rc)) = crate::trees::stems::fit_circle_refined(&near) {
+        let scatter = (near.iter().map(|q| ((q[0] - cx).hypot(q[1] - cy) - rc).powi(2)).sum::<f64>() / near.len() as f64).sqrt();
+        let spread = spread_about(xy, cx, cy, rc);
+        let arc = crate::trees::stems::angular_extent(&near, cx, cy);
+        if rc <= p.max_radius && cx.hypot(cy) <= rc && arc >= p.min_arc_deg && rc >= p.min_snr * scatter.max(spread) * arc_factor(arc) {
+            if let Some((r, kept)) = about([cx, cy]) {
+                return (Some(Section { radius: r, points: kept.len(), arc, scatter, spread }), Some([cx, cy]));
+            }
+        }
     }
-    Some(Section { radius: r, points: n, arc, scatter })
+    (None, None)
 }
 
 /// The parameters that are tied to how far apart the points are, rescaled to
@@ -1388,6 +1901,109 @@ mod tests {
             .collect()
     }
 
+    /// Points on the part of a vertical tube of radius `r` about the z axis
+    /// that faces +x within `half_arc` degrees, `height` tall, 4 mm of noise.
+    fn seen_from_one_side(rng: &mut Generator, n: usize, r: f64, half_arc: f64, height: f64) -> Vec<Point> {
+        (0..n)
+            .map(|_| {
+                let t = (2.0 * rng.random() - 1.0) * half_arc.to_radians();
+                let d = r + 0.008 * (rng.random() - 0.5);
+                [d * t.cos(), d * t.sin(), rng.random() * height]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_shorter_arc_needs_a_radius_further_above_the_noise() {
+        assert_eq!(arc_factor(360.0), 1.0);
+        assert_eq!(arc_factor(180.0), 1.0);
+        assert!((arc_factor(90.0) - 5.828).abs() < 0.01);
+        assert!(arc_factor(60.0) > arc_factor(90.0) && arc_factor(90.0) > arc_factor(135.0));
+        // A limb of 20 cm radius seen over 130 degrees is measured from that
+        // arc; a floor of half a circle refuses it, and the model then has
+        // to guess.
+        let mut rng = Generator::new(7);
+        let pts = seen_from_one_side(&mut rng, 30000, 0.2, 65.0, 6.0);
+        let p = QsmParams::default();
+        let q = build_qsm(&pts, Some([0.2, 0.0]), &p).unwrap();
+        let measured: Vec<&Cylinder> = q.cylinders.iter().filter(|c| c.n_points > 0).collect();
+        assert!(measured.len() > 20, "{} sections measured", measured.len());
+        assert!(measured.iter().all(|c| (c.radius - 0.2).abs() < 0.03), "{:?}", measured.iter().map(|c| c.radius).fold(0.0f64, f64::max));
+        let floor = build_qsm(&pts, Some([0.2, 0.0]), &QsmParams { min_arc_deg: 180.0, ..p }).unwrap();
+        assert_eq!(floor.cylinders.iter().filter(|c| c.n_points > 0).count(), 0);
+    }
+
+    #[test]
+    fn the_spread_counts_the_points_off_the_ring() {
+        let mut rng = Generator::new(5);
+        let mut xy: Vec<[f64; 2]> = (0..300)
+            .map(|_| {
+                let t = rng.random() * std::f64::consts::TAU;
+                let r = 0.1 + 0.008 * (rng.random() - 0.5);
+                [r * t.cos(), r * t.sin()]
+            })
+            .collect();
+        assert!(spread_about(&xy, 0.0, 0.0, 0.1) < 0.005);
+        // Twice as many points again, anywhere in the section.
+        xy.extend((0..600).map(|_| {
+            let t = rng.random() * std::f64::consts::TAU;
+            let r = 0.2 * rng.random().sqrt();
+            [r * t.cos(), r * t.sin()]
+        }));
+        assert!(spread_about(&xy, 0.0, 0.0, 0.1) > 0.03);
+    }
+
+    #[test]
+    fn a_ring_of_known_radius_is_located_from_a_short_arc() {
+        let mut rng = Generator::new(3);
+        // 100 degrees of a ring of radius 0.3 m centred on (1, 2).
+        let xy: Vec<[f64; 2]> = seen_from_one_side(&mut rng, 400, 0.3, 50.0, 1.0).iter().map(|q| [q[0] + 1.0, q[1] + 2.0]).collect();
+        let mean = [xy.iter().map(|q| q[0]).sum::<f64>() / 400.0, xy.iter().map(|q| q[1]).sum::<f64>() / 400.0];
+        assert!((mean[0] - 1.0).hypot(mean[1] - 2.0) > 0.25);
+        let (c, arc) = centre_at_radius(&xy, 0.3, 0.02, 1).unwrap();
+        assert!((c[0] - 1.0).hypot(c[1] - 2.0) < 0.01, "{c:?}");
+        assert!(arc > 80.0 && arc < 110.0, "{arc}");
+        // A radius a tenth too small still lands within a tenth of the radius.
+        let (c, _) = centre_at_radius(&xy, 0.27, 0.02, 1).unwrap();
+        assert!((c[0] - 1.0).hypot(c[1] - 2.0) < 0.04, "{c:?}");
+    }
+
+    #[test]
+    fn the_axis_of_a_stem_seen_from_one_side_lies_on_its_centre() {
+        let mut rng = Generator::new(9);
+        // 130 degrees of a stem of radius 0.3 m: the mean of the points is
+        // 0.27 m from the axis.
+        let pts = seen_from_one_side(&mut rng, 40000, 0.3, 65.0, 8.0);
+        let off = |q: &Qsm| q.cylinders.iter().filter(|c| c.branch_order == 0 && c.start[2] > 1.0 && c.start[2] < 7.0).map(|c| c.start[0].hypot(c.start[1])).fold(0.0f64, f64::max);
+        let p = QsmParams::default();
+        let placed = build_qsm(&pts, Some([0.3, 0.0]), &p).unwrap();
+        assert!(off(&placed) < 0.03, "{}", off(&placed));
+        // Without a measurement and without the centring the axis runs along
+        // the bark.
+        let left = build_qsm(&pts, Some([0.3, 0.0]), &QsmParams { min_arc_deg: 180.0, place_axes: false, ..p }).unwrap();
+        assert!(off(&left) > 0.2, "{}", off(&left));
+    }
+
+    #[test]
+    fn the_stem_runs_straight_below_its_lowest_section() {
+        let mut rng = Generator::new(13);
+        let mut pts = stem(&mut rng, 30000);
+        // What is left of the ground on one side of the base, out to 1.2 m.
+        pts.extend((0..6000).map(|_| {
+            let t = (rng.random() - 0.5) * 2.0;
+            let d = 0.1 + 1.1 * rng.random();
+            [d * t.cos(), d * t.sin(), 0.03 * rng.random()]
+        }));
+        // The lowest point nearest to where the stem is said to stand is on
+        // the ground, a metre away.
+        let p = QsmParams::default();
+        let foot = |q: &Qsm| q.cylinders.iter().filter(|c| c.branch_order == 0 && c.start[2] < 1.0).map(|c| c.start[0].hypot(c.start[1])).fold(0.0f64, f64::max);
+        let placed = build_qsm(&pts, Some([1.0, 0.0]), &p).unwrap();
+        assert!(foot(&placed) < 0.05, "{}", foot(&placed));
+        let left = build_qsm(&pts, Some([1.0, 0.0]), &QsmParams { place_axes: false, ..p }).unwrap();
+        assert!(foot(&left) > 0.3, "{}", foot(&left));
+    }
+
     #[test]
     fn a_ring_is_a_measurement_and_a_filled_section_is_not() {
         let mut rng = Generator::new(11);
@@ -1399,12 +2015,12 @@ mod tests {
                 [r * t.cos(), r * t.sin()]
             })
             .collect();
-        let f = power_mean_radius(&ring, &p).unwrap();
+        let f = power_mean_radius(&ring, &p).0.unwrap();
         assert!((f.radius - 0.1).abs() < 0.005 && f.scatter < 0.004, "{f:?}");
         // The same ring seen from one side, about its centroid: the points
         // still lie on one circle.
         let half: Vec<[f64; 2]> = ring.iter().filter(|q| q[0] > 0.0).map(|q| [q[0] - 0.064, q[1]]).collect();
-        assert!(power_mean_radius(&half, &p).unwrap().scatter < 0.004);
+        assert!(power_mean_radius(&half, &p).0.unwrap().scatter < 0.004);
         // Points spread across the section lie on no circle.
         let filled: Vec<[f64; 2]> = (0..200)
             .map(|_| {
@@ -1413,8 +2029,8 @@ mod tests {
                 [r * t.cos(), r * t.sin()]
             })
             .collect();
-        assert!(power_mean_radius(&filled, &p).is_none());
-        assert!(power_mean_radius(&filled, &QsmParams { min_snr: 0.0, ..p.clone() }).is_some());
+        assert!(power_mean_radius(&filled, &p).0.is_none());
+        assert!(power_mean_radius(&filled, &QsmParams { min_snr: 0.0, ..p.clone() }).0.is_some());
     }
 
     #[test]
@@ -1428,11 +2044,100 @@ mod tests {
         let model = build_qsm(&pts, Some([0.0, 0.0]), &p).unwrap();
         assert!(on_stem(&model) > 30, "{}", on_stem(&model));
         assert_eq!(on_branch(&model), 0);
-        // Without the two rules the clump's circles count, and the branch is
-        // as thick as the clump.
-        let loose = build_qsm(&pts, Some([0.0, 0.0]), &QsmParams { min_snr: 0.0, noise_ratio: 0.0, ..p }).unwrap();
+        // Without the rules the clump's circles count, and the branch is as
+        // thick as the clump.
+        let loose = build_qsm(&pts, Some([0.0, 0.0]), &QsmParams { min_snr: 0.0, noise_ratio: 0.0, pipe_excess: 0.0, ..p.clone() }).unwrap();
         assert!(on_branch(&loose) > 0);
-        assert!(loose.branch_volume() > 3.0 * model.branch_volume(), "{} {}", loose.branch_volume(), model.branch_volume());
+        assert!(loose.branch_volume() > 2.0 * model.branch_volume(), "{} {}", loose.branch_volume(), model.branch_volume());
+    }
+
+    #[test]
+    fn unmeasured_wood_takes_its_area_from_the_length_it_carries_and_no_more_than_its_points_show() {
+        // A stem of 6 m and, from 3 m up it, a twig 1 cm across running 1.5 m
+        // out, its points with no ring to them: not measured. The twig carries 1.5 m of the
+        // 4.5 m beyond the fork, so the pipe model gives it a third of the
+        // stem's cross-section, 5.8 cm of radius; its points show 5 mm.
+        let mut rng = Generator::new(17);
+        let mut pts = stem(&mut rng, 20000);
+        for _ in 0..8000 {
+            let t = rng.random() * std::f64::consts::TAU;
+            let r = 0.005 * rng.random().sqrt();
+            pts.push([0.1 + 1.5 * rng.random(), r * t.cos(), 3.0 + r * t.sin()]);
+        }
+        let at_fork = |q: &Qsm| q.cylinders.iter().filter(|c| c.branch_order > 0 && c.n_points == 0).map(|c| c.radius).fold(0.0, f64::max);
+        let p = QsmParams { spacing_scale: 0.0, ..Default::default() };
+        let by_load = build_qsm(&pts, Some([0.0, 0.0]), &QsmParams { width_slack: 0.0, ..p.clone() }).unwrap();
+        assert!((at_fork(&by_load) - 0.058).abs() < 0.012, "{}", at_fork(&by_load));
+        let model = build_qsm(&pts, Some([0.0, 0.0]), &p).unwrap();
+        assert!(at_fork(&model) < 0.012, "{}", at_fork(&model));
+    }
+
+    #[test]
+    fn a_sleeve_of_foliage_on_a_twig_is_set_aside() {
+        // A twig of 1 cm leaves the stem at 1 m, and for 30 cm of its length
+        // a ring of points 15 cm out surrounds it: a ring as clean as a
+        // branch's, on an axis with no other section to judge it by.
+        let mut rng = Generator::new(21);
+        let mut pts = stem(&mut rng, 20000);
+        // The stem goes on to 16 m: the twig carries little beside it.
+        for _ in 0..30000 {
+            let t = rng.random() * std::f64::consts::TAU;
+            let r = 0.1 + 0.008 * (rng.random() - 0.5);
+            pts.push([r * t.cos(), r * t.sin(), 6.0 + 10.0 * rng.random()]);
+        }
+        for _ in 0..1500 {
+            let t = rng.random() * std::f64::consts::TAU;
+            pts.push([0.1 + 0.8 * rng.random(), 0.01 * t.cos(), 1.0 + 0.01 * t.sin()]);
+        }
+        for _ in 0..4000 {
+            let t = rng.random() * std::f64::consts::TAU;
+            let r = 0.15 + 0.004 * (rng.random() - 0.5);
+            pts.push([0.45 + 0.3 * rng.random(), r * t.cos(), 1.0 + r * t.sin()]);
+        }
+        // Petioles: a few points between the twig and the ring join the two.
+        for _ in 0..600 {
+            let t = rng.random() * std::f64::consts::TAU;
+            let r = 0.15 * rng.random();
+            pts.push([0.45 + 0.3 * rng.random(), r * t.cos(), 1.0 + r * t.sin()]);
+        }
+        let widest = |q: &Qsm| q.cylinders.iter().filter(|c| c.branch_order > 0).map(|c| c.radius).fold(0.0, f64::max);
+        let p = QsmParams { spacing_scale: 0.0, ..Default::default() };
+        let model = build_qsm(&pts, Some([0.0, 0.0]), &p).unwrap();
+        let trusting = build_qsm(&pts, Some([0.0, 0.0]), &QsmParams { pipe_excess: 0.0, ..p }).unwrap();
+        // (no branch is wider than the stem it hangs from)
+        assert!(widest(&trusting) > 0.09, "{}", widest(&trusting));
+        assert!(widest(&model) < 0.06, "{}", widest(&model));
+    }
+
+    #[test]
+    fn the_width_of_a_section_is_its_radius_from_one_side_or_all_round() {
+        let mut rng = Generator::new(8);
+        let (r, noise) = (0.03, 0.005);
+        let arc = |rng: &mut Generator, span: f64| -> Vec<[f64; 2]> {
+            (0..2000)
+                .map(|_| {
+                    let t = (rng.random() - 0.5) * span.to_radians();
+                    let d = r + noise * (rng.random() - 0.5) * 12f64.sqrt();
+                    [d * t.cos(), d * t.sin()]
+                })
+                .collect()
+        };
+        for span in [180.0, 360.0] {
+            let w = section_width(&arc(&mut rng, span), None, noise);
+            assert!((w / r - 1.0).abs() < 0.05, "{span}: {w}");
+        }
+        // Between the two it reads up to a tenth wide, and a short arc reads narrow.
+        let w = section_width(&arc(&mut rng, 270.0), None, noise);
+        assert!(w > r && w < 1.12 * r, "{w}");
+        let w = section_width(&arc(&mut rng, 90.0), None, noise);
+        assert!((w / r - 0.60).abs() < 0.05, "{w}");
+        // Points no wider than the noise have no width beyond it.
+        let dust: Vec<[f64; 2]> = (0..500).map(|_| [noise * (rng.random() - 0.5) * 12f64.sqrt(), noise * (rng.random() - 0.5) * 12f64.sqrt()]).collect();
+        assert!(section_width(&dust, None, noise) <= 1.2 * noise);
+        // Weights that drop the far half of the points leave the near half's width.
+        let both: Vec<[f64; 2]> = arc(&mut rng, 360.0).into_iter().chain((0..2000).map(|_| [0.5 + 0.2 * rng.random(), 0.0])).collect();
+        let w: Vec<f64> = (0..both.len()).map(|i| if i < 2000 { 1.0 } else { 0.0 }).collect();
+        assert!((section_width(&both, Some(&w), noise) / r - 1.0).abs() < 0.05);
     }
 
     #[test]

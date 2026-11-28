@@ -18,7 +18,7 @@ original.
 |---|---|
 | [lidR](https://github.com/r-lidar/lidR) (J.-R. Roussel and contributors) | `segment_crowns(method="dalponte2016")` and the logic of `als.li2012` (translations of lidR's C++); the rules and defaults of the local maximum filter in `als.locate_trees`; the standard area-based metrics of `als.metrics` (`stdmetrics`: names, formulas, entropy, cumulative height percentages). |
 | [AMAPVox](https://github.com/umr-amap/AMAPVox) (UMR AMAP) | `sylva.voxels`: the ray-traced voxel grid follows AMAPVox, whose path-length and attenuation estimators, leaf angle distributions and laser specifications it uses. |
-| [raycloudtools](https://github.com/csiro-robotics/raycloudtools) (CSIRO; [Lowe and Stepanas 2021](references.md), [Devereux et al. 2026](references.md)) | `canopy.density_grid` ([Lowe et al. 2021](references.md)); in `trees.segment_trees`, the form of the edge cost (edge length to a power over a power of the cosine of the bend), the lateral term and the per-tree scaling; in `qsm.build_qsm`, the power-mean section radius, radii in proportion to the length carried (a fork sharing its parent's cross-section by length) and the cap on a fork's summed cross-section. |
+| [raycloudtools](https://github.com/csiro-robotics/raycloudtools) (CSIRO; [Lowe and Stepanas 2021](references.md), [Devereux et al. 2026](references.md)) | `canopy.density_grid` ([Lowe et al. 2021](references.md)); in `trees.segment_trees`, the form of the edge cost (edge length to a power over a power of the cosine of the bend), the lateral term and the per-tree scaling; in `qsm.build_qsm`, the power-mean section radius about the centre of a circle through the section, the length each axis's taper is fitted against (a fork sharing its parent's cross-section by length) and the cap on a fork's summed cross-section. |
 | [GBSeparation](https://doi.org/10.5281/zenodo.6837613) (Tian and Li) | `leaves.classify_leaf_wood(method="gbs")`. |
 | The CSF reference implementation (Zhang, Qi, Wan and Wang) | The cloth update and constants of `ground.classify_ground_csf`. |
 | The [Point Cloud Library](https://pointclouds.org) | The parameters and window sequence of `ground.classify_ground_pmf`. |
@@ -41,6 +41,11 @@ original.
   [Verroust and Lazarus (2000)](references.md) and
   [Xu et al. (2007)](references.md), and fits each axis's taper by the
   Theil–Sen estimator ([Theil 1950](references.md); [Sen 1968](references.md)).
+  Unmeasured wood takes a cross-section area in proportion to the length
+  of branch it carries: that length is the growth length of SimpleForest
+  ([Hackenberg and Bontemps 2023](references.md)), which fits a power of
+  it to a tree's radii, and the proportion is the pipe model's
+  ([Shinozaki et al. 1964](references.md)).
   **`qsm.wood_points`** starts from the path-frequency cue of
   [Vicari et al. (2019)](references.md).
 
