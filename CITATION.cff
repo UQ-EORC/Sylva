@@ -53,7 +53,7 @@ identifiers:
     description: Version 0.3.1
 repository-code: "https://github.com/UQ-EORC/Sylva"
 url: "https://uq-eorc.github.io/Sylva/"
-version: 2.1.0
+version: 2.2.0
 abstract: >-
   Terrestrial and airborne laser scanning processing for forest ecology and
   remote sensing: ground classification, tree segmentation, quantitative
@@ -69,4 +69,4 @@ keywords:
   - quantitative structure model
 license: GPL-3.0-or-later
 year: 2026
-date-released: 2026-11-27
+date-released: 2026-11-28
